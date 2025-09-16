@@ -1,0 +1,874 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:kml="http://www.opengis.net/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
+<Document>
+	<name>Navigation.kml</name>
+	<Style id="icon-green2">
+		<IconStyle>
+			<color>ff00ff00</color>
+			<scale>0.6</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href>
+			</Icon>
+			<hotSpot x="32" y="1" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+		<LabelStyle>
+			<color>ff00ff00</color>
+			<scale>0.7</scale>
+		</LabelStyle>
+		<BalloonStyle>
+			<text>$[description]</text>
+		</BalloonStyle>
+	</Style>
+	<Style id="s_route">
+		<IconStyle>
+			<color>ffffff00</color>
+			<scale>0.8</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href>
+			</Icon>
+			<hotSpot x="10" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+		<LabelStyle>
+			<color>ffffff00</color>
+			<scale>0.8</scale>
+		</LabelStyle>
+		<LineStyle>
+			<color>ffffff00</color>
+			<width>10</width>
+		</LineStyle>
+	</Style>
+	<StyleMap id="waypoint">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#waypoint_n</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#waypoint_h</styleUrl>
+		</Pair>
+	</StyleMap>
+	<StyleMap id="waypoint0">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#waypoint_n0</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#waypoint_h1</styleUrl>
+		</Pair>
+	</StyleMap>
+	<Style id="waypoint_h">
+		<IconStyle>
+			<scale>1.2</scale>
+			<Icon>
+				<href>https://maps.google.com/mapfiles/kml/pal4/icon61.png</href>
+			</Icon>
+		</IconStyle>
+	</Style>
+	<Style id="waypoint_h1">
+		<IconStyle>
+			<scale>1.2</scale>
+			<Icon>
+				<href>https://maps.google.com/mapfiles/kml/pal4/icon61.png</href>
+			</Icon>
+		</IconStyle>
+	</Style>
+	<Style id="waypoint_n">
+		<IconStyle>
+			<Icon>
+				<href>https://maps.google.com/mapfiles/kml/pal4/icon61.png</href>
+			</Icon>
+		</IconStyle>
+	</Style>
+	<Style id="waypoint_n0">
+		<IconStyle>
+			<Icon>
+				<href>https://maps.google.com/mapfiles/kml/pal4/icon61.png</href>
+			</Icon>
+		</IconStyle>
+	</Style>
+	<Folder>
+		<name>Navigation</name>
+		<open>1</open>
+		<Folder>
+			<name>Waypoints</name>
+			<visibility>0</visibility>
+			<open>1</open>
+			<Folder>
+				<name>Bocas</name>
+				<visibility>0</visibility>
+				<open>1</open>
+				<Placemark>
+					<name>StarfishBeach</name>
+					<visibility>0</visibility>
+					<open>1</open>
+					<LookAt>
+						<longitude>-82.32535801421803</longitude>
+						<latitude>9.404026391511216</latitude>
+						<altitude>0</altitude>
+						<heading>1.76143723957313</heading>
+						<tilt>0</tilt>
+						<range>1505.716849282555</range>
+						<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+					</LookAt>
+					<styleUrl>#icon-green2</styleUrl>
+					<Point>
+						<coordinates>-82.32678393484858,9.403830244105224,0</coordinates>
+					</Point>
+				</Placemark>
+			</Folder>
+		</Folder>
+		<Folder>
+			<name>Routes</name>
+			<open>1</open>
+			<Folder>
+				<name>Popa</name>
+				<Placemark>
+					<name>Popa0</name>
+					<TimeStamp><when>2014-04-08T16:55:32Z</when>
+</TimeStamp>
+					<styleUrl>#waypoint0</styleUrl>
+					<Point>
+						<coordinates>-82.24205000000001,9.334083,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>Popa1</name>
+					<TimeStamp><when>2015-11-10T15:21:33Z</when>
+</TimeStamp>
+					<styleUrl>#waypoint0</styleUrl>
+					<Point>
+						<coordinates>-82.204624,9.272119999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>Popa2</name>
+					<TimeStamp><when>2012-07-16T10:37:45Z</when>
+</TimeStamp>
+					<styleUrl>#waypoint0</styleUrl>
+					<Point>
+						<coordinates>-82.197158,9.255865999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>Popa3</name>
+					<TimeStamp><when>2012-07-19T13:45:11Z</when>
+</TimeStamp>
+					<styleUrl>#waypoint0</styleUrl>
+					<Point>
+						<coordinates>-82.19331099999999,9.24972,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>Popa4</name>
+					<TimeStamp><when>2012-07-18T14:29:12Z</when>
+</TimeStamp>
+					<styleUrl>#waypoint0</styleUrl>
+					<Point>
+						<coordinates>-82.180733,9.231066999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>Popa5</name>
+					<TimeStamp><when>2013-04-14T10:38:49Z</when>
+</TimeStamp>
+					<styleUrl>#waypoint0</styleUrl>
+					<Point>
+						<coordinates>-82.16551699999999,9.227,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>Popa6</name>
+					<TimeStamp><when>2012-07-16T11:20:27Z</when>
+</TimeStamp>
+					<styleUrl>#waypoint0</styleUrl>
+					<Point>
+						<coordinates>-82.15557699999999,9.208679,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>Popa7</name>
+					<TimeStamp><when>2012-01-13T13:35:08Z</when>
+</TimeStamp>
+					<styleUrl>#waypoint</styleUrl>
+					<Point>
+						<coordinates>-82.1579851811522,9.202669737767904,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>Popa8</name>
+					<TimeStamp><when>2012-01-13T13:35:08Z</when>
+</TimeStamp>
+					<styleUrl>#waypoint</styleUrl>
+					<Point>
+						<coordinates>-82.15242731270472,9.200270722905344,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>Popa9</name>
+					<TimeStamp><when>2012-01-13T13:35:08Z</when>
+</TimeStamp>
+					<styleUrl>#waypoint</styleUrl>
+					<Point>
+						<coordinates>-82.14583525996348,9.200831732589233,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>Popa10</name>
+					<TimeStamp><when>2015-02-12T11:16:49Z</when>
+</TimeStamp>
+					<styleUrl>#waypoint</styleUrl>
+					<Point>
+						<coordinates>-82.14325569536319,9.203775901876377,0</coordinates>
+					</Point>
+				</Placemark>
+			</Folder>
+			<Folder>
+				<name>Michelle</name>
+				<visibility>0</visibility>
+				<Placemark>
+					<name>Route</name>
+					<visibility>0</visibility>
+					<styleUrl>#s_route</styleUrl>
+					<LineString>
+						<coordinates>
+							-82.16541700000001,9.134401,0 -82.16589999999999,9.133501000000001,0 -82.16758299999999,9.132667,0 -82.16758299999999,9.130884,0 -82.166867,9.129517999999999,0 -82.16538300000001,9.128083999999999,0 -82.16345,9.128384,0 -82.161483,9.128401,0 -82.15901700000001,9.131150999999999,0 -82.157033,9.131751,0 -82.155883,9.132251,0 -82.15519999999999,9.133300999999999,0 -82.1546,9.135700999999999,0 -82.15445,9.139101,0 -82.15125,9.142601000000001,0 -82.15045000000001,9.143784,0 -82.151983,9.145467999999999,0 -82.153683,9.146851,0 -82.154467,9.148116999999999,0 -82.15478299999999,9.149616999999999,0 -82.15394999999999,9.152101,0 -82.154267,9.153267,0 -82.155,9.154833999999999,0 -82.155883,9.155666999999999,0 -82.157617,9.156801,0 -82.160383,9.159300999999999,0 -82.16076700000001,9.160701,0 -82.16211699999999,9.162784,0 -82.163383,9.163434000000001,0 -82.16463299999999,9.167017,0 -82.16283300000001,9.170067,0 -82.161367,9.171684000000001,0 -82.161317,9.176117,0 -82.160117,9.179167,0 -82.161467,9.181267,0 -82.1605,9.183033999999999,0 -82.161717,9.184834,0 -82.160483,9.186484,0 -82.16243299999999,9.189767,0 -82.1733,9.200684000000001,0 -82.185483,9.206084000000001,0 -82.195217,9.217283999999999,0 -82.19798299999999,9.221684,0 -82.202517,9.240917,0 -82.208367,9.282833999999999,0 -82.241967,9.330266999999999,0 
+						</coordinates>
+					</LineString>
+				</Placemark>
+				<Placemark>
+					<name>m001</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.16541700000001,9.134401,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m002</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.16589999999999,9.133501000000001,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m003</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.16758299999999,9.132667,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m004</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.16758299999999,9.130884,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m005</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.166867,9.129517999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m006</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.16538300000001,9.128083999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m007</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.16345,9.128384,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m008</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.161483,9.128401,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m009</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.15901700000001,9.131150999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m010</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.157033,9.131751,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m011</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.155883,9.132251,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m012</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.15519999999999,9.133300999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m013</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.1546,9.135700999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m014</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.15445,9.139101,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m015</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.15125,9.142601000000001,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m016</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.15045000000001,9.143784,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m017</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.151983,9.145467999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m018</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.153683,9.146851,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m019</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.154467,9.148116999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m020</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.15478299999999,9.149616999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m021</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.15394999999999,9.152101,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m022</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.154267,9.153267,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m023</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.155,9.154833999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m024</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.155883,9.155666999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m025</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.157617,9.156801,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m026</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.160383,9.159300999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m027</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.16076700000001,9.160701,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m028</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.16211699999999,9.162784,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m029</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.163383,9.163434000000001,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m030</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.16463299999999,9.167017,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m031</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.16283300000001,9.170067,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m032</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.161367,9.171684000000001,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m033</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.161317,9.176117,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m034</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.160117,9.179167,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m035</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.161467,9.181267,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m036</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.1605,9.183033999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m037</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.161717,9.184834,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m038</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.160483,9.186484,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m039</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.16243299999999,9.189767,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m040</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.1733,9.200684000000001,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m041</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.185483,9.206084000000001,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m042</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.195217,9.217283999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m043</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.19798299999999,9.221684,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m044</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.202517,9.240917,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m045</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.208367,9.282833999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>m046</name>
+					<visibility>0</visibility>
+					<description>Date: 2011-02-07T22:53:16Z</description>
+					<TimeStamp><when>2011-02-07T22:53:16Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.241967,9.330266999999999,0</coordinates>
+					</Point>
+				</Placemark>
+			</Folder>
+			<Folder>
+				<name>Agua</name>
+				<visibility>0</visibility>
+				<Placemark>
+					<name>Route</name>
+					<visibility>0</visibility>
+					<styleUrl>#s_route</styleUrl>
+					<LineString>
+						<coordinates>
+							-82.05944,9.178286999999999,0 -82.078079,9.152581,0 -82.078789,9.146447999999999,0 -82.07581500000001,9.138095,0 -82.076292,9.120976000000001,0 -82.07144099999999,9.109351,0 -82.08924500000001,9.082345,0 -82.15982099999999,9.098413000000001,0 -82.172105,9.113739000000001,0 -82.172974,9.124307,0 
+						</coordinates>
+					</LineString>
+				</Placemark>
+				<Placemark>
+					<name>om01</name>
+					<visibility>0</visibility>
+					<description>Date: 2010-09-16T09:26:09Z</description>
+					<TimeStamp><when>2010-09-16T09:26:09Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.05944,9.178286999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>om02</name>
+					<visibility>0</visibility>
+					<description>Date: 2010-09-16T09:26:30Z</description>
+					<TimeStamp><when>2010-09-16T09:26:30Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.078079,9.152581,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>om03</name>
+					<visibility>0</visibility>
+					<description>Date: 2010-11-06T13:47:56Z</description>
+					<TimeStamp><when>2010-11-06T13:47:56Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.078789,9.146447999999999,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>om04</name>
+					<visibility>0</visibility>
+					<description>Date: 2010-09-16T09:26:47Z</description>
+					<TimeStamp><when>2010-09-16T09:26:47Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.07581500000001,9.138095,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>om05</name>
+					<visibility>0</visibility>
+					<description>Date: 2010-09-16T09:27:14Z</description>
+					<TimeStamp><when>2010-09-16T09:27:14Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.076292,9.120976000000001,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>om06</name>
+					<visibility>0</visibility>
+					<description>Date: 2010-09-16T09:27:43Z</description>
+					<TimeStamp><when>2010-09-16T09:27:43Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.07144099999999,9.109351,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>om07</name>
+					<visibility>0</visibility>
+					<description>Date: 2010-11-06T13:48:52Z</description>
+					<TimeStamp><when>2010-11-06T13:48:52Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.08924500000001,9.082345,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>om08</name>
+					<visibility>0</visibility>
+					<description>Date: 2010-09-16T09:28:36Z</description>
+					<TimeStamp><when>2010-09-16T09:28:36Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.15982099999999,9.098413000000001,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>om09</name>
+					<visibility>0</visibility>
+					<description>Date: 2010-09-16T09:28:54Z</description>
+					<TimeStamp><when>2010-09-16T09:28:54Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.172105,9.113739000000001,0</coordinates>
+					</Point>
+				</Placemark>
+				<Placemark>
+					<name>om10</name>
+					<visibility>0</visibility>
+					<description>Date: 2010-09-16T09:31:00Z</description>
+					<TimeStamp><when>2010-09-16T09:31:00Z</when>
+</TimeStamp>
+					<styleUrl>#s_route</styleUrl>
+					<Point>
+						<coordinates>-82.172974,9.124307,0</coordinates>
+					</Point>
+				</Placemark>
+			</Folder>
+		</Folder>
+		<atom:link rel="app" href="https://www.google.com/earth/about/versions/#earth-pro" title="Google Earth Pro 7.3.6.10201"></atom:link>
+	</Folder>
+</Document>
+</kml>
