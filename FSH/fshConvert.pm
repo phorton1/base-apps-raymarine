@@ -30,17 +30,17 @@
 # **good** purpose to try to upload a track to the E80.
 
 
-package bat::raymarineE80::fshConvert;
+package apps::raymarine::FSH::fshConvert;
 use strict;
 use warnings;
 use Fcntl qw(:seek);
 use Time::Local;
 use Pub::Utils;
-use bat::raymarineE80::fshUtils;
-use bat::raymarineE80::fshFile;
-use bat::raymarineE80::fshBlocks;
-use bat::raymarineE80::genGPX;
-use bat::raymarineE80::genKML;
+use apps::raymarine::FSH::fshUtils;
+use apps::raymarine::FSH::fshFile;
+use apps::raymarine::FSH::fshBlocks;
+use apps::raymarine::FSH::genGPX;
+use apps::raymarine::FSH::genKML;
 
 
 #---------------------------------------
@@ -49,7 +49,7 @@ use bat::raymarineE80::genKML;
 
 my $ifilename = "/Archive/Archive.FSH";	# ARCHIVE2_FROM_OLD_E80.FSH";
     # in current directory
-my $ofilename = "modified.kml";
+my $ofilename = "output/created_from_ARCHIVE_FSH.kml";
 
 my $all_blocks = fshFileToBlocks($ifilename);
 

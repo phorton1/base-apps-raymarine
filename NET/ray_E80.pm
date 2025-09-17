@@ -3,11 +3,11 @@
 #---------------------------------------
 # see docs/raynet.md
 
-package bat::raymarineE80::ray_E80;
+package apps::raymarine::NET::ray_E80;
 use strict;
 use warnings;
 use Pub::Utils;
-use bat::raymarineE80::ray_UI;
+use apps::raymarine::NET::ray_UI;
 
 BEGIN
 {
@@ -381,13 +381,11 @@ sub handleE80NAV
 	#-------------------------------------
 	# Analyze for changes.
 	#-------------------------------------
-	# If an ignored byte changes we redraw them all.
-	# Otherwise, any new changes are given a timestamp, and
+	# Any new changes are given a timestamp, and
 	# if there are any, the record is considered to be "diff"
 
 	my $diff = 0;
 	my $len_changed = 0;
-	my $ignore_changed = 0;
 	my $now = time();
 
 	if ($found)
@@ -398,7 +396,7 @@ sub handleE80NAV
 		my $use_len = $len <= $flen ? $len : $flen;
 		for (my $i=0; $i<$use_len; $i++)
 		{
-			if (substr($data,$i,1) ne substr($data,$i,1))
+			if (substr($data,$i,1) ne substr($found->{data},$i,1))
 			{
 				$rec->{changes}->{$i} = $now;
 				$diff = 1;

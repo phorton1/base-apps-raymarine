@@ -3,7 +3,7 @@
 #--------------------------------------
 # Based on the C code at https://github.com/rahra/parsefsh
 
-package bat::raymarineE80::fshUtils;
+package apps::raymarine::FSH::fshUtils;
 use strict;
 use warnings;
 use POSIX qw(floor pow atan);
@@ -69,8 +69,8 @@ sub blockTypeToStr
 sub guidToStr
 {
     my ($guid) = @_;
-    my $guid_str = '';
-    for (my $i=0; $i<8; $i++)
+    my $guid_str = length($guid) ? '' : "empty_guid";
+    for (my $i=0; $i<8 && $i<length($guid); $i++)
     {
         my $byte = ord(substr($guid,$i,1));
         $guid_str .= sprintf("%02X",$byte);

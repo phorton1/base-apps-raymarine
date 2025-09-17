@@ -2,7 +2,7 @@
 # ray_E80NAV.pm
 #--------------------------------------------
 
-package bat::raymarineE80::parse_E80_NAV;
+package apps::raymarine::NET::E80NAV;
 
 
 

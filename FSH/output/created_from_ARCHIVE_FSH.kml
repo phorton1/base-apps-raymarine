@@ -1,0 +1,341 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"
+	xmlns:gx="http://www.google.com/kml/ext/2.2"
+	xmlns:kml="http://www.opengis.net/kml/2.2"
+	xmlns:atom="http://www.w3.org/2005/Atom">
+<Document>
+
+	<Style id='s_track'>
+		<LineStyle>
+		  <color>#ffff6666</color>
+		  <width>1</width>
+		</LineStyle>
+		<LabelStyle>
+			<scale>0.8</scale>
+			<color>#ffff6666</color>
+		</LabelStyle>
+		<IconStyle>
+			<scale>0.8</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href>
+			</Icon>
+			<color>#ffff6666</color>
+			<hotSpot x="10" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id='s_route'>
+		<LineStyle>
+		  <color>#ffffff00</color>
+		  <width>10</width>
+		</LineStyle>
+		<LabelStyle>
+			<scale>0.8</scale>
+			<color>#ffffff00</color>
+		</LabelStyle>
+		<IconStyle>
+			<scale>0.8</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href>
+			</Icon>
+			<color>#ffffff00</color>
+			<hotSpot x="10" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id='s_waypoint'>
+		<LabelStyle>
+			<scale>0.8</scale>
+			<color>#ff00ff00</color>
+		</LabelStyle>
+		<IconStyle>
+			<scale>0.8</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href>
+			</Icon>
+			<color>#ff00ff00</color>
+			<hotSpot x="10" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id='s_group'>
+		<LabelStyle>
+			<scale>0.8</scale>
+			<color>#ff00ffff</color>
+		</LabelStyle>
+		<IconStyle>
+			<scale>0.8</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href>
+			</Icon>
+			<color>#ff00ffff</color>
+			<hotSpot x="10" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+    <name>output/created_from_ARCHIVE_FSH.kml</name>
+    <Folder>
+        <name>Groups</name>
+        <Folder>
+            <name>Popa</name>
+            <Placemark>
+                <name>Popa0</name>
+                <Point>
+                    <coordinates>-82.242050,9.334050</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_group</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa1</name>
+                <Point>
+                    <coordinates>-82.204624,9.272087</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_group</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa2</name>
+                <Point>
+                    <coordinates>-82.197158,9.255833</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_group</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa3</name>
+                <Point>
+                    <coordinates>-82.193311,9.249687</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_group</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa4</name>
+                <Point>
+                    <coordinates>-82.180733,9.231034</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_group</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa5</name>
+                <Point>
+                    <coordinates>-82.165517,9.226967</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_group</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa6</name>
+                <Point>
+                    <coordinates>-82.155577,9.208646</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_group</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa7</name>
+                <Point>
+                    <coordinates>-82.157985,9.202637</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_group</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa8</name>
+                <Point>
+                    <coordinates>-82.152427,9.200238</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_group</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa9</name>
+                <Point>
+                    <coordinates>-82.145835,9.200799</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_group</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa10</name>
+                <Point>
+                    <coordinates>-82.143256,9.203743</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_group</styleUrl>
+            </Placemark>
+        </Folder>
+    </Folder>
+    <Folder>
+        <name>Routes</name>
+        <Folder>
+            <name>Popa</name>
+            <Placemark>
+                <name>Route</name>
+                <styleUrl>s_route</styleUrl>
+                <LineString>
+                    <gx:altitudeOffset>0</gx:altitudeOffset>
+                    <extrude>0</extrude>
+                    <tessellate>0</tessellate>
+                    <altitudeMode>clampToGround</altitudeMode>
+                    <gx:drawOrder>0</gx:drawOrder>
+                    <coordinates>
+                        -82.242050,9.334050,0
+                        -82.204624,9.272087,0
+                        -82.197158,9.255833,0
+                        -82.193311,9.249687,0
+                        -82.180733,9.231034,0
+                        -82.165517,9.226967,0
+                        -82.155577,9.208646,0
+                        -82.157985,9.202637,0
+                        -82.152427,9.200238,0
+                        -82.145835,9.200799,0
+                        -82.143256,9.203743,0
+                    </coordinates>
+                </LineString>
+            </Placemark>
+            <Placemark>
+                <name>Popa0</name>
+                <Point>
+                    <coordinates>-82.242050,9.334050</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_route</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa1</name>
+                <Point>
+                    <coordinates>-82.204624,9.272087</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_route</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa2</name>
+                <Point>
+                    <coordinates>-82.197158,9.255833</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_route</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa3</name>
+                <Point>
+                    <coordinates>-82.193311,9.249687</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_route</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa4</name>
+                <Point>
+                    <coordinates>-82.180733,9.231034</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_route</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa5</name>
+                <Point>
+                    <coordinates>-82.165517,9.226967</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_route</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa6</name>
+                <Point>
+                    <coordinates>-82.155577,9.208646</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_route</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa7</name>
+                <Point>
+                    <coordinates>-82.157985,9.202637</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_route</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa8</name>
+                <Point>
+                    <coordinates>-82.152427,9.200238</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_route</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa9</name>
+                <Point>
+                    <coordinates>-82.145835,9.200799</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_route</styleUrl>
+            </Placemark>
+            <Placemark>
+                <name>Popa10</name>
+                <Point>
+                    <coordinates>-82.143256,9.203743</coordinates>
+                </Point>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
+                <styleUrl>s_route</styleUrl>
+            </Placemark>
+        </Folder>
+    </Folder>
+    <Folder>
+        <name>Tracks</name>
+        <Placemark>
+            <name>TrackP1</name>
+            <Point>
+                <coordinates>-82.242002,9.333970</coordinates>
+            </Point>
+            <styleUrl>s_track</styleUrl>
+        </Placemark>
+        <Placemark>
+            <name>TrackP1</name>
+            <styleUrl>s_track</styleUrl>
+            <LineString>
+                <gx:altitudeOffset>0</gx:altitudeOffset>
+                <extrude>0</extrude>
+                <tessellate>0</tessellate>
+                <altitudeMode>clampToGround</altitudeMode>
+                <gx:drawOrder>0</gx:drawOrder>
+                <coordinates>
+                    -82.242002,9.333970,0
+                    -82.203575,9.269979,0
+                    -82.196172,9.254105,0
+                    -82.180360,9.230482,0
+                    -82.164772,9.226791,0
+                    -82.155148,9.207797,0
+                    -82.158365,9.201941,0
+                    -82.151062,9.200027,0
+                    -82.144803,9.200952,0
+                    -82.142982,9.204241,0
+                </coordinates>
+            </LineString>
+        </Placemark>
+    </Folder>
+</Document>
+</kml>

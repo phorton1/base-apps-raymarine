@@ -13,14 +13,14 @@
 # fshFileToBlocks() parses the file and returns $all_blocks
 # for further processing by fshBlocks.pm.
 
-package bat::raymarineE80::fshFile;
+package apps::raymarine::FSH::fshFile;
 use strict;
 use warnings;
 use POSIX qw(floor pow atan);
 use Fcntl qw(:seek);
 use Time::Local;
 use Pub::Utils;
-use bat::raymarineE80::fshUtils;
+use apps::raymarine::FSH::fshUtils;
 
 
 my $dbg_file = 1;

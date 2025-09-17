@@ -26,7 +26,7 @@
 # manually copied to the /src/Arduino/ NMEA0183 simulator
 # directory to synchronize the simulator with the E80.
 
-package kmlToCSV;
+package apps::raymarine::CSV::kmlToCSV;
 use strict;
 use warnings;
 use XML::Simple;
@@ -50,12 +50,17 @@ my $xmlsimple = XML::Simple->new(
 # vars
 #--------------------------
 
-my $ifilename = "Navigation.kml";
-my $ofilename = "Navigation.txt";
-	# The output file is called Navigation.txt,
-	# because its easier to navigate to in Raytech
+my $ifilename = "input/Navigation.kml";
+	# This is tghe name of a folder in GE that is exported as
+	# a single KML file that contains all of my official RWT
+	# (Routes, Waypoints, and Tracks) that will be converted
+	# into a Raymarine CSV file containing Routes, Waypoints,
+	# and Waypoint Groups analagous to Folders,
+my $ofilename = "output/Navigation.text";
+	# The output CSV file is called Navigation.txt,
+	# because its easier to navigate to in Raytech RNS
 	# than Navigaation.csv
-my $hfilename = "ge_routes.h";
+my $hfilename = "output/ge_routes.h";
 	# to be manually copied to /src/Arduino NMEA0183 simulator
 	
 

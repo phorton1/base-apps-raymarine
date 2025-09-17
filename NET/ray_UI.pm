@@ -2,7 +2,7 @@
 # ray_UI.pm
 #---------------------------------------
 
-package bat::raymarineE80::ray_UI;
+package apps::raymarine::NET::ray_UI;
 use strict;
 use warnings;
 use Win32::Console::ANSI;

@@ -8,7 +8,7 @@
 # number of Placemarks, and tries to create a Track from it.
 
 
-package XMLSoap;
+package apps::raymarine::FSH::kmlToFSH;
 use strict;
 use warnings;
 use XML::Simple;

@@ -19,14 +19,14 @@
 # by guid as the data structure implies.
 
 
-package bat::raymarineE80::fshBlocks;
+package apps::raymarine::FSH::fshBlocks;
 use strict;
 use warnings;
 use POSIX qw(floor pow atan);
 use Fcntl qw(:seek);
 use Time::Local;
 use Pub::Utils;
-use bat::raymarineE80::fshUtils;
+use apps::raymarine::FSH::fshUtils;
 
 
 my $dbg_trk = 0;

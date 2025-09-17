@@ -3,15 +3,15 @@
 #-------------------------------------------------------
 # Generates a KML file from $all_blocks
 
-package bat::raymarineE80::genKML;
+package apps::raymarine::FSH::genKML;
 use strict;
 use warnings;
 use Fcntl qw(:seek);
 use Time::Local;
 use Pub::Utils;
-use bat::raymarineE80::fshUtils;
-use bat::raymarineE80::fshFile;
-use bat::raymarineE80::fshBlocks;
+use apps::raymarine::FSH::fshUtils;
+use apps::raymarine::FSH::fshFile;
+use apps::raymarine::FSH::fshBlocks;
 
 
 BEGIN
