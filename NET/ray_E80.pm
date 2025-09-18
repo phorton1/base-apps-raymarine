@@ -25,8 +25,8 @@ my $KNOTS_TO_METERS_PER_SEC = 0.5144;
 my $SCALE_LATLON = 1e-7;
 
 my $WORD_SPACE = 5;
-my $BYTES_PER_LINE = 24;
-my $WORDS_PER_LINE = 12;
+my $BYTES_PER_LINE = 20;
+my $WORDS_PER_LINE = 10;
 my $DATA_COL = 41;
 my $STR_COL  = $DATA_COL + $WORDS_PER_LINE*$WORD_SPACE + 2;
 my $SENSOR_COL = $STR_COL + $BYTES_PER_LINE + 2;
@@ -46,7 +46,8 @@ my $FTYPE_SOG       = 5;
 my $FTYPE_LAT       = 6;
 my $FTYPE_LON       = 7;
 my $FTYPE_SOG2      = 8;
-my $NUM_FTYPES      = 9;
+my $FTYPE_UINT32    = 9;
+my $NUM_FTYPES      = 10;
 
 
 sub getFields
@@ -119,6 +120,16 @@ sub getFields
 									$fields->{$FTYPE_LAT} = 120;
 									$fields->{$FTYPE_LON} = 124;
 									$fields->{$FTYPE_HEAD_ABS} = 140;
+
+									if ($version > 0x17)
+									{
+										# 0x1d len 420
+
+										# poking around thought this might be
+										# distance to waypoint or something.
+										# it seems to decrement in proportion to speed
+										$fields->{$FTYPE_UINT32} = 336;
+									}
 								}
 							}
 						}
@@ -224,7 +235,8 @@ sub getFields
 				$i == $FTYPE_SOG       ? 2 :
 				$i == $FTYPE_LAT       ? 4 :
 				$i == $FTYPE_LON       ? 4 :
-				$i == $FTYPE_SOG2      ? 2 : 0;
+				$i == $FTYPE_SOG2      ? 2 :
+				$i == $FTYPE_UINT32    ? 4 : 0;
 			push @values,[$offset, $i, $len];
 		}
 	}
@@ -310,6 +322,15 @@ sub showSOG
 	my $sog = sprintf("%0.1f",$sog_int / (100 * $KNOTS_TO_METERS_PER_SEC));
 		# sog encoded as centimeters per second
 	showValue($out_line,"SOG($sog_str)","$sog knots");
+}
+
+sub showUINT32
+{
+	my ($out_line,$data,$offset) = @_;
+	my $uint32_bytes = substr($data,$offset,4);
+	my $uint32_int = unpack("V",$uint32_bytes);
+	my $uint32_str = unpack("H*",$uint32_bytes);
+	showValue($out_line,"UINT32($uint32_str)",$uint32_int);
 }
 
 
@@ -526,6 +547,7 @@ sub handleE80NAV
 			showLL		($at_line,$data,$offset,'LAT')	if $ftype == $FTYPE_LAT;
 			showLL		($at_line,$data,$offset,'LON')	if $ftype == $FTYPE_LON;
 			showSOG		($at_line,$data,$offset) 		if $ftype == $FTYPE_SOG2;
+			showUINT32  ($at_line,$data,$offset) 		if $ftype == $FTYPE_UINT32;
 		}
 	}
 
