@@ -21,12 +21,6 @@ my $dbg_raydp = 1;
 #   and some expose multiple tcp ports along with a single udp port
 # We have tentatively named some of the funcs, but that is a work in progress.
 
-our $FUNC_E80TCP = 27;
-our $raydp_devices:shared = shared_clone({});
-    # a hash of all unique RAYDP udp descriptor packets on the wire
-our $raydp_ports:shared = shared_clone({});
-    # a list built from that of all ports that can be monitored
-
 # devices apparently send out keep alive messaes and
 # join the multicast group with their own listeners.
 # This global variable allows the UI to turn the monitoring
@@ -34,7 +28,112 @@ our $raydp_ports:shared = shared_clone({});
 
 our $MONITOR_RAYDP_ALIVE = 0;
 
-our $KNOWN_UNDECODED56 = pack("H*","010000000000000037a681b23902000036f1000a0033cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc3302000100");
+
+my $KNOWN_UNDECODED = [
+	# 56
+	pack("H*","010000000000000037a681b23902000036f1000a0033cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc3302000100"),
+	pack("H*","010000000000000037a681b23902000036f1000a0033cc33cc32c433cc33cc33cc33cc33cc33cc37cc33c833cc33cc33cc33cc3302000100"),
+];
+
+
+# Most recent devices found, sorted by length,func
+#
+#   len(28) type(0) id(37a681b2) func( 7) x(01001e00,06080800) ip(10.0.241.54) port(2054)
+#   len(28) type(0) id(37a681b2) func(15) x(01001e00,04080800) ip(10.0.241.54) port(2052)
+#   len(28) type(0) id(37a681b2) func(19) x(01001e00,05080800) ip(10.0.241.54) port(2053)
+#   len(28) type(0) id(37a681b2) func(22) x(01001e00,07080800) ip(10.0.241.54) port(2055)
+#   len(36) type(0) id(37a681b2) func( 8) x(09001e00,08081000) mcast_ip(224.30.38.196) mcast_port(2563) tcp_ip(10.0.241.54)  tcp_port(2056)
+#   len(36) type(0) id(37a681b2) func(27) x(01001e00,aa161000) mcast_ip(224.0.0.2)     mcast_port(5801) tcp_ip(10.0.241.54)  tcp_port(5802)
+#   len(36) type(0) id(ffffffff) func(27) x(01001e00,aa161000) mcast_ip(224.0.0.2)     mcast_port(5801) tcp_ip(10.0.241.200) tcp_port(5802)
+#   len(36) type(0) id(37a681b2) func(35) x(01001e00,00081000) mcast_ip(224.30.38.193) mcast_port(2560) tcp_ip(10.0.241.54)  tcp_port(2048)
+#   len(37) type(0) id(37a681b2) func( 5) x(01001e00,01081100) mcast_ip(224.30.38.194) mcast_port(2561) tcp_ip(10.0.241.54)  tcp_port(2049) flags(1)
+#   len(40) type(0) id(37a681b2) func(16) x(01001e00,02081400) tcp_ip(10.0.241.54) tcp_port1(2050) tcp_port2(2051) mcast_ip(224.30.38.195) mcast_port(2562)
+#
+
+# It looks like this "trigger packet" may be  registering port 18432 (0x0048) for
+# chart functions? xx010500 where xx is 0x09 and subsequently requests are
+# made to via udp to port(2049) and *perhaps* the packets are sent via tcp
+# to the requester ip address and the given port 18432
+#
+# udp(10)   10.0.241.54:2049     <-- 10.0.241.200:55481    09010500 00000000 0048
+#
+# in my tcp_old.pm program I sent the same packet with my encoded ip address
+# 
+
+
+
+# Most recent ray_port breakdown, sorted by port number
+# with the names I previously associated with the funcs
+#
+# 									def color			notes
+#---------------------------------------------------------------------------
+#   35	tcp	10.0.241.54		2048
+#   5	tcp	10.0.241.54		2049					CHARTREQ chart requests?
+#   16	tcp	10.0.241.54		2050
+#   16	tcp	10.0.241.54		2051
+#   15	tcp	10.0.241.54		2052					NAVQRY sends and receive (ack?) waypoints
+#   19	tcp	10.0.241.54		2053
+#   7	tcp	10.0.241.54		2054
+#   22	tcp	10.0.241.54		2055
+#   8	tcp	10.0.241.54		2056
+
+#   35	udp	224.30.38.193	2560
+#   5	udp	224.30.38.194	2561
+#   16	udp	224.30.38.195	2562					E80NAV udp that I actually parsed
+#   8	udp	224.30.38.196	2563
+#  *0*	udp 224.0.0.1		5800					RAYNET itself, RNS at $LOCAL_IP also advertises this
+#   27	udp	224.0.0.2		5801	in 				HEARTBEAT Two advertisments, one port once RNS starts
+#   27	tcp	10.0.241.54		5802
+#   27	tcp	10.0.241.200	5802
+
+# my $E80_IP = '10.0.241.54';
+# my $REGISTER_PORT = 2049;
+# UUU fucking DDDDD PPPPP ????
+
+# 5801 appears to get keep alive messages from the E80
+
+#    'Default',
+#    'Blue',
+#    'Green',
+#    'Cyan',
+#    'Red',
+#    'Magenta',
+#    'Brown',
+#    'Light Gray',
+#    'Gray',
+#    'Light Blue',
+#    'Light Green',
+#    'Light Cyan',
+#    'Light Red',
+#    'Light Magenta',
+#    'Yellow',
+#    'White',
+
+my $RNS_INIT  = 0;
+my $UNDER_WAY = 0;
+my $CHART_REQ = 0;
+
+# the zeros are things that happen when underway with I_0183 and RNS running
+# $RNS_INIT only happened during RNS startup after that
+
+my $PORT_DEFAULTS  = {
+	2048 => { name=>'',			mon_in=>1,			mon_out=>$UNDER_WAY,	multi=>1,	color=>0,	 },
+	2049 => { name=>'CHARTREQ',	mon_in=>$CHART_REQ,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_CYAN,    },
+	2050 => { name=>'GPS?',		mon_in=>$UNDER_WAY,	mon_out=>$UNDER_WAY,	multi=>1,	color=>0,    },
+	2051 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+	2052 => { name=>'NAVQRY',	mon_in=>$UNDER_WAY,	mon_out=>$UNDER_WAY,	multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },	#
+	2053 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+	2054 => { name=>'',			mon_in=>$RNS_INIT,	mon_out=>$UNDER_WAY,	multi=>1,	color=>$UTILS_COLOR_LIGHT_CYAN,    },
+	2055 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+	2056 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+	2560 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+	2561 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+	2562 => { name=>'E80NAV',	mon_in=>$UNDER_WAY,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_GREEN,    },
+	2563 => { name=>'',			mon_in=>$UNDER_WAY,	mon_out=>1,				multi=>1,	color=>0,    },
+	5801 => { name=>'ALIVE',	mon_in=>$UNDER_WAY,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_BLUE,    },
+	5802 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+	5802 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+};
 
 
 
@@ -42,35 +141,49 @@ BEGIN
 {
  	use Exporter qw( import );
     our @EXPORT = qw(
-        funcName
 
         $MONITOR_RAYDP_ALIVE
-        $raydp_ports
+
+        findRayDevice
+        findRayPort
+        getRayPorts
 
         decodeRAYDP
-        $raydp_devices
-        findRayDevice
     );
 }
 
 
+
+my $devices:shared = shared_clone({});
+    # a hash of all unique RAYDP udp descriptor packets by func:id
+my $ports = shared_clone([]);
+my $ports_by_addr:shared = shared_clone({});
+    # a list of all ports in order they're found,
+    # and ahash of them by addr
+
+
 #------------------------------------
-# UI API (in addition to hashes)
+# accesors
 #------------------------------------
 
-sub funcName
-{
-    my ($func) = @_;
-    return "E80NAV" if $func == 16;
-    return "E80TCP" if $func == 27;
-    return "func($func)";
-}
 
 sub findRayDevice
 {
     my ($func,$id) = @_;
     my $key = "$func:$id";
-    return $raydp_devices->{$key};
+    return $devices->{$key};
+}
+
+sub findRayPort
+{
+    my ($ip,$port) = @_;
+    my $addr = "$ip:$port";
+    return $ports_by_addr->{$addr};
+}
+
+sub getRayPorts
+{
+    return $ports;
 }
 
 
@@ -79,32 +192,45 @@ sub findRayDevice
 # sniffer API (called by shark.pm
 #-----------------------------------
 
-sub addPort
+sub _addPort
 {
     my ($rec,$proto,$ip,$port) = @_;
-    my $addr = "$proto $ip:$port";
-    my $found = $raydp_ports->{$addr};
+    my $ip_str = inet_ntoa(pack('N', $ip));
+    my $addr = "$ip_str:$port";
+    my $found = $ports_by_addr->{$addr};
     if (!$found)
     {
-        my $port = shared_clone({
+		my $def = $PORT_DEFAULTS->{$port} || {};
+		# warning(0,0,"adding port $proto $addr in($def->{mon_in}) out($def->{mon_out}) color($def->{color}) multi($def->{multi})");
+
+        my $ray_port = shared_clone({
             proto   => $proto,
-            ip      => $ip,
+            ip      => $ip_str,
             port    => $port,
             addr    => $addr,
-            func    => $rec->{func},    # the function IS the kind of device
-            id      => $rec->{id},
+            func    => $rec->{func},    # the function is??
+			id      => $rec->{id},
 
-            # preparation for wx widgets UI to control monitor
-
-            mon_in => 0,
-            mon_out => 0,
+            # for wxWidgets winRAYDP
+			
+			name    => $def->{name},
+            mon_in => $def->{mon_in} || 0,
+            mon_out => $def->{mon_out} || 0,
+            color => $def->{color} || 0,
+			multi => $def->{multi} || 0,
         });
-        $raydp_ports->{$addr} = $port;
+        $ports_by_addr->{$addr} = $ray_port;
+        push @$ports,$ray_port;
     }
+	elsif (0)
+	{
+		display_hash(0,0,"Duplicate port_addr($addr)",$rec);
+		display_hash(0,1,"prev",$found);
+	}
 }
 
 
-sub decode_stuff
+sub _decode_header
 {
     my ($with_flags, $rec, $raw, @fields) = @_;
     my @values = @{$rec}{@fields} = unpack("V" . @fields, $raw);
@@ -139,7 +265,7 @@ sub decodeRAYDP
     # and $RAYDP_PORT
 {
     my ($packet) = @_;
-    my $raw = $packet->{raw};
+    my $raw = $packet->{raw_data};
     my $len = length($raw);
     display($dbg_raydp,0,"decodeRAYDP($len)");
 
@@ -174,18 +300,14 @@ sub decodeRAYDP
     # implementation error if the key is not unique enough
 
     my $key = sprintf("$func:$id");
-    my $found = $raydp_devices->{$key};
+    my $found = $devices->{$key};
     if ($found && $rec->{raw} ne $found->{raw})
     {
-        if ($found && $rec->{raw} ne $found->{raw})
-        {
-            setConsoleColor($DISPLAY_COLOR_ERROR);
-            print packetWireHeader($packet,0)."SKIPPING CHANGED RAYDP_PACKET len($len) func($func) id($id)!!\n";
-            print "old=".unpack("H*",$found->{raw})."\n";
-            print "new=".unpack("H*",$rec->{raw})."\n";
-            setConsoleColor();
-            return;
-        }
+		setConsoleColor($DISPLAY_COLOR_ERROR);
+		print packetWireHeader($packet,0)."SKIPPING CHANGED RAYDP_PACKET len($len) func($func) id($id)!!\n";
+		print "old=".unpack("H*",$found->{raw})."\n";
+		print "new=".unpack("H*",$rec->{raw})."\n";
+		setConsoleColor();
     }
 
     # set the count and return if the RAYDP packet has already been parsed
@@ -204,47 +326,59 @@ sub decodeRAYDP
 
     if ($len == 28)
     {
-        $text2 = decode_stuff(0,$rec, $payload, qw(ip port));
-        addPort($rec,'tcp',$rec->{ip},$rec->{port});
+        $text2 = _decode_header(0,$rec, $payload, qw(ip port));
+        _addPort($rec,'tcp',$rec->{ip},$rec->{port});
     }
     elsif ($len == 36)
     {
-        $text2 = decode_stuff(0,$rec, $payload, qw(mcast_ip mcast_port tcp_ip tcp_port));
-        addPort($rec,'udp',$rec->{mcast_ip},$rec->{mcast_port});
-        addPort($rec,'tcp',$rec->{tcp_ip},$rec->{tcp_port});
+        $text2 = _decode_header(0,$rec, $payload, qw(mcast_ip mcast_port tcp_ip tcp_port));
+        _addPort($rec,'udp',$rec->{mcast_ip},$rec->{mcast_port});
+        _addPort($rec,'tcp',$rec->{tcp_ip},$rec->{tcp_port});
     }
     elsif ($len == 37)
     {
-        $text2 = decode_stuff(1, $rec, $payload, qw(mcast_ip mcast_port tcp_ip tcp_port));
-        addPort($rec,'udp',$rec->{mcast_ip},$rec->{mcast_port});
-        addPort($rec,'tcp',$rec->{tcp_ip},$rec->{tcp_port});
+        $text2 = _decode_header(1, $rec, $payload, qw(mcast_ip mcast_port tcp_ip tcp_port));
+        _addPort($rec,'udp',$rec->{mcast_ip},$rec->{mcast_port});
+        _addPort($rec,'tcp',$rec->{tcp_ip},$rec->{tcp_port});
     }
     elsif ($len == 40)
     {
-        $text2 = decode_stuff(0,$rec, $payload, qw(tcp_ip tcp_port1 tcp_port2 mcast_ip mcast_port));
-        addPort($rec,'udp',$rec->{mcast_ip},$rec->{mcast_port});
-        addPort($rec,'tcp',$rec->{tcp_ip},$rec->{tcp_port1});
-        addPort($rec,'tcp',$rec->{tcp_ip},$rec->{tcp_port2});
+        $text2 = _decode_header(0,$rec, $payload, qw(tcp_ip tcp_port1 tcp_port2 mcast_ip mcast_port));
+        _addPort($rec,'udp',$rec->{mcast_ip},$rec->{mcast_port});
+        _addPort($rec,'tcp',$rec->{tcp_ip},$rec->{tcp_port1});
+        _addPort($rec,'tcp',$rec->{tcp_ip},$rec->{tcp_port2});
     }
 
     # packets that we skip but display
 
-    elsif ($len == 56 && $raw eq $KNOWN_UNDECODED56)
-    {
-		$text1 = "KNOWN UNDECODED PACKET(56)";
-    }
     else
-    {
-        setConsoleColor($DISPLAY_COLOR_WARNING);
-		print packetWireHeader($packet,0)."UNKNOWN PACKET($len) ".unpack("H*",$rec->{raw})."\n";
-        setConsoleColor();
-        return;
+	{
+		my $matched = '';
+		for my $match (@$KNOWN_UNDECODED)
+		{
+			if ($raw eq $match)
+			{
+				$matched = "KNOWN UNDECODED PACKET($len)";
+				last;
+			}
+		}
+		if ($matched)
+		{
+			$text1 = $matched;
+		}
+		else
+		{
+			setConsoleColor($DISPLAY_COLOR_WARNING);
+			print packetWireHeader($packet,0)."UNKNOWN PACKET($len) ".unpack("H*",$rec->{raw})."\n";
+			setConsoleColor();
+			return;
+		}
     }
 
     setConsoleColor($DISPLAY_COLOR_LOG);
     print packetWireHeader($packet,0)."$text1 $text2\n";
     setConsoleColor();
-    $raydp_devices->{$key} = $rec;
+    $devices->{$key} = $rec;
 }
 
 

@@ -82,19 +82,17 @@ sub nextSniffPacket
         $rec->{udp} = 1;
         $rec->{src_port} = $fields{udp_srcport};
         $rec->{dest_port} = $fields{udp_dstport};
-        $rec->{payload}   = $fields{udp_payload};
+        $rec->{hex_data} = $fields{udp_payload};
     } else {
         $rec->{tcp} = 1;
         $rec->{src_port} = $fields{tcp_srcport};
         $rec->{dest_port} = $fields{tcp_dstport};
-        $rec->{payload}   = $fields{tcp_payload};
+        $rec->{hex_data} = $fields{tcp_payload};
     }
 
-    $rec->{raw} = pack("H*", $rec->{payload});
-    $rec->{hex32} = $rec->{payload};
-    $rec->{hex32} =~ s/(.{8})/$1 /g;
+    $rec->{raw_data} = pack("H*", $rec->{hex_data});
 
-    display($dbg_sniff,0,"$rec->{proto} $rec->{src_ip}:$rec->{src_port} -> $rec->{dest_ip}:$rec->{dest_port}: $rec->{hex32}");
+    display($dbg_sniff,0,"$rec->{proto} $rec->{src_ip}:$rec->{src_port} -> $rec->{dest_ip}:$rec->{dest_port}: $rec->{hex_data}");
 
     return $rec;
 }
