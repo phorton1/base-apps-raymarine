@@ -1,6 +1,17 @@
 #---------------------------------------------
 # r_RAYDP.pm
 #---------------------------------------------
+# I have more or less decoded all of the RAYNET (5800) packets,
+# except for one that is 56 bytes long and which does not appear
+# to match the conventions used by all of the others.
+
+#	UNKNOWN PACKET(56)
+#		01000000 00000000 37a681b2 39020000 [36f1000a] 0023ad01 5cd87304 01000000
+#		00000000 37a681b2 39220000 [36f1000a] 0033cc33 02000100
+#
+#	[36f1000a] == 10.0.241.54
+#
+
 
 package apps::raymarine::NET::r_RAYDP;
 use strict;
@@ -12,6 +23,23 @@ use Socket;
 use Pub::Utils;
 
 my $dbg_raydp = 1;
+
+BEGIN
+{
+ 	use Exporter qw( import );
+    our @EXPORT = qw(
+
+        $MONITOR_RAYDP_ALIVE
+
+        findRayDevice
+        findRayPort
+        getRayPorts
+		findRayPortByName
+
+        decodeRAYDP
+    );
+}
+
 
 # a raydp "device" represents a unique func:id pair that was broadcast
 #   to the RAYDP udp multicast group and which exposes raydp "ports"
@@ -26,7 +54,7 @@ my $dbg_raydp = 1;
 # This global variable allows the UI to turn the monitoring
 # of those keep alive messages on or off
 
-our $MONITOR_RAYDP_ALIVE = 0;
+our $MONITOR_RAYDP_ALIVE:shared = 0;
 
 
 my $KNOWN_UNDECODED = [
@@ -68,8 +96,8 @@ my $KNOWN_UNDECODED = [
 # 									def color			notes
 #---------------------------------------------------------------------------
 #   35	tcp	10.0.241.54		2048
-#   5	tcp	10.0.241.54		2049					CHARTREQ chart requests?
-#   16	tcp	10.0.241.54		2050
+#   5	tcp	10.0.241.54		2049					UDP !!! CHARTREQ register and requests
+#   16	tcp	10.0.241.54		2050					GPS
 #   16	tcp	10.0.241.54		2051
 #   15	tcp	10.0.241.54		2052					NAVQRY sends and receive (ack?) waypoints
 #   19	tcp	10.0.241.54		2053
@@ -111,17 +139,19 @@ my $KNOWN_UNDECODED = [
 
 my $RNS_INIT  = 0;
 my $UNDER_WAY = 0;
-my $CHART_REQ = 0;
+my $CARD_REQ = 1;
+my $MY_GPS = $UNDER_WAY;
+my $MY_NAV = 0;
 
 # the zeros are things that happen when underway with I_0183 and RNS running
 # $RNS_INIT only happened during RNS startup after that
 
 my $PORT_DEFAULTS  = {
 	2048 => { name=>'',			mon_in=>1,			mon_out=>$UNDER_WAY,	multi=>1,	color=>0,	 },
-	2049 => { name=>'CHARTREQ',	mon_in=>$CHART_REQ,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_CYAN,    },
-	2050 => { name=>'GPS?',		mon_in=>$UNDER_WAY,	mon_out=>$UNDER_WAY,	multi=>1,	color=>0,    },
+	2049 => { name=>'CARDIO',	mon_in=>$CARD_REQ,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_CYAN,    },
+	2050 => { name=>'GPS',		mon_in=>$MY_GPS,	mon_out=>$MY_GPS,		multi=>1,	color=>0,    },
 	2051 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
-	2052 => { name=>'NAVQRY',	mon_in=>$UNDER_WAY,	mon_out=>$UNDER_WAY,	multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },	#
+	2052 => { name=>'NAVQRY',	mon_in=>$MY_NAV,	mon_out=>$MY_NAV,		multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },	#
 	2053 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
 	2054 => { name=>'',			mon_in=>$RNS_INIT,	mon_out=>$UNDER_WAY,	multi=>1,	color=>$UTILS_COLOR_LIGHT_CYAN,    },
 	2055 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
@@ -137,20 +167,6 @@ my $PORT_DEFAULTS  = {
 
 
 
-BEGIN
-{
- 	use Exporter qw( import );
-    our @EXPORT = qw(
-
-        $MONITOR_RAYDP_ALIVE
-
-        findRayDevice
-        findRayPort
-        getRayPorts
-
-        decodeRAYDP
-    );
-}
 
 
 
@@ -160,6 +176,7 @@ my $ports = shared_clone([]);
 my $ports_by_addr:shared = shared_clone({});
     # a list of all ports in order they're found,
     # and ahash of them by addr
+my $duplicate_unknown:shared = shared_clone({});
 
 
 #------------------------------------
@@ -184,6 +201,16 @@ sub findRayPort
 sub getRayPorts
 {
     return $ports;
+}
+
+sub findRayPortByName
+{
+	my ($name) = @_;
+	for my $rayport (@$ports)
+	{
+		return $rayport if $rayport->{name} eq $name;
+	}
+	return 0;
 }
 
 
@@ -262,7 +289,11 @@ sub _decode_header
 sub decodeRAYDP
     # MAIN ENTRY POINT from shark.pm that gets called
     # with all packets that are sent to the $RAYDP_GROUP
-    # and $RAYDP_PORT
+    # and $RAYDP_PORT.
+	#
+	# Returns 1 on the first time an interesting message is found,
+	# in which case the app can choose to monitor the raw bytes for comparison,
+	# or 0 for known repetitive or previously decoded mesages.
 {
     my ($packet) = @_;
     my $raw = $packet->{raw_data};
@@ -275,12 +306,12 @@ sub decodeRAYDP
     {
         print packetWireHeader($packet,0)."RAYDP_ALIVE_PACKET\n"
             if $MONITOR_RAYDP_ALIVE;
-        return;
+        return 0;
     }
     if ($raw eq $RAYDP_WAKEUP_PACKET)
     {
         print packetWireHeader($packet,0)."RAYDP_WAKEUP_PACKET: ".unpack("H*",$raw)."\n";
-        return;
+        return 0;
     }
 
     # parse the RAYDP packet for header fields
@@ -315,10 +346,9 @@ sub decodeRAYDP
     my $count = $found ? $found->{count} : 0;
     $count++;
     $rec->{count} = $count;
-    return if $found;
+    return 0 if $found;
 
     # PARSE AND ADD A NEW RAYDP RECORD
-
 
     my $text2 = '';
     my $text1 = sprintf("len(%d) type(%d) id(%s) func(%2d) x(%s,%s)", $len, $type, $id, $func, $x1, $x2);
@@ -368,10 +398,15 @@ sub decodeRAYDP
 		}
 		else
 		{
-			setConsoleColor($DISPLAY_COLOR_WARNING);
-			print packetWireHeader($packet,0)."UNKNOWN PACKET($len) ".unpack("H*",$rec->{raw})."\n";
-			setConsoleColor();
-			return;
+			if (!$duplicate_unknown->{$raw})
+			{
+				$duplicate_unknown->{$raw} = 1;
+				setConsoleColor($DISPLAY_COLOR_WARNING);
+				print packetWireHeader($packet,0)."UNKNOWN PACKET($len) ".unpack("H*",$rec->{raw})."\n";
+				setConsoleColor();
+				return 1;
+			}
+			return 0;
 		}
     }
 
@@ -379,6 +414,7 @@ sub decodeRAYDP
     print packetWireHeader($packet,0)."$text1 $text2\n";
     setConsoleColor();
     $devices->{$key} = $rec;
+	return 1;
 }
 
 

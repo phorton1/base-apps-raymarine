@@ -36,7 +36,7 @@ my $COL_IN_BOX		= 54;
 my $COL_OUT_BOX		= 62;
 my $COL_COLOR		= 70;	# width 14
 
-my $MON_RAYDP_ALIVE		= 901;
+my $ID_MON_RAYDP_ALIVE	= 901;
 my $MON_IN_BOX_ID_BASE 	= 1000;
 my $MON_OUT_BOX_ID_BASE = 1100;
 my $MON_COMBO_ID_BASE 	= 1200;
@@ -66,8 +66,8 @@ sub new
 	# Wx::StaticText->new($this,-1,"static text",[10,10]);
 	# EVT_CLOSE($this,\&onClose);
 
-	my $alive = Wx::CheckBox->new($this,$MON_RAYDP_ALIVE,"monitor alive messages",[10,10]);
-	$alive->SetValue(1) if $MON_RAYDP_ALIVE;
+	my $alive = Wx::CheckBox->new($this,$ID_MON_RAYDP_ALIVE,"monitor alive messages",[10,10]);
+	$alive->SetValue(1) if $MONITOR_RAYDP_ALIVE;
 
 	$this->{num_ports} = 0;
 	$this->{line_num} = 0;
@@ -146,7 +146,7 @@ sub onCheckBox
 	my ($this,$event) = @_;
 	my $id = $event->GetId();
 	my $checked = $event->IsChecked() || 0;
-	if ($id == $MON_RAYDP_ALIVE)
+	if ($id == $ID_MON_RAYDP_ALIVE)
 	{
 		$MONITOR_RAYDP_ALIVE = $checked;
 		warning(0,0,"MON_RAYDP_ALIVE=$MONITOR_RAYDP_ALIVE");

@@ -12,9 +12,6 @@ use Pub::Utils;
 use Pub::WX::Resources;
 use Pub::WX::Main;
 use Win32::Console;
-use IO::Handle;
-use IO::Socket::INET;
-use IO::Select;
 use apps::raymarine::NET::r_utils;
 use apps::raymarine::NET::r_sniffer;
 use apps::raymarine::NET::r_RAYDP;
@@ -27,7 +24,6 @@ use base 'Wx::App';
 my $dbg_shark = 0;
 
 our $SEND_ALIVE:shared = 0;
-our $MON_RAYNET:shared = 1;
 
 BEGIN
 {
@@ -94,29 +90,6 @@ my $REQUEST_2049_TEMPLATE = "0201050010110000{PORT}009a4c00000400001c005c4e61766
 # all needed sockets inline in this main perl thread.
 # And I'm already seeing wonky behavior from threads in general.
 
-my $REQUEST_PATH_TEMPLATE = "0201050010110000{PORT}009a4c0000040000";
-# 1c005c4e6176696f6e69635c4368617274735c3347313338584c2e4e5632";
-my $REQUEST_XML_TEMPLATE = "0201050006000000{PORT}000000009a9d01000e005c63686172746361742e786d6c00";
-    # / .........H..........\chartcat.xml
-my $REQUEST_FILE_TEMPLATE = "0201050006000000{PORT}000000009a9d0100";
-    # uses $with_null
-    # 0e005c63686172746361742e786d6c00";
-    # / .........H..........\chartcat.xml
-
-# The 9a9d0100 may be a session token that was gotten from previous packets
-# and may change with different E80's
-
-
-sub createPortifiedPathPacket
-{
-    my ($port,$hex,$path,$with_null) = @_;
-    my $packet = createPortifiedPacket($port,$hex);
-    my $len = length($path);
-    $packet .= pack("v",$len);
-    $packet .= $path;
-    $packet .= chr(0) if $with_null;
-    return $packet;
-}
 
 
 
@@ -129,12 +102,10 @@ sub createPortifiedPacket
     return pack("H*",$hex);
 }
 
-# udp(48)   10.0.241.54:2049     <-- 10.0.241.200:8765     02010500 10110000 0148009a 4c000004 00001c00 5c4e6176 696f6e69 635c4368   .........H..L.......\Navionic\Charts\3G138XL.NV2
-#                                                          61727473 5c334731 3338584c 2e4e5632                                       arts\3G138XL.NV2
 
-sub sendUDPPacket
+sub sendPortifiedPacket
 {
-    my ($name,$dest_ip,$dest_port,$packet) = @_;
+    my ($name,$dest_ip,$dest_port,$listen_port,$template) = @_;
     display(0,1,"sending $name packet");
     if (!$LOCAL_UDP_SOCKET)
     {
@@ -142,6 +113,7 @@ sub sendUDPPacket
         return;
     }
     my $dest_addr = pack_sockaddr_in($dest_port, inet_aton($dest_ip));
+    my $packet = createPortifiedPacket($listen_port,$template);
     $LOCAL_UDP_SOCKET->send($packet, 0, $dest_addr);
     display(0,1,"$name packet sent");
 }
@@ -212,51 +184,28 @@ sub serial_thread
             {
                 if (ord($char) == 1)            # CTRL-A
                 {
-                    my $packet = createPortifiedPacket(
-                        $LISTEN_2049_PORT,
-                        $REGISTER_2049_TEMPLATE);
-                    sendUDPPacket(
+                    sendPortifiedPacket(
                         "register2049",
                         $IP_2049,
                         $PORT_2049,
-                        $packet);
+                        $LISTEN_2049_PORT,
+                        $REGISTER_2049_TEMPLATE);
                 }
                 elsif (ord($char) == 2)            # CTRL-B
                 {
-                    my $packet;
-
-                    if (1)
-                    {
-                        $packet = createPortifiedPathPacket(
-                            $LISTEN_2049_PORT,
-                            # $REQUEST_PATH_TEMPLATE,
-                            $REQUEST_FILE_TEMPLATE,
-                            '\junk_data\test_data_image1.jpg',
-                            #'\FusionUI.xml',
-                            1 );
-                           # '\Navionic\Charts\*.NV2');
-                           # '\\');
-                           # '\Navionic\Charts');
-                           # '\Navionic\Charts\3G138XL.NV2');
-                    }
-                    else
-                    {
-                        $packet = createPortifiedPacket(
-                            $LISTEN_2049_PORT,
-                            $REQUEST_XML_TEMPLATE);
-                    }
-                    sendUDPPacket(
+                    sendPortifiedPacket(
                         "request2049",
                         $IP_2049,
                         $PORT_2049,
-                        $packet);
+                        $LISTEN_2049_PORT,
+                        $REQUEST_2049_TEMPLATE);
                 }
 
                 # The above commands work with no RNS on a fresh E80
                 # without any keep alives, etc.  However, we are not
                 # getting any other "regular" packets, except for 5801
                 # "ALIVE" packets.
-                
+
                 elsif (ord($char) == 4)            # CTRL-D
                 {
                     $CONSOLE->Cls();    # manually clear the screen
@@ -269,11 +218,6 @@ sub serial_thread
                 {
                     $SEND_ALIVE = $SEND_ALIVE ? 0 : 1;
                     warning(0,0,"SEND_ALIVE=$SEND_ALIVE");
-                }
-                elsif ($char eq 'r')
-                {
-                    $MON_RAYNET = $MON_RAYNET ? 0 : 1;
-                    warning(0,0,"MON_RAYNET=$MON_RAYNET");
                 }
             }
         }
@@ -307,13 +251,7 @@ sub sniffer_thread
                 # $packet->{dest_ip} eq $RAYDP_IP &&
                 $packet->{dest_port} == $RAYDP_PORT)
             {
-                if (decodeRAYDP($packet) && $MON_RAYNET)
-                {
-                    my $rayport_5800 = {
-                        color => 0,
-                        multi => 1 };
-                    showPacket($rayport_5800,$packet,0);
-                }
+                decodeRAYDP($packet);
                 next;
             }
 
@@ -323,7 +261,7 @@ sub sniffer_thread
                 color => $UTILS_COLOR_BROWN,
                 multi => 0, } : 0;
 
-            if (1 && $dest_18432)
+            if (0 && $dest_18432)
             {
                 # found an xml file
                 # the length of most of the packets is 1042, last is 428
@@ -394,7 +332,7 @@ sub sniffer_thread
             }
 
             # udp(10)   10.0.241.54:2049     <-- 10.0.241.200:55481    09010500 00000000 0048
-            
+
             elsif ($packet->{raw_data} =~ /(navionic)/i && $packet->{dest_port} != 2049)
             {
                 # print "ray_src("._def($ray_src).") ray_dest("._def($ray_dest).") ";
@@ -541,52 +479,19 @@ sub alive_thread
 
 
 
-my $script_parse = 'parse';
-my $script_repeat = 'repeat';
-my $script_wait = 'wait';
 
 
-my $gps_script = [
-    '0800',
-    '0201100062000000',
-    '0c00',
-    '050110000100000062000000',
-    "$script_repeat:" ];
-
-my $nav_script = [
-    '0800',
-    'b0010f00'.'00000000',
-    $script_wait,
-    '0800',
-    '00010f00'.'01000000',
-    '1400',
-    '00020f00'.'01000000'.'00000000'.'00000000'.'1a000000',
-    '3400',
-    '01020f00'.'01000000'.'28000000'.('00000000' x 5).'10270000'.('00000000' x 4),
-    '1000',
-    '02020f00'.'01000000'.'00000000'.'00000000',
-];
-
-my $wp_index_header = '0c0000000f0001000000';
 
 
 sub tcp_thread
 {
-    my ($name,$local_port,$script) = @_;
+    my ($name,$commands,$repeat_commands) = @_;
+    $commands ||= [];
     display(0,0,"starting tcp_thread($name)");
-    sleep(2);
-
-    print "script=".join("\r\n   ",@$script)."\r\n";
-
-    my $sel;
     my $port;
     my $sock;
+    my $commands_sent = 0;
     my $rayport;
-
-    my $done = 0;
-    my $hex_buf = '';
-    my $script_index = 0;
-    my $script_steps = @$script;
 
     while (1)
     {
@@ -600,96 +505,62 @@ sub tcp_thread
             else
             {
                 $port = $rayport->{port};
-                print "opening tcp port to $rayport->{ip}:$port\r\n";
+                display(0,1,"opening tcp port to $rayport->{ip}:$port");
 
                 $sock = IO::Socket::INET->new(
                     LocalAddr => $LOCAL_IP,
-                    LocalPort => $local_port,
-                    PeerAddr  => $rayport->{ip},
-                    PeerPort  => $port,
-                    Proto     => 'tcp',
-                );
+                    PeerAddr => $rayport->{ip},
+                    PeerPort => $port,
+                    Proto    => 'tcp',
+                    Timeout  => 5 );
                 if (!$sock)
                 {
                     error("Could not create tcp socket($name) to $rayport->{ip}:$port: $!");
                     return;
                 }
-                $sel = IO::Select->new($sock);
-            }
-            next;
-        }
 
-        #---------------------------
-
-        if ($sel->can_read())
-        {
-            my $buf;
-            recv($sock, $buf, 4096, 0);
-            if ($buf)
-            {
-                my $hex = unpack("H*",$buf);
-                $hex_buf .= $hex;
-                $done ?
-                    display_bytes(0,1,"buf",$buf) :
-                    print "got "._lim($hex,200)."\r\n";
-                # sleep(0.001);
-            }
-        }
-
-        my $pos = index($hex_buf,$wp_index_header);
-        if (!$done && $pos >= 0)
-        {
-            $done = 1;
-            $script_index = $script_steps;
-            $hex_buf = substr($hex_buf,$pos);
-            print "-->HEX_BUF=$hex_buf\r\n";
-            
-            my $len = length($hex_buf);
-            my $num = 2;                # the first request is sequence number 2
-            my $offset = 4 + 13 * 8;    # the 13th dword inside the packet following 0c00
-            while ($offset < $len + 16) # 16 hex chars for 2 dword uuid
-            {
-                my $uuid = substr($hex_buf,$offset,16);
-                last if $uuid eq ('0' x 16);
-                requestOneWp($sock,$num++,$uuid);
-                $offset += 16;
-            }
-        }
-
-
-        if ($script_index < $script_steps)
-        {
-            if ($script->[$script_index] eq $script_wait)
-            {
-                $script_index++;
                 sleep(0.5);
             }
-            elsif ($sel->can_write())
+        }
+        elsif (!$commands_sent)
+        {
+            $commands_sent = 1;
+            for my $command (@$commands)
             {
-                my $command = $script->[$script_index++];
-                print "-->$command\r\n";
-                my $packed = pack("H*",$command);
-                my $sent = $sock->send($packed);
-                if (0 && !$sent)
-                {
-                    error("Could not send: $! $^E");
-                    sleep(1);
-                    $script_index--;
-                }
+                display(0,1,"sending command: $command") if $rayport->{mon_out};
+                $sock->send(pack("H*",$command));
+                sleep(0.1);
             }
         }
-    }
-}
+        else
+        {
+            # the sniffer is returning 1 byte packets, but
+            # we don't see them here.  They show as TCP
+            # "keep-alives" with ACKS in wireShark
 
+            my $raw;
+            recv($sock, $raw, 4096, 0);
+            if ($raw && $rayport->{mon_in})
+            {
+                # my $hex = unpack("H*",$raw);
+                setConsoleColor($UTILS_COLOR_LIGHT_CYAN);
+                display_bytes(0,0,"tcp_thread($name,$port) GOT ".length($raw)." BYTES",$raw);
+                # print "LISTEN got $hex\n";
+                setConsoleColor();
+            }
 
-sub requestOneWp
-{
-    my ($sock,$num,$uuid) = @_;
-    $sock->send(pack("H*",'1000'));
-    my $hex = '03010f00'.unpack("H*",pack('V',$num)).$uuid;
-    print "request($num) uuid($uuid) --> $hex\r\n";
-    $sock->send(pack("H*",$hex));
-}
+            # Just sending 0100 one time is not sufficient
+            # to get another reply.
+            # I can send the commands over and over and
+            # get a response.
+
+            $commands = $repeat_commands if $commands;
+            $commands_sent = 0;
+            sleep(1);
+
+        }
+    }   # while (1)
+}   # tcp_thread
 
 
 
@@ -730,16 +601,60 @@ if (1)  # openListenSocket())
 
 if (0)
 {
-    my $gps_thread = threads->create(\&tcp_thread,'GPS',9876,$gps_script);
+    my $gps_thread = threads->create(\&tcp_thread,'GPS',[
+        '0800',
+        '0201100062000000',
+        '0c00',
+        '050110000100000062000000', ]);
     $gps_thread->detach();
 }
 if (0)
 {
-    my $nav_thread = threads->create(\&tcp_thread,'NAVQRY',9877,$nav_script);
+    my $nav_thread = threads->create(\&tcp_thread,'GPS',[
+        '0800',
+        '0201100062000000',
+        '0c00',
+        '050110000100000062000000', ]);
     $nav_thread->detach();
 }
+'0800',
+'b0010f0000000000',
+'0800',
+'00010f0001000000',
+'1400',
+'00020f000100000000000000000000001a000000',
+'3400',
+'01020f00010000002800000000000000000000000000000000000000'.
+    '000000001027000000000000000000000000000000000000',
+'1000',
+'02020f00010000000000000000000000',
+
+'1000',
+'02020f00010000000000000000000000',
 
 
+
+# NAVQRY
+#   tcp(2)    10.0.241.54:2052     <-- 10.0.241.200:52811    0800                                                                      ..
+#   tcp(8)    10.0.241.54:2052     <-- 10.0.241.200:52811    b0010f00 00000000                                                         ........
+#   tcp(2)    10.0.241.54:2052     --> 10.0.241.200:52811    0c00                                                                      ..
+#   tcp(12)   10.0.241.54:2052     --> 10.0.241.200:52811    b0000f00 00000000 08000000                                                ............
+#   tcp(2)    10.0.241.54:2052     <-- 10.0.241.200:52811    0800                                                                      ..
+#   tcp(8)    10.0.241.54:2052     <-- 10.0.241.200:52811    00010f00 01000000                                                         ........
+#   tcp(2)    10.0.241.54:2052     <-- 10.0.241.200:52811    1400                                                                      ..
+#   tcp(20)   10.0.241.54:2052     <-- 10.0.241.200:52811                                 ....................
+#   tcp(2)    10.0.241.54:2052     <-- 10.0.241.200:52811    3400                                                                      4.
+#   tcp(52)   10.0.241.54:2052     <-- 10.0.241.200:52811    01020f00 01000000 28000000 00000000 00000000 00000000 00000000 00000000   ........(.......................
+#                                                            10270000 00000000 00000000 00000000 00000000                              .'..................
+#   tcp(2)    10.0.241.54:2052     <-- 10.0.241.200:52811    1000                                                                      ..
+#   tcp(16)   10.0.241.54:2052     <-- 10.0.241.200:52811    02020f00 01000000 00000000 00000000                                       ................
+#   tcp(2)    10.0.241.54:2052     --> 10.0.241.200:52811    0c00                                                                      ..
+#   tcp(158)  10.0.241.54:2052     --> 10.0.241.200:52811    00000f00 01000000 00000400 14000002 0f000100 00000000 00000000 00001900   ................................
+#                                                            00006800 01020f00 01000000 5c000000 0b000000 d18299aa f567e68e 81b237a6   ..h.........\............g....7.
+#                                                            37008ff4 81b237a6 36002a9d 81b237a6 3700208c 81b237a6 36001996 81b237a6   7.....7.6.*...7.7. ...7.6.....7.
+#                                                            370014d0 81b237a6 3600b880 81b237a6 35008a98 81b237a6 34007ff8 81b237a6   7.....7.6.....7.5.....7.4.....7.
+#                                                            3500818a 81b237a6 3500478a 10000202 0f000100 00000000 00000000 0000
+#   Then it appears as if it jsut keeps sending 1000 and getting back bigger 0c00 packets
 
 
 #----------------

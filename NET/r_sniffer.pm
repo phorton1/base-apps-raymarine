@@ -90,6 +90,7 @@ sub nextSniffPacket
         $rec->{hex_data} = $fields{tcp_payload};
     }
 
+    error("no packet: $line") if !$rec->{hex_data};
     $rec->{raw_data} = pack("H*", $rec->{hex_data});
 
     display($dbg_sniff,0,"$rec->{proto} $rec->{src_ip}:$rec->{src_port} -> $rec->{dest_ip}:$rec->{dest_port}: $rec->{hex_data}");

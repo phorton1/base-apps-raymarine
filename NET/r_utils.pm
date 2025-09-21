@@ -53,6 +53,7 @@ BEGIN
         $LOCAL_UDP_PORT
 		$LOCAL_UDP_SOCKET
 
+		sendAlive
         wakeup_e80
 		setConsoleColor
 		packetWireHeader
@@ -83,10 +84,17 @@ our $LOCAL_UDP_SOCKET = IO::Socket::INET->new(
         LocalPort => $LOCAL_UDP_PORT,
         Proto     => 'udp',
         ReuseAddr => 1);
-error("Could not open UDP_SEND_SOCKET")
-	if !$LOCAL_UDP_SOCKET;
+$LOCAL_UDP_SOCKET ?
+	display(0,0,"LOCAL_UDP_SOCKET opened") :
+	error("Could not open UDP_SEND_SOCKET");
 
 
+
+
+sub sendAlive
+{
+	$LOCAL_UDP_SOCKET->send($RAYDP_ALIVE_PACKET, 0, $RAYDP_ADDR);
+}
 
 
 
@@ -104,7 +112,7 @@ sub wakeup_e80
     for (my $i = 0; $i < 5; $i++)
     {
 		display(0,1,"sending RAYDP_ALIVE_PACKET");
-        $LOCAL_UDP_SOCKET->send($RAYDP_ALIVE_PACKET, 0, $RAYDP_ADDR);
+		sendAlive();
         sleep(1);
     }
 
