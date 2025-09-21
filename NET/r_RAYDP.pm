@@ -148,7 +148,7 @@ my $MY_NAV = 0;
 
 my $PORT_DEFAULTS  = {
 	2048 => { name=>'',			mon_in=>1,			mon_out=>$UNDER_WAY,	multi=>1,	color=>0,	 },
-	2049 => { name=>'CARDIO',	mon_in=>$CARD_REQ,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_CYAN,    },
+	2049 => { name=>'FILESYS',	mon_in=>$CARD_REQ,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_CYAN,    },
 	2050 => { name=>'GPS',		mon_in=>$MY_GPS,	mon_out=>$MY_GPS,		multi=>1,	color=>0,    },
 	2051 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
 	2052 => { name=>'NAVQRY',	mon_in=>$MY_NAV,	mon_out=>$MY_NAV,		multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },	#

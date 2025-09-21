@@ -19,6 +19,7 @@ use apps::raymarine::NET::r_utils;
 use apps::raymarine::NET::r_sniffer;
 use apps::raymarine::NET::r_RAYDP;
 use apps::raymarine::NET::r_E80NAV;
+use apps::raymarine::NET::r_FILESYS;
 use apps::raymarine::NET::s_resources;
 use apps::raymarine::NET::s_frame;
 use base 'Wx::App';
@@ -35,123 +36,17 @@ BEGIN
     our @EXPORT = qw(
 
         $SEND_ALIVE
+
     );
 }
 
 my $console_in;
-my $sock_listen;
 
-
-# When I sniffed these packets from RNS to the E80, {PORT} was 0048=0x4800 which is 18432
-# To create these message, which register a listener port with an E80 udp function which
-# accepts requests, we replace those bytes
-
-# port(2049) is tending toward the CHARTREQ 'function'
-# I'm not sure if I should have a separate listener for
-# each 'function'
-
-
-my $IP_2049 = '10.0.241.54';
-my $PORT_2049 = 2049;
-
-my $LISTEN_2049_PORT = 0x4801;  # 18433;
-my $REGISTER_2049_TEMPLATE = "0901050000000000{PORT}";
-my $REQUEST_2049_TEMPLATE = "0201050010110000{PORT}009a4c00000400001c005c4e6176696f6e69635c4368617274735c3347313338584c2e4e5632";
-    #   .........H.šL.......\Navionic\Charts\3G138XL.NV2
-    # an alternative is "0101050002000000{PORT}00000e005c6368617274 6361742e786d6c00"
-    #   .........H....\chartcat.xml.
-
-# The first packet sent, apart from WAKEUP/ALIVE by RNS is a registration packet
-#   udp 10.0.241.54:2049 <-- 10.0.241.200:65362        09010500 00000000 0048
-# The E80 responds by sending a udp packet to 0048 == 18432, perhaps an ack of th eregistration
-#   10.0.241.54:1215     --> 10.0.241.200:18432    09000500 00000000 >>> ...0014802A08W7
-# (I get the exact same packet back when I "register" with 2049)
-
-
-# The next thing that happens is with 2050 GPS,
-# It appears as if a local, two way tcp port is opened to 2050 ..
-#   tcp 10.0.241.54:2050     <-- 10.0.241.200:51877    0800                                                                      ..
-#   tcp 10.0.241.54:2050     <-- 10.0.241.200:51877    02011000 62000000                                                         ....b...
-#   tcp 10.0.241.54:2050     <-- 10.0.241.200:51877    0c00                                                                      ..
-#   tcp 10.0.241.54:2050     <-- 10.0.241.200:51877    05011000 01000000 62000000
-# I don't know what the 6200 is
-#     51877 = 0xCAA5 (A5CA in hex format)
-#     0x62 = 98 if its on the uint32 boundry
-#     0x6200 = 25088 doesn't match anything
-# After this, the E80 apparently sends an E80NAV packet
-#   udp(36)   224.30.38.195:2562   <-- 10.0.241.54:1217      00031000 02000000 17000000 2a000200 b8650506 00004700 00002a00 0200e767   ............*....e....G...*....g
-#       E80NAV len(26) type(0x17) version(0x02)
-#           6     HEAD(DEV,b865)                149.20
-#           20    HEAD(ABS,e767)                152.40
-# Before responding with a reply from 2050
-#   tcp(2)    10.0.241.54:2050     --> 10.0.241.200:51877    1000
-# After which some big 2563 packet is sent, and more 2050 packets
-#   start going back and forth.
-
-# I don't know if I really have to join multicast groups
-# for the E80 to respond, or if I can send these things blindly.
-# What I do suspect is that it will be very difficult to open
-# all needed sockets inline in this main perl thread.
-# And I'm already seeing wonky behavior from threads in general.
-
-my $REQUEST_PATH_TEMPLATE = "0201050010110000{PORT}009a4c0000040000";
-# 1c005c4e6176696f6e69635c4368617274735c3347313338584c2e4e5632";
-my $REQUEST_XML_TEMPLATE = "0201050006000000{PORT}000000009a9d01000e005c63686172746361742e786d6c00";
-    # / .........H..........\chartcat.xml
-my $REQUEST_FILE_TEMPLATE = "0201050006000000{PORT}000000009a9d0100";
-    # uses $with_null
-    # 0e005c63686172746361742e786d6c00";
-    # / .........H..........\chartcat.xml
-
-# The 9a9d0100 may be a session token that was gotten from previous packets
-# and may change with different E80's
-
-
-sub createPortifiedPathPacket
-{
-    my ($port,$hex,$path,$with_null) = @_;
-    my $packet = createPortifiedPacket($port,$hex);
-    my $len = length($path);
-    $packet .= pack("v",$len);
-    $packet .= $path;
-    $packet .= chr(0) if $with_null;
-    return $packet;
-}
-
-
-
-sub createPortifiedPacket
-{
-    my ($port,$hex) = @_;
-    my $packed_port = pack('v',$port);
-    my $hex_port = unpack("H*",$packed_port);
-    $hex =~ s/{PORT}/$hex_port/g;
-    return pack("H*",$hex);
-}
-
-# udp(48)   10.0.241.54:2049     <-- 10.0.241.200:8765     02010500 10110000 0148009a 4c000004 00001c00 5c4e6176 696f6e69 635c4368   .........H..L.......\Navionic\Charts\3G138XL.NV2
-#                                                          61727473 5c334731 3338584c 2e4e5632                                       arts\3G138XL.NV2
-
-sub sendUDPPacket
-{
-    my ($name,$dest_ip,$dest_port,$packet) = @_;
-    display(0,1,"sending $name packet");
-    if (!$LOCAL_UDP_SOCKET)
-    {
-        error("LOCAL_UDP_SOCKET not open in sendRequest packet");
-        return;
-    }
-    my $dest_addr = pack_sockaddr_in($dest_port, inet_aton($dest_ip));
-    $LOCAL_UDP_SOCKET->send($packet, 0, $dest_addr);
-    display(0,1,"$name packet sent");
-}
 
 
 #-----------------------------------------
 # serial_thread
 #-----------------------------------------
-
-
 
 sub openConsoleIn
 {
@@ -212,44 +107,11 @@ sub serial_thread
             {
                 if (ord($char) == 1)            # CTRL-A
                 {
-                    my $packet = createPortifiedPacket(
-                        $LISTEN_2049_PORT,
-                        $REGISTER_2049_TEMPLATE);
-                    sendUDPPacket(
-                        "register2049",
-                        $IP_2049,
-                        $PORT_2049,
-                        $packet);
+                    apps::raymarine::NET::r_FILESYS::sendRegisterRequest();
                 }
                 elsif (ord($char) == 2)            # CTRL-B
                 {
-                    my $packet;
-
-                    if (1)
-                    {
-                        $packet = createPortifiedPathPacket(
-                            $LISTEN_2049_PORT,
-                            # $REQUEST_PATH_TEMPLATE,
-                            $REQUEST_FILE_TEMPLATE,
-                            '\junk_data\test_data_image1.jpg',
-                            #'\FusionUI.xml',
-                            1 );
-                           # '\Navionic\Charts\*.NV2');
-                           # '\\');
-                           # '\Navionic\Charts');
-                           # '\Navionic\Charts\3G138XL.NV2');
-                    }
-                    else
-                    {
-                        $packet = createPortifiedPacket(
-                            $LISTEN_2049_PORT,
-                            $REQUEST_XML_TEMPLATE);
-                    }
-                    sendUDPPacket(
-                        "request2049",
-                        $IP_2049,
-                        $PORT_2049,
-                        $packet);
+                    apps::raymarine::NET::r_FILESYS::sendFilesysRequest(2,'\junk_data\test_data_image1.jpg');
                 }
 
                 # The above commands work with no RNS on a fresh E80
@@ -275,8 +137,56 @@ sub serial_thread
                     $MON_RAYNET = $MON_RAYNET ? 0 : 1;
                     warning(0,0,"MON_RAYNET=$MON_RAYNET");
                 }
+                elsif ($char eq 'g')
+                {
+                    requestFile('\junk_data\test_data_image1.jpg');
+                }
+                elsif ($char eq 'd')
+                {
+                    requestDirectory('\junk_data');
+                }
+                elsif ($char eq '1')
+                {
+                    requestDirectory('\\');
+                }
+                elsif ($char eq '2')
+                {
+                    requestSize('\junk_data\test_data_image1.jpg');
+                }
+                elsif ($char eq '3')
+                {
+                    requestSize('\junk_data');
+                }
+                elsif ($char eq '4')
+                {
+                    requestSize('\\');
+                }
+                elsif ($char eq '5')
+                {
+                    requestDirectory('\blah\blurb');
+                }
+                elsif ($char eq '6')
+                {
+                    requestDirectory('\Navionic\Charts');
+                }
+
             }
         }
+        #   else
+        #   {
+        #       if ($file_request_state == $FILE_REQUEST_STARTED ||
+        #           $file_request_state == $FILE_REQUEST_PACKET0 ||
+        #           $file_request_state == $FILE_REQUEST_PACKETS)
+        #       {
+        #           my $elapsed = time() - $file_request_time;
+        #           if ($elapsed > $FILE_REQUEST_TIMEOUT)
+        #           {
+        #               my $byte = length($file_contents);
+        #               fileRequestError("timeout in file_request($file_request_filename) at byte($byte)");
+        #           }
+        #       }
+        #       sleep(0.1);
+        #   }
     }
 }
 
@@ -285,12 +195,6 @@ sub serial_thread
 #-----------------------------------------
 # sniffer thread
 #-----------------------------------------
-
-
-
-
-
-my $xml = '';
 
 
 sub sniffer_thread
@@ -322,47 +226,19 @@ sub sniffer_thread
             my $dest_18432 = $packet->{dest_port} == 18432 ? {
                 color => $UTILS_COLOR_BROWN,
                 multi => 0, } : 0;
+            my $dest_18433 = $packet->{dest_port} == 18433 ? {
+                color => $UTILS_COLOR_BROWN,
+                multi => 0, } : 0;
 
-            if (1 && $dest_18432)
+            if (1 && $dest_18433)
             {
-                # found an xml file
-                # the length of most of the packets is 1042, last is 428
-                #
-                #
-                #   raw_data offset
-                #       12 = uint16 = 6800 = number of packets = 0x68
-                #       14 = uint16 = 0000 = packet number
-                #       16 = uint16 = packet_bytes
-                #           most: 0004 (0x0400) = 1024
-                #           last; 9a01 (0x019a) = 410
-                #       18 = start of text, 0x0a delimited lines,
-                #
-                # So, baaed on packet size alone
-                #       most 1042 = 18 = 1024 bytes of text
-                #       last 428 - 18 = 410
-                #   agrees with interpretation of packet_bytes
-
                 my $raw_data = $packet->{raw_data};
-                my $start_xml = $raw_data =~ /<\?xml/ ? 1 : 0;
-                $dest_18432->{multi} = 1 if $start_xml;
-
-                # $dest_18432->{multi} = 1 if
-                #     $packet->{raw_data} =~ /<\?xml/ ||
-                #     $packet->{hex_data} =~ /68006700/;
-
-                if ($xml || $start_xml)
-                {
-                    my ($num_packets,$packet_num,$bytes) = unpack('v3',substr($raw_data,12,6));
-                    display(0,1,"xml num($packet_num/$num_packets) bytes($bytes)");
-                    $xml .= substr($raw_data,18);
-                    if ($packet_num == $num_packets-1)
-                    {
-                        printVarToFile(1,"/junk/test.xml",$xml,1);
-                        $xml = '';
-                        $dest_18432->{multi} = 1
-                    }
-                }
-
+                my ($num_packets,$packet_num,$bytes) = unpack('v3',substr($raw_data,12,6));
+                showPacket($dest_18433,$packet,0);
+            }
+            elsif (1 && $dest_18432)
+            {
+                my $raw_data = $packet->{raw_data};
                 showPacket($dest_18432,$packet,0);
             }
             elsif ($ray_src && $ray_src->{mon_out})
@@ -390,12 +266,12 @@ sub sniffer_thread
             {
                 my $xml = $1;
                 # print "ray_src("._def($ray_src).") ray_dest("._def($ray_dest).") ";
-                print "$packet->{src_ip}:$packet->{src_port} --> $packet->{dest_ip}:$packet->{dest_port} : Found XMK: $xml\n";
+                print "$packet->{src_ip}:$packet->{src_port} --> $packet->{dest_ip}:$packet->{dest_port} : Found XML: $xml\n";
             }
 
             # udp(10)   10.0.241.54:2049     <-- 10.0.241.200:55481    09010500 00000000 0048
             
-            elsif ($packet->{raw_data} =~ /(navionic)/i && $packet->{dest_port} != 2049)
+            elsif (0 && $packet->{raw_data} =~ /(navionic)/i && $packet->{dest_port} != 2049)
             {
                 # print "ray_src("._def($ray_src).") ray_dest("._def($ray_dest).") ";
                 print "$packet->{src_ip}:$packet->{src_port} --> $packet->{dest_ip}:$packet->{dest_port} : Found NAVIONIC\n";
@@ -416,41 +292,6 @@ sub sniffer_thread
         else
         {
             sleep(0.001);
-        }
-    }
-}
-
-
-#-------------------------------------------------
-# listen thread
-#-------------------------------------------------
-
-
-sub listen_udp_thread
-    # blocking unidirectional single port monitoring thread
-{
-    my ($port) = @_;
-    display(0,0,"listen_udp_thread($port) started");
-    my $sock = IO::Socket::INET->new(
-            LocalPort => $LISTEN_2049_PORT,
-            Proto     => 'udp',
-            ReuseAddr => 1 );
-    if (!$sock)
-    {
-        error("Could not open sock in listen_udp_thread($port)");
-        return;
-    }
-    while (1)
-    {
-        my $raw;
-        recv($sock, $raw, 4096, 0);
-        if ($raw)
-        {
-            # my $hex = unpack("H*",$raw);
-            setConsoleColor($UTILS_COLOR_LIGHT_MAGENTA);
-            display_bytes(0,0,"listen_udp_thread($port) GOT ".length($raw)." BYTES",$raw);
-            # print "LISTEN got $hex\n";
-            setConsoleColor();
         }
     }
 }
@@ -724,7 +565,7 @@ if ($LOCAL_UDP_SOCKET)
 
 if (1)  # openListenSocket())
 {
-    my $listen_thread = threads->create(\&listen_udp_thread,$LISTEN_2049_PORT);
+    my $listen_thread = threads->create(\&fileRequestThread);
     $listen_thread->detach();
 }
 

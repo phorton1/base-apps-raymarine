@@ -53,6 +53,8 @@ BEGIN
         $LOCAL_UDP_PORT
 		$LOCAL_UDP_SOCKET
 
+		sendUDPPacket
+
 		sendAlive
         wakeup_e80
 		setConsoleColor
@@ -88,6 +90,20 @@ $LOCAL_UDP_SOCKET ?
 	display(0,0,"LOCAL_UDP_SOCKET opened") :
 	error("Could not open UDP_SEND_SOCKET");
 
+
+sub sendUDPPacket
+{
+    my ($name,$dest_ip,$dest_port,$packet) = @_;
+    display(0,1,"sending $name packet: ".unpack('H*',$packet));
+    if (!$LOCAL_UDP_SOCKET)
+    {
+        error("LOCAL_UDP_SOCKET not open in sendRequest packet");
+        return;
+    }
+    my $dest_addr = pack_sockaddr_in($dest_port, inet_aton($dest_ip));
+    $LOCAL_UDP_SOCKET->send($packet, 0, $dest_addr);
+    display(0,1,"$name packet sent");
+}
 
 
 
