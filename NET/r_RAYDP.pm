@@ -139,16 +139,16 @@ my $KNOWN_UNDECODED = [
 
 my $RNS_INIT  = 0;
 my $UNDER_WAY = 0;
-my $CARD_REQ = 1;
+my $FILESYS = 0;
 my $MY_GPS = $UNDER_WAY;
-my $MY_NAV = 0;
+my $MY_NAV = 1;
 
 # the zeros are things that happen when underway with I_0183 and RNS running
 # $RNS_INIT only happened during RNS startup after that
 
 my $PORT_DEFAULTS  = {
 	2048 => { name=>'',			mon_in=>1,			mon_out=>$UNDER_WAY,	multi=>1,	color=>0,	 },
-	2049 => { name=>'FILESYS',	mon_in=>$CARD_REQ,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_CYAN,    },
+	2049 => { name=>'FILESYS',	mon_in=>$FILESYS,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_CYAN,    },
 	2050 => { name=>'GPS',		mon_in=>$MY_GPS,	mon_out=>$MY_GPS,		multi=>1,	color=>0,    },
 	2051 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
 	2052 => { name=>'NAVQRY',	mon_in=>$MY_NAV,	mon_out=>$MY_NAV,		multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },	#

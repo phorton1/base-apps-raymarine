@@ -64,6 +64,9 @@ BEGIN
 		@color_names
 		$color_values
 
+		degreeMinutes
+
+		show_dwords
     );
 }
 
@@ -144,6 +147,16 @@ sub wakeup_e80
 
 
 
+sub degreeMinutes
+{
+	my $DEG_CHAR = chr(0xB0);
+	my ($ll) = @_;
+	my $deg = int($ll);
+	my $min = round(abs($ll - $deg) * 60,3);
+	return "$deg$DEG_CHAR$min";
+}
+
+
 sub setConsoleColor
 	# running in context of Pub::Utils; does not use ansi colors above
 	# just sets the console to the given Pub::Utils::$DISPLAY_COLOR_XXX or $UTILS_COLOR_YYY
@@ -191,20 +204,26 @@ sub showPacket
 {
 	my ($rayport,$packet,$backwards) = @_;
 	my $header = packetWireHeader($packet,$backwards);
-	my $header_len = length($header);
 	my $multi = $rayport->{multi};
-
+	my $color = $rayport->{color} || 0;
 	my $raw_data = $packet->{raw_data};
 	my $hex_data = $packet->{hex_data};
-	my $packet_len = length($raw_data);
 	# $packet_len = $BYTES_PER_LINE if !$multi && ($packet_len > $BYTES_PER_LINE);
+	show_dwords($header,$raw_data,$hex_data,$color,$multi);
+}
 
+
+sub show_dwords
+{
+	my ($header,$raw_data,$hex_data,$color,$multi) = @_;
 	my $offset = 0;
 	my $byte_num = 0;
 	my $group_byte = 0;
 	my $left_side = '';
 	my $right_side = '';
 	my $full_packet = $header;
+	my $header_len = length($header);
+	my $packet_len = length($raw_data);
 	# $full_packet .= "\r\nONE($hex_data)\r\n" if $packet_len == 1;
 	while ($offset < $packet_len)
 	{
@@ -236,8 +255,6 @@ sub showPacket
 		$full_packet .= pad($left_side,$LEFT_SIZE)."  ".$right_side."\r\n";
 	}
 
-
-	my $color = $rayport->{color} || 0;
     setConsoleColor($color) if $color;
     print $full_packet;
 	setConsoleColor() if $color;

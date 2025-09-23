@@ -24,7 +24,6 @@ BEGIN
 my $PI = 3.1415926535;
 my $METERS_TO_FEET = 3.28084;
 my $KNOTS_TO_METERS_PER_SEC = 0.5144;
-my $SCALE_LATLON = 1e-7;
 
 
 # scheme cannot encode offset(0)
@@ -304,6 +303,7 @@ sub showSOG
 }
 
 
+my $SCALE_LATLON = 1e-7;
 
 sub decode_coord
 {
