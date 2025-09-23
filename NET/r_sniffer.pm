@@ -63,7 +63,7 @@ sub startSniffer
 sub nextSniffPacket
 {
     my $line = <$sniff_fh>;
-    return undef if !$line;
+    return undef if !defined($line) || !length($line);
 
     chomp $line;
     return undef if !$line;
@@ -90,13 +90,16 @@ sub nextSniffPacket
         $rec->{hex_data} = $fields{tcp_payload};
     }
 
-    if (!$rec->{hex_data})
-    {
-        error("no packet: $line");
-        $rec->{hex_data} = '';
-    }
-    $rec->{raw_data} = pack("H*", $rec->{hex_data});
+    return undef if !$rec->{hex_data} || length($rec->{hex_data}) == 1;
+        # length(1) is an annoying ack message.
 
+    # if (!$rec->{hex_data})
+    # {
+    #     error("no packet: $line");
+    #     $rec->{hex_data} = '';
+    # }
+
+    $rec->{raw_data} = pack("H*", $rec->{hex_data});
     display($dbg_sniff,0,"$rec->{proto} $rec->{src_ip}:$rec->{src_port} -> $rec->{dest_ip}:$rec->{dest_port}: $rec->{hex_data}");
 
     return $rec;

@@ -141,7 +141,7 @@ my $RNS_INIT  = 0;
 my $UNDER_WAY = 0;
 my $FILESYS = 0;
 my $MY_GPS = $UNDER_WAY;
-my $MY_NAV = 1;
+my $MY_NAV = 0;
 
 # the zeros are things that happen when underway with I_0183 and RNS running
 # $RNS_INIT only happened during RNS startup after that

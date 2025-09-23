@@ -1,6 +1,25 @@
 #---------------------------------------------
 # r_NAVQRY.pm
 #---------------------------------------------
+# Conflict between a completely self contained
+# WGR listener, and a tool to explore and learn
+# how to do things (i.e. write waypoints).
+#
+# I think I will first getting working as a self
+# contained WGR listener, but only request waypoints,
+# and then add a specific control path to test
+# writing waypoints.
+#
+# Note that I made tried to have commands to start and
+# stop this client, but it really didn't make sense.
+# If I try to close the socket to a running E80, the
+# program hangs until I reboot the E80.
+#
+# So, instead, there is an optional one time command
+# to start it, and thereafter, if it fails to send,
+# then and only then it closes the socket, waits 10
+# seconds, and retries.
+
 
 package apps::raymarine::NET::r_NAVQRY;
 use strict;
@@ -17,313 +36,552 @@ use Pub::Utils;
 use apps::raymarine::NET::r_utils;
 use apps::raymarine::NET::r_RAYDP;
 
+my $dbg = 0;
+my $SHOW = 1;
 
-my $NAVQUERY_PORT = 9877;
+
+my $NAVQUERY_PORT 			= 9877;
+
+my $COMMAND_TIMEOUT 		= 3;
+my $REFRESH_INTERVAL		= 5;
+my $RECONNECT_INTERVAL		= 15;
+
+
+my $STATE_NONE 				= 0;
+my $STATE_GET_WP_DICT 		= 1;
+my $STATE_PARSE_WP_DICT 	= 2;
+my $STATE_GET_WAYPOINTS		= 3;
+my $STATE_GET_ROUTE_DICT	= 4;
+my $STATE_PARSE_ROUTE_DICT	= 5;
+my $STATE_GET_ROUTES		= 6;
+my $STATE_GET_GROUP_DICT	= 7;
+my $STATE_PARSE_GROUP_DICT	= 8;
+my $STATE_GET_GROUPS		= 9;
+
+
+my $SUCCESS_SIG = '00000400';
+my $DICT_END_RECORD_MARKER	= '10000202';
+
 
 BEGIN
 {
  	use Exporter qw( import );
     our @EXPORT = qw(
-        startNavQuery
-
 		navQueryThread
-
+		startNavQuery
+		refreshNavQuery
+		toggleNavQueryAutoRefresh
     );
 }
 
-my $STATE_NONE 	 = 0;
-my $STATE_SCRIPT = 1;	# sending the script
-my $STATE_DICT	 = 2;	# waiting for the dict
-my $STATE_UUIDS  = 3;	# parsing dict
-my $STATE_WPS    = 4;	# sending wp requests
+
+my $one_time_start:shared = 1;
+	# set this to 0 to require startNavQuery() to
+	# be called to start the thread.
+my $refresh_time:shared = 0;
+	# time of the last refresh; 0=immediate-ish
+my $auto_refresh:shared = 1;
+	# set this to 0 to require refreshNavQuery
+	# or toggleNavQueryAutoRefres() to be called.
+my $refresh_now:shared = 0;
 
 
 
-my $query_state:shared = 0;
+my $waypoints:shared = shared_clone({});
+my $routes:shared = shared_clone({});
+my $groups:shared = shared_clone({});
+my $state:shared = $STATE_NONE;
 
 sub startNavQuery
 {
-	setState($STATE_SCRIPT);
+	display(0,0,"startNavQuery()");
+	$one_time_start = 1;
 }
 
-sub setState
+sub refreshNavQuery
 {
-	my ($state) = @_;
-	print "\r\nSTATE($state)\r\n";
-	$query_state = $state;
+	if ($state || !$one_time_start)
+	{
+		error("illegal attempt to refreshNavQuery: state($state) started($one_time_start)");
+		return;
+	}
+	display(0,0,"refreshNavQuery()");
+	$refresh_now = 1;
+	$refresh_time = 0;
+}
+
+sub toggleNavQueryAutoRefresh
+{
+	my $auto = $auto_refresh ? 0 : 1;
+	display(0,0,"toggleNavQueryAutoRefresh($auto)");
+	$refresh_time = time() if $auto && !$state;
+	$auto_refresh = $auto;
 }
 
 
-my $known_uuids = {
-	'db829991f567e68e' => { type=>'Group', name=>'Agua' 			},
-	'db82998ef567e68e' => { type=>'Group', name=>'Bocas',			},
-	'81b237a6390014d0' => { type=>'Group', name=>'Group 2',			},
-	'ee8299fef567e68e' => { type=>'Group', name=>'InstantRoute',	},
-	'db829990f567e68e' => { type=>'Group', name=>'Michelle',		},
-	'ee8299d3f567e68e' => { type=>'Group', name=>'Nmea',			},
-	'db82998ff567e68e' => { type=>'Group', name=>'Popa',			},
-	'4600000000000000' => { type=>'Route', name=>'Agua',			},
-	'ee8299fdf567e68e' => { type=>'Route', name=>'InstantRoute',	},
-	'3b00000000000000' => { type=>'Route', name=>'Michelle',		},
-	'0c00000000000000' => { type=>'Route', name=>'Popa',			},			# I suspect that the E80 assigned this to 0c00
-	'd38299a1f567e68e' => { type=>'Route', name=>'testRoute',		},
+
+
+
+# constant command atoms
+
+my $context 	= '0800'.'{sig_byte}001'.'0f00'.'{seq_num}';
+my $set_context = '1400'.'0002'.'0f00'.'{seq_num}'.	'00000000'.'00000000'.'1a000000';
+my $set_buffer 	= '3400'.'0102'.'0f00'.'{seq_num}'.	'28000000'.('00000000'x5).'10270000'.('00000000'x4);
+my $dictionary 	= '1000'.'0202'.'0f00'.'{seq_num}'.	'00000000'.'00000000';
+
+my $get_dict 	= $context.$set_context.$set_buffer.$dictionary;
+my $get_item	= '1000'.'{sig_byte}301'.'0f00'.'{seq_num}'.'{uuid}';
+
+my $sig_dict	= '{sig_byte}0000f00{seq_num}';
+my $sig_item	= '{sig_byte}6000f00{seq_num}';
+
+
+
+
+if (0)
+{
+	my $waypoint_context = '0800'.'0001'.'0f00'.'{seq_num}';
+	my $route_context 	 = '0800'.'4001'.'0f00'.'{seq_num}';
+	my $group_context 	 = '0800'.'8001'.'0f00'.'{seq_num}';
+		# sets the waypoint, route, or group context
+		#	'0800'.'1001'.'0f00'.'{seq_num}',	# 6		stops working
+		#	'0800'.'2001'.'0f00'.'{seq_num}',	# 7		stops working
+		#	'0800'.'0d01'.'0f00'.'{seq_num}',	# 6		unknown example from RNS
+		#	'0800'.'8e01'.'0f00'.'{seq_num}',	# 7		unknown example from RNS
+	# my $set_buffer 	= '3400'.'0102'.'0f00'.'{seq_num}'.	'28000000'.('00000000'x5).'10270000'.('00000000'x4);
+		# appears to 'commit' whatever context command was sent
+		# unsure; this may only be needed once per session
+		# maybe sets buffers or enables other comms
+		# all of these 3400's are equivilant
+		# '3400'.'0102'.'0f00'.'{seq_num}'.	'28000000'.('00000000'x5).'96000000'.('00000000'x4), # 10 a
+		# '3400'.'0102'.'0f00'.'{seq_num}'.	'28000000'.('00000000'x5).'64000000'.('00000000'x4), # 11 b
+		# '3400'.'0102'.'0f00'.'{seq_num}'.	'28000000'.('00000000'x4).'e8550f16'.'64000000'.('00000000'x4), # 12 c
+		# '3400'.'0102'.'0f00'.'{seq_num}'.	'28000000'.('00000000'x4).'e8550f16'.'96000000'.('00000000'x4), # 13 d
+
+		# gets the dictionary (uuid list) for the current context
+	my $get_waypoints 	= $waypoint_context.$set_context.$set_buffer.$dictionary;
+	my $get_routes 		= $route_context.	$set_context.$set_buffer.$dictionary;
+	my $get_groups 		= $group_context.	$set_context.$set_buffer.$dictionary;
+	my $get_waypoint	= '1000'.'0301'.'0f00'.'{seq_num}'.'{uuid}';	# get waypoint
+	my $get_route		= '1000'.'4301'.'0f00'.'{seq_num}'.'{uuid}',	# get route
+	my $get_group 		= '1000'.'8301'.'0f00'.'{seq_num}'.'{uuid}',	# get group
+}
+
+
+
+
+my $test_commands = {
+	'0'	=>	'0400'.'b101'.'0f00',               # erase context?
+	'1'	=>	'0400'.'b201'.'0f00',               # get context report?
+		# both return 0800 05000f00 01000000 08004500 0f000100 00000800 85000f00 01000000
+	'2' =>	'0800'.'b001'.'0f00'.'{seq_num}',	# get database version
+		# returns b0000f00 {seq} {version}
+	'f'	=> '1000'.'0301'.'0f00'.'{seq_num}'.'eeeeeeee'.'eeee0110',	# get waypoint
+	'g' => '1000'.'4301'.'0f00'.'{seq_num}'.'81b237a6'.'3a00c218',	# get route
+	'h' => '1000'.'8301'.'0f00'.'{seq_num}'.'db8299a1'.'f567e68e',	# get group
 };
 
 
+#-------------------------------------------
+# implementation
+#-------------------------------------------
 
 
-#   I now believe that all these 0400, 0800, 1000, 1900, 3400 prefixes
-#   are just the length of the command bytes that follow.
-#   But the replies all start with 0c00 and typically have longer records
-#   AND NOW I THINK the 0f00 all over the place is the func(15) for NAVQRY
 
 
-my $DICT_END_RECORD_MARKER	= '100002020f000100';
-my $wp_dict_sig = pack('H*','00000f00'.'01000000');
+sub setState
+{
+	my ($new_state) = @_;
+	return if $state == $new_state;
+	$state = $new_state;
+	my $text =
+		$state == $STATE_NONE 				? 'NONE' :
+		$state == $STATE_GET_WP_DICT 		? 'GET_WP_DICT' :
+		$state == $STATE_PARSE_WP_DICT 		? 'PARSE_WP_DICT' :
+		$state == $STATE_GET_WAYPOINTS		? 'GET_WAYPOINTS' :
+		$state == $STATE_GET_ROUTE_DICT		? 'GET_ROUTE_DICT' :
+		$state == $STATE_PARSE_ROUTE_DICT	? 'PARSE_ROUTE_DICT' :
+		$state == $STATE_GET_ROUTES			? 'GET_ROUTES' :
+		$state == $STATE_GET_GROUP_DICT		? 'GET_GROUP_DICT' :
+		$state == $STATE_PARSE_GROUP_DICT	? 'PARSE_GROUP_DICT' :
+		$state == $STATE_GET_GROUPS			? 'GET_GROUPS' :
+		'UNKNOWN';
+	display($dbg,-1,"setState($state) $text");
+}
 
 
-my $script_wait = 'wait';
-my $script = [
-    '0800'.
-    '00010f00'.'01000000' .
-    '1400' .
-    '00020f00'.'01000000'.'00000000'.'00000000'.'1a000000' .
-    '3400' .
-    '01020f00'.'01000000'.'28000000'.('00000000' x 5).'10270000'.('00000000' x 4) .
-    '1000' .
-    '02020f00'.'01000000'.'00000000'.'00000000',
-];
+sub substitute
+{
+	my ($text,$sig_byte,$seq_num,$uuid,) = @_;
+	my $seq_packed = pack('V',$seq_num);
+	my $seq_hex = unpack('H*',$seq_packed);
+	$text =~ s/{sig_byte}/$sig_byte/g;
+	$text =~ s/{seq_num}/$seq_hex/g;
+	$text =~ s/{uuid}/$uuid/g;
+	return $text;
+}
 
-# wpdict request
-#   02020f00 {seq} {00000000 00000000) uuid 0?
-# route_dict request?  how is this different?
-#	02020f00 {seq} {00000000 00000000} uuid 0?
-# group request
-#	83010f00 {seq} {uuid}
-# waypoint request
-#   03010f00 {seq} {uuid}
+sub sendCommand
+{
+	my ($sel,$sock,$template,$sig_byte,$seq_num,$uuid) = @_;
+	if (!$sel->can_write())
+	{
+		error("Cannot write to socket");
+		return 0;
+	}
+	my $command = substitute($template,$sig_byte,$seq_num,$uuid);
+	my $packed = pack("H*",$command);
+
+	my $offset = 0;
+	my $command_len = length($packed);
+	while ($offset < $command_len)
+	{
+		my $hdr = substr($packed,$offset,2);
+		my $len = unpack('v',$hdr);
+		my $data = substr($packed,$offset+2,$len);
+
+		my $show_hdr = unpack("H*",$hdr);
+		my $show_data = unpack("H*",$data);
+
+		print pad("$offset,2",7)."<-- $show_hdr\n" if $SHOW;
+		$offset += 2;
+		if (!$sock->send($hdr))
+		{
+			error("Could not send header: $show_hdr\n$!");
+			return 0;
+		}
+
+		# print pad("$offset,$len",6)."<-- $show_data\n";
+		show_dwords(pad("$offset,$len",7)."<-- ",$data,$show_data,0,1) if $SHOW;
+		if (!$sock->send($data))
+		{
+			error("Could not send data: $show_hdr\n$!");
+			return 0;
+		}
+		$offset += $len;
+	}
+	return 1;
+}
 
 
+
+sub kind
+{
+	my ($sig_byte) = @_;
+	return
+		$sig_byte eq '8' ? 'GROUP' :
+		$sig_byte eq '4' ? 'ROUTE' : 'WP';
+}
 
 
 sub navQueryThread
 {
-    display(0,0,"starting navQueryThread");
+    display($dbg,0,"starting navQueryThread");
 
 	# get NAVQRY ip:port
 
 	my $rayport = findRayPortByName('NAVQRY');
 	while (!$rayport)
 	{
-		display(0,1,"waiting for rayport(NAVQRY)");
+		display($dbg,1,"waiting for rayport(NAVQRY)");
 		sleep(1);
 		$rayport = findRayPortByName('NAVQRY');
 	}
 	my $nav_ip = $rayport->{ip};
 	my $nav_port = $rayport->{port};
-	display(0,1,"found rayport(NAVQRY) at $nav_ip:$nav_port");
+	display($dbg,1,"found rayport(NAVQRY) at $nav_ip:$nav_port");
 
-	# open tcp two way socket
 
-	my $sock = IO::Socket::INET->new(
-		LocalAddr => $LOCAL_IP,
-		LocalPort => $NAVQUERY_PORT,
-		PeerAddr  => $nav_ip,
-		PeerPort  => $nav_port,
-		Proto     => 'tcp',
-	);
-	if (!$sock)
+	my $sel;
+	my $sock;
+	my $running = 0;
+	my $seq_num = 1;
+	my $sig_byte = '';
+	my $started = 1;
+
+	my $sig = '';
+	my $command_time = 0;
+	my $reconnect_time = 0;
+
+	while (!$one_time_start)
 	{
-		error("Could not create navQueryThread tcp socket to $nav_ip:$nav_port: $!");
-		return;
+		display($dbg+1,0,"Waiting for one_time_start");
+		sleep(1);
 	}
-
-    my $sel = IO::Select->new($sock);
+	display($dbg,0,"starting navQuery loop");
 	
-
-    print "script=".join("\r\n   ",@$script)."\r\n";
-
-    my $script_index = 0;
-    my $script_steps = @$script;
-
-	my $wp_dict = '';
-	my @uuids;
-	my $the_uuid = '';
-
-	my $wp_num = 0;
-	my $wp_sig = '';
-
     while (1)
     {
+		#---------------------------------------
+		# start/stop = open or close the socket
+		#---------------------------------------
+
+		if ($started && !$running)
+		{
+			display($dbg,0,"opening navQuery socket");
+			$sock = IO::Socket::INET->new(
+				LocalAddr => $LOCAL_IP,
+				LocalPort => $NAVQUERY_PORT,
+				PeerAddr  => $nav_ip,
+				PeerPort  => $nav_port,
+				Proto     => 'tcp',
+				Reuse	  => 1,	# allows open even if windows is timing it out
+				Timeout	  => 3 );
+			if ($sock)
+			{
+				display($dbg,0,"navQuery socket opened");
+
+				$running = 1;
+				$sel = IO::Select->new($sock);
+				$waypoints = shared_clone({});
+				$routes = shared_clone({});
+				$groups = shared_clone({});
+
+				$sig = '';
+				$command_time = 0;
+
+				setState($STATE_GET_WP_DICT);
+			}
+			else
+			{
+				error("Could not open navQuery socket to $nav_ip:$nav_port\n$!");
+				$started = 0;
+				$reconnect_time = time();
+			}
+		}
+		elsif ($running && !$started)
+		{
+			warning(0,0,"closing navQuerySocket");
+			$sock->shutdown(2);
+			$sock->close();
+			$sock = undef;
+			$running = 0;
+			$sel = undef;
+
+			$sig = '';
+			$command_time = 0;
+			$refresh_time = 0;
+			$reconnect_time = time();
+			setState($STATE_NONE);
+		}
+		if (!$running)
+		{
+			if ($reconnect_time && time() > $reconnect_time + $RECONNECT_INTERVAL)
+			{
+				$reconnect_time = 0;
+				warning($dbg,0,"AUTO RECONNECTING");
+				$started = 1;
+			}
+			sleep(1);
+			next;
+		}
+
+		#---------------------------------------
+		# read the input buffer
+		#---------------------------------------
+		
+		my $buf;
         if ($sel->can_read(0.1))
         {
-            my $buf;
             recv($sock, $buf, 4096, 0);
             if ($buf)
             {
                 my $hex = unpack("H*",$buf);
 				my $len = length($hex);
-				my $show;
-				if ($query_state)
+				show_dwords(pad(length($buf),7)."--> ",$buf,$hex,0,1);
+			}
+		}
+
+		if ($sig && time() > $command_time + $COMMAND_TIMEOUT)
+		{
+			error("Command timed out");
+			$sig = '';
+			$command_time = 0;
+			$started = 0;
+			$reconnect_time = time();
+			setState($STATE_NONE);
+			next;
+		}
+
+		if ($state == $STATE_NONE)
+		{
+			if ($refresh_now)
+			{
+				warning($dbg,0,"REFRESH NOW");
+				$refresh_now = 0;
+				$refresh_time = 0;
+				setState($STATE_GET_WP_DICT);
+			}
+			elsif ($auto_refresh && $refresh_time && time() > $refresh_time + $REFRESH_INTERVAL)
+			{
+				warning($dbg,0,"AUTO REFRESHING");
+				$refresh_time = 0;
+				setState($STATE_GET_WP_DICT);
+			}
+		}
+
+		#---------------------------------------
+		# send dictionary commands
+		#---------------------------------------
+
+		if ($state == $STATE_GET_WP_DICT ||
+			$state == $STATE_GET_ROUTE_DICT ||
+			$state == $STATE_GET_GROUP_DICT )
+		{
+			my $seq = $seq_num++;
+			$sig_byte =
+				$state == $STATE_GET_GROUP_DICT ? '8' :
+				$state == $STATE_GET_ROUTE_DICT ? '4' : '0';
+			display($dbg+1,0,"getting ".kind($sig_byte)." dictionary");
+			if (sendCommand($sel,$sock,$get_dict,$sig_byte,$seq))
+			{
+				$sig = pack('H*',substitute($sig_dict,$sig_byte,$seq));
+				$command_time = time();
+				setState($state+1);
+			}
+			else
+			{
+				$started = 0;
+				$reconnect_time = time();
+			}
+		}
+
+		#-----------------------------------------------
+		# handle matching dictionary signatures
+		#-----------------------------------------------
+
+		elsif ($buf && substr($buf,0,8) eq $sig)
+		{
+			display($dbg+2,0,"state($state) ".kind($sig_byte)." sig matched");
+			
+			$sig = '';
+			$command_time = 0;
+			if (unpack('H*',substr($buf,8,4)) ne $SUCCESS_SIG)
+			{
+				error("Unexpected reply. No SUCCESS_SIG($SUCCESS_SIG)");
+				setState($STATE_NONE);
+				next;
+			}
+			
+			if ($state == $STATE_PARSE_WP_DICT ||
+				$state == $STATE_PARSE_ROUTE_DICT ||
+				$state == $STATE_PARSE_GROUP_DICT )
+			{
+				my $hash =
+					$state == $STATE_PARSE_GROUP_DICT ? $groups :
+					$state == $STATE_PARSE_ROUTE_DICT ? $routes :
+					$waypoints;
+
+				# TEMPORARY DICTIONARY FIX - Skip 14 bytes at offset 548
+
+				my $num = 0;
+				my $any_new = 0;
+				my $offset = 13 * 4;	# the 13th dword starts the first uuid
+				my $len = length($buf);
+				while ($offset < $len + 8) # 8 bytes for 2 dword uuid
 				{
-					$show = _lim($hex,90);
-					$show .= " >>>" if $len > 90;
-					print pad(length($buf),6)."-->$show\r\n";
+					if ($offset == 548)
+					{
+						warning($dbg,0,"skipping 14 bytes at offset 548");
+						$offset += 14
+					}
+					my $uuid = unpack('H*',substr($buf,$offset,8));
+					last if substr($uuid,0,8) eq $DICT_END_RECORD_MARKER;
+
+					my $found = $hash->{$uuid};
+					$any_new = 1 if !$found;
+					$hash->{$uuid} = shared_clone({}) if !$found;
+
+					display($dbg+1,1,pad($offset,5).pad(" uuid($num)",10).
+						"= $uuid".($found ? '' : ' NEW'));
+
+					$offset += 8;
+					$num++;
+				}
+				display($dbg+2,0,"found($num) uuids in ".kind($sig_byte)." dictionary hash=".scalar(keys %$hash));
+				setState($state + 1);
+			}
+
+			#-----------------------------------------------
+			# handle matching item signatures
+			#-----------------------------------------------
+
+			elsif ($state == $STATE_GET_WAYPOINTS ||
+				   $state == $STATE_GET_ROUTES ||
+				   $state == $STATE_GET_GROUPS )
+			{
+				my $SELF_ID_OFFSET = 22;
+				my $uuid = unpack('H*',substr($buf,$SELF_ID_OFFSET,8));
+				my $hash =
+					$state == $STATE_GET_GROUPS ? $groups :
+					$state == $STATE_GET_ROUTES ? $routes :
+					$waypoints;
+				my $rec = $hash->{$uuid};
+				if ($rec)
+				{
+					display($dbg+2,0,"parsing ".kind($sig_byte)." item");
 				}
 				else
 				{
-					show_dwords(pad(length($buf),6)."-->",$buf,$hex,0,1);
-						# 0 = default color
-						# 1 == m
-				}
-
-                if ($query_state == $STATE_DICT && index($buf,$wp_dict_sig) >= 0)
-				{
-					$wp_dict = $buf;
-					setState($STATE_UUIDS);
-				}
-				elsif ($query_state == $STATE_WPS && index($buf,$wp_sig) >= 0)
-				{
-					my $actual_num = $wp_num-1;
-					
-					parseWaypoint($actual_num,$the_uuid,$buf);
-
-
-					my $num_left = @uuids;
-					print "-------------------------------------------------------------------------\r\n";
-					print "FINISHED $actual_num. there are $num_left UUIDs\r\n";
-					print "-------------------------------------------------------------------------\r\n";
-
-					$wp_sig = ''; 	# continue ...
-					
-					if (!@uuids)
-					{
-						display(0,0,"FINISHED!!!");
-						$script_index = 0;
-						$wp_dict = '';
-						@uuids = ();
-						$wp_num = 0;
-						setState($STATE_NONE);
-					}
-				}
-				elsif (1 && $query_state == $STATE_WPS)
-				{
-					# skip lone 0c00's
-
-					next if (unpack("H*",$buf) eq '0c00');
-
-					error("Invalid WP reponse");
-
-					$wp_sig = '';	# continue
-					if (!@uuids)
-					{
-						warning(0,0,"FINISHED WITH ERRORS");
-						$script_index = 0;
-						$wp_dict = '';
-						@uuids = ();
-						$wp_num = 0;
-						$wp_sig = '';
-						setState($STATE_NONE);
-					}
-				}
-            }
-        }
-
-		if ($query_state == $STATE_NONE)
-		{
-			sleep(1);
-		}
-		elsif ($query_state == $STATE_SCRIPT)
-		{
-			if ($script_index < $script_steps)
-			{
-				if ($script->[$script_index] eq $script_wait)
-				{
-					$script_index++;
-					sleep(0.5);
-				}
-				elsif ($sel->can_write())
-				{
-					my $command = $script->[$script_index++];
-					print "      <--$command\r\n";
-					my $packed = pack("H*",$command);
-					my $sent = $sock->send($packed);
-					if (0 && !$sent)
-					{
-						error("Could not send: $! $^E");
-						sleep(1);
-						$script_index--;
-					}
+					error("Could not find item($uuid)");
+					setState($STATE_NONE);
 				}
 			}
-			setState($STATE_DICT) if $script_index >= $script_steps;
+		}	# signature matched
 
-		}
-		elsif ($query_state == $STATE_UUIDS)
+		#----------------------------------------
+		# request any pending items
+		#----------------------------------------
+
+		if (!$sig && (
+			$state == $STATE_GET_WAYPOINTS ||
+			$state == $STATE_GET_ROUTES ||
+			$state == $STATE_GET_GROUPS ))
 		{
-			my $len = length($wp_dict);
-			my $hex_dict = unpack("H*",$wp_dict);
+			my $hash =
+				$state == $STATE_GET_GROUPS ? $groups :
+				$state == $STATE_GET_ROUTES ? $routes :
+				$waypoints;
+			my $sig_byte =
+				$state == $STATE_GET_GROUPS ? '8' :
+				$state == $STATE_GET_ROUTES ? '4' : '0';
 
-			show_dwords("wp_dict --> ",$wp_dict,$hex_dict,0,1);
-				# 0=color; 1=multi
+			display($dbg+2,0,"checking ".scalar(keys %$hash)." ".kind($sig_byte)." items");
 
-			print "parsing wp_dict($len):$hex_dict\r\n";
-
-			# TEMPORARY DICTIONARY FIX - Skip 14 bytes at offset 548
-
-			my $num = 0;
-			my $offset = 13 * 4;	# 4 + 13 * 8;    # the 13th dword inside the packet following 0c00
-			while ($offset < $len + 8) # 8 bytes for 2 dword uuid
+			my $sent = 0;
+			for my $uuid (keys %$hash)
 			{
-				if ($offset == 548)
+				my $rec = $hash->{$uuid};
+				if (!$rec->{requested})
 				{
-					print "skipping 14 bytes at offset 548\n";
-					$offset += 14
+					display($dbg,0,"getting ".kind($sig_byte)." item($uuid)");
+					my $seq = $seq_num++;
+					if (sendCommand($sel,$sock,$get_item,$sig_byte,$seq,$uuid))
+					{
+						$sent = 1;
+						$rec->{requested} = time();
+						$sig = pack('H*',substitute($sig_item,$sig_byte,$seq));
+						$command_time = time();
+					}
+					else
+					{
+						$started = 0;
+						$reconnect_time = time();
+					}
+					last;
 				}
-				my $uuid = unpack('H*',substr($wp_dict,$offset,8));
-				print "    ".pad($offset,5).pad(" uuid($num)",10)."= $uuid\r\n";
-				# last if $uuid eq ('0' x 16);
-				# there's actually a waypoint with uuid(0) in my data
-				last if $uuid eq $DICT_END_RECORD_MARKER;
-				
-				push @uuids,$uuid;
-				$offset += 8;
-				$num++;
 			}
-			print "found(".scalar(@uuids).") uuids in wp_dict\n";
-			
-			setState($STATE_WPS);
+
+			display($dbg+2,0,kind($sig_byte)." items done sent($sent)");
+			setState($state == $STATE_GET_GROUPS ? $STATE_NONE : $state+1) if $started && !$sent;
+			if ($state == $STATE_NONE)
+			{
+				$refresh_time = time();
+			}
 		}
-		elsif ($query_state == $STATE_WPS && @uuids && !$wp_sig)
-		{
-			# 06000f00 02000000 00000400
-			$wp_sig = pack('H*','06000f00').pack('V',$wp_num+2).pack('H*','00000400');
-			print "     sig=".unpack('H*',$wp_sig)."\r\n";
-			$the_uuid = shift @uuids;
-			requestOneWp($sock,$wp_num++,$the_uuid),
-		}
-    }
-}
-
-
-
-
-sub requestOneWp
-{
-    my ($sock,$wp_num,$uuid) = @_;
-
-	# <-- 1000
-	# <-- 03010f003f00000081b237a637008ff4
-
-	# trying to fix big loop
-	# sleep(0.1);
-	
-    $sock->send(pack("H*",'1000'));
-    my $hex = '03010f00'.unpack("H*",pack('V',$wp_num+2)).$uuid;
-	print pad("wp($wp_num)",6)."<-- $hex\r\n";
-    $sock->send(pack("H*",$hex));
-}
-
+		
+	}	# while 1
+}	#	navQueryThread()
 
 
 
@@ -360,7 +618,7 @@ sub showLL
 	my $s_degmin = deg_to_degmin($l);
 		# lat and lon are encoded as fixed point integers
 		# with a scaling factor.
-	printf("    $what($l_str)=%0.6f==%s\r\n",$l,$s_degmin);
+	printf("    $what($l_str)=%0.6f==%s\n",$l,$s_degmin);
 }
 
 
@@ -378,7 +636,7 @@ sub showDate
 	$mon  += 1;
 	$mon = pad2($mon);
 	$mday = pad2($mday);
-	print "    DATE($date_str)-$year-$mon-$mday\r\n";
+	print "    DATE($date_str)-$year-$mon-$mday\n";
 }
 
 sub showTime
@@ -399,7 +657,7 @@ sub showTime
 	$hour = pad2($hour);
 	$min = pad2($min);
 	$sec = pad2($sec);
-	print "    TIME($time_str)=$hour:$min:$sec\r\n";
+	print "    TIME($time_str)=$hour:$min:$sec\n";
 }
 
 
@@ -452,7 +710,7 @@ sub northEastToLatLon	# from FSH
 	my $lat = sprintf("%.6f",$latitude);
 	my $lon = sprintf("%.6f",$longitude);
 
-	#display(0,0,"northEastToLatLon($north,$east) ==> $lat,$lon");
+	#display($dbg,0,"northEastToLatLon($north,$east) ==> $lat,$lon");
 	#latLonToNorthEast($lat,$lon);
 
     return {
@@ -465,9 +723,7 @@ sub northEastToLatLon	# from FSH
 # parse a waypoint
 #------------------------------------
 
-my $SYSTEM_UUID_MARKER 		= '10000202';
-
-my $waypoints:shared = shared_clone({});
+my $WP_UUID_MARKER 		= '10000202';
 
 
 
@@ -566,7 +822,7 @@ sub parseWaypoint
 
 	my $name = substr($buf,$NAME_OFFSET,$name_len);	# $MAX_NAME);
 	# $name =~ s/\x10.*$//;
-	print "WP($wp_num) uuid($wp_uuid)            $name\r\n";
+	print "WP($wp_num) uuid($wp_uuid)            $name\n";
 	if ($hash->{cmt_len})
 	{
 		my $comment = substr($buf,$NAME_OFFSET + $name_len,$hash->{cmt_len});
@@ -580,7 +836,7 @@ sub parseWaypoint
 	my $north = unpack('l',substr($buf,$NORTH_OFFSET,4));
 	my $east = unpack('l',substr($buf,$EAST_OFFSET,4));
 	my $alt_coords = northEastToLatLon($north,$east);
-	print "    alt lat($alt_coords->{lat}) lon($alt_coords->{lon})\r\n";
+	print "    alt lat($alt_coords->{lat}) lon($alt_coords->{lon})\n";
 
 	#-----------------------------
 	# following the name I now think there are a set of guids until one
@@ -592,14 +848,8 @@ sub parseWaypoint
 	while ($hex_offset < $hex_len-16)
 	{
 		my $uuid = substr($rest_hex,$hex_offset,16);
-		last if index($uuid,$SYSTEM_UUID_MARKER) == 0;
-		my $utype = 'UNKNOWN';
-		my $uname = '';
-		my $found = $known_uuids->{$uuid};
-		printError("        Could not find uuid($uuid)") if !$found;
-		$utype = $found->{type} if $found;
-		$uname = $found->{name} if $found;
-		print "    UUID($uuid) $utype $uname\n";
+		last if index($uuid,$WP_UUID_MARKER) == 0;
+		print "    UUID($uuid)\n";
 		$hex_offset += 16;
 	}
 

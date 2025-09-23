@@ -246,3 +246,50 @@ WAYPOINT(Waypoint PA102î‚) lat(99fef567e68e1000) 0.0000=0°0.000  lon(02020f000d0
 wp(12)<-- 03010f000e000000100002020f000100
 2     -->0c00
 12    -->06000f000e000000030b04803
+
+
+
+
+
+
+
+#   I now believe that all these 0400, 0800, 1000, 1900, 3400 prefixes
+#   are just the length of the command bytes that follow.
+#   But the replies all start with 0c00 and typically have longer records
+#   AND NOW I THINK the 0f00 all over the place is the func(15) for NAVQRY
+
+#									0400	b101 0f00
+#									0400	b201 0f00
+#	get database version request 	0800	b001 0f00 	{seq_num}	reply happens
+#	unknown1 request				0800	0001 0f00 	{seq_num}*
+#									0800	4001 0f00	{seq_num}
+#									0800	8001 0f00 	{seq_num}
+#									0800	0d01 0f00	{seq_num}	empty 0c00 happens?
+#									0800	8e01 0f00   {seq_num}	reply happens
+# 	unknown2 request				1400	0002 0f00	{seq_num}*	00000000 	00000000 	1a000000
+#	unknown3 request				3400	0102 0f00	{seq_num}*	28000000 	00000000x5				10270000	00000000x4
+#									3400	0102 0f00	{seq_num}*	28000000 	00000000x5				96000000	00000000x4
+#									3400	0102 0f00	{seq_num}*	28000000 	00000000x5				64000000	00000000x4
+#									3400	0102 0f00	{seq_num}*	28000000 	00000000x4	e8550f16 	64000000	00000000x4
+#									3400	0102 0f00	{seq_num}*	28000000 	00000000x4	e8550f16 	96000000	00000000x4#
+
+#	get something request			1000	0202 0f00 	{seq_num}*	00000000 	00000000 	reply happens
+#	get wp uuid request				1000	0301 0f00   {seq_num}	{uuid  		uuid}		reply happens
+
+# 	* this sequence gives me wp_dict
+
+
+
+# 	get database version reply		0c00	b000 0f00 	{seqnum}	{version}
+#	get something success reply		0c00	0000 0f00	{seqnum}	00000400 {dword_count}  ...
+#	event to my 9877				0800	0500 0f00 	00000000 	08004500 0f000000 00000800 85000f00 00000000
+#
+# empty wp dict reply
+#	00000f00 {seq_num} 00000400 1400  0002 0f00 {seq_num} 00000000 00000000
+#	19000000 10000102  0f00 {seq_num} 0400 0000 00000000  10000202 0f00 {seqnum}
+#	00000000 00000000
+#
+#	40000f00 {seq_num} 00000400 14000002 0f000200 00000000 00000000 00001900   @...............................
+#	00001000 01020f00  02000000 04000000 00000000 10000202 0f000200 00000000   ................................
+#	00000000 0000
+# 	It is likely the first 1400 is the number dwords that follow in message

@@ -120,11 +120,11 @@ sub serial_thread
                 {
                     wakeup_e80();
                 }
-                elsif ($char eq 'a')
-                {
-                    $SEND_ALIVE = $SEND_ALIVE ? 0 : 1;
-                    warning(0,0,"SEND_ALIVE=$SEND_ALIVE");
-                }
+                #   elsif ($char eq 'a')
+                #   {
+                #       $SEND_ALIVE = $SEND_ALIVE ? 0 : 1;
+                #       warning(0,0,"SEND_ALIVE=$SEND_ALIVE");
+                #   }
                 elsif ($char eq 'r')
                 {
                     $MON_RAYNET = $MON_RAYNET ? 0 : 1;
@@ -139,11 +139,22 @@ sub serial_thread
                     {
                         startNavQuery();
                     }
-                    elsif ($char eq 'g')
+                    elsif ($char eq 'z')
                     {
                         requestFile('\ARCHIVE.FSH');
                     }
-
+                    elsif ($char eq 'a')
+                    {
+                        startNavQuery();
+                    }
+                    elsif ($char eq 'b')
+                    {
+                        refreshNavQuery();
+                    }
+                    elsif ($char eq 'c')
+                    {
+                        toggleNavQueryAutoRefresh();
+                    }
                 }
                 else    # FILESYS TESTING
                 {
@@ -203,6 +214,13 @@ sub serial_thread
 sub sniffer_thread
 {
     display($dbg_shark,0,"sniffer thread started");
+    # sleep(2);
+        # if the sniffer thread is not started last then this is needed.
+        # give all threads time to start before any blocking reads
+        # without this line, the call to nextSniffPacket will block
+        # if there is no traffic on the ethernet port, i.e. the E80 is off,
+        # and that causes threads->create() to subsequently block.
+        
     while (1)
     {
         my $packet = nextSniffPacket();
@@ -322,18 +340,15 @@ sub alive_thread
 
 display(0,0,"shark.pm initializing");
 
-# exit(0) if !wakeup_e80();
-exit(0) if !startSniffer();
-
-
-my $sniffer_thread = threads->create(\&sniffer_thread);
-$sniffer_thread->detach();
-
 if (openConsoleIn())
 {
+    display(0,0,"initing serial_thread");
     my $serial_thread = threads->create(\&serial_thread);
     $serial_thread->detach();
 }
+
+
+
 
 if ($LOCAL_UDP_SOCKET)
 {
@@ -347,8 +362,11 @@ if ($LOCAL_UDP_SOCKET)
 
 if (1)  # openListenSocket())
 {
+    display(0,0,"initing listen_thread");
     my $listen_thread = threads->create(\&fileRequestThread);
+    display(0,0,"listen_thread created");
     $listen_thread->detach();
+    display(0,0,"listen_thread detached");
 }
 
 #   if (0)
@@ -359,16 +377,34 @@ if (1)  # openListenSocket())
 
 if (1)
 {
+    display(0,0,"initing nav_thread");
     my $nav_thread = threads->create(\&navQueryThread);
+    display(0,0,"nav_thread created");
     $nav_thread->detach();
+    display(0,0,"nav_thread detached");
 }
 
 
+# the sniffer is started last because it has a blocking
+# read in the thread which, for some reason, will cause
+# threads->create() to block unless the E80 is turned on
+# or there is ethernet traffice.
+
+exit(0) if !startSniffer();
+
+if (1)
+{
+    display(0,0,"initing sniffer_thread");
+    my $sniffer_thread = threads->create(\&sniffer_thread);
+    $sniffer_thread->detach();
+}
 
 
 #----------------
 # WX
 #----------------
+
+display(0,0,"starting app");
 
 my $frame;
 
