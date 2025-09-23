@@ -12,8 +12,8 @@ use IO::Select;
 use IO::Socket::INET;
 use IO::Socket::Multicast;
 use Pub::Utils;
-use apps::raymarine::NET::ray_UI;
-use apps::raymarine::NET::ray_E80;
+use apps::raymarine::NET::old::ray_UI;
+use apps::raymarine::NET::old::ray_E80;
 
 
 my $USE_MY_MCAST = 0;
@@ -305,7 +305,7 @@ sub handleRAYNET
 my $E80_OTHER_GROUP = '224.30.38.194';
 my $E80_OTHER_PORT  = 2561;
 
-my $SHOW_UI = 0;
+my $SHOW_UI = 1;
 
 wakeUpE80();
 
