@@ -18,7 +18,7 @@ use IO::Select;
 use apps::raymarine::NET::r_utils;
 use apps::raymarine::NET::r_sniffer;
 use apps::raymarine::NET::r_RAYDP;
-use apps::raymarine::NET::r_E80NAV;
+use apps::raymarine::NET::r_NAVSTAT;
 use apps::raymarine::NET::r_FILESYS;
 use apps::raymarine::NET::r_NAVQRY;
 use apps::raymarine::NET::s_resources;
@@ -29,13 +29,18 @@ use base 'Wx::App';
 my $dbg_shark = 0;
 
 our $SEND_ALIVE:shared = 0;
-our $MON_RAYNET:shared = 1;
+
+our $MON_RAYDP:shared = 1;
+our $MON_FILESYS:shared = 0;
+our $MON_RNS_FILESYS:shared = 0;
+
 
 BEGIN
 {
  	use Exporter qw( import );
     our @EXPORT = qw(
 
+        $MON_RAYDP
         $SEND_ALIVE
 
     );
@@ -127,8 +132,8 @@ sub serial_thread
                 #   }
                 elsif ($char eq 'r')
                 {
-                    $MON_RAYNET = $MON_RAYNET ? 0 : 1;
-                    warning(0,0,"MON_RAYNET=$MON_RAYNET");
+                    $MON_RAYDP = $MON_RAYDP ? 0 : 1;
+                    warning(0,0,"MON_RAYNET=$MON_RAYDP");
                 }
 
 
@@ -139,7 +144,7 @@ sub serial_thread
                     {
                         startNavQuery();
                     }
-                    elsif ($char eq 'z')
+                    elsif ($char eq 'f')
                     {
                         requestFile('\ARCHIVE.FSH');
                     }
@@ -155,6 +160,19 @@ sub serial_thread
                     {
                         toggleNavQueryAutoRefresh();
                     }
+                    elsif ($char eq 'x')
+                    {
+                        showCharacterizedCommands(0);
+                    }
+                    elsif ($char eq 'y')
+                    {
+                        showCharacterizedCommands(1);
+                    }
+                    elsif ($char eq 'z')
+                    {
+                        clearCharacterizedCommands();
+                    }
+
                 }
                 else    # FILESYS TESTING
                 {
@@ -210,7 +228,6 @@ sub serial_thread
 # sniffer thread
 #-----------------------------------------
 
-
 sub sniffer_thread
 {
     display($dbg_shark,0,"sniffer thread started");
@@ -220,7 +237,12 @@ sub sniffer_thread
         # without this line, the call to nextSniffPacket will block
         # if there is no traffic on the ethernet port, i.e. the E80 is off,
         # and that causes threads->create() to subsequently block.
-        
+
+    my $rayport_raydp = findRayPortByName('RAYDP');
+    my $rayport_file = findRayPortByName('FILE');
+    my $rayport_file_rns = findRayPortByName('FILE');
+
+
     while (1)
     {
         my $packet = nextSniffPacket();
@@ -232,70 +254,50 @@ sub sniffer_thread
                 # $packet->{dest_ip} eq $RAYDP_IP &&
                 $packet->{dest_port} == $RAYDP_PORT)
             {
-                if (decodeRAYDP($packet) && $MON_RAYNET)
+                if (decodeRAYDP($packet) &&
+                    $rayport_raydp &&
+                    $rayport_raydp->{mon_out})
                 {
-                    my $rayport_5800 = {
-                        color => 0,
-                        multi => 1 };
-                    showPacket($rayport_5800,$packet,0);
+                    # one time monitoring of new RAYDP ports
+                    showPacket($rayport_raydp,$packet,0);
                 }
                 next;
             }
 
             my $ray_src = findRayPort($packet->{src_ip},$packet->{src_port});
             my $ray_dest = findRayPort($packet->{dest_ip},$packet->{dest_port});
-            my $dest_18432 = $packet->{dest_port} == 18432 ? {
-                color => $UTILS_COLOR_BROWN,
-                multi => 0, } : 0;
-            my $dest_18433 = $packet->{dest_port} == 18433 ? {
-                color => $UTILS_COLOR_BROWN,
-                multi => 0, } : 0;
 
-            if (0 && $dest_18433)
-            {
-                my $raw_data = $packet->{raw_data};
-                my ($num_packets,$packet_num,$bytes) = unpack('v3',substr($raw_data,12,6));
-                showPacket($dest_18433,$packet,0);
-            }
-            elsif (0 && $dest_18432)
-            {
-                my $raw_data = $packet->{raw_data};
-                showPacket($dest_18432,$packet,0);
-            }
-            elsif ($ray_src && $ray_src->{mon_out})
+
+            # my $dest_rns_filesys = $packet->{dest_port} == $RNS_FILESYS_LISTEN_PORT ? {
+            #     color => $UTILS_COLOR_BROWN,
+            #     multi => 0, } : 0;
+            # my $dest_filesys = $packet->{dest_port} == $FILESYS_LISTEN_PORT ? {
+            #     color => $UTILS_COLOR_BROWN,
+            #     multi => 0, } : 0;
+            # if (0 && $dest_18433)
+            # {
+            #     my $raw_data = $packet->{raw_data};
+            #     my ($num_packets,$packet_num,$bytes) = unpack('v3',substr($raw_data,12,6));
+            #     showPacket($dest_18433,$packet,0);
+            # }
+            # elsif (0 && $dest_18432)
+            # {
+            #     my $raw_data = $packet->{raw_data};
+            #     showPacket($dest_18432,$packet,0);
+            # }
+            # els
+
+            if ($ray_src && $ray_src->{mon_out})
             {
                 showPacket($ray_src,$packet,0);
             }
             elsif ($ray_dest && $ray_dest->{mon_in})
             {
                 showPacket($ray_dest,$packet,1);
-                if (0 && $ray_dest->{name} eq "E80NAV")
+                if (0 && $ray_dest->{name} eq "NAVSTAT")
                 {
-                    handleE80NAV($packet);
+                    decodeNAVSTAT($packet);
                 }
-            }
-
-
-            if (0 && ($packet->{raw_data} =~ /Waypoint (\w+)/ ||
-                      $packet->{raw_data} =~ /(Popa\d\d)/i))
-            {
-                my $wp_name = $1;
-                # print "ray_src("._def($ray_src).") ray_dest("._def($ray_dest).") ";
-                print "$packet->{src_ip}:$packet->{src_port} --> $packet->{dest_ip}:$packet->{dest_port} : Found Waypoint: $wp_name\n";
-            }
-            elsif (0 && $packet->{raw_data} =~ /(\w+\.xml)/)
-            {
-                my $xml = $1;
-                # print "ray_src("._def($ray_src).") ray_dest("._def($ray_dest).") ";
-                print "$packet->{src_ip}:$packet->{src_port} --> $packet->{dest_ip}:$packet->{dest_port} : Found XML: $xml\n";
-            }
-
-            # udp(10)   10.0.241.54:2049     <-- 10.0.241.200:55481    09010500 00000000 0048
-            
-            elsif (0 && $packet->{raw_data} =~ /(navionic)/i && $packet->{dest_port} != 2049)
-            {
-                # print "ray_src("._def($ray_src).") ray_dest("._def($ray_dest).") ";
-                print "$packet->{src_ip}:$packet->{src_port} --> $packet->{dest_ip}:$packet->{dest_port} : Found NAVIONIC\n";
             }
 
             # elsif ($packet->{tcp} && $packet->{src_ip} eq '10.0.241.200')
@@ -340,15 +342,15 @@ sub alive_thread
 
 display(0,0,"shark.pm initializing");
 
+initRAYDP();
+
+
 if (openConsoleIn())
 {
     display(0,0,"initing serial_thread");
     my $serial_thread = threads->create(\&serial_thread);
     $serial_thread->detach();
 }
-
-
-
 
 if ($LOCAL_UDP_SOCKET)
 {
@@ -362,11 +364,11 @@ if ($LOCAL_UDP_SOCKET)
 
 if (1)  # openListenSocket())
 {
-    display(0,0,"initing listen_thread");
-    my $listen_thread = threads->create(\&fileRequestThread);
-    display(0,0,"listen_thread created");
-    $listen_thread->detach();
-    display(0,0,"listen_thread detached");
+    display(0,0,"initing filesysThread");
+    my $filesys_thread = threads->create(\&filesysThread);
+    display(0,0,"filesysThread created");
+    $filesys_thread->detach();
+    display(0,0,"filesysThread detached");
 }
 
 #   if (0)

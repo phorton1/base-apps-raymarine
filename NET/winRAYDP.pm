@@ -66,7 +66,7 @@ sub new
 	# Wx::StaticText->new($this,-1,"static text",[10,10]);
 	# EVT_CLOSE($this,\&onClose);
 
-	my $alive = Wx::CheckBox->new($this,$ID_MON_RAYDP_ALIVE,"monitor alive messages",[10,10]);
+	my $alive = Wx::CheckBox->new($this,$ID_MON_RAYDP_ALIVE,"monitor RAYDP alive",[10,10]);
 	$alive->SetValue(1) if $MONITOR_RAYDP_ALIVE;
 
 	$this->{num_ports} = 0;

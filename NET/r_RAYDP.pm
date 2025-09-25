@@ -1,16 +1,59 @@
 #---------------------------------------------
 # r_RAYDP.pm
 #---------------------------------------------
-# I have more or less decoded all of the RAYNET (5800) packets,
-# except for one that is 56 bytes long and which does not appear
-# to match the conventions used by all of the others.
+# RAYDP is the RAYNET Discovery Protocol.
+#
+# This package contains methods to decode RAYDP packets
+# and builds a list of ip addresses and ports advertised
+# on the known RAYDP udp multicast port 224.0.0.1:5800
+#
+# The packets each essentially describe a virtul device
+# which may have one or more ip:ports associated with it.
+# Each virtual device is primarily known by it's FUNC,
+# a small integer, currently in the range from 1 to 34.
+# Each ip:port that is discovered creates a "rayport",
+# that are added to a list and which can be accessed
+# and used by the rest of the system.
+#
+# For rayports which have detailed, or surmised knowledge
+# about how to use it, we give the rayport the NAME of a
+# PROTOCOL which is used to communicate with the virtual
+# device, and, hopefully, documented in some level of detail.
+#
+# The protocols, and their funcs, that I somewhat understand
+# at this point are:
+#
+#	RADAR(1) 	- access to the Radar as presented by the MFD
+#	FILESYS(5) 	- access to the removable media in the MFD
+#	NAVQRY(15) 	- access to the Wapoints, Routes, and Groups on the MFD
+#	NAVSTAT(16) - rapid readonly messages about the Navigation Statu
+#	GPS(16) 	- surmised slower updates about the gps?
+#	ALIVE(27) 	- a slower, once per second or so, port that sends
+#				  out regular repeating messages
+#
+# In addition, there are a number of secondary ports that are
+# setup in order to monitor their traffic. At this time that includes
+# RAYDP itself, as well as monitoring TCP traffic of the FILESYS protocol,
+# either from me (this application) or RNS.
+#
+# TODO
+#
+# 	I have not yet added the known 52 byte packet for RADAR
+#		The structure of the RAYDP packet, as well as detailed
+#		knowledge of the RADAR protocol can be found in
+#		RMRadar_pi/RMControl.cpp
+#
+#	There is one 56 byte long RAYDP packet that does not match
+#		the structure of all the others (does not start with
+#		type,id,func), that has a leading 01 byte, that I
+#		have not figured out yet.
+#
+#		UNKNOWN PACKET(56)
+#			01000000 00000000 37a681b2 39020000 [36f1000a] 0023ad01 5cd87304 01000000
+#			00000000 37a681b2 39220000 [36f1000a] 0033cc33 02000100
+#
+#			[36f1000a] == 10.0.241.54
 
-#	UNKNOWN PACKET(56)
-#		01000000 00000000 37a681b2 39020000 [36f1000a] 0023ad01 5cd87304 01000000
-#		00000000 37a681b2 39220000 [36f1000a] 0033cc33 02000100
-#
-#	[36f1000a] == 10.0.241.54
-#
 
 
 package apps::raymarine::NET::r_RAYDP;
@@ -31,6 +74,8 @@ BEGIN
 
         $MONITOR_RAYDP_ALIVE
 
+		initRAYDP
+
         findRayDevice
         findRayPort
         getRayPorts
@@ -41,9 +86,9 @@ BEGIN
 }
 
 
-# a raydp "device" represents a unique func:id pair that was broadcast
+# A RAYDP "device" represents a unique func:id pair that was broadcast
 #   to the RAYDP udp multicast group and which exposes raydp "ports"
-# a raydp "port" is a protocol (tcp/ip) ip_address, and port within a
+# RAYDP  "port" is protocol (tcp/ip) ip_address, and port within a
 #   raydp device. A device typically exposes a tcp port and a multicast
 #   udp port, though some only expose a single tcp port and no udp ports,
 #   and some expose multiple tcp ports along with a single udp port
@@ -64,7 +109,7 @@ my $KNOWN_UNDECODED = [
 ];
 
 
-# Most recent devices found, sorted by length,func
+# Devices found, sorted by length,func
 #
 #   len(28) type(0) id(37a681b2) func( 7) x(01001e00,06080800) ip(10.0.241.54) port(2054)
 #   len(28) type(0) id(37a681b2) func(15) x(01001e00,04080800) ip(10.0.241.54) port(2052)
@@ -77,39 +122,23 @@ my $KNOWN_UNDECODED = [
 #   len(37) type(0) id(37a681b2) func( 5) x(01001e00,01081100) mcast_ip(224.30.38.194) mcast_port(2561) tcp_ip(10.0.241.54)  tcp_port(2049) flags(1)
 #   len(40) type(0) id(37a681b2) func(16) x(01001e00,02081400) tcp_ip(10.0.241.54) tcp_port1(2050) tcp_port2(2051) mcast_ip(224.30.38.195) mcast_port(2562)
 #
-
-# It looks like this "trigger packet" may be  registering port 18432 (0x0048) for
-# chart functions? xx010500 where xx is 0x09 and subsequently requests are
-# made to via udp to port(2049) and *perhaps* the packets are sent via tcp
-# to the requester ip address and the given port 18432
+# Port found, sorted by port number with the PROTOCOLS I associate with them
 #
-# udp(10)   10.0.241.54:2049     <-- 10.0.241.200:55481    09010500 00000000 0048
-#
-# in my tcp_old.pm program I sent the same packet with my encoded ip address
-# 
-
-
-
-# Most recent ray_port breakdown, sorted by port number
-# with the names I previously associated with the funcs
-#
-# 									def color			notes
 #---------------------------------------------------------------------------
 #   35	tcp	10.0.241.54		2048
-#   5	tcp	10.0.241.54		2049					UDP !!! CHARTREQ register and requests
+#   5	tcp	10.0.241.54		2049					FILESYS
 #   16	tcp	10.0.241.54		2050					GPS
 #   16	tcp	10.0.241.54		2051
-#   15	tcp	10.0.241.54		2052					NAVQRY sends and receive (ack?) waypoints
+#   15	tcp	10.0.241.54		2052					NAVQRY
 #   19	tcp	10.0.241.54		2053
 #   7	tcp	10.0.241.54		2054
 #   22	tcp	10.0.241.54		2055
 #   8	tcp	10.0.241.54		2056
-
 #   35	udp	224.30.38.193	2560
 #   5	udp	224.30.38.194	2561
-#   16	udp	224.30.38.195	2562					E80NAV udp that I actually parsed
+#   16	udp	224.30.38.195	2562					NAVSTAT
 #   8	udp	224.30.38.196	2563
-#  *0*	udp 224.0.0.1		5800					RAYNET itself, RNS at $LOCAL_IP also advertises this
+#  *0*	udp 224.0.0.1		5800					RAYDP itself, RNS at $LOCAL_IP also advertises this
 #   27	udp	224.0.0.2		5801	in 				HEARTBEAT Two advertisments, one port once RNS starts
 #   27	tcp	10.0.241.54		5802
 #   27	tcp	10.0.241.200	5802
@@ -137,32 +166,43 @@ my $KNOWN_UNDECODED = [
 #    'Yellow',
 #    'White',
 
-my $RNS_INIT  = 0;
-my $UNDER_WAY = 0;
-my $FILESYS = 0;
-my $MY_GPS = $UNDER_WAY;
-my $MY_NAV = 0;
+my $RNS_INIT  	= 0;			# starts happening when RNS starts
+my $UNDER_WAY 	= 0;			# emitted by E80 while "underway"
+my $FILESYS 	= 0;			# requests made TO the filesystem
+my $MY_GPS 		= $UNDER_WAY;	# the "GPS" protocol needs further exploration
+my $MY_NAV 		= 1;			# the important Waypoint, Route, and Group management tcp protocol
+my $RAYDP		= 1;
+my $FILE		= 1;
+my $FILE_RNS 	= 1;
 
-# the zeros are things that happen when underway with I_0183 and RNS running
-# $RNS_INIT only happened during RNS startup after that
+# The ports that hav mon_in or mon_out set to one(1) are those I have never seen mcast packets from.
+# The ones I have seen can be turned on or off for program start up by the variables above.
+# For ports with known protocols or observed traffic the internet protocol for the port
+# is listed below.
 
 my $PORT_DEFAULTS  = {
-	2048 => { name=>'',			mon_in=>1,			mon_out=>$UNDER_WAY,	multi=>1,	color=>0,	 },
-	2049 => { name=>'FILESYS',	mon_in=>$FILESYS,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_CYAN,    },
-	2050 => { name=>'GPS',		mon_in=>$MY_GPS,	mon_out=>$MY_GPS,		multi=>1,	color=>0,    },
-	2051 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
-	2052 => { name=>'NAVQRY',	mon_in=>$MY_NAV,	mon_out=>$MY_NAV,		multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },	#
-	2053 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
-	2054 => { name=>'',			mon_in=>$RNS_INIT,	mon_out=>$UNDER_WAY,	multi=>1,	color=>$UTILS_COLOR_LIGHT_CYAN,    },
-	2055 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
-	2056 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
-	2560 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
-	2561 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
-	2562 => { name=>'E80NAV',	mon_in=>$UNDER_WAY,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_GREEN,    },
-	2563 => { name=>'',			mon_in=>$UNDER_WAY,	mon_out=>1,				multi=>1,	color=>0,    },
-	5801 => { name=>'ALIVE',	mon_in=>$UNDER_WAY,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_BLUE,    },
-	5802 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
-	5802 => { name=>'',			mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+	2048 => { name=>'',			proto=>'',		mon_in=>1,			mon_out=>$UNDER_WAY,	multi=>1,	color=>0,	 },
+	2049 => { name=>'FILESYS',	proto=>'',		mon_in=>$FILESYS,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_CYAN,    },
+	2050 => { name=>'GPS',		proto=>'',		mon_in=>$MY_GPS,	mon_out=>$MY_GPS,		multi=>1,	color=>0,    },
+	2051 => { name=>'',			proto=>'',		mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+	2052 => { name=>'NAVQRY',	proto=>'tcp',	mon_in=>$MY_NAV,	mon_out=>$MY_NAV,		multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },	#
+	2053 => { name=>'',			proto=>'',		mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+	2054 => { name=>'',			proto=>'',		mon_in=>$RNS_INIT,	mon_out=>$UNDER_WAY,	multi=>1,	color=>$UTILS_COLOR_LIGHT_CYAN,    },
+	2055 => { name=>'',			proto=>'',		mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+	2056 => { name=>'',			proto=>'',		mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+	2560 => { name=>'',			proto=>'',		mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+	2561 => { name=>'',			proto=>'',		mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+	2562 => { name=>'NAVSTAT',	proto=>'',		mon_in=>$UNDER_WAY,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_GREEN,    },
+	2563 => { name=>'',			proto=>'',		mon_in=>$UNDER_WAY,	mon_out=>1,				multi=>1,	color=>0,    },
+	5800 => { name=>'RAYDP',	proto=>'',		mon_in=>$RAYDP,		mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_LIGHT_BLUE,    },
+	5801 => { name=>'ALIVE',	proto=>'',		mon_in=>$UNDER_WAY,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_BLUE,    },
+	5802 => { name=>'',			proto=>'',		mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+	5802 => { name=>'',			proto=>'',		mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
+
+	$FILESYS_LISTEN_PORT =>
+			{ name=>'FILE',		proto=>'udp',	mon_in=>$FILE,		mon_out=>1,				multi=>0,	color=>$UTILS_COLOR_BROWN,    },
+	$RNS_FILESYS_LISTEN_PORT =>
+			{ name=>'FILE_RNS',	proto=>'udp',	mon_in=>$FILE_RNS,	mon_out=>1,				multi=>0,	color=>$UTILS_COLOR_BROWN,    },
 };
 
 
@@ -177,6 +217,28 @@ my $ports_by_addr:shared = shared_clone({});
     # a list of all ports in order they're found,
     # and ahash of them by addr
 my $duplicate_unknown:shared = shared_clone({});
+
+
+
+sub initRAYDP
+{
+	display(0,0,"creating default RAYDP ports");
+	# The ip addresses have to be turned into inet ip's,
+	# and then unpacked into the numbers that RAYDP would
+	# have given for them.
+	_addPort({func => 0, id=>'default'},
+		unpack('N',inet_aton($RAYDP_IP)),
+		$RAYDP_PORT);
+	_addPort({func => 105,id=>'default'},
+		unpack('N',inet_aton($LOCAL_IP)),
+		$FILESYS_LISTEN_PORT);
+	_addPort({func => 106,id=>'default'},
+		unpack('N',inet_aton($LOCAL_IP)),
+		$RNS_FILESYS_LISTEN_PORT);
+}
+
+
+
 
 
 #------------------------------------
@@ -219,9 +281,20 @@ sub findRayPortByName
 # sniffer API (called by shark.pm
 #-----------------------------------
 
+sub is_multicast
+{
+    my ($ip) = @_;
+    return 0 if $ip !~ /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/;
+    my ($oct1, $oct2, $oct3, $oct4) = ($1, $2, $3, $4);
+    # Multicast range: 224.0.0.0 to 239.255.255.255
+    return ($oct1 >= 224 && $oct1 <= 239) ? 1 : 0;
+}
+
+
+
 sub _addPort
 {
-    my ($rec,$proto,$ip,$port) = @_;
+    my ($rec,$ip,$port) = @_;
     my $ip_str = inet_ntoa(pack('N', $ip));
     my $addr = "$ip_str:$port";
     my $found = $ports_by_addr->{$addr};
@@ -230,8 +303,10 @@ sub _addPort
 		my $def = $PORT_DEFAULTS->{$port} || {};
 		# warning(0,0,"adding port $proto $addr in($def->{mon_in}) out($def->{mon_out}) color($def->{color}) multi($def->{multi})");
 
+		my $proto = $def->{proto};
+		$proto ||= 'mcast' if is_multicast($ip_str);
         my $ray_port = shared_clone({
-            proto   => $proto,
+            proto   => $def->{proto},
             ip      => $ip_str,
             port    => $port,
             addr    => $addr,
@@ -255,6 +330,7 @@ sub _addPort
 		display_hash(0,1,"prev",$found);
 	}
 }
+
 
 
 sub _decode_header
@@ -357,26 +433,26 @@ sub decodeRAYDP
     if ($len == 28)
     {
         $text2 = _decode_header(0,$rec, $payload, qw(ip port));
-        _addPort($rec,'tcp',$rec->{ip},$rec->{port});
+        _addPort($rec,$rec->{ip},$rec->{port});
     }
     elsif ($len == 36)
     {
         $text2 = _decode_header(0,$rec, $payload, qw(mcast_ip mcast_port tcp_ip tcp_port));
-        _addPort($rec,'udp',$rec->{mcast_ip},$rec->{mcast_port});
-        _addPort($rec,'tcp',$rec->{tcp_ip},$rec->{tcp_port});
+        _addPort($rec,$rec->{mcast_ip},$rec->{mcast_port});
+        _addPort($rec,$rec->{tcp_ip},$rec->{tcp_port});
     }
     elsif ($len == 37)
     {
         $text2 = _decode_header(1, $rec, $payload, qw(mcast_ip mcast_port tcp_ip tcp_port));
-        _addPort($rec,'udp',$rec->{mcast_ip},$rec->{mcast_port});
-        _addPort($rec,'tcp',$rec->{tcp_ip},$rec->{tcp_port});
+        _addPort($rec,$rec->{mcast_ip},$rec->{mcast_port});
+        _addPort($rec,$rec->{tcp_ip},$rec->{tcp_port});
     }
     elsif ($len == 40)
     {
         $text2 = _decode_header(0,$rec, $payload, qw(tcp_ip tcp_port1 tcp_port2 mcast_ip mcast_port));
-        _addPort($rec,'udp',$rec->{mcast_ip},$rec->{mcast_port});
-        _addPort($rec,'tcp',$rec->{tcp_ip},$rec->{tcp_port1});
-        _addPort($rec,'tcp',$rec->{tcp_ip},$rec->{tcp_port2});
+        _addPort($rec,$rec->{mcast_ip},$rec->{mcast_port});
+        _addPort($rec,$rec->{tcp_ip},$rec->{tcp_port1});
+        _addPort($rec,$rec->{tcp_ip},$rec->{tcp_port2});
     }
 
     # packets that we skip but display
@@ -416,6 +492,7 @@ sub decodeRAYDP
     $devices->{$key} = $rec;
 	return 1;
 }
+
 
 
 

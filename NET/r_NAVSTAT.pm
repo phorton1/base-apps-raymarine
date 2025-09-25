@@ -1,11 +1,19 @@
 #---------------------------------------
-# raynet.pm
+# r_NAVSTAT.pm
 #---------------------------------------
-# see docs/raynet.md
-# Not really working, or useful.
-# Rapidlly ported from raynet_old.pm
+# This package endeavors to decode NAVSTAT udp multicast packet.
+#
+# These packets are sent out fairly rapidly once the MFD has a
+# GPS fix and/or is "underway".
+#
+# The record structure is exceedingly complex, pointing to
+# years of evolution in development, with many different
+# types, and versions, of records.
+#
+# The code herein is currently working poorly after a rapid
+# port, without much debugging, from raynet_old.pm
 
-package apps::raymarine::NET::r_E80NAV;
+package apps::raymarine::NET::r_NAVSTAT;
 use strict;
 use warnings;
 use apps::raymarine::NET::r_utils;
@@ -16,11 +24,12 @@ BEGIN
 {
  	use Exporter qw( import );
 	our @EXPORT = qw (
-		handleE80NAV
+		decodeNAVSTAT
 	);
 }
 
 
+my $SCALE_LATLON = 1e-7;
 my $PI = 3.1415926535;
 my $METERS_TO_FEET = 3.28084;
 my $KNOTS_TO_METERS_PER_SEC = 0.5144;
@@ -303,7 +312,7 @@ sub showSOG
 }
 
 
-my $SCALE_LATLON = 1e-7;
+
 
 sub decode_coord
 {
@@ -335,7 +344,7 @@ sub showLL
 
 
 
-sub handleE80NAV
+sub decodeNAVSTAT
 {
 	my ($packet) = @_;
 	my $raw = $packet->{raw_data};
@@ -347,7 +356,7 @@ sub handleE80NAV
 	my $data = substr($raw,10);
 	my $len = length($data);
 
-	my $text = sprintf("    E80NAV len($len) type(0x%02x) version(0x%02x)\r\n",$type,$version);
+	my $text = sprintf("    NAVSTAT len($len) type(0x%02x) version(0x%02x)\r\n",$type,$version);
 
 	my $field_num = 0;
 	my $fields = getFields($type,$version);
@@ -370,7 +379,7 @@ sub handleE80NAV
 	print $text;
 	setConsoleColor();
 
-}	# handleE80NAV()
+}	# decodeNAVSTAT()
 
 
 

@@ -25,9 +25,9 @@
 #     51877 = 0xCAA5 (A5CA in hex format)
 #     0x62 = 98 if its on the uint32 boundry
 #     0x6200 = 25088 doesn't match anything
-# After this, the E80 apparently sends an E80NAV packet
+# After this, the E80 apparently sends an NAVSTAT packet
 #   udp(36)   224.30.38.195:2562   <-- 10.0.241.54:1217      00031000 02000000 17000000 2a000200 b8650506 00004700 00002a00 0200e767   ............*....e....G...*....g
-#       E80NAV len(26) type(0x17) version(0x02)
+#       NAVSTAT len(26) type(0x17) version(0x02)
 #           6     HEAD(DEV,b865)                149.20
 #           20    HEAD(ABS,e767)                152.40
 # Before responding with a reply from 2050

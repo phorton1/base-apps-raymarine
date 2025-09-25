@@ -20,6 +20,24 @@
 # then and only then it closes the socket, waits 10
 # seconds, and retries.
 
+# command
+#
+#	WXYZ
+#
+#		All outer level commands have Z != 0
+#		All outer level replies	 have Z == 0
+#		All inner and outer level event parts have Z == 0
+#		All commands with Z==1 are only sent as outer level commands
+#			they are never included as inner items
+#		However, commands with Z==2 are sent as
+#			outer level commands, as well as included
+#			in both requests and replies
+#
+#	X is starting to look like an actual enumerted "command"
+#
+# 	W is always 0,4, or 8 in all outer level replies
+#		the only time is 0xb is in those two no seq-num commands b101 and b102
+#		thus far the notion of this as bitwise for WRT (default=W) is holding
 
 package apps::raymarine::NET::r_NAVQRY;
 use strict;
@@ -37,7 +55,9 @@ use apps::raymarine::NET::r_utils;
 use apps::raymarine::NET::r_RAYDP;
 
 my $dbg = 0;
-my $SHOW = 1;
+my $SHOW_OUTPUT = 0;
+my $SHOW_INPUT = 0;
+my $PARSE_STUFF = 0;
 
 
 my $NAVQUERY_PORT 			= 9877;
@@ -71,6 +91,9 @@ BEGIN
 		startNavQuery
 		refreshNavQuery
 		toggleNavQueryAutoRefresh
+
+		showCharacterizedCommands
+		clearCharacterizedCommands
     );
 }
 
@@ -80,7 +103,7 @@ my $one_time_start:shared = 1;
 	# be called to start the thread.
 my $refresh_time:shared = 0;
 	# time of the last refresh; 0=immediate-ish
-my $auto_refresh:shared = 1;
+my $auto_refresh:shared = 0;
 	# set this to 0 to require refreshNavQuery
 	# or toggleNavQueryAutoRefres() to be called.
 my $refresh_now:shared = 0;
@@ -124,62 +147,370 @@ sub toggleNavQueryAutoRefresh
 
 # constant command atoms
 
-my $context 	= '0800'.'{sig_byte}001'.'0f00'.'{seq_num}';
-my $set_context = '1400'.'0002'.'0f00'.'{seq_num}'.	'00000000'.'00000000'.'1a000000';
-my $set_buffer 	= '3400'.'0102'.'0f00'.'{seq_num}'.	'28000000'.('00000000'x5).'10270000'.('00000000'x4);
-my $dictionary 	= '1000'.'0202'.'0f00'.'{seq_num}'.	'00000000'.'00000000';
+my $CONTEXT 	= '0800'.	'{sig_byte}001'.'0f00'.'{seq_num}';
+my $SET_CONTEXT = '1400'.	'0002'.'0f00'.'{seq_num}'.	'00000000'.'00000000'.'1a000000';
+my $SET_BUFFER 	= '3400'.	'0102'.'0f00'.'{seq_num}'.	'28000000'.('00000000'x5).'10270000'.('00000000'x4);
+my $DICTIONARY 	= '1000'.	'0202'.'0f00'.'{seq_num}'.	'00000000'.'00000000';
 
-my $get_dict 	= $context.$set_context.$set_buffer.$dictionary;
-my $get_item	= '1000'.'{sig_byte}301'.'0f00'.'{seq_num}'.'{uuid}';
+my $GET_DICT 	= $CONTEXT.$SET_CONTEXT.$SET_BUFFER.$DICTIONARY;
+my $GET_ITEM	= '1000'.	'{sig_byte}301'.'0f00'.'{seq_num}'.'{uuid}';
 
-my $sig_dict	= '{sig_byte}0000f00{seq_num}';
-my $sig_item	= '{sig_byte}6000f00{seq_num}';
+my $SIG_DICT	= '{sig_byte}0000f00{seq_num}';
+my $SIG_ITEM	= '{sig_byte}6000f00{seq_num}';
+
+# Adding a Waypoint to the E80
+#
+# Appears to be a conversation where first the new uuid is
+# checked, then the waypoint name is checked, then if all is
+# ok, the uuid is created on the e80, then name is created
+# then the content of the item is created, then a readback
+# is performed.
+#
+# It is very verbose, and I have also seen that eventing is
+# happens when running both my (now active) NAVQRY tcp port
+# and RNS.
+#
+# I believe that the E80 is the actual 'master', but that since
+# RNS also caches/keeps its own WRG's, that much synchronization
+# needs to be done and that RNS is a bit paranoid about that.
+
+		#	$UTILS_COLOR_BLACK
+		#	$UTILS_COLOR_BLUE
+		#	$UTILS_COLOR_GREEN
+		#	$UTILS_COLOR_CYAN
+		#	$UTILS_COLOR_RED
+		#	$UTILS_COLOR_MAGENTA
+		#	$UTILS_COLOR_BROWN
+		#	$UTILS_COLOR_LIGHT_GRAY
+		#	$UTILS_COLOR_GRAY
+		#	$UTILS_COLOR_LIGHT_BLUE
+		#	$UTILS_COLOR_LIGHT_GREEN
+		#	$UTILS_COLOR_LIGHT_CYAN
+		#	$UTILS_COLOR_LIGHT_RED
+		#	$UTILS_COLOR_LIGHT_MAGENTA
+		#	$UTILS_COLOR_YELLOW
+		#	$UTILS_COLOR_WHITE
 
 
+#-------------------------------------------------
+# characterizing NAVQRY messages
+#-------------------------------------------------
+# including those sent as subparts of other messages
 
 
-if (0)
+my %messages:shared;
+
+sub clearCharacterizedCommands
 {
-	my $waypoint_context = '0800'.'0001'.'0f00'.'{seq_num}';
-	my $route_context 	 = '0800'.'4001'.'0f00'.'{seq_num}';
-	my $group_context 	 = '0800'.'8001'.'0f00'.'{seq_num}';
-		# sets the waypoint, route, or group context
-		#	'0800'.'1001'.'0f00'.'{seq_num}',	# 6		stops working
-		#	'0800'.'2001'.'0f00'.'{seq_num}',	# 7		stops working
-		#	'0800'.'0d01'.'0f00'.'{seq_num}',	# 6		unknown example from RNS
-		#	'0800'.'8e01'.'0f00'.'{seq_num}',	# 7		unknown example from RNS
-	# my $set_buffer 	= '3400'.'0102'.'0f00'.'{seq_num}'.	'28000000'.('00000000'x5).'10270000'.('00000000'x4);
-		# appears to 'commit' whatever context command was sent
-		# unsure; this may only be needed once per session
-		# maybe sets buffers or enables other comms
-		# all of these 3400's are equivilant
-		# '3400'.'0102'.'0f00'.'{seq_num}'.	'28000000'.('00000000'x5).'96000000'.('00000000'x4), # 10 a
-		# '3400'.'0102'.'0f00'.'{seq_num}'.	'28000000'.('00000000'x5).'64000000'.('00000000'x4), # 11 b
-		# '3400'.'0102'.'0f00'.'{seq_num}'.	'28000000'.('00000000'x4).'e8550f16'.'64000000'.('00000000'x4), # 12 c
-		# '3400'.'0102'.'0f00'.'{seq_num}'.	'28000000'.('00000000'x4).'e8550f16'.'96000000'.('00000000'x4), # 13 d
+	display(0,0,"COMMANDS CLEARED");
+	%messages = ();
+}
 
-		# gets the dictionary (uuid list) for the current context
-	my $get_waypoints 	= $waypoint_context.$set_context.$set_buffer.$dictionary;
-	my $get_routes 		= $route_context.	$set_context.$set_buffer.$dictionary;
-	my $get_groups 		= $group_context.	$set_context.$set_buffer.$dictionary;
-	my $get_waypoint	= '1000'.'0301'.'0f00'.'{seq_num}'.'{uuid}';	# get waypoint
-	my $get_route		= '1000'.'4301'.'0f00'.'{seq_num}'.'{uuid}',	# get route
-	my $get_group 		= '1000'.'8301'.'0f00'.'{seq_num}'.'{uuid}',	# get group
+my $rns_started:shared = 0;
+
+sub parse_stuff
+	# this method parses what I used to think of as a monolithic reply
+	# into separate parts based on the lengths
+	#
+	# for simple input navquery of stable e80, there are no events
+	# that might come in the stream, so we assume the declared
+	# length of any packet is the length that cam in the packet
+	# before the given packet.
+{
+	my ($src_port, $dest_port, $declared_len, $packet) = @_;
+
+	my $arrow = $src_port == 2052 ? "--> " : "<-- ";
+
+	my $color =
+		$src_port == $NAVQUERY_PORT ? $UTILS_COLOR_BROWN :			# from me to E80
+		$dest_port == $NAVQUERY_PORT ? $UTILS_COLOR_LIGHT_BLUE :	# from E80 to me
+		$dest_port == 2052 ?	$UTILS_COLOR_LIGHT_MAGENTA :			# from RNS to E80
+		$UTILS_COLOR_LIGHT_CYAN;									# from E80 to RNS
+
+	my $is_event = 0;
+	$rns_started=1 if $color == $UTILS_COLOR_LIGHT_MAGENTA;
+
+
+	if ($rns_started && $dest_port == $NAVQUERY_PORT)
+	{
+		$is_event = 1;
+		$color = $UTILS_COLOR_WHITE;
+		# highligh events to me in white
+	}
+
+	setConsoleColor($color);
+
+	my $packet_len = length($packet);
+	print "src($src_port) dest($dest_port) declared_len($declared_len\) packet_len($packet_len)\n";
+	
+	my $offset = 0;
+	my $partnum = 0;
+	my $len = $declared_len;
+	while ($len)
+	{
+		my $hex_len = unpack('H*',pack('v',$len));
+		my $raw = substr($packet,$offset,$len);
+		my $hex = unpack('H*',$raw);
+		my $command = substr($hex,0,4);
+		my $func = substr($hex,4,4);
+		my $seq_num = $len > 4 ? substr($hex,8,8) : '';
+		my $data = $len > 8 ? substr($hex,16) : '';
+		my $data_len = length($data);
+		my $show_data = $data;
+
+		if ($func ne '0f00')
+		{
+			error("offset($offset) func($func) is not 0f00");
+			last;
+		}
+		$show_data = substr($show_data,0,40)."..." if $data_len > 40;
+		print "    part($partnum) command($command) ".
+			pad("data_len($hex_len=$data_len)",20).
+			"$show_data\n";
+
+		#-----------------------------------
+		# characterize message
+
+		my $found = $messages{$command};
+		if (!$found)
+		{
+			$found = shared_clone({
+				command => $command,
+				count => 0,
+				min => 99999,
+				max => 0,
+				cmd => 0,
+				rep => 0,
+				inc => 0,
+				inr => 0,
+				evt => 0,
+				ine => 0,
+				data => shared_clone({}),
+				outer => 0,
+				inner => 0, });
+			$messages{$command} = $found;
+		}
+
+		$found->{count}++;
+		$found->{max} = $len if $len > $found->{max};
+		$found->{min} = $len if $len < $found->{min};
+		if ($offset == 0)
+		{
+			$found->{outer} = 1;
+			if ($is_event)
+			{
+				$found->{evt} = 1;
+			}
+			else
+			{
+				$found->{cmd} = 1 if $dest_port==2052;
+				$found->{rep} = 1 if $src_port==2052;
+			}
+		}
+		else
+		{
+			$found->{inner} = 1;
+			if ($is_event)
+			{
+				$found->{ine} = 1;
+			}
+			else
+			{
+				$found->{inc} = 1 if $dest_port==2052;
+				$found->{inr} = 1 if $src_port==2052;
+			}
+		}
+		$found->{data}->{$arrow.$data} = 1 if $data_len;
+
+
+
+		#-----------------------------------
+
+		$offset += $len;
+		$len = 0;
+		if ($offset < $packet_len - 2)
+		{
+			$len = unpack('v',substr($packet,$offset,2));
+			$offset += 2;
+		}
+		$partnum++;
+	}
+
+	setConsoleColor();
+}
+
+
+sub cmpCommands
+{
+	my ($aa,$bb) = @_;
+	my $msg_a = $messages{$aa};
+	my $msg_b = $messages{$bb};
+	my $cmp;
+
+	# outer messages at top
+
+	$cmp = $msg_b->{outer} <=> $msg_a->{outer};
+	return $cmp if $cmp;
+
+	# commands before replies
+
+	$cmp = $msg_b->{cmd} <=> $msg_a->{cmd};
+	return $cmp if $cmp;
+
+	# replies before events
+
+	$cmp = $msg_b->{rep} <=> $msg_a->{rep};
+	return $cmp if $cmp;
+
+	# events befre anything remaining
+
+	$cmp = $msg_b->{evt} <=> $msg_a->{evt};
+	return $cmp if $cmp;
+
+
+	# by Z (in wxyz)
+
+	$cmp = substr($aa,3,1) cmp substr($bb,3,1);
+	return $cmp if $cmp;
+
+	# by X (in wxyz)
+
+	$cmp = substr($aa,1,1) cmp substr($bb,1,1);
+	return $cmp if $cmp;
+
+	# by W (in wxyz)
+
+	return $aa cmp $bb;
+}
+
+
+sub showCharacterizedCommands
+{
+	my ($with_data) = @_;
+
+	print "\r\n";
+	print "Characterized Commands\n";
+
+	print
+		pad("command",8).				# 0
+		pad("count",6).                 # 8
+		pad("min",5).                   # 14
+		pad("max",5).                   # 19
+		pad("cmd",4).                   # 24
+		pad("rep",4).                   # 28
+		pad("inc",4).                   # 32
+		pad("inr",4).                   # 36
+		pad("evt",4).                   # 40
+		pad("ine",4).                   # 44
+		pad("outer",6).                 # 48
+		pad("inner",6).                 # 54
+		pad("new",4).					# 60
+		pad("ndata",6).					# 64
+		"data\n";						# 70
+	print "----------------------------------------------------------------------------------------------------------------\n";
+
+	my $MAX_SHOW = 80;
+	for my $command (sort {cmpCommands($a,$b)} keys %messages)
+	{
+		my $rec = $messages{$command};
+		my @data = sort keys %{$rec->{data}};
+		my $num_data = @data;
+		my $first_data = @data ? shift @data : '';
+		my $data_len = length($first_data);
+		$first_data = substr($first_data,0,$MAX_SHOW)."..." if $data_len > $MAX_SHOW;
+
+		my $new = $rec->{seen} ? '' : 'new';
+
+		print
+			pad($rec->{command},	8).
+			pad($rec->{count},		6).
+			pad($rec->{min},		5).
+			pad($rec->{max},		5).
+			pad($rec->{cmd},		4).
+			pad($rec->{rep},		4).
+			pad($rec->{inc},		4).
+			pad($rec->{inr},		4).
+			pad($rec->{evt},		4).
+			pad($rec->{ine},		4).
+			pad($rec->{outer},		6).
+			pad($rec->{inner},		6).
+			pad($new,				4).
+			pad($num_data,			6).
+			"$first_data\n";
+
+		$rec->{seen} = 1;
+
+		if ($with_data)
+		{
+			for my $data (@data)
+			{
+				my $len = length($data);
+				$data = substr($data,0,$MAX_SHOW)."..." if $len > $MAX_SHOW;
+				print pad("",70);
+				print "$data\n";
+			}
+		}
+	}
+	print "\n\n";
+	# createCommandCSV();
 }
 
 
 
+sub createCommandCSV
+{
+	my $text = 
+		"command,".
+		"W,X,Y,Z,".
+		"count,".
+		"min,".
+		"max,".
+		"cmd,".
+		"rep,".
+		"inc,".
+		"inr,".
+		"evt,".
+		"ine,".
+		"outer,".
+		"inner,".
+		"ndata\n";
 
-my $test_commands = {
-	'0'	=>	'0400'.'b101'.'0f00',               # erase context?
-	'1'	=>	'0400'.'b201'.'0f00',               # get context report?
-		# both return 0800 05000f00 01000000 08004500 0f000100 00000800 85000f00 01000000
-	'2' =>	'0800'.'b001'.'0f00'.'{seq_num}',	# get database version
-		# returns b0000f00 {seq} {version}
-	'f'	=> '1000'.'0301'.'0f00'.'{seq_num}'.'eeeeeeee'.'eeee0110',	# get waypoint
-	'g' => '1000'.'4301'.'0f00'.'{seq_num}'.'81b237a6'.'3a00c218',	# get route
-	'h' => '1000'.'8301'.'0f00'.'{seq_num}'.'db8299a1'.'f567e68e',	# get group
-};
+	for my $command (sort {cmpCommands($a,$b)} keys %messages)
+	{
+		my $rec = $messages{$command};
+		my @data = sort keys %{$rec->{data}};
+		my $num_data = @data;
+
+		my $W = substr($command,0,1);
+		my $X = substr($command,1,1);
+		my $Y = substr($command,2,1);
+		my $Z = substr($command,3,1);
+
+		$text .=
+			"=\"$command\",".
+			"=\"$W\",".
+			"=\"$X\",".
+			"=\"$Y\",".
+			"=\"$Z\",".
+			"$rec->{count},".
+			"$rec->{min},".
+			"$rec->{max},".
+			"$rec->{cmd},".
+			"$rec->{rep},".
+			"$rec->{inc},".
+			"$rec->{inr},".
+			"$rec->{evt},".
+			"$rec->{ine},".
+			"$rec->{outer},".
+			"$rec->{inner},".
+			"$num_data\n";
+
+	}
+	printVarToFile(1,'docs/junk/commands.csv',$text,1);
+}
+
+
+
 
 
 #-------------------------------------------
@@ -223,7 +554,7 @@ sub substitute
 
 sub sendCommand
 {
-	my ($sel,$sock,$template,$sig_byte,$seq_num,$uuid) = @_;
+	my ($sel,$sock,$dest_port,$template,$sig_byte,$seq_num,$uuid) = @_;
 	if (!$sel->can_write())
 	{
 		error("Cannot write to socket");
@@ -243,7 +574,7 @@ sub sendCommand
 		my $show_hdr = unpack("H*",$hdr);
 		my $show_data = unpack("H*",$data);
 
-		print pad("$offset,2",7)."<-- $show_hdr\n" if $SHOW;
+		print pad("$offset,2",7)."<-- $show_hdr\n" if $SHOW_OUTPUT;
 		$offset += 2;
 		if (!$sock->send($hdr))
 		{
@@ -252,7 +583,7 @@ sub sendCommand
 		}
 
 		# print pad("$offset,$len",6)."<-- $show_data\n";
-		show_dwords(pad("$offset,$len",7)."<-- ",$data,$show_data,0,1) if $SHOW;
+		show_dwords(pad("$offset,$len",7)."<-- ",$data,$show_data,0,1) if $SHOW_OUTPUT;
 		if (!$sock->send($data))
 		{
 			error("Could not send data: $show_hdr\n$!");
@@ -260,6 +591,10 @@ sub sendCommand
 		}
 		$offset += $len;
 	}
+
+	my $declared_len = unpack('v',substr($packed,0,2));
+	my $packet = substr($packed,2);
+	parse_stuff($NAVQUERY_PORT,$dest_port,$declared_len,$packet) if $PARSE_STUFF;
 	return 1;
 }
 
@@ -302,6 +637,7 @@ sub navQueryThread
 	my $sig = '';
 	my $command_time = 0;
 	my $reconnect_time = 0;
+	my $declared_len;
 
 	while (!$one_time_start)
 	{
@@ -388,7 +724,12 @@ sub navQueryThread
             {
                 my $hex = unpack("H*",$buf);
 				my $len = length($hex);
-				show_dwords(pad(length($buf),7)."--> ",$buf,$hex,0,1);
+				show_dwords(pad(length($buf),7)."--> ",$buf,$hex,0,1) if $SHOW_INPUT;
+
+				$declared_len = unpack('v',$buf) if length($buf) == 2;
+					# for parse_stuff(), the packet that follows has the
+					# 'declared_length' of this packet of length(2) that
+					# preceded it.
 			}
 		}
 
@@ -433,9 +774,9 @@ sub navQueryThread
 				$state == $STATE_GET_GROUP_DICT ? '8' :
 				$state == $STATE_GET_ROUTE_DICT ? '4' : '0';
 			display($dbg+1,0,"getting ".kind($sig_byte)." dictionary");
-			if (sendCommand($sel,$sock,$get_dict,$sig_byte,$seq))
+			if (sendCommand($sel,$sock,$nav_port,$GET_DICT,$sig_byte,$seq))
 			{
-				$sig = pack('H*',substitute($sig_dict,$sig_byte,$seq));
+				$sig = pack('H*',substitute($SIG_DICT,$sig_byte,$seq));
 				$command_time = time();
 				setState($state+1);
 			}
@@ -453,7 +794,7 @@ sub navQueryThread
 		elsif ($buf && substr($buf,0,8) eq $sig)
 		{
 			display($dbg+2,0,"state($state) ".kind($sig_byte)." sig matched");
-			
+
 			$sig = '';
 			$command_time = 0;
 			if (unpack('H*',substr($buf,8,4)) ne $SUCCESS_SIG)
@@ -527,6 +868,9 @@ sub navQueryThread
 					setState($STATE_NONE);
 				}
 			}
+
+			parse_stuff($nav_port,$NAVQUERY_PORT,$declared_len,$buf) if $PARSE_STUFF;
+
 		}	# signature matched
 
 		#----------------------------------------
@@ -556,11 +900,11 @@ sub navQueryThread
 				{
 					display($dbg,0,"getting ".kind($sig_byte)." item($uuid)");
 					my $seq = $seq_num++;
-					if (sendCommand($sel,$sock,$get_item,$sig_byte,$seq,$uuid))
+					if (sendCommand($sel,$sock,$nav_port,$GET_ITEM,$sig_byte,$seq,$uuid))
 					{
 						$sent = 1;
 						$rec->{requested} = time();
-						$sig = pack('H*',substitute($sig_item,$sig_byte,$seq));
+						$sig = pack('H*',substitute($SIG_ITEM,$sig_byte,$seq));
 						$command_time = time();
 					}
 					else

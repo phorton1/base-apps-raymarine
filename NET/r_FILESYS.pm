@@ -33,7 +33,8 @@ BEGIN
  	use Exporter qw( import );
     our @EXPORT = qw(
 
-        fileRequestThread
+        filesysThread
+
 
 		$FILE_STATE_ERROR
 		$FILE_STATE_COMPLETE
@@ -54,7 +55,7 @@ BEGIN
 
 # command constants
 
-my $LISTEN_PORT             = 0x4801;   # 18433
+
 
 my $COMMAND_DIRECTORY   = 0;		# returns a directory listing without any file or directory sizes (plus some other stuff)
 my $COMMAND_GET_SIZE    = 1;		# returns a dword size (success completely understood)
@@ -210,7 +211,7 @@ sub sendRegisterRequest
 	$packet .= $COMMAND_REQUEST;
 	$packet .= $FUNC_5;
 	$packet .= pack('V',$next_seq_num++);
-	$packet .= pack('v',$LISTEN_PORT);
+	$packet .= pack('v',$FILESYS_LISTEN_PORT);
     sendUDPPacket(
         'fileRegister',
         $filesys_ip,
@@ -238,7 +239,7 @@ sub sendFilesysRequest
 	$packet .= $COMMAND_REQUEST;
 	$packet .= $FUNC_5;
 	$packet .= pack('V',$seq_num);
-	$packet .= pack('v',$LISTEN_PORT);
+	$packet .= pack('v',$FILESYS_LISTEN_PORT);
 
 	$packet .= pack('H*','0000') if $command == $COMMAND_GET_SIZE;
 		# add a dword for command get size
@@ -258,23 +259,23 @@ sub sendFilesysRequest
 
 
 #-------------------------------------------------
-# fileRequestThread
+# filesysThread
 #-------------------------------------------------
 
-sub fileRequestThread
+sub filesysThread
     # blocking unidirectional single port monitoring thread
 {
-    display(0,0,"listen_udp_thread($LISTEN_PORT) started");
+    display(0,0,"filesysThread($FILESYS_LISTEN_PORT) started");
 
 	# open listen socket
 
     my $sock = IO::Socket::INET->new(
-            LocalPort => $LISTEN_PORT,
+            LocalPort => $FILESYS_LISTEN_PORT,
             Proto     => 'udp',
             ReuseAddr => 1 );
     if (!$sock)
     {
-        error("Could not open sock in listen_udp_thread($LISTEN_PORT)");
+        error("Could not open sock in listen_udp_thread($FILESYS_LISTEN_PORT)");
         return;
     }
     display(0,0,"listen socket opened");
@@ -300,14 +301,14 @@ sub fileRequestThread
     {
         if ($sel->can_read(0.1))
         {
-            display(0,1," fileRequestThread can_read");
+            display(0,1," filesysThread can_read");
 
 			my $raw;
 			recv($sock, $raw, 4096, 0);
 			if ($raw)
 			{
 				setConsoleColor($UTILS_COLOR_LIGHT_MAGENTA);
-				display(0,1,"fileRequestThread($LISTEN_PORT) GOT ".length($raw)." BYTES "._lim(unpack("H*",$raw),32));
+				display(0,1,"filesysThread() GOT ".length($raw)." BYTES "._lim(unpack("H*",$raw),32));
 				setConsoleColor();
 
 				$request_time = time();
@@ -416,7 +417,7 @@ sub fileRequestThread
 			$file_state = $FILE_STATE_PACKETS;
 		}
 	}	# while 1
-}	# fileRequestThread
+}	# filesysThread
 
 
 

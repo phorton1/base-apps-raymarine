@@ -53,6 +53,9 @@ BEGIN
         $LOCAL_UDP_PORT
 		$LOCAL_UDP_SOCKET
 
+		$FILESYS_LISTEN_PORT
+		$RNS_FILESYS_LISTEN_PORT
+
 		sendUDPPacket
 
 		sendAlive
@@ -77,8 +80,13 @@ our $RAYDP_ADDR			 = pack_sockaddr_in($RAYDP_PORT, inet_aton($RAYDP_IP));
 our $RAYDP_ALIVE_PACKET  = pack("H*", "0100000003000000ffffffff76020000018e768000000000000000000000000000000000000000000000000000000000000000000000"),
 our $RAYDP_WAKEUP_PACKET = "ABCDEFGHIJKLMNOP",
 
-our $LOCAL_IP       = '10.0.241.200';
+our $LOCAL_IP	= '10.0.241.200';
 our $LOCAL_UDP_PORT = 8765;                 # arbitrary but recognizable
+
+# static and known udp listening ports
+
+our $FILESYS_LISTEN_PORT		= 0x4801;   # 18433
+our $RNS_FILESYS_LISTEN_PORT	= 0x4800;	# 18432
 
 # The global $UDP_SEND_SOCKET is opened
 # in the main thread at the outer perl
@@ -199,17 +207,52 @@ my $BYTES_PER_LINE	= $GROUPS_PER_LINE * $BYTES_PER_GROUP;
 my $LEFT_SIZE = $GROUPS_PER_LINE * $BYTES_PER_GROUP * 2 + $GROUPS_PER_LINE;
 
 
+# use apps::raymarine::NET::r_NAVQRY;
+my %declared_len:shared;
+
 
 sub showPacket
 {
 	my ($rayport,$packet,$backwards) = @_;
-	my $header = packetWireHeader($packet,$backwards);
-	my $multi = $rayport->{multi};
-	my $color = $rayport->{color} || 0;
-	my $raw_data = $packet->{raw_data};
-	my $hex_data = $packet->{hex_data};
-	# $packet_len = $BYTES_PER_LINE if !$multi && ($packet_len > $BYTES_PER_LINE);
-	show_dwords($header,$raw_data,$hex_data,$color,$multi);
+
+	return if length($packet->{raw_data}) == 1;		# skip keep-aives
+
+
+		my $header = packetWireHeader($packet,$backwards);
+		my $multi = $rayport->{multi};
+		my $color = $rayport->{color} || 0;
+		my $raw_data = $packet->{raw_data};
+		my $hex_data = $packet->{hex_data};
+		# $packet_len = $BYTES_PER_LINE if !$multi && ($packet_len > $BYTES_PER_LINE);
+		show_dwords($header,$raw_data,$hex_data,$color,$multi);
+
+	if ($rayport->{name} && $rayport->{name} eq 'NAVQRY')
+	{
+		my $dest_port = $packet->{dest_port};
+		if (length($raw_data) == 2)
+		{
+			$declared_len{$dest_port} = unpack('v',$packet->{raw_data});
+			print "declared_len{$dest_port}=$declared_len{$dest_port}\n";
+		}
+		else
+		{
+			my $src_port = $packet->{src_port};
+
+			# some events come in without a previous length byte
+			# ... and get the length from the packet
+			my $use_len = $declared_len{$dest_port};
+			if ($use_len == -1)
+			{
+				$use_len = unpack('v',$raw_data);
+				$raw_data = substr($raw_data,2);
+				$hex_data = substr($hex_data,4);
+				warning(0,0,"using length($use_len) shifting packet by 2 to: $hex_data");
+			}
+			apps::raymarine::NET::r_NAVQRY::parse_stuff($src_port,$dest_port,$declared_len{$dest_port},$raw_data);
+			# so I clear the previous length byte once I use it ...
+			$declared_len{$dest_port} = -1;
+		}
+	}
 }
 
 
