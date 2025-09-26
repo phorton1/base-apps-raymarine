@@ -228,7 +228,7 @@ sub degreesWithMinutes
     my $degrees = int($float_degrees);
     my $minutes = ($float_degrees - $degrees) * 60;
     $minutes = sprintf("%.3f", $minutes);
-    return "$degrees$DEGREE_CHAR $minutes' $dir_char";
+    return "$degrees$DEGREE_CHAR$minutes$dir_char";
 }
 
 

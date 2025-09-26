@@ -202,8 +202,11 @@ sub fshFileToBlocks
     my $num_flobs = getFileHeader($fh);
     return error("Empty file (no flobs)") if !$num_flobs;
 
+	display($dbg_flobs,0,"num_flobs=$num_flobs");
+
     for (my $i = 0; $i < $num_flobs; $i++)
     {
+		display($dbg_flobs,1,"getting flob($i)");
         $file_offset = $FSH_FILE_HEADER_SIZE + $i * $FLOB_SIZE;
         return error("Could not seek to FLOB[$i] at ".showOffset())
             if !seek($fh,$file_offset,0);

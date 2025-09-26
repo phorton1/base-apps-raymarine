@@ -47,7 +47,7 @@ use apps::raymarine::FSH::genKML;
 # main
 #---------------------------------------
 
-my $ifilename = "/Archive/Archive.FSH";	# ARCHIVE2_FROM_OLD_E80.FSH";
+my $ifilename = "/Archive/ARCHIVE.FSH";	# ARCHIVE2_FROM_OLD_E80.FSH";
     # in current directory
 my $ofilename = "output/created_from_ARCHIVE_FSH.kml";
 

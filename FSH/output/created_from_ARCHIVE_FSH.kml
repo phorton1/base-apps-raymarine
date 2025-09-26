@@ -73,649 +73,104 @@
     <Folder>
         <name>Groups</name>
         <Folder>
-            <name>Agua</name>
-            <Placemark>
-                <name>om01</name>
-                <Point>
-                    <coordinates>-82.059440,9.178254</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:41Z</description>
-                <TimeStamp><when>2025-09-22T13:37:41Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om02</name>
-                <Point>
-                    <coordinates>-82.078079,9.152548</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:42Z</description>
-                <TimeStamp><when>2025-09-22T13:37:42Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om03</name>
-                <Point>
-                    <coordinates>-82.078789,9.146415</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:43Z</description>
-                <TimeStamp><when>2025-09-22T13:37:43Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om04</name>
-                <Point>
-                    <coordinates>-82.075815,9.138062</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:43Z</description>
-                <TimeStamp><when>2025-09-22T13:37:43Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om05</name>
-                <Point>
-                    <coordinates>-82.076292,9.120944</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:44Z</description>
-                <TimeStamp><when>2025-09-22T13:37:44Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om06</name>
-                <Point>
-                    <coordinates>-82.071441,9.109319</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:44Z</description>
-                <TimeStamp><when>2025-09-22T13:37:44Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om07</name>
-                <Point>
-                    <coordinates>-82.089245,9.082313</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:45Z</description>
-                <TimeStamp><when>2025-09-22T13:37:45Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om08</name>
-                <Point>
-                    <coordinates>-82.159821,9.098381</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:45Z</description>
-                <TimeStamp><when>2025-09-22T13:37:45Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om09</name>
-                <Point>
-                    <coordinates>-82.172105,9.113707</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:46Z</description>
-                <TimeStamp><when>2025-09-22T13:37:46Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om10</name>
-                <Point>
-                    <coordinates>-82.172974,9.124275</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:46Z</description>
-                <TimeStamp><when>2025-09-22T13:37:46Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-        </Folder>
-        <Folder>
-            <name>Bocas</name>
-            <Placemark>
-                <name>StarfishBeach</name>
-                <Point>
-                    <coordinates>-82.326784,9.403796</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:04Z</description>
-                <TimeStamp><when>2025-09-22T13:37:04Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-        </Folder>
-        <Folder>
-            <name>Group 2</name>
-        </Folder>
-        <Folder>
-            <name>InstantRoute</name>
-            <Placemark>
-                <name>Waypoint PA04</name>
-                <Point>
-                    <coordinates>-82.226683,9.308775</coordinates>
-                </Point>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>Waypoint PA102</name>
-                <Point>
-                    <coordinates>-82.143183,9.203867</coordinates>
-                </Point>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-        </Folder>
-        <Folder>
-            <name>Michelle</name>
-            <Placemark>
-                <name>m001</name>
-                <Point>
-                    <coordinates>-82.165417,9.134369</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:10Z</description>
-                <TimeStamp><when>2025-09-22T13:37:10Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m002</name>
-                <Point>
-                    <coordinates>-82.165900,9.133469</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:10Z</description>
-                <TimeStamp><when>2025-09-22T13:37:10Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m003</name>
-                <Point>
-                    <coordinates>-82.167583,9.132635</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:11Z</description>
-                <TimeStamp><when>2025-09-22T13:37:11Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m004</name>
-                <Point>
-                    <coordinates>-82.167583,9.130852</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:11Z</description>
-                <TimeStamp><when>2025-09-22T13:37:11Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m005</name>
-                <Point>
-                    <coordinates>-82.166867,9.129485</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:12Z</description>
-                <TimeStamp><when>2025-09-22T13:37:12Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m006</name>
-                <Point>
-                    <coordinates>-82.165383,9.128052</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:12Z</description>
-                <TimeStamp><when>2025-09-22T13:37:12Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m007</name>
-                <Point>
-                    <coordinates>-82.163450,9.128352</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:13Z</description>
-                <TimeStamp><when>2025-09-22T13:37:13Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m008</name>
-                <Point>
-                    <coordinates>-82.161483,9.128369</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:13Z</description>
-                <TimeStamp><when>2025-09-22T13:37:13Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m009</name>
-                <Point>
-                    <coordinates>-82.159017,9.131118</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:14Z</description>
-                <TimeStamp><when>2025-09-22T13:37:14Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m010</name>
-                <Point>
-                    <coordinates>-82.157033,9.131719</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:14Z</description>
-                <TimeStamp><when>2025-09-22T13:37:14Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m011</name>
-                <Point>
-                    <coordinates>-82.155883,9.132218</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:15Z</description>
-                <TimeStamp><when>2025-09-22T13:37:15Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m012</name>
-                <Point>
-                    <coordinates>-82.155200,9.133269</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:15Z</description>
-                <TimeStamp><when>2025-09-22T13:37:15Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m013</name>
-                <Point>
-                    <coordinates>-82.154600,9.135668</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:16Z</description>
-                <TimeStamp><when>2025-09-22T13:37:16Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m014</name>
-                <Point>
-                    <coordinates>-82.154450,9.139069</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:16Z</description>
-                <TimeStamp><when>2025-09-22T13:37:16Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m015</name>
-                <Point>
-                    <coordinates>-82.151250,9.142568</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:17Z</description>
-                <TimeStamp><when>2025-09-22T13:37:17Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m016</name>
-                <Point>
-                    <coordinates>-82.150450,9.143751</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:18Z</description>
-                <TimeStamp><when>2025-09-22T13:37:18Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m017</name>
-                <Point>
-                    <coordinates>-82.151983,9.145435</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:18Z</description>
-                <TimeStamp><when>2025-09-22T13:37:18Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m018</name>
-                <Point>
-                    <coordinates>-82.153683,9.146818</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:19Z</description>
-                <TimeStamp><when>2025-09-22T13:37:19Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m019</name>
-                <Point>
-                    <coordinates>-82.154467,9.148084</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:19Z</description>
-                <TimeStamp><when>2025-09-22T13:37:19Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m020</name>
-                <Point>
-                    <coordinates>-82.154783,9.149584</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:20Z</description>
-                <TimeStamp><when>2025-09-22T13:37:20Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m021</name>
-                <Point>
-                    <coordinates>-82.153950,9.152068</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:20Z</description>
-                <TimeStamp><when>2025-09-22T13:37:20Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m022</name>
-                <Point>
-                    <coordinates>-82.154267,9.153234</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:21Z</description>
-                <TimeStamp><when>2025-09-22T13:37:21Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m023</name>
-                <Point>
-                    <coordinates>-82.155000,9.154801</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:22Z</description>
-                <TimeStamp><when>2025-09-22T13:37:22Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m024</name>
-                <Point>
-                    <coordinates>-82.155883,9.155634</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:24Z</description>
-                <TimeStamp><when>2025-09-22T13:37:24Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m025</name>
-                <Point>
-                    <coordinates>-82.157617,9.156768</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:26Z</description>
-                <TimeStamp><when>2025-09-22T13:37:26Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m026</name>
-                <Point>
-                    <coordinates>-82.160383,9.159268</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:27Z</description>
-                <TimeStamp><when>2025-09-22T13:37:27Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m027</name>
-                <Point>
-                    <coordinates>-82.160767,9.160668</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:29Z</description>
-                <TimeStamp><when>2025-09-22T13:37:29Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m028</name>
-                <Point>
-                    <coordinates>-82.162117,9.162751</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:31Z</description>
-                <TimeStamp><when>2025-09-22T13:37:31Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m029</name>
-                <Point>
-                    <coordinates>-82.163383,9.163401</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:32Z</description>
-                <TimeStamp><when>2025-09-22T13:37:32Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m030</name>
-                <Point>
-                    <coordinates>-82.164633,9.166984</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:33Z</description>
-                <TimeStamp><when>2025-09-22T13:37:33Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m031</name>
-                <Point>
-                    <coordinates>-82.162833,9.170034</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:33Z</description>
-                <TimeStamp><when>2025-09-22T13:37:33Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m032</name>
-                <Point>
-                    <coordinates>-82.161367,9.171651</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:34Z</description>
-                <TimeStamp><when>2025-09-22T13:37:34Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m033</name>
-                <Point>
-                    <coordinates>-82.161317,9.176084</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:34Z</description>
-                <TimeStamp><when>2025-09-22T13:37:34Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m034</name>
-                <Point>
-                    <coordinates>-82.160117,9.179134</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:35Z</description>
-                <TimeStamp><when>2025-09-22T13:37:35Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m035</name>
-                <Point>
-                    <coordinates>-82.161467,9.181234</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:35Z</description>
-                <TimeStamp><when>2025-09-22T13:37:35Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m036</name>
-                <Point>
-                    <coordinates>-82.160500,9.183001</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:36Z</description>
-                <TimeStamp><when>2025-09-22T13:37:36Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m037</name>
-                <Point>
-                    <coordinates>-82.161717,9.184801</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:36Z</description>
-                <TimeStamp><when>2025-09-22T13:37:36Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m038</name>
-                <Point>
-                    <coordinates>-82.160483,9.186451</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:37Z</description>
-                <TimeStamp><when>2025-09-22T13:37:37Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m039</name>
-                <Point>
-                    <coordinates>-82.162433,9.189734</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:37Z</description>
-                <TimeStamp><when>2025-09-22T13:37:37Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m040</name>
-                <Point>
-                    <coordinates>-82.173300,9.200651</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:38Z</description>
-                <TimeStamp><when>2025-09-22T13:37:38Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m041</name>
-                <Point>
-                    <coordinates>-82.185483,9.206051</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:38Z</description>
-                <TimeStamp><when>2025-09-22T13:37:38Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m042</name>
-                <Point>
-                    <coordinates>-82.195217,9.217251</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:39Z</description>
-                <TimeStamp><when>2025-09-22T13:37:39Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m043</name>
-                <Point>
-                    <coordinates>-82.197983,9.221651</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:39Z</description>
-                <TimeStamp><when>2025-09-22T13:37:39Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m044</name>
-                <Point>
-                    <coordinates>-82.202517,9.240884</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:40Z</description>
-                <TimeStamp><when>2025-09-22T13:37:40Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m045</name>
-                <Point>
-                    <coordinates>-82.208367,9.282801</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:40Z</description>
-                <TimeStamp><when>2025-09-22T13:37:40Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m046</name>
-                <Point>
-                    <coordinates>-82.241967,9.330234</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:41Z</description>
-                <TimeStamp><when>2025-09-22T13:37:41Z</when></TimeStamp>
-                <styleUrl>s_group</styleUrl>
-            </Placemark>
-        </Folder>
-        <Folder>
-            <name>Nmea</name>
-        </Folder>
-        <Folder>
             <name>Popa</name>
             <Placemark>
                 <name>Popa0</name>
                 <Point>
-                    <coordinates>-82.242050,9.334050</coordinates>
+                    <coordinates>-82.24205,9.334083</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:04Z</description>
-                <TimeStamp><when>2025-09-22T13:37:04Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_group</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa1</name>
                 <Point>
-                    <coordinates>-82.204624,9.272087</coordinates>
+                    <coordinates>-82.204624,9.2721199</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:05Z</description>
-                <TimeStamp><when>2025-09-22T13:37:05Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_group</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa2</name>
                 <Point>
-                    <coordinates>-82.197158,9.255833</coordinates>
+                    <coordinates>-82.197158,9.255866</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:05Z</description>
-                <TimeStamp><when>2025-09-22T13:37:05Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_group</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa3</name>
                 <Point>
-                    <coordinates>-82.193311,9.249687</coordinates>
+                    <coordinates>-82.193311,9.24972</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:06Z</description>
-                <TimeStamp><when>2025-09-22T13:37:06Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_group</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa4</name>
                 <Point>
-                    <coordinates>-82.180733,9.231034</coordinates>
+                    <coordinates>-82.180733,9.231067</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:06Z</description>
-                <TimeStamp><when>2025-09-22T13:37:06Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_group</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa5</name>
                 <Point>
-                    <coordinates>-82.165517,9.226967</coordinates>
+                    <coordinates>-82.165517,9.227</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:07Z</description>
-                <TimeStamp><when>2025-09-22T13:37:07Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_group</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa6</name>
                 <Point>
-                    <coordinates>-82.155577,9.208646</coordinates>
+                    <coordinates>-82.1555769,9.208679</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:07Z</description>
-                <TimeStamp><when>2025-09-22T13:37:07Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_group</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa7</name>
                 <Point>
-                    <coordinates>-82.157985,9.202637</coordinates>
+                    <coordinates>-82.157985,9.20267</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:08Z</description>
-                <TimeStamp><when>2025-09-22T13:37:08Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_group</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa8</name>
                 <Point>
-                    <coordinates>-82.152427,9.200238</coordinates>
+                    <coordinates>-82.152427,9.200271</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:08Z</description>
-                <TimeStamp><when>2025-09-22T13:37:08Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_group</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa9</name>
                 <Point>
-                    <coordinates>-82.145835,9.200799</coordinates>
+                    <coordinates>-82.145835,9.200832</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:09Z</description>
-                <TimeStamp><when>2025-09-22T13:37:09Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_group</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa10</name>
                 <Point>
-                    <coordinates>-82.143256,9.203743</coordinates>
+                    <coordinates>-82.1432559,9.203776</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:09Z</description>
-                <TimeStamp><when>2025-09-22T13:37:09Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_group</styleUrl>
             </Placemark>
         </Folder>
@@ -723,614 +178,6 @@
     <Folder>
         <name>Routes</name>
         <Folder>
-            <name>Agua</name>
-            <Placemark>
-                <name>Route</name>
-                <styleUrl>s_route</styleUrl>
-                <LineString>
-                    <gx:altitudeOffset>0</gx:altitudeOffset>
-                    <extrude>0</extrude>
-                    <tessellate>0</tessellate>
-                    <altitudeMode>clampToGround</altitudeMode>
-                    <gx:drawOrder>0</gx:drawOrder>
-                    <coordinates>
-                        -82.059440,9.178254,0
-                        -82.078079,9.152548,0
-                        -82.078789,9.146415,0
-                        -82.075815,9.138062,0
-                        -82.076292,9.120944,0
-                        -82.071441,9.109319,0
-                        -82.089245,9.082313,0
-                        -82.159821,9.098381,0
-                        -82.172105,9.113707,0
-                        -82.172974,9.124275,0
-                    </coordinates>
-                </LineString>
-            </Placemark>
-            <Placemark>
-                <name>om01</name>
-                <Point>
-                    <coordinates>-82.059440,9.178254</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:41Z</description>
-                <TimeStamp><when>2025-09-22T13:37:41Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om02</name>
-                <Point>
-                    <coordinates>-82.078079,9.152548</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:42Z</description>
-                <TimeStamp><when>2025-09-22T13:37:42Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om03</name>
-                <Point>
-                    <coordinates>-82.078789,9.146415</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:43Z</description>
-                <TimeStamp><when>2025-09-22T13:37:43Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om04</name>
-                <Point>
-                    <coordinates>-82.075815,9.138062</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:43Z</description>
-                <TimeStamp><when>2025-09-22T13:37:43Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om05</name>
-                <Point>
-                    <coordinates>-82.076292,9.120944</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:44Z</description>
-                <TimeStamp><when>2025-09-22T13:37:44Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om06</name>
-                <Point>
-                    <coordinates>-82.071441,9.109319</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:44Z</description>
-                <TimeStamp><when>2025-09-22T13:37:44Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om07</name>
-                <Point>
-                    <coordinates>-82.089245,9.082313</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:45Z</description>
-                <TimeStamp><when>2025-09-22T13:37:45Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om08</name>
-                <Point>
-                    <coordinates>-82.159821,9.098381</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:45Z</description>
-                <TimeStamp><when>2025-09-22T13:37:45Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om09</name>
-                <Point>
-                    <coordinates>-82.172105,9.113707</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:46Z</description>
-                <TimeStamp><when>2025-09-22T13:37:46Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>om10</name>
-                <Point>
-                    <coordinates>-82.172974,9.124275</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:46Z</description>
-                <TimeStamp><when>2025-09-22T13:37:46Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-        </Folder>
-        <Folder>
-            <name>InstantRoute</name>
-            <Placemark>
-                <name>Route</name>
-                <styleUrl>s_route</styleUrl>
-                <LineString>
-                    <gx:altitudeOffset>0</gx:altitudeOffset>
-                    <extrude>0</extrude>
-                    <tessellate>0</tessellate>
-                    <altitudeMode>clampToGround</altitudeMode>
-                    <gx:drawOrder>0</gx:drawOrder>
-                    <coordinates>
-                    </coordinates>
-                </LineString>
-            </Placemark>
-        </Folder>
-        <Folder>
-            <name>Michelle</name>
-            <Placemark>
-                <name>Route</name>
-                <styleUrl>s_route</styleUrl>
-                <LineString>
-                    <gx:altitudeOffset>0</gx:altitudeOffset>
-                    <extrude>0</extrude>
-                    <tessellate>0</tessellate>
-                    <altitudeMode>clampToGround</altitudeMode>
-                    <gx:drawOrder>0</gx:drawOrder>
-                    <coordinates>
-                        -82.165417,9.134369,0
-                        -82.165900,9.133469,0
-                        -82.167583,9.132635,0
-                        -82.167583,9.130852,0
-                        -82.166867,9.129485,0
-                        -82.165383,9.128052,0
-                        -82.163450,9.128352,0
-                        -82.161483,9.128369,0
-                        -82.159017,9.131118,0
-                        -82.157033,9.131719,0
-                        -82.155883,9.132218,0
-                        -82.155200,9.133269,0
-                        -82.154600,9.135668,0
-                        -82.154450,9.139069,0
-                        -82.151250,9.142568,0
-                        -82.150450,9.143751,0
-                        -82.151983,9.145435,0
-                        -82.153683,9.146818,0
-                        -82.154467,9.148084,0
-                        -82.154783,9.149584,0
-                        -82.153950,9.152068,0
-                        -82.154267,9.153234,0
-                        -82.155000,9.154801,0
-                        -82.155883,9.155634,0
-                        -82.157617,9.156768,0
-                        -82.160383,9.159268,0
-                        -82.160767,9.160668,0
-                        -82.162117,9.162751,0
-                        -82.163383,9.163401,0
-                        -82.164633,9.166984,0
-                        -82.162833,9.170034,0
-                        -82.161367,9.171651,0
-                        -82.161317,9.176084,0
-                        -82.160117,9.179134,0
-                        -82.161467,9.181234,0
-                        -82.160500,9.183001,0
-                        -82.161717,9.184801,0
-                        -82.160483,9.186451,0
-                        -82.162433,9.189734,0
-                        -82.173300,9.200651,0
-                        -82.185483,9.206051,0
-                        -82.195217,9.217251,0
-                        -82.197983,9.221651,0
-                        -82.202517,9.240884,0
-                        -82.208367,9.282801,0
-                        -82.241967,9.330234,0
-                    </coordinates>
-                </LineString>
-            </Placemark>
-            <Placemark>
-                <name>m001</name>
-                <Point>
-                    <coordinates>-82.165417,9.134369</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:10Z</description>
-                <TimeStamp><when>2025-09-22T13:37:10Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m002</name>
-                <Point>
-                    <coordinates>-82.165900,9.133469</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:10Z</description>
-                <TimeStamp><when>2025-09-22T13:37:10Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m003</name>
-                <Point>
-                    <coordinates>-82.167583,9.132635</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:11Z</description>
-                <TimeStamp><when>2025-09-22T13:37:11Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m004</name>
-                <Point>
-                    <coordinates>-82.167583,9.130852</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:11Z</description>
-                <TimeStamp><when>2025-09-22T13:37:11Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m005</name>
-                <Point>
-                    <coordinates>-82.166867,9.129485</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:12Z</description>
-                <TimeStamp><when>2025-09-22T13:37:12Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m006</name>
-                <Point>
-                    <coordinates>-82.165383,9.128052</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:12Z</description>
-                <TimeStamp><when>2025-09-22T13:37:12Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m007</name>
-                <Point>
-                    <coordinates>-82.163450,9.128352</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:13Z</description>
-                <TimeStamp><when>2025-09-22T13:37:13Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m008</name>
-                <Point>
-                    <coordinates>-82.161483,9.128369</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:13Z</description>
-                <TimeStamp><when>2025-09-22T13:37:13Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m009</name>
-                <Point>
-                    <coordinates>-82.159017,9.131118</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:14Z</description>
-                <TimeStamp><when>2025-09-22T13:37:14Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m010</name>
-                <Point>
-                    <coordinates>-82.157033,9.131719</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:14Z</description>
-                <TimeStamp><when>2025-09-22T13:37:14Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m011</name>
-                <Point>
-                    <coordinates>-82.155883,9.132218</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:15Z</description>
-                <TimeStamp><when>2025-09-22T13:37:15Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m012</name>
-                <Point>
-                    <coordinates>-82.155200,9.133269</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:15Z</description>
-                <TimeStamp><when>2025-09-22T13:37:15Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m013</name>
-                <Point>
-                    <coordinates>-82.154600,9.135668</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:16Z</description>
-                <TimeStamp><when>2025-09-22T13:37:16Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m014</name>
-                <Point>
-                    <coordinates>-82.154450,9.139069</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:16Z</description>
-                <TimeStamp><when>2025-09-22T13:37:16Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m015</name>
-                <Point>
-                    <coordinates>-82.151250,9.142568</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:17Z</description>
-                <TimeStamp><when>2025-09-22T13:37:17Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m016</name>
-                <Point>
-                    <coordinates>-82.150450,9.143751</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:18Z</description>
-                <TimeStamp><when>2025-09-22T13:37:18Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m017</name>
-                <Point>
-                    <coordinates>-82.151983,9.145435</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:18Z</description>
-                <TimeStamp><when>2025-09-22T13:37:18Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m018</name>
-                <Point>
-                    <coordinates>-82.153683,9.146818</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:19Z</description>
-                <TimeStamp><when>2025-09-22T13:37:19Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m019</name>
-                <Point>
-                    <coordinates>-82.154467,9.148084</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:19Z</description>
-                <TimeStamp><when>2025-09-22T13:37:19Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m020</name>
-                <Point>
-                    <coordinates>-82.154783,9.149584</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:20Z</description>
-                <TimeStamp><when>2025-09-22T13:37:20Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m021</name>
-                <Point>
-                    <coordinates>-82.153950,9.152068</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:20Z</description>
-                <TimeStamp><when>2025-09-22T13:37:20Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m022</name>
-                <Point>
-                    <coordinates>-82.154267,9.153234</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:21Z</description>
-                <TimeStamp><when>2025-09-22T13:37:21Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m023</name>
-                <Point>
-                    <coordinates>-82.155000,9.154801</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:22Z</description>
-                <TimeStamp><when>2025-09-22T13:37:22Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m024</name>
-                <Point>
-                    <coordinates>-82.155883,9.155634</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:24Z</description>
-                <TimeStamp><when>2025-09-22T13:37:24Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m025</name>
-                <Point>
-                    <coordinates>-82.157617,9.156768</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:26Z</description>
-                <TimeStamp><when>2025-09-22T13:37:26Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m026</name>
-                <Point>
-                    <coordinates>-82.160383,9.159268</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:27Z</description>
-                <TimeStamp><when>2025-09-22T13:37:27Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m027</name>
-                <Point>
-                    <coordinates>-82.160767,9.160668</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:29Z</description>
-                <TimeStamp><when>2025-09-22T13:37:29Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m028</name>
-                <Point>
-                    <coordinates>-82.162117,9.162751</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:31Z</description>
-                <TimeStamp><when>2025-09-22T13:37:31Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m029</name>
-                <Point>
-                    <coordinates>-82.163383,9.163401</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:32Z</description>
-                <TimeStamp><when>2025-09-22T13:37:32Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m030</name>
-                <Point>
-                    <coordinates>-82.164633,9.166984</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:33Z</description>
-                <TimeStamp><when>2025-09-22T13:37:33Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m031</name>
-                <Point>
-                    <coordinates>-82.162833,9.170034</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:33Z</description>
-                <TimeStamp><when>2025-09-22T13:37:33Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m032</name>
-                <Point>
-                    <coordinates>-82.161367,9.171651</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:34Z</description>
-                <TimeStamp><when>2025-09-22T13:37:34Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m033</name>
-                <Point>
-                    <coordinates>-82.161317,9.176084</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:34Z</description>
-                <TimeStamp><when>2025-09-22T13:37:34Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m034</name>
-                <Point>
-                    <coordinates>-82.160117,9.179134</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:35Z</description>
-                <TimeStamp><when>2025-09-22T13:37:35Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m035</name>
-                <Point>
-                    <coordinates>-82.161467,9.181234</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:35Z</description>
-                <TimeStamp><when>2025-09-22T13:37:35Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m036</name>
-                <Point>
-                    <coordinates>-82.160500,9.183001</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:36Z</description>
-                <TimeStamp><when>2025-09-22T13:37:36Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m037</name>
-                <Point>
-                    <coordinates>-82.161717,9.184801</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:36Z</description>
-                <TimeStamp><when>2025-09-22T13:37:36Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m038</name>
-                <Point>
-                    <coordinates>-82.160483,9.186451</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:37Z</description>
-                <TimeStamp><when>2025-09-22T13:37:37Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m039</name>
-                <Point>
-                    <coordinates>-82.162433,9.189734</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:37Z</description>
-                <TimeStamp><when>2025-09-22T13:37:37Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m040</name>
-                <Point>
-                    <coordinates>-82.173300,9.200651</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:38Z</description>
-                <TimeStamp><when>2025-09-22T13:37:38Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m041</name>
-                <Point>
-                    <coordinates>-82.185483,9.206051</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:38Z</description>
-                <TimeStamp><when>2025-09-22T13:37:38Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m042</name>
-                <Point>
-                    <coordinates>-82.195217,9.217251</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:39Z</description>
-                <TimeStamp><when>2025-09-22T13:37:39Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m043</name>
-                <Point>
-                    <coordinates>-82.197983,9.221651</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:39Z</description>
-                <TimeStamp><when>2025-09-22T13:37:39Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m044</name>
-                <Point>
-                    <coordinates>-82.202517,9.240884</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:40Z</description>
-                <TimeStamp><when>2025-09-22T13:37:40Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m045</name>
-                <Point>
-                    <coordinates>-82.208367,9.282801</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:40Z</description>
-                <TimeStamp><when>2025-09-22T13:37:40Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-            <Placemark>
-                <name>m046</name>
-                <Point>
-                    <coordinates>-82.241967,9.330234</coordinates>
-                </Point>
-                <description>Date: 2025-09-22T13:37:41Z</description>
-                <TimeStamp><when>2025-09-22T13:37:41Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-        </Folder>
-        <Folder>
             <name>Popa</name>
             <Placemark>
                 <name>Route</name>
@@ -1342,265 +189,132 @@
                     <altitudeMode>clampToGround</altitudeMode>
                     <gx:drawOrder>0</gx:drawOrder>
                     <coordinates>
-                        -82.242050,9.334050,0
-                        -82.204624,9.272087,0
-                        -82.197158,9.255833,0
-                        -82.193311,9.249687,0
-                        -82.180733,9.231034,0
-                        -82.165517,9.226967,0
-                        -82.155577,9.208646,0
-                        -82.157985,9.202637,0
-                        -82.152427,9.200238,0
-                        -82.145835,9.200799,0
-                        -82.143256,9.203743,0
+                        -82.24205,9.334083,0
+                        -82.204624,9.2721199,0
+                        -82.197158,9.255866,0
+                        -82.193311,9.24972,0
+                        -82.180733,9.231067,0
+                        -82.165517,9.227,0
+                        -82.1555769,9.208679,0
+                        -82.157985,9.20267,0
+                        -82.152427,9.200271,0
+                        -82.145835,9.200832,0
+                        -82.1432559,9.203776,0
                     </coordinates>
                 </LineString>
             </Placemark>
             <Placemark>
                 <name>Popa0</name>
                 <Point>
-                    <coordinates>-82.242050,9.334050</coordinates>
+                    <coordinates>-82.24205,9.334083</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:04Z</description>
-                <TimeStamp><when>2025-09-22T13:37:04Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_route</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa1</name>
                 <Point>
-                    <coordinates>-82.204624,9.272087</coordinates>
+                    <coordinates>-82.204624,9.2721199</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:05Z</description>
-                <TimeStamp><when>2025-09-22T13:37:05Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_route</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa2</name>
                 <Point>
-                    <coordinates>-82.197158,9.255833</coordinates>
+                    <coordinates>-82.197158,9.255866</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:05Z</description>
-                <TimeStamp><when>2025-09-22T13:37:05Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_route</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa3</name>
                 <Point>
-                    <coordinates>-82.193311,9.249687</coordinates>
+                    <coordinates>-82.193311,9.24972</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:06Z</description>
-                <TimeStamp><when>2025-09-22T13:37:06Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_route</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa4</name>
                 <Point>
-                    <coordinates>-82.180733,9.231034</coordinates>
+                    <coordinates>-82.180733,9.231067</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:06Z</description>
-                <TimeStamp><when>2025-09-22T13:37:06Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_route</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa5</name>
                 <Point>
-                    <coordinates>-82.165517,9.226967</coordinates>
+                    <coordinates>-82.165517,9.227</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:07Z</description>
-                <TimeStamp><when>2025-09-22T13:37:07Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_route</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa6</name>
                 <Point>
-                    <coordinates>-82.155577,9.208646</coordinates>
+                    <coordinates>-82.1555769,9.208679</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:07Z</description>
-                <TimeStamp><when>2025-09-22T13:37:07Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_route</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa7</name>
                 <Point>
-                    <coordinates>-82.157985,9.202637</coordinates>
+                    <coordinates>-82.157985,9.20267</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:08Z</description>
-                <TimeStamp><when>2025-09-22T13:37:08Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_route</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa8</name>
                 <Point>
-                    <coordinates>-82.152427,9.200238</coordinates>
+                    <coordinates>-82.152427,9.200271</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:08Z</description>
-                <TimeStamp><when>2025-09-22T13:37:08Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_route</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa9</name>
                 <Point>
-                    <coordinates>-82.145835,9.200799</coordinates>
+                    <coordinates>-82.145835,9.200832</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:09Z</description>
-                <TimeStamp><when>2025-09-22T13:37:09Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_route</styleUrl>
             </Placemark>
             <Placemark>
                 <name>Popa10</name>
                 <Point>
-                    <coordinates>-82.143256,9.203743</coordinates>
+                    <coordinates>-82.1432559,9.203776</coordinates>
                 </Point>
-                <description>Date: 2025-09-22T13:37:09Z</description>
-                <TimeStamp><when>2025-09-22T13:37:09Z</when></TimeStamp>
+                <description>Date: 2025-09-05T21:14:25Z</description>
+                <TimeStamp><when>2025-09-05T21:14:25Z</when></TimeStamp>
                 <styleUrl>s_route</styleUrl>
             </Placemark>
         </Folder>
-        <Folder>
-            <name>testRoute</name>
-            <Placemark>
-                <name>Route</name>
-                <styleUrl>s_route</styleUrl>
-                <LineString>
-                    <gx:altitudeOffset>0</gx:altitudeOffset>
-                    <extrude>0</extrude>
-                    <tessellate>0</tessellate>
-                    <altitudeMode>clampToGround</altitudeMode>
-                    <gx:drawOrder>0</gx:drawOrder>
-                    <coordinates>
-                        -82.281388,9.255517,0
-                    </coordinates>
-                </LineString>
-            </Placemark>
-            <Placemark>
-                <name>Cristobal</name>
-                <Point>
-                    <coordinates>-82.281388,9.255517</coordinates>
-                </Point>
-                <description>Date: 2025-09-16T15:18:58Z</description>
-                <TimeStamp><when>2025-09-16T15:18:58Z</when></TimeStamp>
-                <styleUrl>s_route</styleUrl>
-            </Placemark>
-        </Folder>
-    </Folder>
-    <Folder>
-        <name>Waypoints</name>
-        <Placemark>
-            <name>Cristobal</name>
-            <Point>
-                <coordinates>-82.281388,9.255517</coordinates>
-            </Point>
-            <description>Date: 2025-09-16T15:18:58Z</description>
-            <TimeStamp><when>2025-09-16T15:18:58Z</when></TimeStamp>
-            <styleUrl>s_waypoint</styleUrl>
-        </Placemark>
-        <Placemark>
-            <name>Mainland</name>
-            <Point>
-                <coordinates>-82.214193,9.186285</coordinates>
-            </Point>
-            <styleUrl>s_waypoint</styleUrl>
-        </Placemark>
-        <Placemark>
-            <name>Popa02</name>
-            <Point>
-                <coordinates>-82.204608,9.272060</coordinates>
-            </Point>
-            <description>Date: 2025-09-19T10:02:34Z</description>
-            <TimeStamp><when>2025-09-19T10:02:34Z</when></TimeStamp>
-            <styleUrl>s_waypoint</styleUrl>
-        </Placemark>
-        <Placemark>
-            <name>Popa03</name>
-            <Point>
-                <coordinates>-82.204636,9.272116</coordinates>
-            </Point>
-            <description>Date: 2025-09-18T19:31:46Z</description>
-            <TimeStamp><when>2025-09-18T19:31:46Z</when></TimeStamp>
-            <styleUrl>s_waypoint</styleUrl>
-        </Placemark>
-        <Placemark>
-            <name>Popa05</name>
-            <Point>
-                <coordinates>-82.165634,9.227001</coordinates>
-            </Point>
-            <description>Date: 2025-09-19T00:31:35Z</description>
-            <TimeStamp><when>2025-09-19T00:31:35Z</when></TimeStamp>
-            <styleUrl>s_waypoint</styleUrl>
-        </Placemark>
-        <Placemark>
-            <name>Popa08</name>
-            <Point>
-                <coordinates>-82.152547,9.200267</coordinates>
-            </Point>
-            <description>Date: 2025-09-18T16:53:49Z</description>
-            <TimeStamp><when>2025-09-18T16:53:49Z</when></TimeStamp>
-            <styleUrl>s_waypoint</styleUrl>
-        </Placemark>
-        <Placemark>
-            <name>Popa041</name>
-            <Point>
-                <coordinates>-82.180744,9.231069</coordinates>
-            </Point>
-            <description>Date: 2025-09-19T02:56:21Z</description>
-            <TimeStamp><when>2025-09-19T02:56:21Z</when></TimeStamp>
-            <styleUrl>s_waypoint</styleUrl>
-        </Placemark>
-        <Placemark>
-            <name>Waypoint 15</name>
-            <Point>
-                <coordinates>-82.280301,9.395024</coordinates>
-            </Point>
-            <styleUrl>s_waypoint</styleUrl>
-        </Placemark>
-        <Placemark>
-            <name>Waypoint PA01</name>
-            <Point>
-                <coordinates>-82.204630,9.272164</coordinates>
-            </Point>
-            <styleUrl>s_waypoint</styleUrl>
-        </Placemark>
-        <Placemark>
-            <name>Waypoint PA02</name>
-            <Point>
-                <coordinates>-82.204677,9.272152</coordinates>
-            </Point>
-            <styleUrl>s_waypoint</styleUrl>
-        </Placemark>
-        <Placemark>
-            <name>Waypoint PA08</name>
-            <Point>
-                <coordinates>-82.179371,9.233740</coordinates>
-            </Point>
-            <styleUrl>s_waypoint</styleUrl>
-        </Placemark>
-        <Placemark>
-            <name>Waypoint PA011</name>
-            <Point>
-                <coordinates>-82.226746,9.308812</coordinates>
-            </Point>
-            <styleUrl>s_waypoint</styleUrl>
-        </Placemark>
-        <Placemark>
-            <name>Waypointb12</name>
-            <Point>
-                <coordinates>-82.146900,9.292284</coordinates>
-            </Point>
-            <description>A<br></description>
-            <styleUrl>s_waypoint</styleUrl>
-        </Placemark>
     </Folder>
     <Folder>
         <name>Tracks</name>
         <Placemark>
-            <name>Track 7</name>
+            <name>TrackP1</name>
             <Point>
-                <coordinates>-82.155583,9.208601</coordinates>
+                <coordinates>-82.242002,9.333970</coordinates>
             </Point>
             <styleUrl>s_track</styleUrl>
         </Placemark>
         <Placemark>
-            <name>Track 7</name>
+            <name>TrackP1</name>
             <styleUrl>s_track</styleUrl>
             <LineString>
                 <gx:altitudeOffset>0</gx:altitudeOffset>
@@ -1609,12 +323,16 @@
                 <altitudeMode>clampToGround</altitudeMode>
                 <gx:drawOrder>0</gx:drawOrder>
                 <coordinates>
-                    -82.155583,9.208601,0
-                    -82.161867,9.192884,0
-                    -82.157733,9.203217,0
-                    -82.151867,9.199917,0
-                    -82.145200,9.200884,0
-                    -82.143100,9.203951,0
+                    -82.242002,9.333970,0
+                    -82.203575,9.269979,0
+                    -82.196172,9.254105,0
+                    -82.180360,9.230482,0
+                    -82.164772,9.226791,0
+                    -82.155148,9.207797,0
+                    -82.158365,9.201941,0
+                    -82.151062,9.200027,0
+                    -82.144803,9.200952,0
+                    -82.142982,9.204241,0
                 </coordinates>
             </LineString>
         </Placemark>
