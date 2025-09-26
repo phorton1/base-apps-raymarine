@@ -98,7 +98,7 @@ BEGIN
 }
 
 
-my $one_time_start:shared = 1;
+my $one_time_start:shared = 0;
 	# set this to 0 to require startNavQuery() to
 	# be called to start the thread.
 my $refresh_time:shared = 0;

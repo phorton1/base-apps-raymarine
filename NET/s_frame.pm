@@ -19,6 +19,7 @@ use Win32::SerialPort;
 use Win32::Console;
 use apps::raymarine::NET::s_resources;
 use apps::raymarine::NET::winRAYDP;
+use apps::raymarine::NET::winFILESYS;
 
 
 use base qw(Pub::WX::Frame);
@@ -30,11 +31,12 @@ sub new
 	my $this = $class->SUPER::new($parent);
 
 	EVT_MENU($this, $WIN_RAYDP, \&onCommand);
+	EVT_MENU($this, $WIN_FILESYS, \&onCommand);
     EVT_IDLE($this, \&onIdle);
 
 	my $data = undef;
 	$this->createPane($WIN_RAYDP,$this->{book},$data,"test237");
-
+	# $this->createPane($WIN_FILESYS,$this->{book},$data,"test237");
 	return $this;
 }
 
@@ -58,6 +60,7 @@ sub createPane
     $book ||= $this->{book};
 	display(0,0,"minimumFrame::createPane($id) book="._def($book)."  data="._def($data));
 	return apps::raymarine::NET::winRAYDP->new($this,$book,$id,"test236 $id") if $id == $WIN_RAYDP;
+	return apps::raymarine::NET::winFILESYS->new($this,$book,$id,"test236 $id") if $id == $WIN_FILESYS;
     return $this->SUPER::createPane($id,$book,$data,"test237");
 }
 
@@ -66,7 +69,8 @@ sub onCommand
 {
     my ($this,$event) = @_;
     my $id = $event->GetId();
-	if ($id == $WIN_RAYDP)
+	if ($id == $WIN_RAYDP ||
+		$id == $WIN_FILESYS)
 	{
     	my $pane = $this->findPane($id);
 		display(0,0,"$appName onCommand($id) pane="._def($pane));

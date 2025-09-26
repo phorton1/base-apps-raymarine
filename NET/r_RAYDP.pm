@@ -54,7 +54,7 @@
 #
 #			[36f1000a] == 10.0.241.54
 
-
+# mysterioius magic FILESYS key: 9a9d0100
 
 package apps::raymarine::NET::r_RAYDP;
 use strict;
@@ -170,10 +170,10 @@ my $RNS_INIT  	= 0;			# starts happening when RNS starts
 my $UNDER_WAY 	= 0;			# emitted by E80 while "underway"
 my $FILESYS 	= 0;			# requests made TO the filesystem
 my $MY_GPS 		= $UNDER_WAY;	# the "GPS" protocol needs further exploration
-my $MY_NAV 		= 1;			# the important Waypoint, Route, and Group management tcp protocol
-my $RAYDP		= 1;
-my $FILE		= 1;
-my $FILE_RNS 	= 1;
+my $MY_NAV 		= 0;			# the important Waypoint, Route, and Group management tcp protocol
+my $RAYDP		= 0;
+my $FILE		= 0;
+my $FILE_RNS 	= 0;
 
 # The ports that hav mon_in or mon_out set to one(1) are those I have never seen mcast packets from.
 # The ones I have seen can be turned on or off for program start up by the variables above.
@@ -194,7 +194,7 @@ my $PORT_DEFAULTS  = {
 	2561 => { name=>'',			proto=>'',		mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
 	2562 => { name=>'NAVSTAT',	proto=>'',		mon_in=>$UNDER_WAY,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_GREEN,    },
 	2563 => { name=>'',			proto=>'',		mon_in=>$UNDER_WAY,	mon_out=>1,				multi=>1,	color=>0,    },
-	5800 => { name=>'RAYDP',	proto=>'',		mon_in=>$RAYDP,		mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_LIGHT_BLUE,    },
+	5800 => { name=>'RAYDP',	proto=>'',		mon_in=>1,			mon_out=>$RAYDP,		multi=>1,	color=>$UTILS_COLOR_LIGHT_BLUE,    },
 	5801 => { name=>'ALIVE',	proto=>'',		mon_in=>$UNDER_WAY,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_BLUE,    },
 	5802 => { name=>'',			proto=>'',		mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
 	5802 => { name=>'',			proto=>'',		mon_in=>1,			mon_out=>1,				multi=>1,	color=>0,    },
@@ -202,7 +202,7 @@ my $PORT_DEFAULTS  = {
 	$FILESYS_LISTEN_PORT =>
 			{ name=>'FILE',		proto=>'udp',	mon_in=>$FILE,		mon_out=>1,				multi=>0,	color=>$UTILS_COLOR_BROWN,    },
 	$RNS_FILESYS_LISTEN_PORT =>
-			{ name=>'FILE_RNS',	proto=>'udp',	mon_in=>$FILE_RNS,	mon_out=>1,				multi=>0,	color=>$UTILS_COLOR_BROWN,    },
+			{ name=>'FILE_RNS',	proto=>'udp',	mon_in=>$FILE_RNS,	mon_out=>1,				multi=>1,	color=>$UTILS_COLOR_BROWN,    },
 };
 
 

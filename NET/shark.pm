@@ -121,23 +121,23 @@ sub serial_thread
                 {
                     $CONSOLE->Cls();    # manually clear the screen
                 }
-                elsif ($char eq 'w')
-                {
-                    wakeup_e80();
-                }
-                #   elsif ($char eq 'a')
+                #   elsif ($char eq 'w')
                 #   {
-                #       $SEND_ALIVE = $SEND_ALIVE ? 0 : 1;
-                #       warning(0,0,"SEND_ALIVE=$SEND_ALIVE");
+                #       wakeup_e80();
                 #   }
-                elsif ($char eq 'r')
-                {
-                    $MON_RAYDP = $MON_RAYDP ? 0 : 1;
-                    warning(0,0,"MON_RAYNET=$MON_RAYDP");
-                }
+                #   #   elsif ($char eq 'a')
+                #   #   {
+                #   #       $SEND_ALIVE = $SEND_ALIVE ? 0 : 1;
+                #   #       warning(0,0,"SEND_ALIVE=$SEND_ALIVE");
+                #   #   }
+                #   elsif ($char eq 'r')
+                #   {
+                #       $MON_RAYDP = $MON_RAYDP ? 0 : 1;
+                #       warning(0,0,"MON_RAYNET=$MON_RAYDP");
+                #   }
 
 
-                elsif (1)
+                elsif (0)
                 {
                     # NAVQUERY TESTING
                     if ($char eq 'q')
@@ -146,7 +146,7 @@ sub serial_thread
                     }
                     elsif ($char eq 'f')
                     {
-                        requestFile('\ARCHIVE.FSH');
+                        requestFile('\ARCHIVE.FSH','ARCHIVE.FSH');
                     }
                     elsif ($char eq 'a')
                     {
@@ -174,51 +174,101 @@ sub serial_thread
                     }
 
                 }
-                else    # FILESYS TESTING
+                elsif (0)    # FILESYS TESTING
                 {
                     if (ord($char) == 1)            # CTRL-A
                     {
-                        apps::raymarine::NET::r_FILESYS::sendRegisterRequest();
+                        apps::raymarine::NET::r_FILESYS::sendFilesysRequest(0);
                     }
                     elsif (ord($char) == 2)            # CTRL-B
                     {
                         apps::raymarine::NET::r_FILESYS::sendFilesysRequest(2,'\junk_data\test_data_image1.jpg');
                     }
+
                     elsif ($char eq 'g')
                     {
-                        requestFile('\junk_data\test_data_image1.jpg');
+                        requestFile('\ARCHIVE.FSH','ARCHIVE.FSH');
                     }
-                    elsif ($char eq 'd')
+
+                    elsif ($char eq 'h')
+                    {
+                        requestFile('\junk_data\test_data_image1.jpg',"test.jpg");
+                    }
+                    elsif ($char eq 'i')
                     {
                         requestDirectory('\junk_data');
                     }
-                    elsif ($char eq '1')
+                    elsif ($char eq 'j')
                     {
                         requestDirectory('\\');
                     }
-                    elsif ($char eq '2')
+                    elsif ($char eq 'k')
                     {
                         requestSize('\junk_data\test_data_image1.jpg');
                     }
-                    elsif ($char eq '3')
+                    elsif ($char eq 'l')
                     {
                         requestSize('\junk_data');
                     }
-                    elsif ($char eq '4')
+                    elsif ($char eq 'm')
                     {
                         requestSize('\\');
                     }
-                    elsif ($char eq '5')
+                    elsif ($char eq 'n')
                     {
                         requestDirectory('\blah\blurb');
                     }
-                    elsif ($char eq '6')
+                    elsif ($char eq 'o')
                     {
-                        requestDirectory('\Navionic\Charts');
+                        requestSize('\ARCHIVE.FSH');
+                    }
+
+                    # probing FILESYS
+
+                    elsif ($char eq 'q')
+                    {
+                        apps::raymarine::NET::r_FILESYS::sendFilesysRequest(7,'');
+                    }
+
+                    elsif ((0 && $char ge '0' && $char le '9') || ($char ge 'a' && $char le 'f'))
+                    {
+                        my @paths = (
+                            '\\',                                   # root directory
+                            '\junk_data',                           # exiting directory
+                            '\junk_data\test_data_image1.jpg',      # existing file
+                            '\blah',                                # non existing outer level path or filename
+                            '\junk_data\blah',                      # non existing inner level path or filename
+                            '\SYSTEM VOLUME INFORMATION',           # hidden operating system file
+                            '\ARCHIVE.FSH',                         # a big file
+                        );
+
+                        display(0,0,"Probing FILESYS($char)");
+                        my $cmd = ord($char);
+                        $cmd = $cmd >= ord('a') ? 10+$cmd-ord('a') : $cmd-ord('0');
+
+                        my $extra;
+                        my $extra2;
+                        $extra = '0000' if $cmd == 3 || $cmd > 9;
+                            # extra bytes before cmd(3) or a-f didn't seem to help
+                            # extra bytes after the the required length don't seem to do anything
+                            
+                        for my $path (@paths)
+                        {
+                            $path = '' if $cmd==7 && $cmd==8;
+                            display(0,1,"probe($char) path=$path");
+                            apps::raymarine::NET::r_FILESYS::sendFilesysRequest($cmd,$path,1,$extra,$extra2);
+                            sleep(1);
+                        }
+
                     }
                 }   # FILESYS TESTING
             }   #   Got $char
         }   # $in->GetEvents()
+        else
+        {
+            sleep(0.1);
+        }
+        
     }   # while (1)
 }   #   serial_thread()
 
@@ -242,14 +292,13 @@ sub sniffer_thread
     my $rayport_file = findRayPortByName('FILE');
     my $rayport_file_rns = findRayPortByName('FILE');
 
-
     while (1)
     {
         my $packet = nextSniffPacket();
         if ($packet)
         {
             my $len = length($packet->{raw_data});
-            display($dbg_shark+1,1,"got $packet->{proto} packet len($len)");
+            # display($dbg_shark+1,1,"got $packet->{proto} packet len($len)");
             if ($packet->{udp} &&
                 # $packet->{dest_ip} eq $RAYDP_IP &&
                 $packet->{dest_port} == $RAYDP_PORT)
@@ -264,9 +313,9 @@ sub sniffer_thread
                 next;
             }
 
+
             my $ray_src = findRayPort($packet->{src_ip},$packet->{src_port});
             my $ray_dest = findRayPort($packet->{dest_ip},$packet->{dest_port});
-
 
             # my $dest_rns_filesys = $packet->{dest_port} == $RNS_FILESYS_LISTEN_PORT ? {
             #     color => $UTILS_COLOR_BROWN,
@@ -313,7 +362,8 @@ sub sniffer_thread
         }
         else
         {
-            sleep(0.001);
+            sleep(0.1);
+            # sleep(0.001);
         }
     }
 }

@@ -11,31 +11,23 @@ use Socket;
 use IO::Socket::INET;
 use IO::Socket::Multicast;
 use Time::HiRes qw(sleep);
+use Wx qw(:everything);
 use Pub::Utils;
 
 
-our @color_names = (
-    'Default',
-    'Blue',
-    'Green',
-    'Cyan',
-    'Red',
-    'Magenta',
-    'Brown',
-    'Light Gray',
-    'Gray',
-    'Light Blue',
-    'Light Green',
-    'Light Cyan',
-    'Light Red',
-    'Light Magenta',
-    'Yellow',
-    'White', );
-our $color_values = { map { $color_names[$_] => $_ } 0..$#color_names };
-	# $#array gives the last index of the array as opposed to @array which is the length in a scalar context
-	# map takes a list and applies a block of code to each element, returning a new list.
-	# The block of code is within the {} and $_ is each element of the elist is presented to the right
-	# map {block} list
+our $RAYDP_IP            = '224.0.0.1';
+our $RAYDP_PORT          = 5800;
+our $RAYDP_ADDR			 = pack_sockaddr_in($RAYDP_PORT, inet_aton($RAYDP_IP));
+our $RAYDP_ALIVE_PACKET  = pack("H*", "0100000003000000ffffffff76020000018e768000000000000000000000000000000000000000000000000000000000000000000000"),
+our $RAYDP_WAKEUP_PACKET = "ABCDEFGHIJKLMNOP",
+
+our $LOCAL_IP	= '10.0.241.200';
+our $LOCAL_UDP_PORT = 8765;                 # arbitrary but recognizable
+
+# static and known udp listening ports
+
+our $FILESYS_LISTEN_PORT		= 0x4801;   # 18433
+our $RNS_FILESYS_LISTEN_PORT	= 0x4800;	# 18432
 
 
 
@@ -64,29 +56,32 @@ BEGIN
 		packetWireHeader
 		showPacket
 
-		@color_names
-		$color_values
-
 		degreeMinutes
 
 		show_dwords
+
+		@color_names
+		$color_values
+
+	    $color_red
+	    $color_green
+	    $color_blue
+	    $color_cyan
+	    $color_magenta
+	    $color_yellow
+	    $color_dark_yellow
+	    $color_grey
+	    $color_purple
+	    $color_orange
+	    $color_white
+	    $color_medium_cyan
+	    $color_dark_cyan
+	    $color_lime
+	    $color_light_grey
+	    $color_medium_grey
+
     );
 }
-
-
-our $RAYDP_IP            = '224.0.0.1';
-our $RAYDP_PORT          = 5800;
-our $RAYDP_ADDR			 = pack_sockaddr_in($RAYDP_PORT, inet_aton($RAYDP_IP));
-our $RAYDP_ALIVE_PACKET  = pack("H*", "0100000003000000ffffffff76020000018e768000000000000000000000000000000000000000000000000000000000000000000000"),
-our $RAYDP_WAKEUP_PACKET = "ABCDEFGHIJKLMNOP",
-
-our $LOCAL_IP	= '10.0.241.200';
-our $LOCAL_UDP_PORT = 8765;                 # arbitrary but recognizable
-
-# static and known udp listening ports
-
-our $FILESYS_LISTEN_PORT		= 0x4801;   # 18433
-our $RNS_FILESYS_LISTEN_PORT	= 0x4800;	# 18432
 
 # The global $UDP_SEND_SOCKET is opened
 # in the main thread at the outer perl
@@ -101,6 +96,57 @@ $LOCAL_UDP_SOCKET ?
 	display(0,0,"LOCAL_UDP_SOCKET opened") :
 	error("Could not open UDP_SEND_SOCKET");
 
+# console colors
+# given names for monitor dropdown
+
+our @color_names = (
+    'Default',
+    'Blue',
+    'Green',
+    'Cyan',
+    'Red',
+    'Magenta',
+    'Brown',
+    'Light Gray',
+    'Gray',
+    'Light Blue',
+    'Light Green',
+    'Light Cyan',
+    'Light Red',
+    'Light Magenta',
+    'Yellow',
+    'White', );
+our $color_values = { map { $color_names[$_] => $_ } 0..$#color_names };
+	# $#array gives the last index of the array as opposed to @array which is the length in a scalar context
+	# map takes a list and applies a block of code to each element, returning a new list.
+	# The block of code is within the {} and $_ is each element of the elist is presented to the right
+	# map {block} list
+
+
+# wx colors
+
+our $color_red     	     = Wx::Colour->new(0xE0, 0x00, 0x00);		# commit: deletes; link: errors or needs pull; dialog: repoError
+our $color_green   	     = Wx::Colour->new(0x00, 0x60, 0x00);		# commit: staged M's; link: public
+our $color_blue    	     = Wx::Colour->new(0x00, 0x00, 0xC0);		# commit: icons and repo line; link: private
+our $color_cyan          = Wx::Colour->new(0x00, 0xE0, 0xE0);		# winInfoRight header
+our $color_magenta       = Wx::Colour->new(0xC0, 0x00, 0xC0);		# link: staged or unstaged changes
+our $color_yellow        = Wx::Colour->new(0xFF, 0xD7, 0x00);		# winCommitRight title background; dialog: repoWarning
+our $color_dark_yellow   = Wx::Colour->new(0xA0, 0xA0, 0x00);		# default branch warning
+our $color_grey          = Wx::Colour->new(0x99, 0x99, 0x99);		# unused
+our $color_purple        = Wx::Colour->new(0x60, 0x00, 0xC0);		# unused
+our $color_orange        = Wx::Colour->new(0xC0, 0x60, 0x00);		# link: needs Push; history: tags
+our $color_white         = Wx::Colour->new(0xFF, 0xFF, 0xFF);		# dialog: repoNote
+our $color_medium_cyan   = Wx::Colour->new(0x00, 0x60, 0xC0);		# repo: forked
+our $color_dark_cyan     = Wx::Colour->new(0x00, 0x60, 0x60);		# unused
+our $color_lime  	     = Wx::Colour->new(0x50, 0xA0, 0x00);		# hitory: tags
+our $color_light_grey    = Wx::Colour->new(0xF0, 0xF0, 0xF0);		# winCommitRight panel; dialog: repoDisplay
+our $color_medium_grey   = Wx::Colour->new(0xC0, 0xC0, 0xC0);		# winInfoLeft selected item
+
+
+#---------------------------------
+# method
+#---------------------------------
+
 
 sub sendUDPPacket
 {
@@ -113,7 +159,6 @@ sub sendUDPPacket
     }
     my $dest_addr = pack_sockaddr_in($dest_port, inet_aton($dest_ip));
     $LOCAL_UDP_SOCKET->send($packet, 0, $dest_addr);
-    display(0,1,"$name packet sent");
 }
 
 

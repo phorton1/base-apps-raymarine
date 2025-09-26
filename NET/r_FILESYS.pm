@@ -1,6 +1,15 @@
 #---------------------------------------------
 # r_FILESYS.pm
 #---------------------------------------------
+# Provides read-only access to the removable media (CF card)
+# on the MFD (E80).
+#
+# The FILESYS protocol works by setting up a UDP listener
+# and then sending requests to the FILESYS udp port which
+# then sends reponses to the listener.
+#
+# As far as I can tell, FILESYS is read-only and cannot
+# modify the removable media.
 
 package apps::raymarine::NET::r_FILESYS;
 use strict;
@@ -19,8 +28,10 @@ use apps::raymarine::NET::r_RAYDP;
 my $dbg_fs = 0;
 
 
-my $FILE_REQUEST_TIMEOUT    = 2;        # seconds
+my $FILE_REQUEST_TIMEOUT    = 30;        # seconds
 
+our $FILE_STATE_ILLEGAL   = -9; 	# used only to init change detection in winFILESYS
+our $FILE_STATE_INIT 	  = -3;
 our $FILE_STATE_ERROR     = -2;
 our $FILE_STATE_COMPLETE  = -1;
 our $FILE_STATE_IDLE      = 0;
@@ -35,7 +46,8 @@ BEGIN
 
         filesysThread
 
-
+		$FILE_STATE_ILLEGAL
+		$FILE_STATE_INIT
 		$FILE_STATE_ERROR
 		$FILE_STATE_COMPLETE
 		$FILE_STATE_IDLE
@@ -45,57 +57,118 @@ BEGIN
         getFileRequestState
         getFileRequestError
         getFileRequestContent
-
+		clearFileRequestError
+		getFileRequestProgress
+		
         requestSize
 		requestFile
         requestDirectory
+		requestCardID
+
+		fileStateName
+
+		$FAT_READ_ONLY
+		$FAT_HIDDEN
+		$FAT_SYSTEM
+		$FAT_VOLUME_ID
+		$FAT_DIRECTORY
+		$FAT_FILE
+
     );
 }
 
 
-# command constants
-
-
+# used command constants
 
 my $COMMAND_DIRECTORY   = 0;		# returns a directory listing without any file or directory sizes (plus some other stuff)
-my $COMMAND_GET_SIZE    = 1;		# returns a dword size (success completely understood)
+my $COMMAND_GET_SIZE    = 1;		# returns a dword size of FILES only (success completely understood)
 my $COMMAND_GET_FILE    = 2;		# returns the contents of a file (success completely understood)
-my $COMMAND_REGISTER    = 9;		# returns a string (plus some other stuff)
+my $COMMAND_CARD_ID     = 9;		# returns a string (plus some other stuff) that I think is related to the particular CF card
+    # the string 0014910F06D62062  returned with my RAY_DATA CF card in the E80
+    # the string 0014802A08W79223  returned with Caribbean Navionics CF card in the E80
+
+# unused command constants
+# I never got anything from probes of 3 or higher than 9
+
+my $COMMAND_UNKNOWN 	= 3;		# I never got anything back from this in probing
+my $COMMAND_GET_ATTR	= 4;		# returns dword size (files only) AND byte of attributes
+	# does not return attrs on ROOT dirctory
+	# apparently does not require extra inserted word(0)
+my $COMMAND_FILE_EXISTS = 5;		# appears to return $FILE_SUCCESS on existing files only, an error otherwise
+my $COMMAND_GET_SIZE2	= 6;		# appears to return exactly the same thing as GET_SIZE
+	# but apparently does not require extra insered word(0)
+my $COMMAND_LOCK		= 7;		# increments an internal lock counter, probably per listener
+my $COMMAND_UNLOCK		= 8;		# decrements an internal lock counter, probably per listener
+	# LOCKING: it appears as if the intent is that you call $COMMAND_UNLOCK and then
+	# if it returns an error, you are free to increment the counter with $COMMAND_LOCK
+	# which always returns $SUCCESS.  UNLOCK will return $SUCCEESS for as many times
+	# as you called LOCK, and then start returning errors again.
+	# I have not tested if the LOCK prevents modification to the CF card by the E80
+	# while asserted, and as far as I can tell there is no way to modify the CF card
+	# using the FILESYS protocol.
+
+
+# ERROR CODES: If the operation fails, FILESYS returns
+# something other than the $SUCCESS_CODE 00000400 after
+# the sequence number. As far as I have seen it always
+# returns at least the dword('01050480'), but on some
+# calls it returns an extra dword that appears to contain
+# buffer junk from whatever followed the 00000400 in the
+# most recent success reply.
+# my $KNOWN_ERROR_CODE    = pack('H*','01050480');
 
 my $COMMAND_REQUEST     = pack('C',1);
 my $COMMAND_REPLY       = pack('C',0);
 my $FUNC_5              = pack('H*','0500');
-my $SUCCESS_PATTERN		= pack("H*",'00000400');
+my $SUCCESS_PATTERN		= pack('H*','00000400');
 
-my $UNKNOWN_MAGIC_FILE_KEY = '9a9d0100';
-	# this is required for $COMMAND_GET_FILE
+my $MAXIMUM_FILE_SIZE = 'ffffff01'; #;
+	# YAY .. its the maximum file length to retrieve.
+	# The highest number I was able to plug in and get a response
+	# is 0x1ffffff, which correlate to a maximum file size of 32K.
+	# It took me a long time to figure out that the '9a9d0100' I'd
+	# seen from RNS was not some kind of a "magic" key.
 
 # FAT attribute bits
 
-my $FAT_READ_ONLY   = 0x01;
-my $FAT_HIDDEN      = 0x02;
-my $FAT_SYSTEM      = 0x04;
-my $FAT_VOLUME_ID   = 0x08;
-my $FAT_DIRECTORY   = 0x10;
-my $FAT_FILE     	= 0x20;
+our $FAT_READ_ONLY   = 0x01;
+our $FAT_HIDDEN      = 0x02;
+our $FAT_SYSTEM      = 0x04;
+our $FAT_VOLUME_ID   = 0x08;
+our $FAT_DIRECTORY   = 0x10;
+our $FAT_FILE     	 = 0x20;
+
 
 # shared variables
 
 my $filesys_ip:shared		= '';
 my $filesys_port:shared 	= 0;
 
-my $file_state:shared       = 0;
+my $file_state:shared       = $FILE_STATE_INIT;
 my $file_error:shared       = '';
 
 my $file_command:shared     = 0;
 my $file_path:shared        = '';
 my $file_content:shared    	= '';
 my $request_time:shared    	= 0;	# Shouldn't need to be shared
+my $output_filename:shared  = '';
 
 # these vars are thread local, non-shared
 
 my $file_req_num		= -1;
 my $next_seq_num  		= 0;
+
+our $file_request_cur:shared = 0;
+our $file_request_num:shared = 0;
+
+
+sub getFileRequestProgress
+{
+	return {
+		cur => $file_request_cur,
+		num => $file_request_num };
+}
+
 
 
 #------------------------------------------
@@ -117,6 +190,20 @@ sub getFileRequestContent
 	return $file_content;
 }
 
+sub clearFileRequestError
+{
+	if ($file_state == $FILE_STATE_ERROR)
+	{
+		$file_error = '';
+		$file_state = $FILE_STATE_IDLE;
+	}
+}
+
+
+sub requestCardID
+{
+	initFileRequest($COMMAND_CARD_ID);
+}
 
 sub requestSize
 {
@@ -126,8 +213,8 @@ sub requestSize
 
 sub requestFile
 {
-	my ($filename) = @_;
-	initFileRequest($COMMAND_GET_FILE,$filename);
+	my ($filename,$ofilename) = @_;
+	initFileRequest($COMMAND_GET_FILE,$filename,$ofilename);
 }
 
 sub requestDirectory
@@ -137,31 +224,46 @@ sub requestDirectory
 }
 
 
+sub fileStateName
+{
+	return "ILLEGAL"   if $file_state == $FILE_STATE_ILLEGAL;
+	return "INIT" 	   if $file_state == $FILE_STATE_INIT;
+	return "ERROR"     if $file_state == $FILE_STATE_ERROR;
+	return "COMPLETE"  if $file_state == $FILE_STATE_COMPLETE;
+	return "IDLE"      if $file_state == $FILE_STATE_IDLE;
+	return "STARTED"   if $file_state == $FILE_STATE_STARTED;
+	return "PACKETS"   if $file_state == $FILE_STATE_PACKETS;
+	return "UNKOWN";
+}
+
+
+
 
 #----------------------------------------------------
 # implementation
 #----------------------------------------------------
 
-sub fatStr
+sub dbgFatStr
 {
-	my ($flag) = @_;
-	my $text = sprintf("flag(0x%02x) ",$flag);
-	$text .= 'VOL  ' 	if $flag & $FAT_VOLUME_ID;
-	$text .= 'DIR  ' 	if $flag & $FAT_DIRECTORY;
-	$text .= 'FILE ' 	if $flag & $FAT_FILE;
-	$text .= 'r'  		if $flag & $FAT_READ_ONLY;
-	$text .= 'h'  		if $flag & $FAT_HIDDEN;
-	$text .= 's'  		if $flag & $FAT_SYSTEM;
+	my ($attr) = @_;
+	my $text = sprintf("flag(0x%02x) ",$attr);
+	$text .= 'VOL  ' 	if $attr & $FAT_VOLUME_ID;
+	$text .= 'DIR  ' 	if $attr & $FAT_DIRECTORY;
+	$text .= 'FILE ' 	if $attr & $FAT_FILE;
+	$text .= 'r'  		if $attr & $FAT_READ_ONLY;
+	$text .= 'h'  		if $attr & $FAT_HIDDEN;
+	$text .= 's'  		if $attr & $FAT_SYSTEM;
 	$text = pad($text,20);
 	return $text;
 }
+
 
 sub commandStr
 {
 	return "DIRECTORY"	if $file_command == $COMMAND_DIRECTORY;
 	return "GET_SIZE" 	if $file_command == $COMMAND_GET_SIZE;
 	return "GET_FILE" 	if $file_command == $COMMAND_GET_FILE;
-	return "REGISTER" 	if $file_command == $COMMAND_REGISTER;
+	return "CARD_ID" 	if $file_command == $COMMAND_CARD_ID;
 	return "UNKNOWN COMMAND";
 }
 
@@ -182,7 +284,9 @@ sub fileRequestError
 
 sub initFileRequest
 {
-    my ($command,$path) = @_;
+    my ($command,$path,$ofilename) = @_;
+	$ofilename ||= '';
+	display($dbg_fs,0,"initFileRequest($command,$path,$ofilename)");
 
 	if (!$filesys_port)
 	{
@@ -195,43 +299,62 @@ sub initFileRequest
 		return;
 	}
 
-	$file_command 	= $command;
-	$file_path 		= $path;
-	$file_content	= '';
+	$file_request_cur = 0;
+	$file_request_num = 0;
+	
+	$file_command 	 = $command;
+	$file_path 		 = $path;
+	$output_filename = $ofilename;
+
+	# Perl weirdness: if I set $file_content='' here, and then do a directory
+	# listing which sets it to a shared_clone([]), it works the first time.
+	# If I then do a second command of any kind, Perl seems to crash on the
+	# second $file_content='' here, as if there's a problem in changing the
+	# type of the var from a shared array to a scalar.  But if I set
+	# $file_content=shared_clone([]) here, then I can do multiple directories
+	# in a row. But then of course, my current code for getting a file breaks
+	# and if I try to fix it by setting $file_content='' if ref($file_content)
+	# then Perl dies at that statement.  Therefore, directory contents are
+	# delivered as \n delimited lines of tab delimited fields in a known order.
+
+	$file_content 	= '';
 	$file_error 	= '';
 	$request_time 	= time();
 	$file_state 	= $FILE_STATE_STARTED;
 }
 
 
-sub sendRegisterRequest
-{
-	# interesting an error here put a 0 as the command, with no length or path got a directory
-	my $packet = pack('C',$COMMAND_REGISTER);
-	$packet .= $COMMAND_REQUEST;
-	$packet .= $FUNC_5;
-	$packet .= pack('V',$next_seq_num++);
-	$packet .= pack('v',$FILESYS_LISTEN_PORT);
-    sendUDPPacket(
-        'fileRegister',
-        $filesys_ip,
-        $filesys_port,
-        $packet);
-}
-
-
 sub sendFilesysRequest
-	# first time I tried this it crashed the E80 with the packet
+	# Note that it is possible to crash the E80 with this method.
+	# First time I tried this it crashed the E80 with the packet
+	#
 	# 	02010500 01000000 01482000 5c6a756e 6b5f6461 74615c74 6573745f 64617461   .........H .\junk_data\test_data
 	# 	5f696d61 6765312e 6a706700                                                _image1.jpg.
 	#
-	# command(2) should look like 02010500 06000000 {PORT} 00000000 9a9d0100
-	# missing the extra dword(0) and magic_key(9a9d0100) on first try
+	# in which I did not include the exter dword(0) and dword(maximum_file_size)
+	# that I observed when RNS made this call.  Presumably it crashed because
+	# it has a fixed buffer size and/or tried to allocate a buffer of 7461 (0x6174)
+	# bytes and either failed the allocate or read past the buffer.
+	#
+	# So, some care must be taken when probing the E80, and therefore, for
+	# the time being I invariantly add the needed extra words for the GET_SIZE
+	# and GET_FILE commands, which I already know work.
 {
-	my ($command,$path) = @_;
+	my ($command,$path,$is_probe,$extra1,$extra2) = @_;
+	$is_probe ||= 0;
+
+	# optional params allow probing FILESYS directly
+	# from the main thread. $extra1 is inserted before
+	# the path, and $extra2 is added at the end of the packet.
+
 	$command ||= $file_command;
 	$path 	 ||= $file_path;
-		# optional params allow calling from main thread
+	display($dbg_fs,0,"sendFilesysRequest($command,$path)".
+		($is_probe?"PROBE ":'').
+		(defined($extra1)?" extra1=$extra1":'').
+		(defined($extra2)?" extra2=$extra1":''));
+
+	# The header of the command never changes
 
 	my $seq_num = $next_seq_num++;
 	my $len = length($path) + 1;
@@ -241,17 +364,26 @@ sub sendFilesysRequest
 	$packet .= pack('V',$seq_num);
 	$packet .= pack('v',$FILESYS_LISTEN_PORT);
 
-	$packet .= pack('H*','0000') if $command == $COMMAND_GET_SIZE;
-		# add a dword for command get size
-	$packet .= pack('H*','00000000'.$UNKNOWN_MAGIC_FILE_KEY) if $command == $COMMAND_GET_FILE;
-		# add the extra dword and magic key
+	# The path is optional on some comannds.
+	# The path must be preceded by things on some commands.
 
-	$packet .= pack('v',$len);
-	$packet .= $path;
-	$packet .= chr(0);
-
+	if ($path)
+	{
+		$packet .= pack('H*',$extra1) if defined($extra1);
+		$packet .= pack('H*','0000') if $command == $COMMAND_GET_SIZE;
+			# add a dword for GET_SIZE
+		$packet .= pack('H*','00000000'.$MAXIMUM_FILE_SIZE) if $command == $COMMAND_GET_FILE;
+			# add the extra dword and  maximum file size for GET_FILE
+		$packet .= pack('v',$len);
+		$packet .= $path;
+		$packet .= chr(0);
+			# it is not clear if this terminating null is required
+			# but it does not hurt anything
+	}
+	
+	$packet .= pack('H*',$extra2) if defined($extra2);
     sendUDPPacket(
-        "fileCommand($file_command)",
+        "fileCommand($command)",
 		$filesys_ip,
         $filesys_port,
         $packet);
@@ -265,7 +397,7 @@ sub sendFilesysRequest
 sub filesysThread
     # blocking unidirectional single port monitoring thread
 {
-    display(0,0,"filesysThread($FILESYS_LISTEN_PORT) started");
+    display($dbg_fs,0,"filesysThread($FILESYS_LISTEN_PORT) started");
 
 	# open listen socket
 
@@ -278,9 +410,13 @@ sub filesysThread
         error("Could not open sock in listen_udp_thread($FILESYS_LISTEN_PORT)");
         return;
     }
-    display(0,0,"listen socket opened");
+	setsockopt($sock, SOL_SOCKET, SO_RCVBUF, pack("I", 0x1ffffff));
+		# Increasing the udp socket buffer size was required for me to
+		# reliably recieve a 1MB ARCHIVE.FSH file.
 
-	# get FILESYS ip:port
+    display($dbg_fs,0,"listen socket opened");
+
+	# get the FILESYS ip:port from RAYDP
 
 	my $rayport = findRayPortByName('FILESYS');
 	while (!$rayport)
@@ -291,24 +427,23 @@ sub filesysThread
 	}
 	$filesys_ip = $rayport->{ip};
 	$filesys_port = $rayport->{port};
-	display(0,1,"found rayport(FILESYS) at $filesys_ip:$filesys_port");
+	display($dbg_fs,1,"found rayport(FILESYS) at $filesys_ip:$filesys_port");
 	
 	# start the loop
 
 	my $reply_sig;
+	$file_state = $FILE_STATE_IDLE;
     my $sel = IO::Select->new($sock);
     while (1)
     {
         if ($sel->can_read(0.1))
         {
-            display(0,1," filesysThread can_read");
-
 			my $raw;
 			recv($sock, $raw, 4096, 0);
 			if ($raw)
 			{
 				setConsoleColor($UTILS_COLOR_LIGHT_MAGENTA);
-				display(0,1,"filesysThread() GOT ".length($raw)." BYTES "._lim(unpack("H*",$raw),32));
+				display($dbg_fs,1,"filesysThread() GOT ".length($raw)." BYTES "._lim(unpack("H*",$raw),32));
 				setConsoleColor();
 
 				$request_time = time();
@@ -316,22 +451,48 @@ sub filesysThread
 				if ($file_state == $FILE_STATE_PACKETS &&
 					substr($raw,0,8) eq $reply_sig)
 				{
-					# the next four bytes should be '00000400', the success pattern
+					# COMMAND_CARD_ID does not use a 00004000 success signature
+					# Example for the string 0014910F06D62062 returned with my RAY_DATA CF card in the E80
+					#
+					#	09000500 nnnnnnnn
+					#   	signature w/seq_num
+					#	88130000 0100
+					#      	unknown leading bytes
+					#	1400 20202020 30303134 39313046 30364436 32303632
+					#       length and string
+					#		 _ _ _ _  0 0 1 4  9 1 0 F  0 6 D 6  2 0 6 2
+					#	0f270c
+					#		unknown trailing bytes
 
-					if (substr($raw,8,4) ne $SUCCESS_PATTERN)
+					if ($file_command == $COMMAND_CARD_ID)
 					{
-						fileRequestError("operation failed: ".unpack('H*',substr($raw,9)));
+						my $len = unpack('v',substr($raw,14,2));
+						my $id = substr($raw,16,$len);
+						print "CARD_ID=$id\n";
+						$file_content = $id;
+						$file_state = $FILE_STATE_COMPLETE;
 					}
+
+					# otherwise, for all other commands, the next four bytes should
+					# be '00000400', the success pattern
+
+					elsif (substr($raw,8,4) ne $SUCCESS_PATTERN)
+					{
+						fileRequestError("operation failed: ".unpack('H*',substr($raw,8)));
+					}
+
+
 					elsif ($file_command == $COMMAND_GET_SIZE)
 					{
 						my $size = unpack('V',substr($raw,12));
-						print "SIZE($file_path) = $size\r\n";
+						print "SIZE($file_path) = $size\n";
+						$file_content = $size;
 						$file_state = $FILE_STATE_COMPLETE;
 					}
 					elsif ($file_command == $COMMAND_DIRECTORY)
 					{
 						# Each entry is word(length) followed by length bytes of name,
-						# followed by a 1 byte FAT bit flag.
+						# followed by a FAT 1 byte bitwise attribute
 						#
 						#                                         v first length byte
 						# 00000500 03000000 00000400 01000100 06000200 2e001002 002e2e10 0e005445   ..............................TE
@@ -340,12 +501,11 @@ sub filesysThread
 						# 5f494d41 4745322e 4a504720                                                _IMAGE2.JPG
 						#
 						# There is a dir entry for . followed by a dir entry for ..
-						# The entry for . seems to have include null, where as the one for .. doesnt
+						# The entry for . seems to have and included null, where as the one for .. doesnt
 						#
 						# I don't understand these 6 bytes from 12-17. I presume they are num_packets
-						# and packet_num to manage large directory listing.
-						#
-						# 0100 0100 0600
+						# and packet_num to manage large directory listings
+						# 			0100 0100 0600
 
 						print "DIR($file_path)\n";
 						my $LIST_OFFSET = 18;
@@ -356,21 +516,27 @@ sub filesysThread
 							my $length = unpack('v',substr($raw,$offset,2));
 							$offset += 2;
 							my $name = substr($raw,$offset,$length);
-							$name =~ s/\x00$//;	# remove traling null from '.' directory
-
 							$offset += $length;
-							my $flag = unpack('C',substr($raw,$offset,1));
+							my $attr = unpack('C',substr($raw,$offset,1));
 							$offset += 1;
 
-							print "    ".fatStr($flag).pad("len($length)",8).$name."\r\n";
-							$file_state = $FILE_STATE_COMPLETE;
-						}
+							$name =~ s/\x00//g;								# remove traling null from '.' directory
+							$name =~ s/\.//g if $attr & $FAT_VOLUME_ID;		# remove erroneous . in middle of my volume name
 
+							print "    ".dbgFatStr($attr).pad("len($length)",8).$name."\n";
+
+							$file_content .= "\n" if $file_content;
+							$file_content .= "$attr\t$name";
+						}
+						$file_state = $FILE_STATE_COMPLETE;
 					}
 					elsif ($file_command == $COMMAND_GET_FILE)
 					{
 						my ($num_packets,$packet_num,$bytes) = unpack('v3',substr($raw,12,6));
-						display(0,2,"command($file_command) packet($packet_num/$num_packets) bytes=$bytes");
+						display($dbg_fs,2,"command($file_command) packet($packet_num/$num_packets) bytes=$bytes");
+
+						$file_request_cur = $packet_num;
+						$file_request_num = $num_packets;
 
 						my $cur_len = length($file_content);
 						if ($cur_len != $packet_num * 1024)
@@ -384,37 +550,44 @@ sub filesysThread
 							$file_content .= $content;
 							if ($packet_num == $num_packets - 1)
 							{
-								my $output_filename = $file_path;
-								$output_filename =~ s/^.*\\//;
-								display(0,2,"FILE($output_filename) COMPLETED!!");
-								printVarToFile(1,$output_filename,$file_content,1);
+								if ($output_filename)
+								{
+									my $ofilename = "docs/junk/downloads/$output_filename";
+									warning(0,2,"writing to $ofilename");
+									printVarToFile(1,$ofilename,$file_content,1);
+								}
+								display($dbg_fs,2,"FILE($file_path) COMPLETED!!");
 								$file_state = $FILE_STATE_COMPLETE;
 							}
 						}	# no length error
-					}	# $COMMAND_GET_FILE
+					}	#   $COMMAND_GET_FILE
 				}	# signature matched
 			}	# got some bytes
 		}	# 	can read
 
-		elsif ($file_state > 0 &&
-			   time() > $request_time + $FILE_REQUEST_TIMEOUT)
+		else	# !can_read
 		{
-			my $len = length($file_content);
-			fileRequestError("offset($len) TIMEOUT");
-		}
-		elsif ($file_state == $FILE_STATE_STARTED)
-		{
-			sendRegisterRequest();
-			# build the 8 byte reply signature that
-			# means the reply is to our request
+			if ($file_state > 0 &&
+				time() > $request_time + $FILE_REQUEST_TIMEOUT)
+			{
+				# my $len = length($file_content);
+				fileRequestError("TIMEOUT");
+			}
+			elsif ($file_state == $FILE_STATE_STARTED)
+			{
+				display($dbg_fs,0,"FILE_STATE_STARTED($file_command)");
 
-			$reply_sig = pack('C',$file_command);
-			$reply_sig .= $COMMAND_REPLY;
-			$reply_sig .= $FUNC_5;
-			$reply_sig .= pack('V',$next_seq_num);
-			display(0,2,"reply_sig=".unpack("H*",$reply_sig));
-			sendFilesysRequest();
-			$file_state = $FILE_STATE_PACKETS;
+				# build the 8 byte reply signature that
+				# means the reply is to our request
+
+				$reply_sig = pack('C',$file_command);
+				$reply_sig .= $COMMAND_REPLY;
+				$reply_sig .= $FUNC_5;
+				$reply_sig .= pack('V',$next_seq_num);
+				display($dbg_fs+1,2,"reply_sig=".unpack("H*",$reply_sig));
+				sendFilesysRequest();
+				$file_state = $FILE_STATE_PACKETS;
+			}
 		}
 	}	# while 1
 }	# filesysThread
