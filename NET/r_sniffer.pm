@@ -2,7 +2,7 @@
 # r_sniffer.pm
 #---------------------------------------------
 
-package apps::raymarine::NET::r_sniffer;
+package r_sniffer;
 use strict;
 use warnings;
 use threads;

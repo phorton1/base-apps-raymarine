@@ -13,7 +13,7 @@ use IO::Select;
 use IO::Socket::INET;
 use IO::Socket::Multicast;
 use Pub::Utils;
-use apps::raymarine::NET::ray_UI;
+use ray_UI;
 
 my $dbg = 0;
 

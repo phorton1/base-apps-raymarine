@@ -6,7 +6,7 @@
 # that allows for control of shark monitoring
 
 
-package apps::raymarine::NET::winRAYDP;
+package winRAYDP;
 use strict;
 use warnings;
 use Wx qw(:everything);
@@ -16,8 +16,8 @@ use Wx::Event qw(
 	EVT_COMBOBOX );
 use Pub::Utils;
 use Pub::WX::Window;
-use apps::raymarine::NET::r_utils;
-use apps::raymarine::NET::r_RAYDP;
+use r_utils;
+use r_RAYDP;
 use base qw(Wx::Window MyWX::Window);
 
 my $dbg_win = 0;

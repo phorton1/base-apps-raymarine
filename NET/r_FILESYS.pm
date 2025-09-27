@@ -11,7 +11,7 @@
 # As far as I can tell, FILESYS is read-only and cannot
 # modify the removable media.
 
-package apps::raymarine::NET::r_FILESYS;
+package r_FILESYS;
 use strict;
 use warnings;
 use threads;
@@ -22,8 +22,8 @@ use IO::Handle;
 use IO::Socket::INET;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
-use apps::raymarine::NET::r_utils;
-use apps::raymarine::NET::r_RAYDP;
+use r_utils;
+use r_RAYDP;
 
 my $dbg_fs = 0;
 

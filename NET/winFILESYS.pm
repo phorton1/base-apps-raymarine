@@ -4,7 +4,7 @@
 #-------------------------------------------------------------------------
 # A Window to Access the Removable Media on the MFD (E80)
 
-package apps::raymarine::NET::winFILESYS;
+package winFILESYS;
 use strict;
 use warnings;
 use Wx qw(:everything);
@@ -18,10 +18,10 @@ use Wx::Event qw(
 use Pub::Utils;
 use Pub::WX::Window;
 use Pub::WX::Dialogs;;
-use apps::raymarine::NET::r_utils;
-use apps::raymarine::NET::r_FILESYS;
-use apps::raymarine::NET::s_resources;
-use apps::raymarine::NET::dlgProgress;
+use r_utils;
+use r_FILESYS;
+use s_resources;
+use dlgProgress;
 use base qw(Wx::Window MyWX::Window);
 
 my $dbg_win = 1;		# window basics
@@ -753,7 +753,7 @@ sub downloadSelected
 
 	# start the recursive file download
 	
-	my $progress = apps::raymarine::NET::dlgProgress->new(
+	my $progress = dlgProgress->new(
 		$this,
 		'download',
 		$num_files,

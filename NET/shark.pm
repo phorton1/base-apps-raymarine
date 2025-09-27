@@ -1,7 +1,8 @@
 #---------------------------------------------
 # shark.pm
 #---------------------------------------------
-package apps::raymarine::NET::shark;
+
+package shark;
 use strict;
 use warnings;
 use threads;
@@ -15,14 +16,15 @@ use Win32::Console;
 use IO::Handle;
 use IO::Socket::INET;
 use IO::Select;
-use apps::raymarine::NET::r_utils;
-use apps::raymarine::NET::r_sniffer;
-use apps::raymarine::NET::r_RAYDP;
-use apps::raymarine::NET::r_NAVSTAT;
-use apps::raymarine::NET::r_FILESYS;
-use apps::raymarine::NET::r_NAVQRY;
-use apps::raymarine::NET::s_resources;
-use apps::raymarine::NET::s_frame;
+use r_utils;
+use r_sniffer;
+use r_RAYDP;
+use r_NAVSTAT;
+use r_FILESYS;
+use r_NAVQRY;
+use r_characterize;
+use s_resources;
+use s_frame;
 use base 'Wx::App';
 
 
@@ -30,17 +32,12 @@ my $dbg_shark = 0;
 
 our $SEND_ALIVE:shared = 0;
 
-our $MON_RAYDP:shared = 1;
-our $MON_FILESYS:shared = 0;
-our $MON_RNS_FILESYS:shared = 0;
-
 
 BEGIN
 {
  	use Exporter qw( import );
     our @EXPORT = qw(
 
-        $MON_RAYDP
         $SEND_ALIVE
 
     );
@@ -130,25 +127,12 @@ sub serial_thread
                 #   #       $SEND_ALIVE = $SEND_ALIVE ? 0 : 1;
                 #   #       warning(0,0,"SEND_ALIVE=$SEND_ALIVE");
                 #   #   }
-                #   elsif ($char eq 'r')
-                #   {
-                #       $MON_RAYDP = $MON_RAYDP ? 0 : 1;
-                #       warning(0,0,"MON_RAYNET=$MON_RAYDP");
-                #   }
 
-
-                elsif (0)
+                elsif (1)
                 {
                     # NAVQUERY TESTING
-                    if ($char eq 'q')
-                    {
-                        startNavQuery();
-                    }
-                    elsif ($char eq 'f')
-                    {
-                        requestFile('\ARCHIVE.FSH','ARCHIVE.FSH');
-                    }
-                    elsif ($char eq 'a')
+
+                    if ($char eq 'a')
                     {
                         startNavQuery();
                     }
@@ -178,11 +162,11 @@ sub serial_thread
                 {
                     if (ord($char) == 1)            # CTRL-A
                     {
-                        apps::raymarine::NET::r_FILESYS::sendFilesysRequest(0);
+                        r_FILESYS::sendFilesysRequest(0);
                     }
                     elsif (ord($char) == 2)            # CTRL-B
                     {
-                        apps::raymarine::NET::r_FILESYS::sendFilesysRequest(2,'\junk_data\test_data_image1.jpg');
+                        r_FILESYS::sendFilesysRequest(2,'\junk_data\test_data_image1.jpg');
                     }
 
                     elsif ($char eq 'g')
@@ -227,7 +211,7 @@ sub serial_thread
 
                     elsif ($char eq 'q')
                     {
-                        apps::raymarine::NET::r_FILESYS::sendFilesysRequest(7,'');
+                        r_FILESYS::sendFilesysRequest(7,'');
                     }
 
                     elsif ((0 && $char ge '0' && $char le '9') || ($char ge 'a' && $char le 'f'))
@@ -256,7 +240,7 @@ sub serial_thread
                         {
                             $path = '' if $cmd==7 && $cmd==8;
                             display(0,1,"probe($char) path=$path");
-                            apps::raymarine::NET::r_FILESYS::sendFilesysRequest($cmd,$path,1,$extra,$extra2);
+                            r_FILESYS::sendFilesysRequest($cmd,$path,1,$extra,$extra2);
                             sleep(1);
                         }
 
@@ -462,7 +446,7 @@ my $frame;
 
 sub OnInit
 {
-	$frame = apps::raymarine::NET::s_frame->new();
+	$frame = s_frame->new();
 	if (!$frame)
 	{
 		error("unable to create frame");
@@ -473,7 +457,7 @@ sub OnInit
 	return 1;
 }
 
-my $app = apps::raymarine::NET::shark->new();
+my $app = shark->new();
 Pub::WX::Main::run($app);
 
 

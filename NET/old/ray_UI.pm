@@ -2,7 +2,7 @@
 # ray_UI.pm
 #---------------------------------------
 
-package apps::raymarine::NET::old::ray_UI;
+package old::ray_UI;
 use strict;
 use warnings;
 use Win32::Console::ANSI;

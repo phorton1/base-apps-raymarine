@@ -56,12 +56,12 @@
 
 # mysterioius magic FILESYS key: 9a9d0100
 
-package apps::raymarine::NET::r_RAYDP;
+package r_RAYDP;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
-use apps::raymarine::NET::r_utils;
+use r_utils;
 use Socket;
 use Pub::Utils;
 
@@ -170,7 +170,7 @@ my $RNS_INIT  	= 0;			# starts happening when RNS starts
 my $UNDER_WAY 	= 0;			# emitted by E80 while "underway"
 my $FILESYS 	= 0;			# requests made TO the filesystem
 my $MY_GPS 		= $UNDER_WAY;	# the "GPS" protocol needs further exploration
-my $MY_NAV 		= 0;			# the important Waypoint, Route, and Group management tcp protocol
+my $MY_NAV 		= 1;			# the important Waypoint, Route, and Group management tcp protocol
 my $RAYDP		= 0;
 my $FILE		= 0;
 my $FILE_RNS 	= 0;

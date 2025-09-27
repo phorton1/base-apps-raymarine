@@ -15,7 +15,7 @@
 # range is the total number of things that we know about
 # at any time.
 
-package apps::raymarine::NET::dlgProgress;
+package dlgProgress;
 use strict;
 use warnings;
 use Wx qw(:everything);

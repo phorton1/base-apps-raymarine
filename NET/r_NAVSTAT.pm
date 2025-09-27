@@ -13,10 +13,10 @@
 # The code herein is currently working poorly after a rapid
 # port, without much debugging, from raynet_old.pm
 
-package apps::raymarine::NET::r_NAVSTAT;
+package r_NAVSTAT;
 use strict;
 use warnings;
-use apps::raymarine::NET::r_utils;
+use r_utils;
 use Pub::Utils;
 
 

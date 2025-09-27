@@ -2,7 +2,7 @@
 # r_utils.pm
 #---------------------------------------------
 
-package apps::raymarine::NET::r_utils;
+package r_utils;
 use strict;
 use warnings;
 use threads;
@@ -28,7 +28,7 @@ our $LOCAL_UDP_PORT = 8765;                 # arbitrary but recognizable
 
 our $FILESYS_LISTEN_PORT		= 0x4801;   # 18433
 our $RNS_FILESYS_LISTEN_PORT	= 0x4800;	# 18432
-
+our $NAVQUERY_PORT 				= 9877;
 
 
 BEGIN
@@ -47,6 +47,7 @@ BEGIN
 
 		$FILESYS_LISTEN_PORT
 		$RNS_FILESYS_LISTEN_PORT
+		$NAVQUERY_PORT
 
 		sendUDPPacket
 
@@ -252,7 +253,7 @@ my $BYTES_PER_LINE	= $GROUPS_PER_LINE * $BYTES_PER_GROUP;
 my $LEFT_SIZE = $GROUPS_PER_LINE * $BYTES_PER_GROUP * 2 + $GROUPS_PER_LINE;
 
 
-# use apps::raymarine::NET::r_NAVQRY;
+
 my %declared_len:shared;
 
 
@@ -293,7 +294,7 @@ sub showPacket
 				$hex_data = substr($hex_data,4);
 				warning(0,0,"using length($use_len) shifting packet by 2 to: $hex_data");
 			}
-			apps::raymarine::NET::r_NAVQRY::parse_stuff($src_port,$dest_port,$declared_len{$dest_port},$raw_data);
+			r_characterize::characterize($src_port,$dest_port,$declared_len{$dest_port},$raw_data);
 			# so I clear the previous length byte once I use it ...
 			$declared_len{$dest_port} = -1;
 		}

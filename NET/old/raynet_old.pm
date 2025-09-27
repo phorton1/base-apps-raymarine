@@ -3,7 +3,7 @@
 #---------------------------------------
 # see docs/raynet.md
 
-package apps::raymarine::NET::raynet_old;
+package raynet_old;
 use strict;
 use warnings;
 use Socket;
@@ -12,8 +12,8 @@ use IO::Select;
 use IO::Socket::INET;
 use IO::Socket::Multicast;
 use Pub::Utils;
-use apps::raymarine::NET::old::ray_UI;
-use apps::raymarine::NET::old::ray_E80;
+use old::ray_UI;
+use old::ray_E80;
 
 
 my $USE_MY_MCAST = 0;

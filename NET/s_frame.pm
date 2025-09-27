@@ -3,7 +3,7 @@
 # s_frame.pm
 #-------------------------------------------------------------------------
 
-package apps::raymarine::NET::s_frame;
+package s_frame;
 use strict;
 use warnings;
 use threads;
@@ -17,9 +17,9 @@ use Pub::Utils;
 use Pub::WX::Frame;
 use Win32::SerialPort;
 use Win32::Console;
-use apps::raymarine::NET::s_resources;
-use apps::raymarine::NET::winRAYDP;
-use apps::raymarine::NET::winFILESYS;
+use s_resources;
+use winRAYDP;
+use winFILESYS;
 
 
 use base qw(Pub::WX::Frame);
@@ -59,8 +59,8 @@ sub createPane
 	return error("No id in createPane()") if (!$id);
     $book ||= $this->{book};
 	display(0,0,"minimumFrame::createPane($id) book="._def($book)."  data="._def($data));
-	return apps::raymarine::NET::winRAYDP->new($this,$book,$id,"test236 $id") if $id == $WIN_RAYDP;
-	return apps::raymarine::NET::winFILESYS->new($this,$book,$id,"test236 $id") if $id == $WIN_FILESYS;
+	return winRAYDP->new($this,$book,$id,"test236 $id") if $id == $WIN_RAYDP;
+	return winFILESYS->new($this,$book,$id,"test236 $id") if $id == $WIN_FILESYS;
     return $this->SUPER::createPane($id,$book,$data,"test237");
 }
 

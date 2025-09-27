@@ -3,7 +3,7 @@
 # s_resources.pm
 #-------------------------------------------------------------------------
 
-package apps::raymarine::NET::s_resources;
+package s_resources;
 use strict;
 use warnings;
 use threads;

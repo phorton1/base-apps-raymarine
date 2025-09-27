@@ -3,11 +3,11 @@
 #---------------------------------------
 # see docs/raynet.md
 
-package apps::raymarine::NET::old::ray_E80;
+package old::ray_E80;
 use strict;
 use warnings;
 use Pub::Utils;
-use apps::raymarine::NET::old::ray_UI;
+use old::ray_UI;
 
 BEGIN
 {
