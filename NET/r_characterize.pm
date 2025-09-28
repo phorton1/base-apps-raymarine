@@ -150,6 +150,8 @@ sub characterize
 	# that might come in the stream, so we (need to) assume the declared
 	# length of any packet is the length that cam in the packet
 	# before the given packet.
+	#
+	# NOTE THAT the packet passed in is AFTER the declared_len bytes
 {
 	my ($src_port, $dest_port, $declared_len, $packet) = @_;
 

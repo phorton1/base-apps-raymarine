@@ -30,12 +30,13 @@ use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use r_utils;
 use r_RAYDP;
+use r_characterize;
 
-my $dbg = -2;
+my $dbg = -1;
 
-my $SHOW_OUTPUT = 0;
-my $SHOW_INPUT = 0;
-my $PARSE_STUFF = 0;
+my $SHOW_OUTPUT = 1;
+my $SHOW_INPUT = 1;
+my $PARSE_STUFF = 1;
 
 my $COMMAND_TIMEOUT 		= 3;
 my $REFRESH_INTERVAL		= 5;
@@ -66,6 +67,9 @@ BEGIN
 		startNavQuery
 		refreshNavQuery
 		toggleNavQueryAutoRefresh
+
+		createWaypoint
+		deleteWaypoint
     );
 }
 
@@ -108,7 +112,7 @@ my $nav_port;
 
 my $running = 0;
 my $started = 1;
-my $next_seqnum = 1;
+my $next_seqnum:shared = 1;
 my $watch_sig = '';
 
 
@@ -116,6 +120,8 @@ my $command_time = 0;
 my $reconnect_time = 0;
 my $declared_len;
 
+my $create_waypoint:shared = 0;
+my $delete_waypoint:shared = 0;
 
 
 #----------------------------------
@@ -148,6 +154,16 @@ sub toggleNavQueryAutoRefresh
 	$auto_refresh = $auto;
 }
 
+
+sub createWaypoint
+{
+	$create_waypoint = 1;
+}
+
+sub deleteWaypoint
+{
+	$delete_waypoint = 0;
+}
 
 
 #-------------------------------------------
@@ -329,7 +345,6 @@ sub readBuf
 			my $hex = unpack("H*",$buf);
 			my $len = length($hex);
 			show_dwords(pad(length($buf),7)."--> ",$buf,$hex,0,1) if $SHOW_INPUT;
-
 			$declared_len = unpack('v',$buf) if length($buf) == 2;
 				# for characterize(), the packet that follows has the
 				# 'declared_length' of this packet of length(2) that
@@ -543,7 +558,7 @@ sub navQueryThread
 		{
 			$watch_sig = '';
 			$command_time = 0;
-			
+
 			my $sig_byte = unpack('H',$buf);
 			display($dbg+2,0,"state($state) ".kind($sig_byte)." sig matched");
 
@@ -566,7 +581,7 @@ sub navQueryThread
 			{
 				handleItemReply($buf,$sig_byte);
 			}
-			
+
 			characterize($nav_port,$NAVQUERY_PORT,$declared_len,$buf) if $PARSE_STUFF;
 		}
 
@@ -579,9 +594,157 @@ sub navQueryThread
 			$state == $STATE_GET_WAYPOINTS ||
 			$state == $STATE_GET_ROUTES ||
 			$state == $STATE_GET_GROUPS );
+
+
+		doCreate() if $create_waypoint;
 	}
 
 }	#	navQueryThread()
+
+
+
+#-----------------------------------
+# test waypoint addition
+#-----------------------------------
+# an event when e80 shuts down?
+# 224.30.38.194:2561   <-- 10.0.241.54:1215      02020500
+
+
+my $create_steps = [
+	{ name => 'set_eventing', 	template => '0400 b1010f00',
+	  expect => '0800 05000f00 00000000 08004500 0f000000 00000800 85000f00 00000000', },
+	{ name => 'null_eventing', 	template => '0400'.'b1010f00',
+	  expect => '' }, # no reply expected.
+	{ name => 'start_create', 	template => '0800 0d010f00 {seq_num}',
+	  expect => '0c00 09000f00 {seq_num} 00000000' },	# ok
+	{ name => 'check_uuid',		template => '1000 03010f00 {seq_num} {uuid}',
+	  expect => '0c00 06000f00 {seq_num} 030b0480' },	# failure
+	{ name => 'check_name',		template => '1900 0c010f00 {seq_num} {wp_name} 000000'.
+	    '00 00000000 00000000',
+		# '00 00000000 00face{byte}',
+		# '00 00000000 00000001',
+		# '90 c7190083 4ec760f8',
+
+
+		# new: 0c010f00 ae000000 506f7061 30000000 90c71900 834ec760 f8
+		# old: 0c010f00 18000000 506f7061 30000000 90c71900 834e2a65 00
+		#                  P o P a  0
+		# I don't understand any of the bytesafter the name,
+		# but perhaps the first zero is a null terminator and the
+		# rest is shifted by one byte so that it lines up with dwords as shown
+		# The last dword has changed in this invocation.
+	  expect => '1400 08000f00 {seq_num} 030b0480 00000000 00000000' },  # failure
+
+	{ name => 'create1',		template => '1000 07010f00 {seq_num} {uuid}',
+	  no_inc_step => 1,
+	  expect => '1400 00020f00 {seq_num} {uuid} 01000000' },
+		# This *might* actually create the waypoint
+		# it is now failing everytime for me
+
+	{ name => 'wp_data', template =>
+		'4100 01020f00 {seq_num}'.
+			'35000000 9e449005 ecdbface c16a9f06 ad4a84c5'.
+			'00000000 00000000 00000000'.
+			'02010000 000000f2 3c010081 4f000500 00000000 {wp_name}',
+		no_inc_seq => 1,
+		expect => '' },
+
+		# 0102 == I'm telling you context?
+		# no reply expected
+
+	{ name => 'commit', template => '1000 02020f00 {seq_num} {uuid}',
+		expect => '0c00 03000f00 {seq_num} 00000400'.
+				  '1000 07000f00 {uuid} 01100000 0000' },
+];
+
+
+my $create_num = 0;
+my $create_uuid = 'eeeeeeee'.'dddd011'; # '0';
+my $create_wp_name = 'Popa';	# 0
+
+
+
+sub delayBuf
+{
+	my ($expect) = @_;
+	if (!$expect)
+	{
+		print "nothing expected\n";
+		return 1;
+	}
+
+	my $TIMEOUT = 1;
+	my $fullbuf = '';
+	while (length($fullbuf) <= 2)
+	{
+		my $buf = readBuf();
+		if ($buf)
+		{
+			$fullbuf .= $buf;
+			$command_time = time();
+		}
+		if ($command_time && time() > $command_time + $COMMAND_TIMEOUT)
+		{
+			print "TIMEOUT ".unpack('H*',$fullbuf)."\n";
+			$command_time = 0;
+			last;
+		}
+	}
+
+	$expect =~ s/\s//g;
+	print "fullbuf=".unpack('H*',$fullbuf)."\n";
+	print "expect =$expect\n";
+	
+	if (length($fullbuf)>2)
+	{
+		my $declared_len = unpack('v',$fullbuf);
+		characterize($nav_port,$NAVQUERY_PORT,$declared_len,substr($fullbuf,2));
+	}
+	return $fullbuf;
+}
+
+my $next_byte = '01';
+
+sub doCreate
+{
+	$create_waypoint = 0;
+	$next_seqnum++;
+
+	my $wp_name = $create_wp_name.$create_num;
+	my $wp_hex = unpack('H*',$wp_name);
+	my $uuid = $create_uuid.$create_num;
+
+	print "\n";
+	print "doCreate($create_num) $wp_name $uuid next_seqnum($next_seqnum)\n";
+	print "---------------------------------------------------------------\n";
+	
+	my $step = $create_num ? 1 : 0;
+	$create_num++;
+	my $byte = $next_byte++;
+
+	while ($step < @$create_steps)
+	{
+		my $info = $create_steps->[$step];
+		my $template = $info->{template};
+		$template =~ s/\s//g;
+		$template =~ s/{null}/00/g;
+		$template =~ s/{wp_name}/$wp_hex/g;
+		$template =~ s/{byte}/$byte/;
+
+		my $seq_num = $next_seqnum;
+		$next_seqnum++ if !$info->{no_inc_seq};
+
+		print "getCreateStep($step=$info->{name}) seq_num($seq_num)\n";
+		print "   template=$template\n";
+
+		my $sig_byte = '';
+		sendCommand($template,$sig_byte,$seq_num,$uuid);
+		delayBuf($info->{expect});
+		$step++;
+	}
+	$command_time = 0;
+}
+
 
 
 

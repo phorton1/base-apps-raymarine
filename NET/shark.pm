@@ -156,7 +156,14 @@ sub serial_thread
                     {
                         clearCharacterizedCommands();
                     }
-
+                    elsif ($char eq '0')
+                    {
+                        createWaypoint();
+                    }
+                    elsif ($char eq '1')
+                    {
+                        deleteWaypoint();
+                    }
                 }
                 elsif (0)    # FILESYS TESTING
                 {

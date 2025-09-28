@@ -262,17 +262,50 @@ These are all the command nibbles I have seen and a very, very
 rough interpretation.  Remember that the protocol is stateful
 and the meanings of these might change depending on the state.
 
-	0 = context
-	1 = set
-	2 = info /dictionary
-	3 = get / item
-	7 - commit
-	c = existence check
-	d = create
+
+WC0D
+
+	Z = Direction
+		0 = REPLY		shows What Command {type} REPLY 	does not show Command(CONTEXT)=0
+		1 = USE			shows USE What Command				sets {ref} to What
+		2 = APPLY		shows APPLY {ref} Command 			sets {type} to Command
+
+		- reply comes AFTER, where as USE/APPLY come before rest
+
+	W = What
+		0 = Waypoint, shows {ref} on APPLY
+		4 = Route
+		8 = Group
+		B = Database; sets {ref}='DATABASE' and {type}='DATA'
+
+	C = Command
+		0 = CONTEXT
+		1 = BUFFER
+		2 = LIST
+		3 = ITEM				by uuid
+		4 = EXISTS				by uuid returns
+		6 = DATA				reply only
+		7 = CREATE
+		8 = UUID
+		9 = 9VERB
+
+		A = AVERB
+		B = BVERB
+		C = FIND				by name
+		D = DVERB
+		E = DELETE
+		F = FVERB
+
 
 Of these, I have only seen 7, c, and d when creating a waypoint in
 RNS that gets sent to the E80.
 
+I'm beginning to think it is best to think of these in 0x notation as whole things
+
+	0xDWC
+		D = direction-ish, 0=reply, 1=command, 2=embedded or additional
+		W = what, 0=waypoint, 4=route, 8=group, b=database
+		C = command nibble that depends semantically on D
 
 
 -------------------------------------------------------------------------------

@@ -18,8 +18,8 @@ use Pub::Utils;
 our $RAYDP_IP            = '224.0.0.1';
 our $RAYDP_PORT          = 5800;
 our $RAYDP_ADDR			 = pack_sockaddr_in($RAYDP_PORT, inet_aton($RAYDP_IP));
-our $RAYDP_ALIVE_PACKET  = pack("H*", "0100000003000000ffffffff76020000018e768000000000000000000000000000000000000000000000000000000000000000000000"),
-our $RAYDP_WAKEUP_PACKET = "ABCDEFGHIJKLMNOP",
+our $RAYDP_ALIVE_PACKET  = pack('H*', '0100000003000000ffffffff76020000018e768000000000000000000000000000000000000000000000000000000000000000000000'),
+our $RAYDP_WAKEUP_PACKET = 'ABCDEFGHIJKLMNOP',
 
 our $LOCAL_IP	= '10.0.241.200';
 our $LOCAL_UDP_PORT = 8765;                 # arbitrary but recognizable
@@ -234,35 +234,305 @@ sub packetWireHeader
 	my $left_port = $backwards ? $packet->{dest_port} : $packet->{src_port};
 	my $right_ip = $backwards ? $packet->{src_ip} : $packet->{dest_ip};
 	my $right_port = $backwards ? $packet->{src_port} : $packet->{dest_port};
-	my $arrow = $backwards ? "<--" : "-->";
+	my $arrow = $backwards ? '<--' : '-->';
 
 	return
-		"$packet->{proto}".
+		$packet->{proto}.
 		pad("($len)",7).
 		pad("$left_ip:$left_port",21).
-		"$arrow ".
+		$arrow.' '.
 		pad("$right_ip:$right_port",21).
-		" ";
+		' ';
 }
 
 
-my $BYTES_PER_GROUP = 4;
-my $GROUPS_PER_LINE = 8;
-
-my $BYTES_PER_LINE	= $GROUPS_PER_LINE * $BYTES_PER_GROUP;
-my $LEFT_SIZE = $GROUPS_PER_LINE * $BYTES_PER_GROUP * 2 + $GROUPS_PER_LINE;
-
-
-
 my %declared_len:shared;
+
+my %nav_ref:shared;
+my %nav_type:shared;
+
+
+# WC0D
+# reply comes AFTER, where as USE/APPLY come before rest
+
+my %nav_direction = (
+	0 => 'recv',
+	1 => 'send',
+	2 => 'info',
+);
+
+my %nav_what = (
+	0 => 'WAYPOINT',
+	4 => 'ROUTE',
+	8 => 'GROUP',
+	b => 'DATABASE',
+);
+
+
+my %nav_command = (
+	0 => 'CONTEXT',
+	1 => 'BUFFER',
+	2 => 'LIST',
+	3 => 'ITEM',				# by uuid
+	4 => 'EXIST',				# by uuid returns
+	5 => 'EVENT',
+	6 => 'DATA',				# reply only
+	7 => 'MODIFY',
+	8 => 'UUID',
+	9 => 'COUNT',
+	a => 'AVERB',
+	b => 'BVERB',
+	c => 'FIND',				# by name
+	d => 'SPACE',
+	e => 'DELETE',
+	f => 'FVERB',
+);
+
+
+
+my $msg_context = '';
+my $buffer_content = 'ITEM';
+
+
+
+
+sub showNavPacket
+	# Break up and show NAVQRY packet
+	# similar to r_characterize::characterize($src_port,$dest_port,$declared_len{$dest_port},$raw_data);
+{
+	my ($rayport,$packet,$backwards) = @_;
+	my $dest_port = $packet->{dest_port};
+	my $raw_data = $packet->{raw_data};
+
+	# remember the length of the packet if it's length is 2
+
+	if (length($raw_data) == 2)
+	{
+		my $use_len = unpack('v',$raw_data);
+		$declared_len{$dest_port} = $use_len;
+		print "declared_len=$use_len\n";
+		return;
+	}
+
+	# get the previous packet length, if any, and if so
+	# put it at the front of the subsequent (current) packet
+
+	$declared_len{$dest_port} = -1 if !defined($declared_len{$dest_port});
+	my $use_len = $declared_len{$dest_port};
+	$declared_len{$dest_port} = -1;
+	if ($use_len != -1)
+	{
+		my $prepend = pack('v',$use_len);
+		$raw_data = $prepend.$raw_data;
+		warning(0,0,"prepending($use_len) to raw packet");
+	}
+
+	# get started
+
+	my $color = $rayport->{color} || 0;
+	my $left_port = 'NAVQRY';
+	my $right_port = $backwards ? $packet->{src_port} : $packet->{dest_port};
+	my $arrow = $backwards ? '<--' : '-->';
+	my $first_header = pad($left_port,7).$arrow.pad($right_port,7);
+	my $header_len = length($first_header);
+
+	# comment stuff
+
+	$nav_ref{$right_port} = 'DATABASE' if !defined($nav_ref{$right_port});
+	$nav_type{$right_port} = 'DATA' if !defined($nav_type{$right_port});
+
+
+	# output parts loop
+
+	my $DEBUG = 0;
+
+	my $num = 0;
+	my $text = '';
+	my $comment = '';
+	my $offset = 0;
+	my $is_reply = 0;
+	my $packet_len = length($raw_data);
+
+	while ($offset < $packet_len)
+	{
+		my $data_offset = 0;
+		my $data_len = unpack('v',substr($raw_data,$offset,2));
+		my $hex_len = unpack('H*',substr($raw_data,$offset,2));
+		my $data = substr($raw_data,$offset+2,$data_len);
+		my $hex_data = unpack('H*',$data);
+		my $header = $num ? pad('',$header_len) : $first_header;
+
+		my $output = show_dwords($header.$hex_len.' ',$data,$hex_data,$color,1);
+		$offset += 2 + $data_len;
+		$text .= $output;
+
+		# get the comand word and move past {seq_num}
+
+		my $W = substr($hex_data,0,1);
+		my $C = substr($hex_data,1,1);
+		my $D = substr($hex_data,3,1);
+		my $dir = $nav_direction{$D};
+		my $command = $nav_command{$C};
+
+		my $what = $nav_what{$W};
+		$msg_context ||= $what;
+		my $context = $W ? $what : $msg_context;
+
+		$context = $what if
+			$command eq 'MODIFY' ||
+			$command eq 'EVENT';
+		
+		# commands that do not have seq_num
+
+		if ($is_reply && (
+			$command eq 'MODIFY' ||
+			$command eq 'EVENT'))
+		{
+			$data_offset = 4;
+		}
+		else
+		{
+			$data_offset = 8;
+		}
+
+		# for first line of replies, get the status and move past it ...
+
+		my $ok = 1;
+		my $answer = '';
+		$is_reply = 1 if !$num && !$D;
+		if ($is_reply && !$num &&
+			# replies that don't carry success codes
+			$command ne 'COUNT' &&
+			$command ne 'MODIFY' &&
+			$command ne 'EVENT')
+		{
+			my $status = unpack('H*',substr($data,$data_offset,4));
+			$data_offset += 4;
+			if ($status ne '00000400')
+			{
+				$answer = 'failed';
+				$ok = 0;
+			}
+			else
+			{
+				$answer = 'ok ';
+			}
+		}
+		
+		if ($ok)
+		{
+			if ($command eq 'LIST')
+			{
+				$buffer_content = 'INDEX';
+			}
+			elsif ($command eq 'BUFFER' && $num)
+			{
+				# there's no actual buffer data if the commands
+				# is the outer request or reply
+
+				$answer = $buffer_content;
+				if ($buffer_content eq 'INDEX')
+				{
+					$data_offset += 4;		# skip dword(2c000000)
+					my $num_uuids = unpack('v',substr($data,$data_offset,2));
+					$data_offset += 4;
+						# start of uuids
+					$answer .= " num_uuids($num_uuids)";
+					$answer .= " first:".unpack('H*',substr($data,$data_offset,8))
+						if $num_uuids;
+				}
+				else # if ($buffer_content eq 'ITEM')
+				{
+					if ($context eq 'WAYPOINT')
+					{
+					}
+					else  #if ($context eq 'GROUP' || $context eq 'ROUTE')
+					{
+						$data_offset += 4;		# skip dword(09000500)
+						my $name_len = unpack('v',substr($data,$data_offset,2));
+						my $num_uuids = unpack('v',substr($data,$data_offset+2,2));
+						$data_offset += 4;
+						my $name = substr($data,$data_offset,$name_len);
+						$data_offset += $name_len;
+							# start of uuids
+						$answer .= " num_uuids($num_uuids) name=$name";
+						$answer .= " first:".unpack('H*',substr($data,$data_offset,8))
+							if $num_uuids;
+					}
+				}
+			}
+			elsif ($command eq 'FIND')
+			{
+				my $name = unpack('Z*',substr($data,$data_offset));
+				$answer .= "'$name'";
+			}
+			elsif ($command eq "UUID")
+			{
+				my $uuid .= unpack('H*',substr($data,$data_offset,8));
+				$answer .= $uuid;
+			}
+			elsif ($command eq "COUNT")
+			{
+				my $count = unpack('V',substr($data,$data_offset,4));
+				$answer .= "number=".$count;
+			}
+
+			# things that are regularly possibly followed by a uuid &
+			# possibly bits
+
+			elsif ($command eq 'MODIFY' ||
+				   $command eq 'ITEM' ||
+				   $command eq 'CONTEXT' ||
+				   $command eq 'LIST' ||
+				   $command eq 'BUFFER' ||
+				   $command eq 'LIST')
+			{
+				my $uuid = '';
+				my $bits = 0;
+
+				if ($data_offset + 8 <= $data_len)
+				{
+					$uuid = unpack('H*',substr($data,$data_offset,8)) || '';
+					$data_offset += 8;
+					if ($data_offset + 1 <= $data_len)
+					{
+						$bits = unpack('H2',substr($data,$data_offset,1)) || 0;
+					}
+				}
+				$answer .= $uuid if $uuid;
+				$answer .= " bits($bits)" if $bits;
+			}
+		}
+
+		my $comment =  "     # $dir: $command $context $answer\n";
+		$text .= $comment;
+		print $comment;
+		$num++;
+	}
+
+	# write to text file
+	# with a blank line after replies
+
+	my $record_filename = 'navqry.txt';
+	if (open(AFILE,">>$record_filename"))
+	{
+		print AFILE $text;
+		print AFILE "\n" if $packet->{src_port} == 2052;
+		close AFILE;
+	}
+	
+	$msg_context = '' if $is_reply;
+	$buffer_content = 'ITEM' if $is_reply;
+
+}
+
+
 
 
 sub showPacket
 {
 	my ($rayport,$packet,$backwards) = @_;
-
 	return if length($packet->{raw_data}) == 1;		# skip keep-aives
-
 
 		my $header = packetWireHeader($packet,$backwards);
 		my $multi = $rayport->{multi};
@@ -270,37 +540,25 @@ sub showPacket
 		my $raw_data = $packet->{raw_data};
 		my $hex_data = $packet->{hex_data};
 		# $packet_len = $BYTES_PER_LINE if !$multi && ($packet_len > $BYTES_PER_LINE);
-		show_dwords($header,$raw_data,$hex_data,$color,$multi);
-
-	if ($rayport->{name} && $rayport->{name} eq 'NAVQRY')
+		my $output = show_dwords($header,$raw_data,$hex_data,$color,$multi);
+		
+	if ($rayport->{name} eq 'NAVQRY')
 	{
-		my $dest_port = $packet->{dest_port};
-		if (length($raw_data) == 2)
-		{
-			$declared_len{$dest_port} = unpack('v',$packet->{raw_data});
-			print "declared_len{$dest_port}=$declared_len{$dest_port}\n";
-		}
-		else
-		{
-			my $src_port = $packet->{src_port};
+		showNavPacket($rayport,$packet,$backwards);
+	}
+	else
+	{
 
-			# some events come in without a previous length byte
-			# ... and get the length from the packet
-			my $use_len = $declared_len{$dest_port};
-			if ($use_len == -1)
-			{
-				$use_len = unpack('v',$raw_data);
-				$raw_data = substr($raw_data,2);
-				$hex_data = substr($hex_data,4);
-				warning(0,0,"using length($use_len) shifting packet by 2 to: $hex_data");
-			}
-			r_characterize::characterize($src_port,$dest_port,$declared_len{$dest_port},$raw_data);
-			# so I clear the previous length byte once I use it ...
-			$declared_len{$dest_port} = -1;
-		}
 	}
 }
 
+
+
+
+my $BYTES_PER_GROUP = 4;
+my $GROUPS_PER_LINE = 8;
+my $BYTES_PER_LINE	= $GROUPS_PER_LINE * $BYTES_PER_GROUP;
+my $LEFT_SIZE = $GROUPS_PER_LINE * $BYTES_PER_GROUP * 2 + $GROUPS_PER_LINE;
 
 sub show_dwords
 {
@@ -313,15 +571,15 @@ sub show_dwords
 	my $full_packet = $header;
 	my $header_len = length($header);
 	my $packet_len = length($raw_data);
-	# $full_packet .= "\r\nONE($hex_data)\r\n" if $packet_len == 1;
+	# $full_packet .= "\nONE($hex_data)\n" if $packet_len == 1;
 	while ($offset < $packet_len)
 	{
 		$byte_num = $offset % $BYTES_PER_LINE;
 		if ($offset && !$byte_num)
 		{
-			$full_packet .= $left_side."  ".$right_side;
-			$full_packet .= " >>>" if !$multi;
-			$full_packet .= "\r\n";
+			$full_packet .= $left_side.'  '.$right_side;
+			$full_packet .= ' >>>' if !$multi;
+			$full_packet .= "\n";
 			$left_side = '';
 			$right_side = '';
 			$group_byte = 0;
@@ -333,7 +591,7 @@ sub show_dwords
 		$group_byte++;
 		if ($group_byte == $BYTES_PER_GROUP)
 		{
-			$left_side .= " ";
+			$left_side .= ' ';
 			$group_byte = 0;
 		}
 		my $c = substr($raw_data,$offset++,1);
@@ -341,12 +599,13 @@ sub show_dwords
 	}
 	if ($left_side)
 	{
-		$full_packet .= pad($left_side,$LEFT_SIZE)."  ".$right_side."\r\n";
+		$full_packet .= pad($left_side,$LEFT_SIZE).'  '.$right_side."\n";
 	}
 
     setConsoleColor($color) if $color;
     print $full_packet;
 	setConsoleColor() if $color;
+	return $full_packet;
 }
 
 
