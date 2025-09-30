@@ -82,6 +82,10 @@ BEGIN
 	    $color_light_grey
 	    $color_medium_grey
 
+		%NAV_DIRECTION
+		%NAV_WHAT
+		%NAV_COMMAND 
+
     );
 }
 
@@ -266,37 +270,37 @@ my %nav_type:shared;		# by client port
 # WC0D
 # reply comes AFTER, where as USE/APPLY come before rest
 
-my %NAV_DIRECTION = (
-	0 => 'recv',
-	1 => 'send',
-	2 => 'info',
+our %NAV_DIRECTION = (
+	0x000 => 'recv',
+	0x100 => 'send',
+	0x200 => 'info',
 );
 
-my %NAV_WHAT = (
-	0 => 'WAYPOINT',
-	4 => 'ROUTE',
-	8 => 'GROUP',
-	b => 'DATABASE',
+our %NAV_WHAT = (
+	0x00 => 'WAYPOINT',
+	0x40 => 'ROUTE',
+	0x80 => 'GROUP',
+	0xb0 => 'DATABASE',
 );
 
 
-my %NAV_COMMAND = (
-	0 => 'CONTEXT',
-	1 => 'BUFFER',
-	2 => 'LIST',
-	3 => 'ITEM',				# by uuid
-	4 => 'EXIST',				# by uuid returns
-	5 => 'EVENT',
-	6 => 'DATA',				# reply only
-	7 => 'MODIFY',
-	8 => 'UUID',
-	9 => 'COUNT',
-	a => 'AVERB',
-	b => 'BVERB',
-	c => 'FIND',				# by name
-	d => 'SPACE',
-	e => 'DELETE',
-	f => 'FVERB',
+our %NAV_COMMAND = (
+	0x0 => 'CONTEXT',
+	0x1 => 'BUFFER',
+	0x2 => 'LIST',
+	0x3 => 'ITEM',				# by uuid
+	0x4 => 'EXIST',				# by uuid returns
+	0x5 => 'EVENT',
+	0x6 => 'DATA',				# reply only
+	0x7 => 'MODIFY',
+	0x8 => 'UUID',
+	0x9 => 'COUNT',
+	0xa => 'AVERB',
+	0xb => 'BVERB',
+	0xc => 'FIND',				# by name
+	0xd => 'SPACE',
+	0xe => 'DELETE',
+	0xf => 'FVERB',
 );
 
 
@@ -358,9 +362,11 @@ sub parseNavPacket
 
 		# get the comand word and move past {seq_num}
 
-		my $W = substr($hex_data,0,1);
-		my $C = substr($hex_data,1,1);
-		my $D = substr($hex_data,3,1);
+		my $command_word = unpack('v',$data);
+		my $D = $command_word & 0xf00;	# substr($hex_data,3,1);
+		my $W = $command_word & 0xf0;	# substr($hex_data,0,1);
+		my $C = $command_word & 0xf;	# substr($hex_data,1,1);
+
 		$is_reply = 1 if !$num && !$D;
 
 		my $dir = $NAV_DIRECTION{$D};

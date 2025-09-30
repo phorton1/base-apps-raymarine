@@ -23,7 +23,6 @@ use r_RAYDP;
 use r_NAVSTAT;
 use r_FILESYS;
 use r_NAVQRY;
-use r_NEWQRY;
 use r_characterize;
 use s_resources;
 use s_frame;
@@ -290,14 +289,7 @@ if (1)  # openListenSocket())
 #       $gps_thread->detach();
 #   }
 
-if (1)
-{
-    display(0,0,"initing nav_thread");
-    my $nav_thread = threads->create(\&navQueryThread);
-    display(0,0,"nav_thread created");
-    $nav_thread->detach();
-    display(0,0,"nav_thread detached");
-}
+r_NAVQRY->startNavQuery() if 1;
 
 
 # the sniffer is started last because it has a blocking
