@@ -337,9 +337,10 @@ sub waitReply
 				if ($expect_success)
 				{
 					my $sig = unpack('H*',substr($reply,10,4));
-					if ($sig ne $SUCCESS_SIG)
+					my $cmp = $sig eq $SUCCESS_SIG ? 1 : -1;
+					if ($cmp != $expect_success)
 					{
-						error("waitReply($seq) $name expected SUCCESS_SIG, got($sig)");
+						error("waitReply($seq) expect($expect_success) SUCCESS_SIG vs got($sig)");
 						return 0;
 					}
 				}
@@ -458,48 +459,55 @@ sub create_wp
 
 	# we send this twice, once we *might* get a reply
 
-	$request = createMsg(-1,$DIR_SEND,$CMD_BUFFER,$WHAT_DATABASE);
-	return 0 if !$this->sendRequest($sock,$sel,-1,'init1',$request);
-		# NAVQRY <--51412  0400 b1010f00                                                                  ....
-		#      # send: BUFFER DATABASE
-	$request = createMsg(-2,$DIR_SEND,$CMD_BUFFER,$WHAT_DATABASE);
-	return 0 if !$this->sendRequest($sock,$sel,-2,'init2',$request);
-		# no reply expected on second
+	if (0)	# database checks
+	{
+		$request = createMsg(-1,$DIR_SEND,$CMD_BUFFER,$WHAT_DATABASE);
+		return 0 if !$this->sendRequest($sock,$sel,-1,'init1',$request);
+			# NAVQRY <--51412  0400 b1010f00                                                                  ....
+			#      # send: BUFFER DATABASE
+		$request = createMsg(-2,$DIR_SEND,$CMD_BUFFER,$WHAT_DATABASE);
+		return 0 if !$this->sendRequest($sock,$sel,-2,'init2',$request);
+			# no reply expected on second
 
 
-	$seq = $this->{next_seqnum}++;
-	$request = createMsg($seq,$DIR_SEND,$CMD_SPACE);
-	return 0 if !$this->sendRequest($sock,$sel,$seq,'space',$request);
-	return 0 if !$this->waitReply();
-		# NAVQRY <--51412  0800 0d010f00 9b010000                                                         ........
-		#	# send: SPACE DATABASE
-		# NAVQRY -->51412  0c00 09000f00 9b010000 00000000                                                ............
-		# 	# recv: COUNT DATABASE number=0
+		$seq = $this->{next_seqnum}++;
+		$request = createMsg($seq,$DIR_SEND,$CMD_SPACE);
+		return 0 if !$this->sendRequest($sock,$sel,$seq,'space',$request);
+		return 0 if !$this->waitReply();
+			# NAVQRY <--51412  0800 0d010f00 9b010000                                                         ........
+			#	# send: SPACE DATABASE
+			# NAVQRY -->51412  0c00 09000f00 9b010000 00000000                                                ............
+			# 	# recv: COUNT DATABASE number=0
+	}
+
+	if (0)	# check alrady exists
+	{
+		$seq = $this->{next_seqnum}++;
+		$request = createMsg($seq,$DIR_SEND,$CMD_ITEM,$WHAT_WAYPOINT,$uuid);
+		return 0 if !$this->sendRequest($sock,$sel,$seq,'check_uuid',$request);
+		return 0 if !$this->waitReply(-1);
+			# NAVQRY <--51412  1000 03010f00 9c010000 aaaaaaaa aaaaaaaa                                       ................
+			#      # send: ITEM WAYPOINT aaaaaaaaaaaaaaaa
+			# NAVQRY -->51412  0c00 06000f00 9c010000 030b0480                                                ............
+			#      # recv: DATA WAYPOINT failed
 
 
-	$seq = $this->{next_seqnum}++;
-	$request = createMsg($seq,$DIR_SEND,$CMD_ITEM,$WHAT_WAYPOINT,$uuid);
-	return 0 if !$this->sendRequest($sock,$sel,$seq,'check_uuid',$request);
-	return 0 if !$this->waitReply();
-		# NAVQRY <--51412  1000 03010f00 9c010000 aaaaaaaa aaaaaaaa                                       ................
-		#      # send: ITEM WAYPOINT aaaaaaaaaaaaaaaa
-		# NAVQRY -->51412  0c00 06000f00 9c010000 030b0480                                                ............
-		#      # recv: DATA WAYPOINT failed
+		my $wp_name_16 = $wp_name;
+		while (length($wp_name_16) < 16) { $wp_name_16 .= "\x00" }
+		$wp_name_16 .= "\x00";
+		my $wp_name_hex = unpack('H*',$wp_name_16);
 
-
-	my $wp_name_16 = $wp_name;
-	while (length($wp_name_16) < 16) { $wp_name_16 .= "\x00" }
-	$wp_name_16 .= "\x00";
-	my $wp_name_hex = unpack('H*',$wp_name_16);
-
-	$seq = $this->{next_seqnum}++;
-	$request = createMsg($seq,$DIR_SEND,$CMD_FIND,$WHAT_WAYPOINT,$wp_name_hex);
-	return 0 if !$this->sendRequest($sock,$sel,$seq,'check_name',$request);
-	return 0 if !$this->waitReply();
-		# NAVQRY <--51412  1900 0c010f00 9d010000 74657374 57617970 6f696e74 31007b60 10                  ........testWaypoint1..`.
-		#      # send: FIND WAYPOINT 'testWaypoint1'
-		# NAVQRY -->51412  1400 08000f00 9d010000 030b0480 00000000 00000000                              ....................
-		#      # recv: UUID WAYPOINT failed
+		$seq = $this->{next_seqnum}++;
+		$request = createMsg($seq,$DIR_SEND,$CMD_FIND,$WHAT_WAYPOINT,$wp_name_hex);
+		return 0 if !$this->sendRequest($sock,$sel,$seq,'check_name',$request);
+		return 0 if !$this->waitReply(-1);
+			# NAVQRY <--51412  1900 0c010f00 9d010000 74657374 57617970 6f696e74 31007b60 10                  ........testWaypoint1..`.
+			#      # send: FIND WAYPOINT 'testWaypoint1'
+			# NAVQRY -->51412  1400 08000f00 9d010000 030b0480 00000000 00000000                              ....................
+			#      # recv: UUID WAYPOINT failed
+	}
+	
+	# create the waypoint
 
 	$seq = $this->{next_seqnum}++;
 	$request =
@@ -508,7 +516,7 @@ sub create_wp
 		createMsg($seq,$DIR_INFO,$CMD_BUFFER,	$WHAT_WAYPOINT,	$data).
 		createMsg($seq,$DIR_INFO,$CMD_LIST,		$WHAT_WAYPOINT,	$uuid);
 	return 0 if !$this->sendRequest($sock,$sel,$seq,'create_wp',$request);
-	return 0 if !$this->waitReply();
+	return 0 if !$this->waitReply(1);
 		# NAVQRY <--51412  1000 07010f00 9e010000 aaaaaaaa aaaaaaaa                                       ................
 		#      # send: MODIFY WAYPOINT aaaaaaaaaaaaaaaa
 		# NAVQRY <--51412  1400 00020f00 9e010000 aaaaaaaa aaaaaaaa 01000000                              ....................
@@ -525,25 +533,26 @@ sub create_wp
 		#      # recv: MODIFY WAYPOINT aaaaaaaaaaaaaaaa bits(00)
 
 
-	# try sending two ITEM WAYPOINT messages after creation like RNS does
-	# didn't help.  Have to move the chart for it to show.
-	# Grumble.  Once I create a waypoint, until I reboot both RNS
-	# and the E80, no waypoints created, or chanaged, on RNS show
-	# until you move the chart.
-	#
-	# It appears that if you reboot the E80, you must restart RNS.
-	#
-	# Perhaps the E80 is waiting for me to answer the events?
 
-	if (1)
+	if (0)
 	{
+		# try sending two ITEM WAYPOINT messages after creation like RNS does
+		# didn't help.  Have to move the chart for it to show.
+		# Grumble.  Once I create a waypoint, until I reboot both RNS
+		# and the E80, no waypoints created, or chanaged, on RNS show
+		# until you move the chart.
+		#
+		# It appears that if you reboot the E80, you must restart RNS.
+		#
+		# Perhaps the E80 is waiting for me to answer the events?
+
 		$seq = $this->{next_seqnum}++;
 		$request = createMsg($seq,$DIR_SEND,$CMD_ITEM,$WHAT_WAYPOINT,$uuid);
 		return 0 if !$this->sendRequest($sock,$sel,$seq,'readback1',$request);
-		return 0 if !$this->waitReply();
+		return 0 if !$this->waitReply(1);
 
 		return 0 if !$this->sendRequest($sock,$sel,$seq,'readback2',$request);
-		return 0 if !$this->waitReply();
+		return 0 if !$this->waitReply(1);
 	}
 
 	return 1;
