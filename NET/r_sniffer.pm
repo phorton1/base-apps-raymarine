@@ -27,6 +27,7 @@ BEGIN
 
 my $sniff_fh;
 my $sniff_fields = [
+    { name => 'time',        field => 'frame.time' },
     { name => 'src_ip',      field => 'ip.src' },
     { name => 'dest_ip',     field => 'ip.dst' },
     { name => 'udp_len',     field => 'udp.length' },
@@ -73,6 +74,7 @@ sub nextSniffPacket
     @fields{ map $_->{name}, @$sniff_fields } = @parts;
 
     my $rec = shared_clone({
+        time      => $fields{time},
         src_ip    => $fields{src_ip},
         dest_ip   => $fields{dest_ip},
         proto     => ($fields{tcp_len} ? 'tcp' : 'udp'),

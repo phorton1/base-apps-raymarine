@@ -50,16 +50,17 @@ BEGIN
 		$NAVQUERY_PORT
 
 		sendUDPPacket
-
 		sendAlive
         wakeup_e80
+
+		parseNavPacket
+
 		setConsoleColor
 		packetWireHeader
 		showPacket
+		navQueryLog
 
 		degreeMinutes
-
-		show_dwords
 
 		@color_names
 		$color_values
@@ -246,22 +247,32 @@ sub packetWireHeader
 }
 
 
-my %declared_len:shared;
 
-my %nav_ref:shared;
-my %nav_type:shared;
+my %declared_len:shared;	# by port
+	# Used on sniffer packets to rebuild them for parseNavQuery
+
+
+# These are used to maintain context between the first
+# message in a request and subsequent messages in the
+# request as well as the subsequent reply.
+# They are set to defaults at the end of a request.
+
+my %nav_context:shared;		# by client port
+	# DATABASE, WAYPOINT, ROUTE, or GROUP
+my %nav_type:shared;		# by client port
+	# ITEM, LIST
 
 
 # WC0D
 # reply comes AFTER, where as USE/APPLY come before rest
 
-my %nav_direction = (
+my %NAV_DIRECTION = (
 	0 => 'recv',
 	1 => 'send',
 	2 => 'info',
 );
 
-my %nav_what = (
+my %NAV_WHAT = (
 	0 => 'WAYPOINT',
 	4 => 'ROUTE',
 	8 => 'GROUP',
@@ -269,7 +280,7 @@ my %nav_what = (
 );
 
 
-my %nav_command = (
+my %NAV_COMMAND = (
 	0 => 'CONTEXT',
 	1 => 'BUFFER',
 	2 => 'LIST',
@@ -290,67 +301,46 @@ my %nav_command = (
 
 
 
-my $msg_context = '';
-my $buffer_content = 'ITEM';
 
 
 
-
-sub showNavPacket
-	# Break up and show NAVQRY packet
-	# similar to r_characterize::characterize($src_port,$dest_port,$declared_len{$dest_port},$raw_data);
+sub navQueryLog
 {
-	my ($rayport,$packet,$backwards) = @_;
-	my $dest_port = $packet->{dest_port};
-	my $raw_data = $packet->{raw_data};
-
-	# remember the length of the packet if it's length is 2
-
-	if (length($raw_data) == 2)
+	my ($text) = @_;
+	my $record_filename = 'docs/junk/navqry.txt';
+	if (open(AFILE,">>$record_filename"))
 	{
-		my $use_len = unpack('v',$raw_data);
-		$declared_len{$dest_port} = $use_len;
-		print "declared_len=$use_len\n";
-		return;
+		print AFILE $text;
+		close AFILE;
 	}
+}
 
-	# get the previous packet length, if any, and if so
-	# put it at the front of the subsequent (current) packet
 
-	$declared_len{$dest_port} = -1 if !defined($declared_len{$dest_port});
-	my $use_len = $declared_len{$dest_port};
-	$declared_len{$dest_port} = -1;
-	if ($use_len != -1)
-	{
-		my $prepend = pack('v',$use_len);
-		$raw_data = $prepend.$raw_data;
-		warning(0,0,"prepending($use_len) to raw packet");
-	}
+sub parseNavPacket
+	# with normal packets, it's src_port --> dest_port
+	# but for nav packets, its NAVQRY <-> client_port
+	# is_request should be passed in as one when the
+	# source is NOT NAVQRY
+{
+	my ($is_reply,$client_port,$raw_data) = @_;
 
-	# get started
+	# initialize state variables
 
-	my $color = $rayport->{color} || 0;
-	my $left_port = 'NAVQRY';
-	my $right_port = $backwards ? $packet->{src_port} : $packet->{dest_port};
-	my $arrow = $backwards ? '<--' : '-->';
-	my $first_header = pad($left_port,7).$arrow.pad($right_port,7);
+	$nav_context{$client_port} = 'DATABASE' if !defined($nav_context{$client_port});
+	$nav_type{$client_port} = 'ITEM' if !defined($nav_type{$client_port});
+
+	# create the header
+
+	my $arrow = $is_reply ? '-->' : '<--';
+	my $first_header = pad('NAVQRY',7).$arrow.' '.pad($client_port,7);
 	my $header_len = length($first_header);
 
-	# comment stuff
-
-	$nav_ref{$right_port} = 'DATABASE' if !defined($nav_ref{$right_port});
-	$nav_type{$right_port} = 'DATA' if !defined($nav_type{$right_port});
-
-
-	# output parts loop
-
-	my $DEBUG = 0;
+	# output messages loop
 
 	my $num = 0;
 	my $text = '';
 	my $comment = '';
 	my $offset = 0;
-	my $is_reply = 0;
 	my $packet_len = length($raw_data);
 
 	while ($offset < $packet_len)
@@ -362,7 +352,7 @@ sub showNavPacket
 		my $hex_data = unpack('H*',$data);
 		my $header = $num ? pad('',$header_len) : $first_header;
 
-		my $output = show_dwords($header.$hex_len.' ',$data,$hex_data,$color,1);
+		my $output = parse_dwords($header.$hex_len.' ',$data,1);
 		$offset += 2 + $data_len;
 		$text .= $output;
 
@@ -371,12 +361,16 @@ sub showNavPacket
 		my $W = substr($hex_data,0,1);
 		my $C = substr($hex_data,1,1);
 		my $D = substr($hex_data,3,1);
-		my $dir = $nav_direction{$D};
-		my $command = $nav_command{$C};
+		$is_reply = 1 if !$num && !$D;
 
-		my $what = $nav_what{$W};
-		$msg_context ||= $what;
-		my $context = $W ? $what : $msg_context;
+		my $dir = $NAV_DIRECTION{$D};
+		my $command = $NAV_COMMAND{$C};
+		my $what = $NAV_WHAT{$W};
+
+		$nav_context{$client_port} = $what if !$num && !$is_reply;
+			# set the conversation context for the entire request-reqply from the first request message
+		my $context = $W ? $what : $nav_context{$client_port};
+			# override the displayed context if it's excplitily non-zero
 
 		$context = $what if
 			$command eq 'MODIFY' ||
@@ -399,7 +393,7 @@ sub showNavPacket
 
 		my $ok = 1;
 		my $answer = '';
-		$is_reply = 1 if !$num && !$D;
+
 		if ($is_reply && !$num &&
 			# replies that don't carry success codes
 			$command ne 'COUNT' &&
@@ -423,15 +417,18 @@ sub showNavPacket
 		{
 			if ($command eq 'LIST')
 			{
-				$buffer_content = 'INDEX';
+				$nav_type{$client_port} = 'INDEX' if !$is_reply;
+					# set the 'type' of the buffer data to INDEX
+					# if a LIST command is encountered in a request
 			}
 			elsif ($command eq 'BUFFER' && $num)
 			{
 				# there's no actual buffer data if the commands
 				# is the outer request or reply
 
-				$answer = $buffer_content;
-				if ($buffer_content eq 'INDEX')
+				my $buffer_type = $nav_type{$client_port};
+				$answer = $buffer_type;
+				if ($buffer_type eq 'INDEX')
 				{
 					$data_offset += 4;		# skip dword(2c000000)
 					my $num_uuids = unpack('v',substr($data,$data_offset,2));
@@ -441,7 +438,7 @@ sub showNavPacket
 					$answer .= " first:".unpack('H*',substr($data,$data_offset,8))
 						if $num_uuids;
 				}
-				else # if ($buffer_content eq 'ITEM')
+				else # if ($buffer_type eq 'ITEM')
 				{
 					if ($context eq 'WAYPOINT')
 					{
@@ -506,27 +503,22 @@ sub showNavPacket
 
 		my $comment =  "     # $dir: $command $context $answer\n";
 		$text .= $comment;
-		print $comment;
+		# print $comment;
 		$num++;
 	}
-
-	# write to text file
-	# with a blank line after replies
-
-	my $record_filename = 'navqry.txt';
-	if (open(AFILE,">>$record_filename"))
-	{
-		print AFILE $text;
-		print AFILE "\n" if $packet->{src_port} == 2052;
-		close AFILE;
-	}
 	
-	$msg_context = '' if $is_reply;
-	$buffer_content = 'ITEM' if $is_reply;
+	if ($is_reply)
+	{
+		$nav_context{$client_port} = 'DATABASE';
+		$nav_type{$client_port} = 'ITEM';
+		$text .= "\n";
+	}
 
+	return $text;
 }
 
 
+my $MON_SELF_NAVQRY = 0;
 
 
 sub showPacket
@@ -534,21 +526,58 @@ sub showPacket
 	my ($rayport,$packet,$backwards) = @_;
 	return if length($packet->{raw_data}) == 1;		# skip keep-aives
 
+	if ($rayport->{name} eq 'NAVQRY')
+	{
+		my $src_port = $packet->{src_port};
+		my $dest_port = $packet->{dest_port};
+		my $raw_data = $packet->{raw_data};
+		my $is_reply = $src_port == $rayport->{port};
+		my $client_port = $is_reply ? $dest_port : $src_port;
+
+		# temporary for lack of a better UI
+		
+		return if $client_port == $NAVQUERY_PORT && !$MON_SELF_NAVQRY;
+		
+		# remember the length of the packet if it's length is 2
+		# or prepend it onto the current packet if available
+
+		if (length($raw_data) == 2)
+		{
+			my $use_len = unpack('v',$raw_data);
+			$declared_len{$dest_port} = $use_len;
+			# print "declared_len($dest_port)=$use_len\n";
+			return;
+		}
+		my $use_len = $declared_len{$dest_port};
+		$declared_len{$dest_port} = -1;
+		if ($use_len && $use_len != -1)
+		{
+			my $prepend = pack('v',$use_len);
+			$raw_data = $prepend.$raw_data;
+			# warning(0,0,"prepending($use_len) to raw packet");
+		}
+
+		# parse and display and/or log the packet
+
+		my $text = parseNavPacket($is_reply,$client_port,$raw_data);
+		navQueryLog($text);
+
+		my $color = $rayport->{color};
+		setConsoleColor($color) if $color;
+		print $text;
+		setConsoleColor() if $color;
+
+	}
+	else
+	{
 		my $header = packetWireHeader($packet,$backwards);
 		my $multi = $rayport->{multi};
 		my $color = $rayport->{color} || 0;
 		my $raw_data = $packet->{raw_data};
-		my $hex_data = $packet->{hex_data};
-		# $packet_len = $BYTES_PER_LINE if !$multi && ($packet_len > $BYTES_PER_LINE);
-		my $output = show_dwords($header,$raw_data,$hex_data,$color,$multi);
-		
-	if ($rayport->{name} eq 'NAVQRY')
-	{
-		showNavPacket($rayport,$packet,$backwards);
-	}
-	else
-	{
-
+		my $full_packet = parse_dwords($header,$raw_data,$multi);
+		setConsoleColor($color) if $color;
+		print $full_packet;
+		setConsoleColor() if $color;
 	}
 }
 
@@ -560,9 +589,9 @@ my $GROUPS_PER_LINE = 8;
 my $BYTES_PER_LINE	= $GROUPS_PER_LINE * $BYTES_PER_GROUP;
 my $LEFT_SIZE = $GROUPS_PER_LINE * $BYTES_PER_GROUP * 2 + $GROUPS_PER_LINE;
 
-sub show_dwords
+sub parse_dwords
 {
-	my ($header,$raw_data,$hex_data,$color,$multi) = @_;
+	my ($header,$raw_data,$multi) = @_;
 	my $offset = 0;
 	my $byte_num = 0;
 	my $group_byte = 0;
@@ -587,26 +616,24 @@ sub show_dwords
 			$full_packet .= pad('',$header_len);
 		}
 
-		$left_side .= substr($hex_data,$offset * 2,2);
+		my $byte = substr($raw_data,$offset++,1);
+		$left_side .= unpack('H2',$byte);
 		$group_byte++;
 		if ($group_byte == $BYTES_PER_GROUP)
 		{
 			$left_side .= ' ';
 			$group_byte = 0;
 		}
-		my $c = substr($raw_data,$offset++,1);
-		$right_side .= ($c ge ' ' && $c le 'z') ? $c : '.';
+		$right_side .= ($byte ge ' ' && $byte le 'z') ? $byte : '.';
 	}
 	if ($left_side)
 	{
 		$full_packet .= pad($left_side,$LEFT_SIZE).'  '.$right_side."\n";
 	}
-
-    setConsoleColor($color) if $color;
-    print $full_packet;
-	setConsoleColor() if $color;
 	return $full_packet;
 }
+
+
 
 
 

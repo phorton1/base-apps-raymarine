@@ -202,25 +202,25 @@ sub clearFileRequestError
 
 sub requestCardID
 {
-	initFileRequest($COMMAND_CARD_ID);
+	return initFileRequest($COMMAND_CARD_ID);
 }
 
 sub requestSize
 {
 	my ($path) = @_;
-	initFileRequest($COMMAND_GET_SIZE,$path);
+	return initFileRequest($COMMAND_GET_SIZE,$path);
 }
 
 sub requestFile
 {
 	my ($filename,$ofilename) = @_;
-	initFileRequest($COMMAND_GET_FILE,$filename,$ofilename);
+	return initFileRequest($COMMAND_GET_FILE,$filename,$ofilename);
 }
 
 sub requestDirectory
 {
 	my ($path) = @_;
-	initFileRequest($COMMAND_DIRECTORY,$path);
+	return initFileRequest($COMMAND_DIRECTORY,$path);
 }
 
 
@@ -291,12 +291,12 @@ sub initFileRequest
 	if (!$filesys_port)
 	{
 		error("No filesys_port in fileRequest($command,$path)");
-		return;
+		return 0;
 	}
 	if ($file_state > 0)
 	{
 		error("requestFile($command,$path) in state($file_state)");
-		return;
+		return 0;
 	}
 
 	$file_request_cur = 0;
@@ -321,6 +321,7 @@ sub initFileRequest
 	$file_error 	= '';
 	$request_time 	= time();
 	$file_state 	= $FILE_STATE_STARTED;
+	return 1;
 }
 
 

@@ -1,0 +1,23 @@
+*********** RAYTECH WAPOINT AND ROUTE TXT FILE --DO NOT EDIT THIS LINE!!!! ***********
+*********** The first 10 lines of this file are reserved *****************
+*********** The waypoint data is comma delimited in the order of: ***********
+*********** Loc,Name,Lat,Long,Rng,Bear,Bmp,Fixed,Locked,Notes,Rel,RelSet,RcCount,RcRadius,Show,RcShow,SeaTemp,Depth,Time,MarkedForTransfer,GUID*********
+*********** Following the waypoint data is the route data: ********
+*********** Route data is also comma delimited in the order of:***********
+*********** RouteName,Visible,MarkedForTransfer,NumMarks, Guid***********
+*********** MarkName,Cog,Eta,Length,PredictedDrift,PredictedSet,PredictedSog,PredictedTime,PredictedTwa,PredictedTwd,PredictedTws***********
+*****************************************************************************************************************
+************************************ END HEADER ****************************************************************
+
+# AAAA = 43690
+# BBBB = 48059
+# CCCC = 52428
+# DDDD = 56797
+# EEEE = 61166
+
+# 10 feet = 3.048
+#
+# However, it is possible that treating the subparts of the uuids as integers
+# Could reveal different patterns, i.e. decimal number groupings or BCD encoded functionality
+
+testGroup1,testWaypoint1,9.334083,-82.242050,0.0,0.0,3,0,0,wpComment1,,,,,1,0,,3.048,0.0,1,43690-43690-43690-43690

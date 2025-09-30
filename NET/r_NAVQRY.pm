@@ -31,12 +31,13 @@ use Pub::Utils;
 use r_utils;
 use r_RAYDP;
 use r_characterize;
+use r_NEWQRY;
 
 my $dbg = -1;
 
-my $SHOW_OUTPUT = 1;
-my $SHOW_INPUT = 1;
-my $PARSE_STUFF = 1;
+my $SHOW_OUTPUT = 0;
+my $SHOW_INPUT = 0;
+my $PARSE_STUFF = 0;
 
 my $COMMAND_TIMEOUT 		= 3;
 my $REFRESH_INTERVAL		= 5;
@@ -64,25 +65,12 @@ BEGIN
 
 		navQueryThread
 
-		startNavQuery
-		refreshNavQuery
-		toggleNavQueryAutoRefresh
-
-		createWaypoint
-		deleteWaypoint
+		doNavQuery
     );
 }
 
 
-my $one_time_start:shared = 0;
-	# set this to 0 to require startNavQuery() to
-	# be called to start the thread.
-my $refresh_time:shared = 0;
-	# time of the last refresh; 0=immediate-ish
-my $auto_refresh:shared = 0;
-	# set this to 0 to require refreshNavQuery
-	# or toggleNavQueryAutoRefres() to be called.
-my $refresh_now:shared = 0;
+my $query_now:shared = 0;
 
 my $waypoints:shared = shared_clone({});
 my $routes:shared = shared_clone({});
@@ -118,52 +106,26 @@ my $watch_sig = '';
 
 my $command_time = 0;
 my $reconnect_time = 0;
-my $declared_len;
-
-my $create_waypoint:shared = 0;
-my $delete_waypoint:shared = 0;
 
 
 #----------------------------------
 # public API
 #----------------------------------
 
-sub startNavQuery
-{
-	display(0,0,"startNavQuery()");
-	$one_time_start = 1;
-}
 
-sub refreshNavQuery
+sub doNavQuery
 {
-	if ($state || !$one_time_start)
+	if ($state)
 	{
-		error("illegal attempt to refreshNavQuery: state($state) started($one_time_start)");
+		error("illegal attempt to refreshNavQuery: state($state)");
 		return;
 	}
 	display(0,0,"refreshNavQuery()");
-	$refresh_now = 1;
-	$refresh_time = 0;
-}
-
-sub toggleNavQueryAutoRefresh
-{
-	my $auto = $auto_refresh ? 0 : 1;
-	display(0,0,"toggleNavQueryAutoRefresh($auto)");
-	$refresh_time = time() if $auto && !$state;
-	$auto_refresh = $auto;
+	$query_now = 1;
 }
 
 
-sub createWaypoint
-{
-	$create_waypoint = 1;
-}
 
-sub deleteWaypoint
-{
-	$delete_waypoint = 0;
-}
 
 
 #-------------------------------------------
@@ -224,38 +186,27 @@ sub sendCommand
 	my $command = substitute($template,$sig_byte,$seq_num,$uuid);
 	my $packed = pack("H*",$command);
 
-	my $offset = 0;
-	my $command_len = length($packed);
-	while ($offset < $command_len)
+		my $text = parseNavPacket(0,$NAVQUERY_PORT,$packed);
+		navQueryLog($text);
+
+		my $color = $UTILS_COLOR_LIGHT_MAGENTA;
+		setConsoleColor($color) if $color;
+		print $text;
+		setConsoleColor() if $color;
+
+	my $hdr = substr($packed,0,2);
+	my $data = substr($packed,2);
+	if (!$sock->send($hdr))
 	{
-		my $hdr = substr($packed,$offset,2);
-		my $len = unpack('v',$hdr);
-		my $data = substr($packed,$offset+2,$len);
-
-		my $show_hdr = unpack("H*",$hdr);
-		my $show_data = unpack("H*",$data);
-
-		print pad("$offset,2",7)."<-- $show_hdr\n" if $SHOW_OUTPUT;
-		$offset += 2;
-		if (!$sock->send($hdr))
-		{
-			error("Could not send header: $show_hdr\n$!");
-			return 0;
-		}
-
-		# print pad("$offset,$len",6)."<-- $show_data\n";
-		show_dwords(pad("$offset,$len",7)."<-- ",$data,$show_data,0,1) if $SHOW_OUTPUT;
-		if (!$sock->send($data))
-		{
-			error("Could not send data: $show_hdr\n$!");
-			return 0;
-		}
-		$offset += $len;
+		error("Could not send header\n$!");
+		return 0;
+	}
+	if (!$sock->send($data))
+	{
+		error("Could not send header\n$!");
+		return 0;
 	}
 
-	my $out_len = unpack('v',substr($packed,0,2));
-	my $packet = substr($packed,2);
-	characterize($NAVQUERY_PORT,$nav_port,$out_len,$packet) if $PARSE_STUFF;
 	$command_time = time();
 	return 1;
 }
@@ -295,7 +246,7 @@ sub openSocket
 			$watch_sig = '';
 			$command_time = 0;
 
-			setState($STATE_GET_WP_DICT);
+			# setState($STATE_GET_WP_DICT);
 		}
 		else
 		{
@@ -315,7 +266,6 @@ sub openSocket
 
 		$watch_sig = '';
 		$command_time = 0;
-		$refresh_time = 0;
 		$reconnect_time = time();
 		setState($STATE_NONE);
 	}
@@ -334,6 +284,8 @@ sub openSocket
 }
 
 
+my $reply = '';
+
 sub readBuf
 {
 	my $buf;
@@ -342,21 +294,10 @@ sub readBuf
 		recv($sock, $buf, 4096, 0);
 		if ($buf)
 		{
-			my $hex = unpack("H*",$buf);
-			my $len = length($hex);
-			show_dwords(pad(length($buf),7)."--> ",$buf,$hex,0,1) if $SHOW_INPUT;
-			$declared_len = unpack('v',$buf) if length($buf) == 2;
-				# for characterize(), the packet that follows has the
-				# 'declared_length' of this packet of length(2) that
-				# preceded it.
+			$reply .= $buf;
 		}
 	}
-	return $buf;
-}
 
-
-sub checkTimeout
-{
 	if ($command_time && time() > $command_time + $COMMAND_TIMEOUT)
 	{
 		error("Command timed out");
@@ -365,31 +306,27 @@ sub checkTimeout
 		$started = 0;
 		$reconnect_time = time();
 		setState($STATE_NONE);
-		return 1;
+		return '';
 	}
-	return 0;
-}
 
-
-sub checkRefresh
-{
-	if ($state == $STATE_NONE)
+	if (length($reply) > 2)
 	{
-		if ($refresh_now)
-		{
-			warning($dbg,0,"REFRESH NOW");
-			$refresh_now = 0;
-			$refresh_time = 0;
-			setState($STATE_GET_WP_DICT);
-		}
-		elsif ($auto_refresh && $refresh_time && time() > $refresh_time + $REFRESH_INTERVAL)
-		{
-			warning($dbg,0,"AUTO REFRESHING");
-			$refresh_time = 0;
-			setState($STATE_GET_WP_DICT);
-		}
+
+		my $text = parseNavPacket(1,$NAVQUERY_PORT,$reply);
+		navQueryLog($text);
+
+		my $color = $UTILS_COLOR_LIGHT_CYAN;
+		setConsoleColor($color) if $color;
+		print $text;
+		setConsoleColor() if $color;
+
+		$reply = '';
 	}
+
+	return $buf;
 }
+
+
 
 
 sub sendDictionaryRequest
@@ -399,6 +336,13 @@ sub sendDictionaryRequest
 	my $sig_byte =
 		$state == $STATE_GET_GROUP_DICT ? '8' :
 		$state == $STATE_GET_ROUTE_DICT ? '4' : '0';
+
+	navQueryLog("\n".
+		"#-----------------------------------------------\n".
+		"# shark query\n".
+		"#-----------------------------------------------\n\n")
+		if $state == $STATE_GET_WP_DICT;
+
 	display($dbg+1,0,"getting ".kind($sig_byte)." dictionary");
 	if (sendCommand($GET_DICT,$sig_byte,$seq_num))
 	{
@@ -450,8 +394,6 @@ sub sendItemRequest
 	display($dbg+2,0,kind($sig_byte)." items done sent($sent)");
 	setState($state == $STATE_GET_GROUPS ? $STATE_NONE : $state+1) if $started && !$sent;
 		# finished?
-	$refresh_time = time() if $state == $STATE_NONE;
-		# finished
 }
 
 
@@ -490,7 +432,7 @@ sub handleDictReply
 		$offset += 8;
 		$num++;
 	}
-	display($dbg+2,0,"found($num) uuids in ".kind($sig_byte)." dictionary hash=".scalar(keys %$hash));
+	display($dbg+1,0,"found($num) uuids in ".kind($sig_byte)." dictionary");
 	setState($state + 1);
 }
 
@@ -538,12 +480,6 @@ sub navQueryThread
 	$nav_ip = $rayport->{ip};
 	$nav_port = $rayport->{port};
 	display($dbg,1,"found rayport(NAVQRY) at $nav_ip:$nav_port");
-
-	while (!$one_time_start)
-	{
-		display($dbg+1,0,"Waiting for one_time_start");
-		sleep(1);
-	}
 	display($dbg,0,"starting navQuery loop");
 
     while (1)
@@ -551,8 +487,13 @@ sub navQueryThread
 		next if !openSocket();
 
 		my $buf = readBuf();
-		next if checkTimeout();
-		checkRefresh();
+
+		if ($query_now && $state == $STATE_NONE)
+		{
+			$query_now = 0;
+			warning($dbg,0,"starting a query");
+			setState($STATE_GET_WP_DICT);
+		}
 
 		if ($buf && $watch_sig && substr($buf,0,8) eq $watch_sig)
 		{
@@ -581,10 +522,7 @@ sub navQueryThread
 			{
 				handleItemReply($buf,$sig_byte);
 			}
-
-			characterize($nav_port,$NAVQUERY_PORT,$declared_len,$buf) if $PARSE_STUFF;
 		}
-
 
 		sendDictionaryRequest() if
 			$state == $STATE_GET_WP_DICT ||
@@ -595,156 +533,11 @@ sub navQueryThread
 			$state == $STATE_GET_ROUTES ||
 			$state == $STATE_GET_GROUPS );
 
-
-		doCreate() if $create_waypoint;
+		my $ok = newNavqueryThread($sock,$sel);
+			# started = 0 if !$ok;
 	}
 
 }	#	navQueryThread()
-
-
-
-#-----------------------------------
-# test waypoint addition
-#-----------------------------------
-# an event when e80 shuts down?
-# 224.30.38.194:2561   <-- 10.0.241.54:1215      02020500
-
-
-my $create_steps = [
-	{ name => 'set_eventing', 	template => '0400 b1010f00',
-	  expect => '0800 05000f00 00000000 08004500 0f000000 00000800 85000f00 00000000', },
-	{ name => 'null_eventing', 	template => '0400'.'b1010f00',
-	  expect => '' }, # no reply expected.
-	{ name => 'start_create', 	template => '0800 0d010f00 {seq_num}',
-	  expect => '0c00 09000f00 {seq_num} 00000000' },	# ok
-	{ name => 'check_uuid',		template => '1000 03010f00 {seq_num} {uuid}',
-	  expect => '0c00 06000f00 {seq_num} 030b0480' },	# failure
-	{ name => 'check_name',		template => '1900 0c010f00 {seq_num} {wp_name} 000000'.
-	    '00 00000000 00000000',
-		# '00 00000000 00face{byte}',
-		# '00 00000000 00000001',
-		# '90 c7190083 4ec760f8',
-
-
-		# new: 0c010f00 ae000000 506f7061 30000000 90c71900 834ec760 f8
-		# old: 0c010f00 18000000 506f7061 30000000 90c71900 834e2a65 00
-		#                  P o P a  0
-		# I don't understand any of the bytesafter the name,
-		# but perhaps the first zero is a null terminator and the
-		# rest is shifted by one byte so that it lines up with dwords as shown
-		# The last dword has changed in this invocation.
-	  expect => '1400 08000f00 {seq_num} 030b0480 00000000 00000000' },  # failure
-
-	{ name => 'create1',		template => '1000 07010f00 {seq_num} {uuid}',
-	  no_inc_step => 1,
-	  expect => '1400 00020f00 {seq_num} {uuid} 01000000' },
-		# This *might* actually create the waypoint
-		# it is now failing everytime for me
-
-	{ name => 'wp_data', template =>
-		'4100 01020f00 {seq_num}'.
-			'35000000 9e449005 ecdbface c16a9f06 ad4a84c5'.
-			'00000000 00000000 00000000'.
-			'02010000 000000f2 3c010081 4f000500 00000000 {wp_name}',
-		no_inc_seq => 1,
-		expect => '' },
-
-		# 0102 == I'm telling you context?
-		# no reply expected
-
-	{ name => 'commit', template => '1000 02020f00 {seq_num} {uuid}',
-		expect => '0c00 03000f00 {seq_num} 00000400'.
-				  '1000 07000f00 {uuid} 01100000 0000' },
-];
-
-
-my $create_num = 0;
-my $create_uuid = 'eeeeeeee'.'dddd011'; # '0';
-my $create_wp_name = 'Popa';	# 0
-
-
-
-sub delayBuf
-{
-	my ($expect) = @_;
-	if (!$expect)
-	{
-		print "nothing expected\n";
-		return 1;
-	}
-
-	my $TIMEOUT = 1;
-	my $fullbuf = '';
-	while (length($fullbuf) <= 2)
-	{
-		my $buf = readBuf();
-		if ($buf)
-		{
-			$fullbuf .= $buf;
-			$command_time = time();
-		}
-		if ($command_time && time() > $command_time + $COMMAND_TIMEOUT)
-		{
-			print "TIMEOUT ".unpack('H*',$fullbuf)."\n";
-			$command_time = 0;
-			last;
-		}
-	}
-
-	$expect =~ s/\s//g;
-	print "fullbuf=".unpack('H*',$fullbuf)."\n";
-	print "expect =$expect\n";
-	
-	if (length($fullbuf)>2)
-	{
-		my $declared_len = unpack('v',$fullbuf);
-		characterize($nav_port,$NAVQUERY_PORT,$declared_len,substr($fullbuf,2));
-	}
-	return $fullbuf;
-}
-
-my $next_byte = '01';
-
-sub doCreate
-{
-	$create_waypoint = 0;
-	$next_seqnum++;
-
-	my $wp_name = $create_wp_name.$create_num;
-	my $wp_hex = unpack('H*',$wp_name);
-	my $uuid = $create_uuid.$create_num;
-
-	print "\n";
-	print "doCreate($create_num) $wp_name $uuid next_seqnum($next_seqnum)\n";
-	print "---------------------------------------------------------------\n";
-	
-	my $step = $create_num ? 1 : 0;
-	$create_num++;
-	my $byte = $next_byte++;
-
-	while ($step < @$create_steps)
-	{
-		my $info = $create_steps->[$step];
-		my $template = $info->{template};
-		$template =~ s/\s//g;
-		$template =~ s/{null}/00/g;
-		$template =~ s/{wp_name}/$wp_hex/g;
-		$template =~ s/{byte}/$byte/;
-
-		my $seq_num = $next_seqnum;
-		$next_seqnum++ if !$info->{no_inc_seq};
-
-		print "getCreateStep($step=$info->{name}) seq_num($seq_num)\n";
-		print "   template=$template\n";
-
-		my $sig_byte = '';
-		sendCommand($template,$sig_byte,$seq_num,$uuid);
-		delayBuf($info->{expect});
-		$step++;
-	}
-	$command_time = 0;
-}
-
 
 
 

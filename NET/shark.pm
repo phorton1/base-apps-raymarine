@@ -17,11 +17,13 @@ use IO::Handle;
 use IO::Socket::INET;
 use IO::Select;
 use r_utils;
+use r_serial;
 use r_sniffer;
 use r_RAYDP;
 use r_NAVSTAT;
 use r_FILESYS;
 use r_NAVQRY;
+use r_NEWQRY;
 use r_characterize;
 use s_resources;
 use s_frame;
@@ -43,225 +45,99 @@ BEGIN
     );
 }
 
-my $console_in;
-
-
 
 #-----------------------------------------
-# serial_thread
+# handleCommand()
 #-----------------------------------------
 
-sub openConsoleIn
+sub handleCommand
 {
-    $console_in = Win32::Console->new(STD_INPUT_HANDLE);
-    $console_in->Mode(ENABLE_MOUSE_INPUT | ENABLE_WINDOW_INPUT ) if $console_in;
-    $console_in ?
-        display(0,0,"openConsoleIn() succeeded") :
-        error("openConsoleIn() failed");
-    return $console_in;
-}
+    my ($lpart,$rpart) = @_;
+    display(0,0,"handleCommand left($lpart) right($rpart)");
 
-sub isEventCtrlC
-    # my ($type,$key_down,$repeat_count,$key_code,$scan_code,$char,$key_state) = @event;
-    # my ($$type,posx,$posy,$button,$key_state,$event_flags) = @event;
-{
-    my (@event) = @_;
-    if ($event[0] &&
-        $event[0] == 1 &&      # key event
-        $event[5] == 3)        # char = 0x03
+	if ($lpart eq 'q')
     {
-        warning(0,0,"ctrl-C pressed ...");
-        return 1;
+        doNavQuery();
     }
-    return 0;
-}
-
-
-sub getChar
-{
-    my (@event) = @_;
-    if ($event[0] &&
-        $event[0] == 1 &&       # key event
-        $event[1] == 1 &&       # key down
-        $event[5])              # char
+    elsif ($lpart eq 'auto')
     {
-        return chr($event[5]);
+        setNavQueryAutoRefresh($rpart);
     }
-    return undef;
-}
 
-
-
-sub serial_thread
-{
-    display(0,0,"serial_thread() started");
-    while (1)
+    elsif ($lpart eq 'create' || $lpart eq 'delete')
     {
-        if ($console_in->GetEvents())
-        {
-            my @event = $console_in->Input();
-            if (@event && isEventCtrlC(@event))			# CTRL-C
-            {
-                warning(0,0,"EXITING PROGRAM from serial_thread()");
-                kill 6,$$;
-            }
-            my $char = getChar(@event);
-            if (defined($char))
-            {
+        my ($what,$num) = split(/\s+/,$rpart);
+    	$what = lc($what);
+        createWaypoint($num) if $lpart eq 'create' && $what eq 'wp';
+        createRoute($num) 	 if $lpart eq 'create' && $what eq 'route';
+        createGroup($num) 	 if $lpart eq 'create' && $what eq 'group';
+        deleteWaypoint($num) if $lpart eq 'delete' && $what eq 'wp';
+        deleteRoute($num) 	 if $lpart eq 'delete' && $what eq 'route';
+        deleteGroup($num) 	 if $lpart eq 'delete' && $what eq 'group';
+	}
+	elsif ($lpart eq "route")
+	{
+        my ($route_num,$op,$wp_num) = split(/\s+/,$rpart);
+		if ($op eq '+' || $op eq '-')
+		{
+			routeWaypoint($route_num,$wp_num,$op eq '+');
+		}
+		else
+		{
+			error("bad route command syntax");
+		}
+	}
+	elsif ($lpart eq 'group')
+	{
+        my ($wp_num,$group_num) = split(/\s+/,$rpart);
+		setWaypointFolder($wp_num,$group_num);
+	}
 
-                # The above commands work with no RNS on a fresh E80
-                # without any keep alives, etc.  However, we are not
-                # getting any other "regular" packets, except for 5801
-                # "ALIVE" packets.
-                
-                if (ord($char) == 4)            # CTRL-D
-                {
-                    $CONSOLE->Cls();    # manually clear the screen
-                }
-                #   elsif ($char eq 'w')
-                #   {
-                #       wakeup_e80();
-                #   }
-                #   #   elsif ($char eq 'a')
-                #   #   {
-                #   #       $SEND_ALIVE = $SEND_ALIVE ? 0 : 1;
-                #   #       warning(0,0,"SEND_ALIVE=$SEND_ALIVE");
-                #   #   }
 
-                elsif (1)
-                {
-                    # NAVQUERY TESTING
+    # showCharacterizedCommands(0);
+    # showCharacterizedCommands(1);
+    # clearCharacterizedCommands();
+    # createWaypoint();
+    # deleteWaypoint();
 
-                    if ($char eq 'a')
-                    {
-                        startNavQuery();
-                    }
-                    elsif ($char eq 'b')
-                    {
-                        refreshNavQuery();
-                    }
-                    elsif ($char eq 'c')
-                    {
-                        toggleNavQueryAutoRefresh();
-                    }
-                    elsif ($char eq 'x')
-                    {
-                        showCharacterizedCommands(0);
-                    }
-                    elsif ($char eq 'y')
-                    {
-                        showCharacterizedCommands(1);
-                    }
-                    elsif ($char eq 'z')
-                    {
-                        clearCharacterizedCommands();
-                    }
-                    elsif ($char eq '0')
-                    {
-                        createWaypoint();
-                    }
-                    elsif ($char eq '1')
-                    {
-                        deleteWaypoint();
-                    }
-                }
-                elsif (0)    # FILESYS TESTING
-                {
-                    if (ord($char) == 1)            # CTRL-A
-                    {
-                        r_FILESYS::sendFilesysRequest(0);
-                    }
-                    elsif (ord($char) == 2)            # CTRL-B
-                    {
-                        r_FILESYS::sendFilesysRequest(2,'\junk_data\test_data_image1.jpg');
-                    }
 
-                    elsif ($char eq 'g')
-                    {
-                        requestFile('\ARCHIVE.FSH','ARCHIVE.FSH');
-                    }
+     # FILESYS TESTING
 
-                    elsif ($char eq 'h')
-                    {
-                        requestFile('\junk_data\test_data_image1.jpg',"test.jpg");
-                    }
-                    elsif ($char eq 'i')
-                    {
-                        requestDirectory('\junk_data');
-                    }
-                    elsif ($char eq 'j')
-                    {
-                        requestDirectory('\\');
-                    }
-                    elsif ($char eq 'k')
-                    {
-                        requestSize('\junk_data\test_data_image1.jpg');
-                    }
-                    elsif ($char eq 'l')
-                    {
-                        requestSize('\junk_data');
-                    }
-                    elsif ($char eq 'm')
-                    {
-                        requestSize('\\');
-                    }
-                    elsif ($char eq 'n')
-                    {
-                        requestDirectory('\blah\blurb');
-                    }
-                    elsif ($char eq 'o')
-                    {
-                        requestSize('\ARCHIVE.FSH');
-                    }
-
-                    # probing FILESYS
-
-                    elsif ($char eq 'q')
-                    {
-                        r_FILESYS::sendFilesysRequest(7,'');
-                    }
-
-                    elsif ((0 && $char ge '0' && $char le '9') || ($char ge 'a' && $char le 'f'))
-                    {
-                        my @paths = (
-                            '\\',                                   # root directory
-                            '\junk_data',                           # exiting directory
-                            '\junk_data\test_data_image1.jpg',      # existing file
-                            '\blah',                                # non existing outer level path or filename
-                            '\junk_data\blah',                      # non existing inner level path or filename
-                            '\SYSTEM VOLUME INFORMATION',           # hidden operating system file
-                            '\ARCHIVE.FSH',                         # a big file
-                        );
-
-                        display(0,0,"Probing FILESYS($char)");
-                        my $cmd = ord($char);
-                        $cmd = $cmd >= ord('a') ? 10+$cmd-ord('a') : $cmd-ord('0');
-
-                        my $extra;
-                        my $extra2;
-                        $extra = '0000' if $cmd == 3 || $cmd > 9;
-                            # extra bytes before cmd(3) or a-f didn't seem to help
-                            # extra bytes after the the required length don't seem to do anything
-                            
-                        for my $path (@paths)
-                        {
-                            $path = '' if $cmd==7 && $cmd==8;
-                            display(0,1,"probe($char) path=$path");
-                            r_FILESYS::sendFilesysRequest($cmd,$path,1,$extra,$extra2);
-                            sleep(1);
-                        }
-
-                    }
-                }   # FILESYS TESTING
-            }   #   Got $char
-        }   # $in->GetEvents()
-        else
-        {
-            sleep(0.1);
-        }
-        
-    }   # while (1)
-}   #   serial_thread()
+    if ($lpart eq 'cardid')            # CTRL-A
+    {
+        return if !requestCardID();
+        while (getFileRequestState() > 0) { sleep(1); }
+        return if getFileRequestState() != $FILE_STATE_COMPLETE;
+        print "\nCARD_ID=".getFileRequestContent()."\n\n";
+    }
+    elsif ($lpart eq 'dir')
+    {
+        return if !requestDirectory($rpart);
+        while (getFileRequestState() > 0) { sleep(1); }
+        return if getFileRequestState() != $FILE_STATE_COMPLETE;
+        print "\nDIRECTORY\n".getFileRequestContent()."\n\n";
+    }
+    elsif ($lpart eq 'size')
+    {
+        return if !requestSize($rpart);
+        while (getFileRequestState() > 0) { sleep(1); }
+        return if getFileRequestState() != $FILE_STATE_COMPLETE;
+        print "\nSIZE=".getFileRequestContent()."\n\n";
+    }
+    elsif ($lpart eq 'file')
+    {
+        return if !requestSize($rpart);
+        while (getFileRequestState() > 0) { sleep(1); }
+        return if getFileRequestState() != $FILE_STATE_COMPLETE;
+        print "\nFILE=".length(getFileRequestContent())."bytes\n\n";
+    }
+    elsif ($lpart eq 'filesys')
+    {
+        my @params = split(/,/,$rpart);
+        sendFilesysRequest(@params);
+    }
+                    
+}   #   handleCommand()
 
 
 
@@ -386,12 +262,8 @@ display(0,0,"shark.pm initializing");
 initRAYDP();
 
 
-if (openConsoleIn())
-{
-    display(0,0,"initing serial_thread");
-    my $serial_thread = threads->create(\&serial_thread);
-    $serial_thread->detach();
-}
+startSerialThread() if 1;
+
 
 if ($LOCAL_UDP_SOCKET)
 {
