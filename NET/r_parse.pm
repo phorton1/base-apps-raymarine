@@ -252,10 +252,10 @@ sub parseNavQueryGroupBuffer
 	# Where the first uuid is the self_uuid of the folder
 	# and the subsequent ones are the waypoints.
 {
-	my ($buffer,$indent) = @_;
+	my ($buffer,$indent,$rec) = @_;
 	my $pad = pad('',$indent);
 	my $buf_len = length($buffer);
-	my $text .= "\n".$pad."Route Buffer buf_len($buf_len)\n";
+	my $text .= "\n".$pad."Group Buffer buf_len($buf_len)\n";
 
 	my $HDR_SIZE = 8;
 	my $hdr_specs = [
@@ -270,12 +270,20 @@ sub parseNavQueryGroupBuffer
 	my $offset = 0;
 	my $hdr = unpackRecord('group_hdr',$hdr_specs, $buffer, $offset, $HDR_SIZE);
 	$offset += $HDR_SIZE;
-
+	mergeHash($rec,$hdr) if $rec;
+	
 	my $name = substr($buffer,$offset,$hdr->{name_len});
 	$offset += $hdr->{name_len};
 	my $comment = $hdr->{cmt_len} ? substr($buffer,$offset,$hdr->{cmt_len}) : '';
 	$offset += $hdr->{cmt_len};
 
+	if ($rec)
+	{
+		$rec->{name} = $name;
+		$rec->{comment} = $comment;
+		$rec->{uuids} = [];
+	}
+	
 	$text .= addOutput($pad,'NAME',$name);
 	$text .= addOutput($pad,'COMMENT',$comment,'',$comment);
 	$text .= outputValueTable($NAVQRY_GROUP_DETAIL,$pad,$hdr,$hdr_specs);
@@ -283,8 +291,8 @@ sub parseNavQueryGroupBuffer
 	for (my $i=0; $i<$hdr->{num_uuids}; $i++)
 	{
 		my $uuid = unpack('H*',substr($buffer,$offset,8));
-		my $uuid_name = $i ? "WPT($i)" : "SELF($i)";
-		$text .= addOutput($pad,$uuid_name,$uuid);
+		$text .= addOutput($pad,"UUID($i)",$uuid);
+		push @{$rec->{uuids}},$uuid if $rec;
 		$offset += 8;
 	}
 
@@ -426,7 +434,7 @@ sub parseNavQueryWaypointBuffer
 	# and they, at least the ones for Routes, are not rigourously
 	# maintained by the E80 or RNS.
 {
-	my ($buffer,$indent) = @_;
+	my ($buffer,$indent,$ret_rec) = @_;
 
 	my $NAME_OFFSET = 52;
 
@@ -463,11 +471,20 @@ sub parseNavQueryWaypointBuffer
 
 	my $offset = 0;
 	my $rec = unpackRecord('waypoint',$field_specs, $buffer, $offset, $NAME_OFFSET);
+	mergeHash($ret_rec,$rec) if $ret_rec;
+
 	$offset += $NAME_OFFSET;
 	my $name = substr($buffer,$offset,$rec->{name_len});
 	$offset += $rec->{name_len};
 	my $comment = $rec->{cmt_len} ? substr($buffer,$offset,$rec->{cmt_len}) : '';
 	$offset += $rec->{cmt_len};
+
+	if ($ret_rec)
+	{
+		$ret_rec->{name} = $name;
+		$ret_rec->{comment} = $comment;
+		$ret_rec->{uuids} = shared_clone([]);
+	}
 	
 	$text .= addOutput($pad,'NAME',$name);
 	$text .= addOutput($pad,'COMMENT',$comment,'',$comment);
@@ -482,6 +499,7 @@ sub parseNavQueryWaypointBuffer
 	while ($offset <= $buf_len-8)
 	{
 		my $uuid = unpack('H*',substr($buffer,$offset,8));
+		push @{$ret_rec->{uuids}},$uuid if $ret_rec;
 		$text .= addOutput($pad,"UUID($num)",$uuid);
 		$offset += 8;
 		$num++;

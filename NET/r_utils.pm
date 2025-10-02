@@ -66,8 +66,10 @@ BEGIN
 		setConsoleColor
 		packetWireHeader
 		showPacket
-		navQueryLog
 
+		navQueryLog
+		clearLog
+		
 		degreeMinutes
 
 		@color_names
@@ -332,12 +334,20 @@ our %NAV_COMMAND = (
 #		# 	# recv: COUNT DATABASE number=0
 
 
-
+sub clearLog
+{
+	my ($filename) = @_;
+	my $record_filename = "docs/junk/$filename";
+	if (open(AFILE,">$record_filename"))
+	{
+		close AFILE;
+	}
+}
 
 sub navQueryLog
 {
-	my ($text) = @_;
-	my $record_filename = 'docs/junk/navqry.txt';
+	my ($text,$filename) = @_;
+	my $record_filename = "docs/junk/$filename";
 	if (open(AFILE,">>$record_filename"))
 	{
 		print AFILE $text;
@@ -601,7 +611,7 @@ sub showPacket
 		# parse and display and/or log the packet
 
 		my $text = parseNavPacket($is_reply,$client_port,$raw_data);
-		navQueryLog($text);
+		navQueryLog($text,"rns.log");
 
 		my $color = $rayport->{color};
 		setConsoleColor($color) if $color;

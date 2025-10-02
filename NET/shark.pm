@@ -63,12 +63,22 @@ sub handleCommand
         setNavQueryAutoRefresh($rpart);
     }
 
+	elsif ($lpart eq 'c')
+	{
+		display(0,0,"Clear Shark Log File");
+		clearLog("shark.log");
+	}
+	elsif ($lpart eq 'd')
+	{
+		display(0,0,"Clear RNS Log File");
+		clearLog("rns.log");
+	}
     elsif ($lpart eq 'create' || $lpart eq 'delete')
     {
-        my ($what,$num) = split(/\s+/,$rpart);
+        my ($what,$num,@rest) = split(/\s+/,$rpart);
     	$what = lc($what);
         createWaypoint($num) 	if $lpart eq 'create' && $what eq 'wp';
-        createRoute($num) 		if $lpart eq 'create' && $what eq 'route';
+        createRoute($num,@rest) if $lpart eq 'create' && $what eq 'route';
         createGroup($num) 	 	if $lpart eq 'create' && $what eq 'group';
         deleteWaypoint($num) 	if $lpart eq 'delete' && $what eq 'wp';
         deleteRoute($num) 	 	if $lpart eq 'delete' && $what eq 'route';
@@ -86,10 +96,10 @@ sub handleCommand
 			error("bad route command syntax");
 		}
 	}
-	elsif ($lpart eq 'group')
+	elsif ($lpart eq 'wp')
 	{
         my ($wp_num,$group_num) = split(/\s+/,$rpart);
-		setWaypointFolder($wp_num,$group_num);
+		setWaypointGroup($wp_num,$group_num);
 	}
 
     # showCharacterizedCommands(0);
