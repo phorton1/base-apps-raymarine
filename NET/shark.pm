@@ -23,6 +23,7 @@ use r_RAYDP;
 use r_NAVSTAT;
 use r_FILESYS;
 use r_NAVQRY;
+use nq_api;
 use r_characterize;
 use s_resources;
 use s_frame;

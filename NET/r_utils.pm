@@ -13,14 +13,9 @@ use IO::Socket::Multicast;
 use Time::HiRes qw(sleep);
 use Wx qw(:everything);
 use Pub::Utils;
-use r_parse;
+use nq_parse;
 
 my $dbg_nq = 0;
-
-
-my $PARSE_WP_BUFFERS = 1;
-my $PARSE_ROUTE_BUFFERS = 1;
-my $PARSE_GROUP_BUFFERS = 1;
 
 
 our $RAYDP_IP            = '224.0.0.1';
@@ -495,15 +490,17 @@ sub parseNavPacket
 					my $buffer = substr($data,8);
 					display($dbg_nq,2,"buffer=".unpack('H*',$buffer));
 
-					$answer .= parseNavQueryWaypointBuffer($buffer,$header_len+2)
-						if $context eq 'WAYPOINT' && $PARSE_WP_BUFFERS;
-					$answer .= parseNavQueryRouteBuffer($buffer,$header_len+2)
-						if $context eq 'ROUTE' && $PARSE_ROUTE_BUFFERS;
-					$answer .= parseNavQueryGroupBuffer($buffer,$header_len+2)
-						if $context eq 'GROUP' && $PARSE_GROUP_BUFFERS;
-
-					$NAVQRY->{$NAVQRY->{NAVQRY_HASH}}->{$NAVQRY->{NAVQRY_UUID}} = $buffer
-						if $NAVQRY && $NAVQRY->{NAVQRY_HASH} && $NAVQRY->{NAVQRY_UUID};
+					my $detail_level = 2;
+					my $rec = parseNQRecord($context,$buffer);
+					$answer .= displayNQRecord($rec,$context,$header_len+2,$detail_level);
+					
+					if ($NAVQRY)
+					{
+						my $uuid = $NAVQRY->{NAVQRY_UUID};
+						my $hash_name = $NAVQRY->{NAVQRY_HASH};
+						my $hash = $NAVQRY->{$hash_name};
+						$hash->{$uuid} = $rec if $hash && $uuid;
+					}
 				}
 			}
 			elsif ($command eq 'FIND')

@@ -5,7 +5,14 @@
 #
 # Can create and delete Waypoints, Routes, and Groups.
 # Deleting a Group with Waypoints in it, moves them to My Waypoints.
-# - Cannot delete a Waypoint in a Group
+# Cannot delete a Waypoint that is in a Group.
+#
+# I know how to add a waypoint to a Group.
+# - Moving waypoints between folders is a multi-step process.
+# - The waypoints probably need to be removed from the
+#   the group before deleting them
+# - The command_queue is probably overkill.
+#
 # - Don't know how to move a Waypoint to a Group or back to My Waypoints
 # - Dont know how to add or remove Waypoints from Routes.
 
@@ -23,11 +30,11 @@ use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use r_utils;
 use r_RAYDP;
-use r_parse;
+use nq_parse;
 use r_utils;
 
 my $dbg = -1;
-my $dbg_wait = 0;
+my $dbg_wait = -1;
 
 my $COMMAND_TIMEOUT 		= 3;
 my $REFRESH_INTERVAL		= 5;
@@ -40,6 +47,13 @@ my $DBG_WAIT = 1;
 # my $SUCCESS_SIG = '00000400';
 # my $DICT_END_RECORD_MARKER	= '10000202';
 
+our $API_NONE 			= 0;
+our $API_DO_QUERY		= 1;
+our $API_GET_ITEM		= 2;
+our $API_CREATE_ITEM 	= 3;
+our $API_DELETE_ITEM 	= 4;
+our $API_MODIFY_ITEM	= 5;
+
 
 BEGIN
 {
@@ -47,34 +61,39 @@ BEGIN
     our @EXPORT = qw(
 
 		startNavQuery
-		getNavQuery
-		doNavQuery
-		
-		createWaypoint
-		deleteWaypoint
+		$navqry
 
-		createRoute
-		deleteRoute
-		routeWaypoint
+		$API_NONE
+		$API_DO_QUERY
+		$API_GET_ITEM
+		$API_CREATE_ITEM
+		$API_DELETE_ITEM
+		$API_MODIFY_ITEM
 
-		setWaypointGroup
-		createGroup
-		deleteGroup
+		apiCommandName
+		queueNQCommand
 
-    );
+		$WHAT_WAYPOINT
+		$WHAT_ROUTE
+		$WHAT_GROUP
+		$WHAT_DATABASE
+
+		$ROUTE_COLOR_RED
+		$ROUTE_COLOR_YELLOW
+		$ROUTE_COLOR_GREEN
+		$ROUTE_COLOR_BLUE
+		$ROUTE_COLOR_PURPLE
+		$ROUTE_COLOR_BLACK
+		$NUM_ROUTE_COLORS
+
+	);
 }
 
 
-my $API_NONE 			= 0;
-my $API_DO_QUERY		= 1;
-my $API_GET_ITEM		= 2;
-my $API_CREATE_ITEM 	= 3;
-my $API_DELETE_ITEM 	= 4;
-my $API_MODIFY_ITEM		= 5;
 
 
 
-my $NAVQRY_FUNC		= 0x000f;
+our $NAVQRY_FUNC		= 0x000f;
 	# F000 in streams
 
 # WCDD = 0xDDWC
@@ -83,12 +102,12 @@ my $DIR_RECV	= 0x000;
 my $DIR_SEND	= 0x100;
 my $DIR_INFO	= 0x200;
 
-my $WHAT_WAYPOINT	= 0x00;
-my $WHAT_ROUTE		= 0x40;
-my $WHAT_GROUP		= 0x80;
-my $WHAT_DATABASE	= 0xb0;
+our $WHAT_WAYPOINT	= 0x00;
+our $WHAT_ROUTE		= 0x40;
+our $WHAT_GROUP		= 0x80;
+our $WHAT_DATABASE	= 0xb0;
 
-my $CMD_CONTEXT		= 0x0;
+my $CMD_CONTEXT	= 0x0;
 my $CMD_BUFFER    	= 0x1;
 my $CMD_LIST     	= 0x2;
 my $CMD_ITEM		= 0x3;
@@ -96,7 +115,7 @@ my $CMD_EXIST		= 0x4;
 my $CMD_EVENT     	= 0x5;
 my $CMD_DATA		= 0x6;
 my $CMD_MODIFY    	= 0x7;
-my $CMD_DELETE      = 0x8;
+my $CMD_DELETE     = 0x8;
 my $CMD_COUNT     	= 0x9;
 my $CMD_AVERB     	= 0xa;
 my $CMD_BVERB     	= 0xb;
@@ -105,62 +124,27 @@ my $CMD_SPACE     	= 0xd;
 my $CMD_EVERB    	= 0xe;
 my $CMD_FVERB     	= 0xf;
 
-my $STD_WP_UUIDS = [
-	'aaaaaaaaaaaaaaaa',
-	'bbbbbbbbbbbbbbbb',
-	'cccccccccccccccc',
-	'dddddddddddddddd', ];
-
-my $STD_ROUTE_UUID = 'eeeeeeeeeeee{int}';
-my $STD_GROUP_UUID = 'eeeeeeeeeeef{int}';
-
-my $STD_WP_DATA = {
-	# length dword that follows seq_num was 47000000 for all of these
-	aaaaaaaaaaaaaaaa =>
-		'47000000'.
-		'9e449005 ecdbface c16a9f06 ad4a84c5 00000000 00000000 00000000'.
-		'02010030 010000ef dc000088 4f000d0a 00000000 74657374 57617970'.
-		'6f696e74 31777043 6f6d6d65 6e7431',
-
-		# '32000000'.
-		# '02e49705 078af5ce d392a806 dff17dc5 00000000 00000000 00000000'.
-		# '02ffffff ffffff71 1c010088 4f000200 00000000 5770',
-
-	bbbbbbbbbbbbbbbb =>
-		'47000000'.
-		'2fd08605 e09100cf ba0f9406 da1a8bc5 00000000 00000000 00000000'.
-		'02010030 010000f0 dc000088 4f000d0a 00000000 74657374 57617970'.
-		'6f696e74 32777043 6f6d6d65 6e7432',
-	cccccccccccccccc =>
-		'47000000'.
-		'44558405 84b501cf 41159106 cb768cc5 00000000 00000000 00000000'.
-		'02010030 010000f0 dc000088 4f000d0a 00000000 74657374 57617970'.
-		'6f696e74 33777043 6f6d6d65 6e7433',
-	dddddddddddddddd =>
-		'47000000'.
-		'30658305 ca4b02cf f5f48f06 142a8dc5 00000000 00000000 00000000'.
-		'02010030 010000f1 dc000088 4f000d0a 00000000 74657374 57617970'.
-		'6f696e74 34777043 6f6d6d65 6e7434', };
-
 my $SUCCESS_SIG = '00000400';
-my $DICT_END_RECORD_MARKER	= '10000202';
 
-my $ROUTE_COLOR_RED 	= 0;
-my $ROUTE_COLOR_YELLOW 	= 1;
-my $ROUTE_COLOR_GREEN	= 2;
-my $ROUTE_COLOR_BLUE	= 3;
-my $ROUTE_COLOR_PURPLE	= 4;
-my $ROUTE_COLOR_BLACK	= 5;
+our $ROUTE_COLOR_RED 	= 0;
+our $ROUTE_COLOR_YELLOW = 1;
+our $ROUTE_COLOR_GREEN	= 2;
+our $ROUTE_COLOR_BLUE	= 3;
+our $ROUTE_COLOR_PURPLE	= 4;
+our $ROUTE_COLOR_BLACK	= 5;
+our $NUM_ROUTE_COLORS   = 6;
+
 	# red, yellow, green, blue, purple, black
 
 
 
-my $self:shared;
+our $navqry:shared;
 
-sub getNavQuery
-{
-	return $self;
-}
+
+
+#--------------------------------------
+# API
+#--------------------------------------
 
 sub apiCommandName
 {
@@ -173,32 +157,6 @@ sub apiCommandName
 	return "UNKNOWN API COMMAND";
 }
 
-#---------------------
-# param massages
-#---------------------
-
-sub std_uuid
-{
-	my ($template,$int) = @_;
-	my $pack = pack('v',$int);
-	my $hex = unpack('H4',$pack);
-	$template =~ s/{int}/$hex/;
-	return $template;
-}
-
-sub name16_hex
-	# return hex representation of max16 name + null
-{
-	my ($name,$opt_end) = @_;
-	while (length($name) < 16) { $name .= "\x00" }
-	$name .= $opt_end ? pack('H*',$opt_end) : "\x00";
-	return unpack('H*',$name);
-}
-
-
-#--------------------------------------
-# API
-#--------------------------------------
 
 sub startNavQuery
 {
@@ -216,7 +174,7 @@ sub startNavQuery
 		# hashes of buffers by uuid, where the
 		# buffer starts with the big_len
 
-	$self = $this;
+	$navqry = $this;
 
 	display(0,0,"creating listen_thread");
     my $listen_thread = threads->create(\&listenerThread,$this);
@@ -226,192 +184,16 @@ sub startNavQuery
 }
 
 
-sub showCommand
-{
-	my ($msg) = @_;
 
-	$msg = "\n\n".
-		"#------------------------------------------------------------------\n".
-		"# $msg\n".
-		"#------------------------------------------------------------------\n\n";
-	print $msg;
-	navQueryLog($msg,'shark.log');
-}
-
-
-
-sub doNavQuery
-{
-	showCommand("doNavQuery()");
-	return queue_command($self,$API_DO_QUERY,0,0,0,undef);
-}
-
-
-sub createWaypoint
-{
-	my ($wp_num) = @_;
-	showCommand("createWaypoint($wp_num)");
-	my $uuid = $STD_WP_UUIDS->[$wp_num-1];
-	my $name = "testWaypoint$wp_num";
-	my $data = $STD_WP_DATA->{$uuid};
-	return queue_command($self,$API_CREATE_ITEM,$WHAT_WAYPOINT,$name,$uuid,$data);
-}
-
-sub deleteWaypoint
-{
-	my ($wp_num) = @_;
-	showCommand("deleteWaypoint($wp_num)");
-	my $uuid = $STD_WP_UUIDS->[$wp_num-1];
-	my $name = "testWaypoint$wp_num";
-	return queue_command($self,$API_DELETE_ITEM,$WHAT_WAYPOINT,$name,$uuid,undef);
-}
-
-
-sub createRoute
-{
-	my ($route_num,$bits) = @_;
-	$bits |= 0;
-	showCommand("createRoute($route_num) bits($bits)");
-	my $uuid = std_uuid($STD_ROUTE_UUID,$route_num);
-	my $name = "testRoute$route_num";
-	my $data = emptyRoute($name,$uuid,$bits); # ,$STD_WP_UUIDS->[0]);
-	return queue_command($self,$API_CREATE_ITEM,$WHAT_ROUTE,$name,$uuid,$data);
-}
-
-sub deleteRoute
-{
-	my ($route_num) = @_;
-	showCommand("deleteRoute($route_num)");
-	my $uuid = std_uuid($STD_ROUTE_UUID,$route_num);
-	my $name = "testRoute$route_num";
-	return queue_command($self,$API_DELETE_ITEM,$WHAT_ROUTE,$name,$uuid,undef);
-}
-
-sub routeWaypoint
-{
-	my ($route_num,$wp_num,$add) = @_;
-	showCommand("outeWaypoint($route_num) wp_num($wp_num) add($add)");
-
-	my $uuid = std_uuid($STD_ROUTE_UUID,$route_num);
-	my $wp_uuid = $STD_WP_UUIDS->[$wp_num-1];
-	my $name = "testRoute$route_num";
-
-	my $data = emptyRoute($name,$uuid,$wp_uuid);
-
-	# my $old_data = $self->{routes}->{$uuid};
-	# return error("Could not find this->route->($uuid)") if !$old_data;
-	# my $data = modifyRoute($old_data,$wp_uuid,$add);
-	# return if !$data;
-
-	return queue_command($self,$API_MODIFY_ITEM,$WHAT_ROUTE,$name,$uuid,$data);
-}
-
-sub createGroup
-{
-	my ($group_num) = @_;
-	showCommand("createGroup($group_num)");
-	my $uuid = std_uuid($STD_GROUP_UUID,$group_num);
-	my $name = "testGroup$group_num";
-	my $data = emptyGroup($name);
-	return queue_command($self,$API_CREATE_ITEM,$WHAT_GROUP,$name,$uuid,$data);
-}
-
-sub deleteGroup
-{
-	my ($group_num) = @_;
-	showCommand("deleteGroup($group_num)");
-	my $uuid = std_uuid($STD_GROUP_UUID,$group_num);
-	my $name = "testGroup$group_num";
-	return queue_command($self,$API_DELETE_ITEM,$WHAT_GROUP,$name,$uuid,undef);
-}
-
-
-sub commandBusy
-{
-	my ($this) = @_;
-	return $this->{command} || @{$this->{command_queue}} ? 1 : 0;
-}
-
-
-sub getWaypointRecord
-{
-	my ($this,$uuid) = @_;
-	my $data = $this->{waypoints}->{$uuid};
-	return error("could not getWaypointRecord($uuid)") if !$data;
-	my $rec = shared_clone({});
-	parseNavQueryWaypointBuffer($data,0,$rec);
-	return $rec;
-}
-
-
-
-sub wait_queue_command
-{
-	my ($this,@params) = @_;
-	$this->queue_command(@params);
-	while ($this->commandBusy())
-	{
-		display_hash(0,0,"wait_queue_command",$this);
-		sleep(1);
-	}
-	error("wait_queue_command failed") if !$this->{command_rslt};
-	display(0,0,"wait_queue_command returning $this->{command_rslt}");
-	return $this->{command_rslt};
-}
-
-
-sub setWaypointGroup
-	# 0 = My Waypoints
-	# This introduces the need for a list of atomic commands per
-	# high level API command and a real desire to keep "records"
-	# instead of buffers, as the hash elements.
-	#
-	# 	get the waypoint, see if it's already in a group
-	#	- remove it from the old group if it is in one
-	#   - add it to the new group if it's not My Waypoints
-	
-{
-	my ($wp_num,$group_num) = @_;
-	showCommand("setWaypointGroup($wp_num) group_num($group_num)");
-
-	my $wp_uuid = $STD_WP_UUIDS->[$wp_num-1];
-	my $wp_name = "testWaypoint$wp_num";
-	my $group_name = $group_num ? "testGroup$group_num" : 'My Waypoints';
-	my $group_uuid = $group_num ? std_uuid($STD_GROUP_UUID,$group_num) : '';
-
-	return if !$self->wait_queue_command($API_GET_ITEM,$WHAT_WAYPOINT,$wp_name,$wp_uuid,undef);
-	my $wp = $self->getWaypointRecord($wp_uuid);
-	display_hash(0,0,"got waypoint",$wp);
-	return;
-	
-	# requires a query, first, at this time
-	my $data;
-
-
-	if ($group_num)
-	{
-		my $old_data = $self->{groups}->{$group_uuid};
-		return error("Could not find this->groups->($group_uuid)") if !$old_data;
-		my $group_rec = {};
-		parseNavQueryGroupBuffer($old_data,0,$group_rec);
-		push @{$group_rec->{uuids}},$wp_uuid;
-		$data = groupRecordToBuffer($group_rec);
-	}
-
-	return queue_command($self,$API_MODIFY_ITEM,$WHAT_GROUP,$group_name,$group_uuid,$data);
-}
-
-
-
-sub queue_command
+sub queueNQCommand
 {
 	my ($this,$api_command,$what,$name,$uuid,$data,$params) = @_;
-	return error("No 'this' in queue_command") if !$this;
+	return error("No 'this' in queueNQCommand") if !$this;
 	return error("Not started") if !$this->{started};
 	return error("Not running") if !$this->{running};
 
 	my $cmd_name = apiCommandName($api_command);
-	my $msg = "# queue_command($api_command=$cmd_name) what($what) name($name) uuid($uuid) data(".($data?length($data):'empty').")\n";
+	my $msg = "# queueNQCommand($api_command=$cmd_name) what($what) name($name) uuid($uuid) data(".($data?length($data):'empty').")\n";
 	print $msg;
 	navQueryLog($msg,"shark.log");
 	
@@ -429,8 +211,18 @@ sub queue_command
 
 
 #-------------------------------------------------
-# commandThread support
+# utilities
 #-------------------------------------------------
+
+sub name16_hex
+	# return hex representation of max16 name + null
+{
+	my ($name,$opt_end) = @_;
+	while (length($name) < 16) { $name .= "\x00" }
+	$name .= $opt_end ? pack('H*',$opt_end) : "\x00";
+	return unpack('H*',$name);
+}
+
 
 sub createMsg
 {
@@ -566,125 +358,6 @@ sub parseDict
 }
 
 
-
-sub groupRecordToBuffer
-{
-	my ($rec) = @_;
-	display_hash(0,0,"groupRecordToBuffer",$rec);
-	my $name_len = length($rec->{name});
-	my $cmt_len = $rec->{comment} ? length($rec->{comment}) : 0;
-	my $uuids = $rec->{uuids};
-	my $num_uuids = @$uuids;
-	
-	my $buffer = '';
-	$buffer .= pack('C',$name_len);
-	$buffer .= pack('C',$cmt_len);
-	$buffer .= pack('v',$num_uuids);
-	$buffer .= $rec->{name};
-	$buffer .= $rec->{comment} if $cmt_len;
-	for my $uuid (@$uuids)
-	{
-		$buffer .= pack('H*',$uuid);
-	}
-	$buffer = pack('V',length($buffer)).$buffer;
-	
-	my $hex_buffer = unpack('H*',$buffer);
-	display(0,0,"groupRecordToBuffer=$hex_buffer");
-	display(0,1,parseNavQueryGroupBuffer($buffer,20));
-	return $hex_buffer;
-
-										   
-}
-
-
-sub emptyGroup
-{
-	my ($name) = @_;
-	my $name_len = length($name);
-
-	my $HDR1_SIZE = 8;
-	my $big_len = $HDR1_SIZE + $name_len + 8 + 8; 	# 8 for the self uuid, and 8 for wp uuid
-	my $buffer = pack('V',$big_len);
-
-	$buffer .= pack('C',$name_len);		# name_len
-	$buffer .= pack('C',0);				# cmt_len
-	$buffer .= pack('v',0);				# num_uuids
-	$buffer .= $name;
-
-	display(0,0,"emptyGroup($name) biglen($big_len) length=".length($buffer));
-	my $ret_hex = unpack('H*',$buffer);
-	# print "emptyGroup = ".$ret_hex."\n";
-	return $ret_hex;
-}
-
-
-my $next_color:shared = 0;
-
-sub emptyRoute
-{
-	my ($name,$self_uuid,$bits,$wpt_uuid) = @_;
-	$bits = 0 if !defined($bits);
-	my $name_len = length($name);
-	
-	my $NUM_WPTS = $wpt_uuid ? 1 : 0;
-	
-	my $HDR1_SIZE = 8;
-	my $HDR2_SIZE = 46;
-	my $big_len = $HDR1_SIZE + $HDR2_SIZE + $name_len + 8; 	# 8 for the single waypoint uuid
-	my $latlon = pack('H*','9e449005ecdbface');		# two dwords = 8 bytes
-	my $buffer = pack('V',$big_len);
-
-	# hdr1
-	$buffer .= pack('v',0);				# u1_0
-	$buffer .= pack('C',$name_len);		# name_len
-	$buffer .= pack('C',0);				# cmt_len
-	$buffer .= pack('v',$NUM_WPTS);		# num_wpts
-	$buffer .= pack('C',$bits);			# '05');			# u2_05
-		# Changing this from 05 to 00 caused the routes to be persistent
-		# and not overwrite themselves.
-		#
-		# 1 = appears to be something like "temporary current route"
-		#     and re-uses the top 'slot' on the E80 and doesnt show in RNS
-		# 2 = appears to be something like "don't transfer to rns"
-		#
-		# In any case, the bits are persistent.
-		
-	my $color = $next_color++ % 6;
-	$buffer .= pack('C',$color);		# color byte
-
-	# name and no uuids
-	$buffer .= $name;
-	$buffer .= pack('H*',$wpt_uuid) if $NUM_WPTS;
-
-	my $zero_uuid = '0000000000000000';
-
-	# hdr2
-	$buffer .= $latlon;					# start
-	$buffer .= $latlon;					# end
-	$buffer .= pack('H*','00000000');	# distance
-
-	$buffer .= pack('H*','02000000'); 	# 02000000');	# u4_0200
-	$buffer .= pack('H*','00000000');	# b8975601');	# u5 = b8975601 data? end marker?	$buffer .= pack('H*',$self_uuid);	# u6_self
-	$buffer .= pack('H*',$self_uuid);	# u7_self
-	$buffer .= pack('H*','0000');		# 1234, 7856, 181d'		# u8  = 'H4';
-
-
-	if ($NUM_WPTS)
-	{
-		$buffer .= pack('H*','0000');		# p_u0_0
-		$buffer .= pack('H*','0000');		# p_depth
-		$buffer .= pack('H*','00000000');	# p_u1_0
-		$buffer .= pack('H*','0000');		# p_sym
-	}
-	
-	display(0,0,"emptyRoute($name) biglen($big_len) length=".length($buffer));
-	my $ret_hex = unpack('H*',$buffer);
-	# print "emptyRoute = ".$ret_hex."\n";
-	return $ret_hex;
-}
-
-
-
 #============================================================
 # commandThread atoms
 #============================================================
@@ -725,24 +398,25 @@ sub query_one
 	my $uuids = parseDict($reply,$what_name);
 
 	my $num = 0;
+	my $hash_name = lc($what_name)."s";
 	for my $uuid (@$uuids)
 	{
 		$seq = $this->{next_seqnum}++;
 		$request = createMsg($seq,$DIR_SEND,$CMD_ITEM,$what,$uuid);
 
 		my $ok = 1;
-		$this->{NAVQRY_HASH} = lc($what_name)."s";
 		$this->{NAVQRY_UUID} = $uuid;
-		$ok ||= $this->sendRequest($sock,$sel,$seq,"$what_name ITEM($num)",$request);
-		$ok ||= $this->waitReply(1);
+		$this->{NAVQRY_HASH} = $hash_name;
+		$ok = 0 if !$this->sendRequest($sock,$sel,$seq,"$what_name ITEM($num)",$request);
+		$ok = 0 if $ok && !$this->waitReply(1);
 		$this->{NAVQRY_HASH} = '';
 		$this->{NAVQRY_UUID} = '';
 		return 0 if !$ok;
-
-		display(0,1,"keys($this->{NAVQRY_HASH}) = ".join(" ",keys %{$this->{$this->{NAVQRY_HASH}}} ));
 		$num++;
 	}
 
+	my $hash = $this->{$hash_name};
+	warning(0,1,"keys($hash_name) = ".join(" ",keys %$hash));
 	return 1;
 }
 
@@ -896,8 +570,7 @@ sub get_item
 
 sub commandThread
 {
-	my ($this,$sock,$sel) = @_;
-	my $command = $this->{command};
+	my ($this,$sock,$sel,$command) = @_;
 	my $api_command = $command->{api_command};
 	my $cmd_name = apiCommandName($api_command);
 	display(0,0,"commandThread($api_command=$cmd_name) started");
@@ -913,7 +586,13 @@ sub commandThread
 	error("API $cmd_name failed") if !$rslt;
 
 	$this->{command_rslt} = $rslt;
-	$this->{command} = '';
+	$this->{busy} = 0;
+		# Note to self.  I used to pull the command off the queue and use
+		# {command} as the busy indicator, then set it to '' here.
+		# But I believe that I once again ran into a Perl weirdness
+		# that Perl will crash (during garbage collection) if you
+		# re-assign a a shared reference to a scalar.
+		
 	display(0,0,"commandThread($api_command=$cmd_name) finished");
 }
 
@@ -1050,12 +729,13 @@ sub listenerThread
 		next if !$this->openSocket(\$sock,\$sel);
 		next if $this->readBuf($sock,$sel) < 0;
 
-		if (!$this->{command} && @{$this->{command_queue}})
+		if (!$this->{busy} && @{$this->{command_queue}})
 		{
-			$this->{command} = shift @{$this->{command_queue}};
+			my $command = shift @{$this->{command_queue}};
+			$this->{busy} = 1;
 			
 			display(0,0,"creating cmd_thread");
-			my $cmd_thread = threads->create(\&commandThread,$this,$sock,$sel);
+			my $cmd_thread = threads->create(\&commandThread,$this,$sock,$sel,$command);
 			display(0,0,"nav_thread cmd_thread");
 			$cmd_thread->detach();
 			display(0,0,"cmd_thread detached");
