@@ -13,6 +13,14 @@ use IO::Socket::Multicast;
 use Time::HiRes qw(sleep);
 use Wx qw(:everything);
 use Pub::Utils;
+use r_parse;
+
+my $dbg_nq = 0;
+
+
+my $PARSE_WP_BUFFERS = 1;
+my $PARSE_ROUTE_BUFFERS = 1;
+my $PARSE_GROUP_BUFFERS = 1;
 
 
 our $RAYDP_IP            = '224.0.0.1';
@@ -293,17 +301,35 @@ our %NAV_COMMAND = (
 	0x5 => 'EVENT',
 	0x6 => 'DATA',				# reply only
 	0x7 => 'MODIFY',
-	0x8 => 'UUID',
+	0x8 => 'DELETE',
 	0x9 => 'COUNT',
 	0xa => 'AVERB',
 	0xb => 'BVERB',
 	0xc => 'FIND',				# by name
 	0xd => 'SPACE',
-	0xe => 'DELETE',
+	0xe => 'EVERB',
 	0xf => 'FVERB',
 );
 
 
+# database checks are not needed
+#
+#	$request = createMsg(-1,$DIR_SEND,$CMD_BUFFER,$WHAT_DATABASE);
+#	return 0 if !$this->sendRequest($sock,$sel,-1,'init1',$request);
+#		# NAVQRY <--51412  0400 b1010f00                                                                  ....
+#		#      # send: BUFFER DATABASE
+#	$request = createMsg(-2,$DIR_SEND,$CMD_BUFFER,$WHAT_DATABASE);
+#	return 0 if !$this->sendRequest($sock,$sel,-2,'init2',$request);
+#		# no reply expected on second
+#
+#	$seq = $this->{next_seqnum}++;
+#	$request = createMsg($seq,$DIR_SEND,$CMD_SPACE);
+#	return 0 if !$this->sendRequest($sock,$sel,$seq,'space',$request);
+#	return 0 if !$this->waitReply();
+#		# NAVQRY <--51412  0800 0d010f00 9b010000                                                         ........
+#		#	# send: SPACE DATABASE
+#		# NAVQRY -->51412  0c00 09000f00 9b010000 00000000                                                ............
+#		# 	# recv: COUNT DATABASE number=0
 
 
 
@@ -326,7 +352,8 @@ sub parseNavPacket
 	# is_request should be passed in as one when the
 	# source is NOT NAVQRY
 {
-	my ($is_reply,$client_port,$raw_data) = @_;
+	my ($is_reply,$client_port,$raw_data,$NAVQRY) = @_;
+	display($dbg_nq,0,"parseNavPacket($is_reply,$client_port) ".unpack('H*',$raw_data));
 
 	# initialize state variables
 
@@ -357,7 +384,7 @@ sub parseNavPacket
 		my $header = $num ? pad('',$header_len) : $first_header;
 
 		my $output = parse_dwords($header.$hex_len.' ',$data,1);
-		$offset += 2 + $data_len;
+
 		$text .= $output;
 
 		# get the comand word and move past {seq_num}
@@ -367,20 +394,29 @@ sub parseNavPacket
 		my $W = $command_word & 0xf0;	# substr($hex_data,0,1);
 		my $C = $command_word & 0xf;	# substr($hex_data,1,1);
 
-		$is_reply = 1 if !$num && !$D;
+		# $is_reply = 1 if !$num && !$D;
 
 		my $dir = $NAV_DIRECTION{$D};
 		my $command = $NAV_COMMAND{$C};
 		my $what = $NAV_WHAT{$W};
 
-		$nav_context{$client_port} = $what if !$num && !$is_reply;
-			# set the conversation context for the entire request-reqply from the first request message
+		if (!$is_reply && $dir eq 'send')
+		{
+			$text .= "    set nav_context($client_port) = $what($W)\n";
+
+			$nav_context{$client_port} = $what
+				# set the conversation context for the entire request-reqply from the first request message
+		}
+		
 		my $context = $W ? $what : $nav_context{$client_port};
 			# override the displayed context if it's excplitily non-zero
 
 		$context = $what if
 			$command eq 'MODIFY' ||
 			$command eq 'EVENT';
+
+		display($dbg_nq,1,"PART($num) offset($offset) dir($dir) command($command) what($what) context($context) nav_context($nav_context{$client_port}) nav_type($nav_type{$client_port})");
+		display($dbg_nq,2,"data=".unpack('H*',$data));
 		
 		# commands that do not have seq_num
 
@@ -427,7 +463,7 @@ sub parseNavPacket
 					# set the 'type' of the buffer data to INDEX
 					# if a LIST command is encountered in a request
 			}
-			elsif ($command eq 'BUFFER' && $num)
+			elsif ($command eq 'BUFFER') 	# !$num)
 			{
 				# there's no actual buffer data if the commands
 				# is the outer request or reply
@@ -446,22 +482,18 @@ sub parseNavPacket
 				}
 				else # if ($buffer_type eq 'ITEM')
 				{
-					if ($context eq 'WAYPOINT')
-					{
-					}
-					else  #if ($context eq 'GROUP' || $context eq 'ROUTE')
-					{
-						$data_offset += 4;		# skip dword(09000500)
-						my $name_len = unpack('v',substr($data,$data_offset,2));
-						my $num_uuids = unpack('v',substr($data,$data_offset+2,2));
-						$data_offset += 4;
-						my $name = substr($data,$data_offset,$name_len);
-						$data_offset += $name_len;
-							# start of uuids
-						$answer .= " num_uuids($num_uuids) name=$name";
-						$answer .= " first:".unpack('H*',substr($data,$data_offset,8))
-							if $num_uuids;
-					}
+					my $buffer = substr($data,8);
+					display($dbg_nq,2,"buffer=".unpack('H*',$buffer));
+
+					$answer .= parseNavQueryWaypointBuffer($buffer,$header_len+2)
+						if $context eq 'WAYPOINT' && $PARSE_WP_BUFFERS;
+					$answer .= parseNavQueryRouteBuffer($buffer,$header_len+2)
+						if $context eq 'ROUTE' && $PARSE_ROUTE_BUFFERS;
+					$answer .= parseNavQueryGroupBuffer($buffer,$header_len+2)
+						if $context eq 'GROUP' && $PARSE_GROUP_BUFFERS;
+
+					$NAVQRY->{$NAVQRY->{NAVQRY_HASH}}->{$NAVQRY->{NAVQRY_UUID}} = $buffer
+						if $NAVQRY && $NAVQRY->{NAVQRY_HASH} && $NAVQRY->{NAVQRY_UUID};
 				}
 			}
 			elsif ($command eq 'FIND')
@@ -488,7 +520,8 @@ sub parseNavPacket
 				   $command eq 'CONTEXT' ||
 				   $command eq 'LIST' ||
 				   $command eq 'BUFFER' ||
-				   $command eq 'LIST')
+				   $command eq 'LIST' ||
+				   $command eq 'DELETE')
 			{
 				my $uuid = '';
 				my $bits = 0;
@@ -510,6 +543,8 @@ sub parseNavPacket
 		my $comment =  "     # $dir: $command $context $answer\n";
 		$text .= $comment;
 		# print $comment;
+
+		$offset += 2 + $data_len;
 		$num++;
 	}
 	

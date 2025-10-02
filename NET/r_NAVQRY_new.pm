@@ -48,7 +48,13 @@ BEGIN
 
 		startNavQuery
 		getNavQuery
+
 		doNavQuery
+
+sendEverb
+listDatabase
+database
+
 		
 		createWaypoint
 		deleteWaypoint
@@ -70,6 +76,11 @@ my $API_DO_QUERY		= 1;
 my $API_CREATE_ITEM 	= 2;
 my $API_DELETE_ITEM 	= 3;
 my $API_MODIFY_ITEM		= 4;
+# my $API_WAYPOINT_GROUP  = 5;
+
+my $API_LIST_DATABASE   = 94;
+my $API_EVERB			= 85;
+my $API_DATABASE		= 96;
 
 
 
@@ -215,11 +226,29 @@ sub startNavQuery
 }
 
 
+
 sub doNavQuery
 {
 	display(0,0,"doNavQuery()");
 	return init_command($self,$API_DO_QUERY,0,0,0,undef);
 }
+
+sub listDatabase
+{
+	display(0,0,"listDatabase");
+	return init_command($self,$API_LIST_DATABASE);
+}
+sub sendEverb
+{
+	display(0,0,"sendEverb");
+	return init_command($self,$API_EVERB);
+}
+sub database
+{
+	display(0,0,"database");
+	return init_command($self,$API_DATABASE);
+}
+
 
 
 sub createWaypoint
@@ -248,7 +277,7 @@ sub createRoute
 	display(0,0,"createRoute($route_num)");
 	my $uuid = std_uuid($STD_ROUTE_UUID,$route_num);
 	my $name = "testRoute$route_num";
-	my $data = emptyRoute($name,$uuid); # ,$STD_WP_UUIDS->[0]);
+	my $data = emptyRoute($name,$uuid);
 	return init_command($self,$API_CREATE_ITEM,$WHAT_ROUTE,$name,$uuid,$data);
 }
 
@@ -488,14 +517,20 @@ sub emptyGroup
 }
 
 
-my $next_color:shared = 0;
 
 sub emptyRoute
+	# This method returns the $data for a empty route buffer with
+	# the given name (no waypoints or pts). It will use the lat/lon
+	# copied from the 0th standard waypoint, and the passed in uuid
+	# or 00000000 00000000
+	#
+	# The leading dword(big_len) will be prepended  at the end
+	#
+	# that worked.
+	# gonna try a route with no waypoints
 {
-	my ($name,$self_uuid,$wpt_uuid) = @_;
+	my ($name) = @_;
 	my $name_len = length($name);
-	
-	my $NUM_WPTS = $wpt_uuid ? 1 : 0;
 	
 	my $HDR1_SIZE = 8;
 	my $HDR2_SIZE = 46;
@@ -507,17 +542,12 @@ sub emptyRoute
 	$buffer .= pack('v',0);				# u1_0
 	$buffer .= pack('C',$name_len);		# name_len
 	$buffer .= pack('C',0);				# cmt_len
-	$buffer .= pack('v',$NUM_WPTS);		# num_wpts
-	$buffer .= pack('H*','00');			# '05');			# u2_05
-		# Changing this from 05 to 00 caused the routes to be persistent
-		# and not overwrite themselves.
-		
-	my $color = $next_color++ % 6;
-	$buffer .= pack('C',$color);		# color byte
+	$buffer .= pack('v',0);				# num_wpts
+	$buffer .= pack('H*','05');			# u2_05
+	$buffer .= pack('C',$ROUTE_COLOR_PURPLE);		# color byte
 
 	# name and no uuids
 	$buffer .= $name;
-	$buffer .= pack('H*',$wpt_uuid) if $NUM_WPTS;
 
 	my $zero_uuid = '0000000000000000';
 
@@ -525,26 +555,80 @@ sub emptyRoute
 	$buffer .= $latlon;					# start
 	$buffer .= $latlon;					# end
 	$buffer .= pack('H*','00000000');	# distance
+	$buffer .= pack('H*','02000000');	# u4_0200
+	$buffer .= pack('H*','00000000');	# u5 = b8975601 data? end marker?
+	$buffer .= pack('H*',$zero_uuid);	# u6_self
+	$buffer .= pack('H*',$zero_uuid);	# u7_self
+	$buffer .= pack('H*','0000');		# 'H4';
 
-	$buffer .= pack('H*','02000000'); 	# 02000000');	# u4_0200
-	$buffer .= pack('H*','00000000');	# b8975601');	# u5 = b8975601 data? end marker?	$buffer .= pack('H*',$self_uuid);	# u6_self
-	$buffer .= pack('H*',$self_uuid);	# u7_self
-	$buffer .= pack('H*','0000');		# 1234, 7856, 181d'		# u8  = 'H4';
-
-
-	if ($NUM_WPTS)
-	{
-		$buffer .= pack('H*','0000');		# p_u0_0
-		$buffer .= pack('H*','0000');		# p_depth
-		$buffer .= pack('H*','00000000');	# p_u1_0
-		$buffer .= pack('H*','0000');		# p_sym
-	}
+	# no pointa
+	#	if ($NUM_WPTS)
+	#	{
+	#		$buffer .= pack('H*','0000');		# p_u0_0
+	#		$buffer .= pack('H*','0000');		# p_depth
+	#		$buffer .= pack('H*','00000000');	# p_u1_0
+	#		$buffer .= pack('H*','0000');		# p_sym
+	#	}
 	
 	display(0,0,"emptyRoute($name) biglen($big_len) length=".length($buffer));
 	my $ret_hex = unpack('H*',$buffer);
 	# print "emptyRoute = ".$ret_hex."\n";
 	return $ret_hex;
 }
+
+
+sub modifyRoute
+{
+	my ($buffer,$wp_uuid,$add) = @_;
+	display(0,0,"modifyRoute($wp_uuid) add($add)");
+	display(0,1,"buffer=".unpack('H*',$buffer));
+
+	my $offset = 0;
+	my $big_len = unpack('V',substr($buffer,$offset,4));
+	$offset += 4;
+	my $skip_word = substr($buffer,$offset,2);
+	$offset += 2;
+	my $name_len = unpack('C',substr($buffer,$offset++,1));
+	my $cmt_len = unpack('C',substr($buffer,$offset++,1));
+	my $num_uuids = unpack('v',substr($buffer,$offset,2));
+	$offset += 2;
+	display(0,1,"name_len($name_len) cmt_len($cmt_len) num_uuids($num_uuids)");
+
+	my $HDR1_SIZE = 12;						# includes big_len && main_dword
+	my $PT_SIZE = 10;
+	my $UUID_OFFSET = $HDR1_SIZE + $name_len + $cmt_len;
+
+	my $left = substr($buffer,$offset,$UUID_OFFSET-$offset);
+	my $uuids = substr($buffer,$UUID_OFFSET,$num_uuids * 8);
+	my $right = substr($buffer,$UUID_OFFSET + $num_uuids * 8);
+
+	display(0,1,"left=".unpack('H*',$left));
+	display(0,1,"uuids=".unpack('H*',$uuids));
+	display(0,1,"right=".unpack('H*',$right));
+
+	if ($add)
+	{
+		$uuids .= pack('H*',$wp_uuid);
+		$buffer =
+			pack('V',$big_len + $PT_SIZE + 8).
+			$skip_word.
+			pack('C',$name_len).
+			pack('C',$cmt_len).
+			pack('v',$num_uuids+1).
+			$left.
+			$uuids.
+			$right.
+			pack('H*','00' x $PT_SIZE);
+
+		my $hex_buffer = unpack('H*',$buffer);
+		display(0,2,"buffer=$hex_buffer");
+
+		my $text = parseNavQueryRouteBuffer($buffer,8);
+		print $text;
+		return $hex_buffer;
+	}
+}
+
 
 
 
@@ -603,6 +687,7 @@ sub query_one
 	return 1;
 }
 
+
 sub do_query
 	# get all Waypoints, Routes, and Groups from the E80
 {
@@ -648,9 +733,9 @@ sub create_item
 	$seq = $this->{next_seqnum}++;
 	$request =
 		createMsg($seq,$DIR_SEND,$CMD_MODIFY,	$what,	$uuid).
-		createMsg($seq,$DIR_INFO,$CMD_CONTEXT,	0,		$uuid.'03000000').	#.'00000000').
+		createMsg($seq,$DIR_INFO,$CMD_CONTEXT,	0,		$uuid).		#.'02000000');	#.'00000000').
 		createMsg($seq,$DIR_INFO,$CMD_BUFFER,	0,		$data).
-		createMsg($seq,$DIR_INFO,$CMD_LIST,		0,		'00000000 00000000'); # $uuid);
+		createMsg($seq,$DIR_INFO,$CMD_LIST,		0,		$uuid);
 
 	return 0 if !$this->sendRequest($sock,$sel,$seq,"create $what_name",$request);
 	return 0 if !$this->waitReply(1);
@@ -690,6 +775,20 @@ sub modify_item
 }
 
 
+
+# NAVQRY <-- 62586  1400 46010f00 49010000 15000000 eeeeeeee eeee0100                              F...I...............
+#     set nav_context(62586) = ROUTE(64)
+#      # send: DATA ROUTE
+# NAVQRY <-- 62586  1400 00020f00 49010000 eeeeeeee eeee0100 02000000                              ....I...............
+#      # info: CONTEXT ROUTE eeeeeeeeeeee0100 bits(02)
+# NAVQRY <-- 62586  5e00 01020f00 49010000 52000000 00000a00 01000005 74657374 526f7574 6531aaaa   ....I...R...........testRoute1..
+#                        aaaaaaaa aaaa0000 00000000 00000000 00000000 00000000 0000eeee eeeeeeee   ................................
+#                        01000200 00006c90 19008830 5e030000 00007873 00000000 00000000 0000       ......l....0^.....xs..........
+#      # info: BUFFER ROUTE ITEM
+# NAVQRY <-- 62586  1000 02020f00 49010000 eeeeeeee eeee0100                                       ....I...........
+#      # info: LIST ROUTE
+
+
 sub delete_item
 	 # name just included for nicety debugging
 {
@@ -711,6 +810,8 @@ sub delete_item
 
 
 
+
+
 sub commandThread
 {
 	my ($this,$sock,$sel,$command) = @_;
@@ -721,10 +822,71 @@ sub commandThread
 	$this->delete_item($sock,$sel) 	if $command == $API_DELETE_ITEM;
 	$this->modify_item($sock,$sel) 	if $command == $API_MODIFY_ITEM;
 
+	$this->do_list_database($sock,$sel) if $command == $API_LIST_DATABASE;
+	$this->do_everb($sock,$sel) if $command == $API_EVERB;
+	$this->do_database($sock,$sel) if $command == $API_DATABASE;
+
 	$this->{pending_command} = $API_NONE;
 }
 
 
+sub do_list_database
+{
+	my ($this,$sock,$sel) = @_;
+
+	display($dbg,0,"do_list_database(");
+
+	my $request = createMsg(-1,$DIR_SEND,$CMD_LIST,$WHAT_DATABASE);
+	return 0 if !$this->sendRequest($sock,$sel,-1,"list database",$request);
+		# NAVQRY <-- 61901  0400 b2010f00                                                                  ....
+		#     set nav_context(61901) = DATABASE(176)
+		#      # send: LIST DATABASE
+
+	my $seq = $this->{next_seqnum}++;
+	$request = createMsg($seq,$DIR_SEND,$CMD_EVERB,$WHAT_GROUP);
+	return 0 if !$this->sendRequest($sock,$sel,$seq,"everb",$request);
+		# NAVQRY <-- 61901  0800 8e010f00 15000000                                                         ........
+		# 	set nav_context(61901) = GROUP(128)
+		# 	# send: EVERB GROUP
+
+	return 0 if !$this->waitReply(-1);
+	return 1;
+}
+
+
+sub do_everb
+{
+	my ($this,$sock,$sel) = @_;
+
+	display($dbg,0,"do_everb(");
+	my $seq = $this->{next_seqnum}++;
+	my $request = createMsg($seq,$DIR_SEND,$CMD_EVERB,$WHAT_GROUP);
+	return 0 if !$this->sendRequest($sock,$sel,$seq,"everb",$request);
+		# NAVQRY <-- 61901  0800 8e010f00 15000000                                                         ........
+		# 	set nav_context(61901) = GROUP(128)
+		# 	# send: EVERB GROUP
+
+	return 0 if !$this->waitReply(-1);
+	return 1;
+}
+
+
+sub do_database
+{
+	my ($this,$sock,$sel) = @_;
+
+	display($dbg,0,"do_database(");
+
+	my $seq = $this->{next_seqnum}++;
+	my $request = createMsg($seq,$DIR_SEND,$CMD_CONTEXT,$WHAT_DATABASE);
+	return 0 if !$this->sendRequest($sock,$sel,$seq,"database check",$request);
+	return 0 if !$this->waitReply(-1);
+		#	NAVQRY <-- 61550  0800 0d010f00 8b000000                                                         ........
+		#	    set nav_context(61550) = WAYPOINT(0)
+		#	     # send: SPACE WAYPOINT
+		#	NAVQRY --> 61550  0c00 09000f00 8b000000 01000000                                                ............
+		#	     # recv: COUNT WAYPOINT number=1
+}
 
 
 #========================================================================

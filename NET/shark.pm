@@ -67,12 +67,12 @@ sub handleCommand
     {
         my ($what,$num) = split(/\s+/,$rpart);
     	$what = lc($what);
-        createWaypoint($num) if $lpart eq 'create' && $what eq 'wp';
-        createRoute($num) 	 if $lpart eq 'create' && $what eq 'route';
-        createGroup($num) 	 if $lpart eq 'create' && $what eq 'group';
-        deleteWaypoint($num) if $lpart eq 'delete' && $what eq 'wp';
-        deleteRoute($num) 	 if $lpart eq 'delete' && $what eq 'route';
-        deleteGroup($num) 	 if $lpart eq 'delete' && $what eq 'group';
+        createWaypoint($num) 	if $lpart eq 'create' && $what eq 'wp';
+        createRoute($num) 		if $lpart eq 'create' && $what eq 'route';
+        createGroup($num) 	 	if $lpart eq 'create' && $what eq 'group';
+        deleteWaypoint($num) 	if $lpart eq 'delete' && $what eq 'wp';
+        deleteRoute($num) 	 	if $lpart eq 'delete' && $what eq 'route';
+        deleteGroup($num) 	 	if $lpart eq 'delete' && $what eq 'group';
 	}
 	elsif ($lpart eq "route")
 	{
@@ -92,12 +92,9 @@ sub handleCommand
 		setWaypointFolder($wp_num,$group_num);
 	}
 
-
     # showCharacterizedCommands(0);
     # showCharacterizedCommands(1);
     # clearCharacterizedCommands();
-    # createWaypoint();
-    # deleteWaypoint();
 
 
      # FILESYS TESTING

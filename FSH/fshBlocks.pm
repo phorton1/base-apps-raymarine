@@ -351,31 +351,32 @@ sub decodeRTE   # BLK_RTE
 	display_bytes($dbg_rte+2,1,"bytes",$bytes);
 
 	my $HEADER1_SIZE = 8;
-	my $HEADER2_SIZE = 46;
+	my $HEADER2_SIZE = 46;	 
 	my $FSH_PT_SIZE = 10;
 	my $HEADER3_SIZE = 4;
 
 	# I don't know why he uses int16_t for enumerations
 	# I generally use 'C','S', and 'L', prefering unsigned unless
-	# the number can truly be negative.
+	# the number can truly be negative.  This record starts AFTER
+	# the big_len in NAVQRY ethernet ROUTE BUFFER messages.
 
     my $hdr1_specs = [				# struct fsh_route21_header;  8 bytes
         k1_0		=> 'S',			#   int16_t a;        	// unknown, always 0
 		name_len	=> 'C',			#   char name_len;    	// length of name of route
 		cmt_len		=> 'C',			#   char cmt_len;     	// length of comment
 		guid_cnt	=> 's',			#   int16_t guid_cnt; 	// number of guids following this header
-		u1			=> 'H4',		#   uint16_t b;       	// unknown
+		u1			=> 'H2',		#   uint8_t b;       	// unknown, often 05 or 00
+		color		=> 'C',			#   uint8_t color;		// NEWLY DISCOVERED: color index (red, yellow, green, blue, purple, black)
 	];								# }
 
     my $hdr2_specs = [				# struct fsh_hdr2;   46 bytes
-        lat_start	=> 'l',			#	int32_t lat0;
-		lon_start	=> 'l',         #	int32_t lon0;  		// lat/lon of first waypoint
-		lat_end		=> 'l',         #	int32_t lat1;
-		lon_end		=> 'l',         #	int32_t lon1;  		// lat/lon of last waypoint
-		u2			=> 'L',         #	int32_t a;
-		                            #	//int16_t b;        // comment only; not a real field: 0 or 1
-		u3			=> 'S',         #	int16_t c;
-		u4			=> 'H24',       #	char d[24];
+        lat_start	=> 'l',			#	0  int32_t lat0;
+		lon_start	=> 'l',         #	4  int32_t lon0;  		// lat/lon of first waypoint
+		lat_end		=> 'l',         #	8  int32_t lat1;
+		lon_end		=> 'l',         #	12 int32_t lon1;  		// lat/lon of last waypoint
+		distance	=> 'V',         #	16 uint32_t distance;	// NEWLY DISCOVERED: distance of route in meters
+		u3			=> 'S',         #	20 int16_t c;
+		u4			=> 'H48',       #	22 char d[24];
 	];								# }
 
 	my $fsh_pt_specs = [			# struct fsh_pt; 10 bytes
@@ -450,7 +451,6 @@ sub decodeRTE   # BLK_RTE
 	my $hdr3 = unpackRecord($dbg_rte+1,$hdr3_specs,substr($bytes,$offset,$HEADER3_SIZE));
 	mergeHash($hdr1,$hdr3);
 	$offset += $HEADER3_SIZE;
-
 
 	# common waypoints
 	# each BLK_RTE common waypoint is, itself, preceded by TWO guids
