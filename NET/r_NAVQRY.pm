@@ -31,6 +31,7 @@ use Pub::Utils;
 use r_utils;
 use r_RAYDP;
 use nq_parse;
+use nq_packet;
 use r_utils;
 
 my $dbg = -1;
@@ -98,33 +99,7 @@ our $NAVQRY_FUNC		= 0x000f;
 
 # WCDD = 0xDDWC
 
-my $DIR_RECV	= 0x000;
-my $DIR_SEND	= 0x100;
-my $DIR_INFO	= 0x200;
 
-our $WHAT_WAYPOINT	= 0x00;
-our $WHAT_ROUTE		= 0x40;
-our $WHAT_GROUP		= 0x80;
-our $WHAT_DATABASE	= 0xb0;
-
-my $CMD_CONTEXT	= 0x0;
-my $CMD_BUFFER    	= 0x1;
-my $CMD_LIST     	= 0x2;
-my $CMD_ITEM		= 0x3;
-my $CMD_EXIST		= 0x4;
-my $CMD_EVENT     	= 0x5;
-my $CMD_DATA		= 0x6;
-my $CMD_MODIFY    	= 0x7;
-my $CMD_UUID    	= 0x8;
-my $CMD_NUMBER     	= 0x9;
-my $CMD_AVERB     	= 0xa;
-my $CMD_BVERB     	= 0xb;
-my $CMD_FIND		= 0xc;
-my $CMD_COUNT     	= 0xd;
-my $CMD_EVERB    	= 0xe;
-my $CMD_FVERB     	= 0xf;
-
-my $SUCCESS_SIG = '00000400';
 
 our $ROUTE_COLOR_RED 	= 0;
 our $ROUTE_COLOR_YELLOW = 1;
@@ -258,7 +233,7 @@ sub sendRequest
 	}
 
 	my $text = "# sendRequest($seq) $name\n";
-	$text .= parseNavPacket(0,$NAVQUERY_PORT,$request);
+	$text .= parseNQPacket(0,$NAVQUERY_PORT,$request);
 
 	my $color = $UTILS_COLOR_LIGHT_CYAN;
 	setConsoleColor($color) if $color;
@@ -688,7 +663,7 @@ sub readBuf
 	{
 		push @{$this->{replies}},$this->{reply};
 
-		my $text = parseNavPacket(1,$NAVQUERY_PORT,$this->{reply},$this);
+		my $text = parseNQPacket(1,$NAVQUERY_PORT,$this->{reply},$this);
 		my $color = $UTILS_COLOR_LIGHT_BLUE;
 		setConsoleColor($color) if $color;
 		print $text;

@@ -44,7 +44,7 @@ BEGIN
 
 my $STD_WP_UUID	   = 'aaaaaaaaaaaa{int}';
 my $STD_ROUTE_UUID = 'bbbbbbbbbbbb{int}';
-my $STD_GROUP_UUID = 'cccccccccccf{int}';
+my $STD_GROUP_UUID = 'cccccccccccc{int}';
 
 my $LAT_LON = [
 	[ 9.334083,-82.242050 ],

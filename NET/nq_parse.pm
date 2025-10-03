@@ -14,10 +14,10 @@ use POSIX qw(floor pow atan tan);
 use Pub::Utils;
 
 
-my $dbg_wp = 0;
-my $dbg_route = -2;
-my $dbg_group = 0;
-my $dbg_unpack = -1;
+my $dbg_wp = 1;
+my $dbg_route = 1;
+my $dbg_group = 1;
+my $dbg_unpack = 1;
 
 
 BEGIN
