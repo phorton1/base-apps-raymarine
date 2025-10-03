@@ -293,7 +293,7 @@ WC0D
 		B = BVERB
 		C = FIND				by name
 		D = DVERB
-		E = DELETE
+		E = UUID
 		F = FVERB
 
 

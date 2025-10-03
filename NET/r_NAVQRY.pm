@@ -47,12 +47,12 @@ my $DBG_WAIT = 1;
 # my $SUCCESS_SIG = '00000400';
 # my $DICT_END_RECORD_MARKER	= '10000202';
 
-our $API_NONE 			= 0;
-our $API_DO_QUERY		= 1;
-our $API_GET_ITEM		= 2;
-our $API_CREATE_ITEM 	= 3;
-our $API_DELETE_ITEM 	= 4;
-our $API_MODIFY_ITEM	= 5;
+our $API_NONE 		= 0;
+our $API_DO_QUERY	= 1;
+our $API_GET_ITEM	= 2;
+our $API_NEW_ITEM 	= 3;
+our $API_DEL_ITEM 	= 4;
+our $API_MOD_ITEM	= 5;
 
 
 BEGIN
@@ -66,9 +66,9 @@ BEGIN
 		$API_NONE
 		$API_DO_QUERY
 		$API_GET_ITEM
-		$API_CREATE_ITEM
-		$API_DELETE_ITEM
-		$API_MODIFY_ITEM
+		$API_NEW_ITEM
+		$API_DEL_ITEM
+		$API_MOD_ITEM
 
 		apiCommandName
 		queueNQCommand
@@ -115,12 +115,12 @@ my $CMD_EXIST		= 0x4;
 my $CMD_EVENT     	= 0x5;
 my $CMD_DATA		= 0x6;
 my $CMD_MODIFY    	= 0x7;
-my $CMD_DELETE     = 0x8;
-my $CMD_COUNT     	= 0x9;
+my $CMD_UUID    	= 0x8;
+my $CMD_NUMBER     	= 0x9;
 my $CMD_AVERB     	= 0xa;
 my $CMD_BVERB     	= 0xb;
 my $CMD_FIND		= 0xc;
-my $CMD_SPACE     	= 0xd;
+my $CMD_COUNT     	= 0xd;
 my $CMD_EVERB    	= 0xe;
 my $CMD_FVERB     	= 0xf;
 
@@ -149,11 +149,11 @@ our $navqry:shared;
 sub apiCommandName
 {
 	my ($cmd) = @_;
-	return 'DO_QUERY' 	 if $cmd == $API_DO_QUERY;
-	return 'GET_ITEM'	 if $cmd == $API_GET_ITEM;
-	return 'CREATE_ITEM' if $cmd == $API_CREATE_ITEM;
-	return 'DELETE_ITEM' if $cmd == $API_DELETE_ITEM;
-	return 'MODIFY_ITEM' if $cmd == $API_MODIFY_ITEM;
+	return 'DO_QUERY'	if $cmd == $API_DO_QUERY;
+	return 'GET_ITEM'	if $cmd == $API_GET_ITEM;
+	return 'NEW_ITEM'	if $cmd == $API_NEW_ITEM;
+	return 'DEL_ITEM'	if $cmd == $API_DEL_ITEM;
+	return 'MOD_ITEM'	if $cmd == $API_MOD_ITEM;
 	return "UNKNOWN API COMMAND";
 }
 
@@ -531,7 +531,7 @@ sub delete_item
 
 
 	my $seq = $this->{next_seqnum}++;
-	my $request = createMsg($seq,$DIR_SEND,$CMD_DELETE,$what,$uuid);
+	my $request = createMsg($seq,$DIR_SEND,$CMD_UUID,$what,$uuid);
 	return 0 if !$this->sendRequest($sock,$sel,$seq,"delete $what_name",$request);
 	return 0 if !$this->waitReply(1);
 
@@ -579,9 +579,9 @@ sub commandThread
 
 	$rslt = $this->get_item($sock,$sel,$command) 		if $api_command == $API_GET_ITEM;
 	$rslt = $this->do_query($sock,$sel,$command) 		if $api_command == $API_DO_QUERY;
-	$rslt = $this->create_item($sock,$sel,$command) 	if $api_command == $API_CREATE_ITEM;
-	$rslt = $this->delete_item($sock,$sel,$command) 	if $api_command == $API_DELETE_ITEM;
-	$rslt = $this->modify_item($sock,$sel,$command) 	if $api_command == $API_MODIFY_ITEM;
+	$rslt = $this->create_item($sock,$sel,$command) 	if $api_command == $API_NEW_ITEM;
+	$rslt = $this->delete_item($sock,$sel,$command) 	if $api_command == $API_DEL_ITEM;
+	$rslt = $this->modify_item($sock,$sel,$command) 	if $api_command == $API_MOD_ITEM;
 
 	error("API $cmd_name failed") if !$rslt;
 

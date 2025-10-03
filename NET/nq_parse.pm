@@ -363,6 +363,18 @@ sub displayNQRecord
 			}
 		}
 	}
+
+	my $uuids = $rec->{uuids} || [];
+	my $raw_points = $rec->{raw_points} || [];
+	for (my $i=0; $i<@$uuids; $i++)
+	{
+		$text .= addOutput($pad,"UUID($i)",$$uuids[$i]);
+	}
+	for (my $i=0; $i<@$raw_points; $i++)
+	{
+		$text .= addOutput($pad,"PT($i)",$$raw_points[$i]);
+	}
+	
 	return $text;
 }
 
@@ -560,6 +572,7 @@ sub parseNQRoute
 	$rec->{comment} = $comment;
 	my $uuids = $rec->{uuids} = shared_clone([]);
 	my $points = $rec->{points} = shared_clone([]);
+	my $raw_points = $rec->{raw_points} = shared_clone([]);
 
 	for (my $i=0; $i<$rec->{num_wpts}; $i++)
 	{
@@ -573,6 +586,8 @@ sub parseNQRoute
 	
 	for (my $i=0; $i<$rec->{num_wpts}; $i++)
 	{
+		my $raw_point = unpack('H*',substr($buffer,$offset,$ROUTE_PT_SIZE));
+		push @$raw_points,$raw_point;
 		my $pt = unpackRecord('point',$ROUTE_PT_SPECS, $buffer, $offset, $ROUTE_PT_SIZE);
 		push @$points,$pt;
 		$offset += $ROUTE_PT_SIZE;

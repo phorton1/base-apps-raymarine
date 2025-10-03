@@ -298,35 +298,15 @@ our %NAV_COMMAND = (
 	0x5 => 'EVENT',
 	0x6 => 'DATA',				# reply only
 	0x7 => 'MODIFY',
-	0x8 => 'DELETE',
-	0x9 => 'COUNT',
+	0x8 => 'UUID',
+	0x9 => 'NUMBER',
 	0xa => 'AVERB',
 	0xb => 'BVERB',
 	0xc => 'FIND',				# by name
-	0xd => 'SPACE',
+	0xd => 'COUNT',
 	0xe => 'EVERB',
 	0xf => 'FVERB',
 );
-
-
-# database checks are not needed
-#
-#	$request = createMsg(-1,$DIR_SEND,$CMD_BUFFER,$WHAT_DATABASE);
-#	return 0 if !$this->sendRequest($sock,$sel,-1,'init1',$request);
-#		# NAVQRY <--51412  0400 b1010f00                                                                  ....
-#		#      # send: BUFFER DATABASE
-#	$request = createMsg(-2,$DIR_SEND,$CMD_BUFFER,$WHAT_DATABASE);
-#	return 0 if !$this->sendRequest($sock,$sel,-2,'init2',$request);
-#		# no reply expected on second
-#
-#	$seq = $this->{next_seqnum}++;
-#	$request = createMsg($seq,$DIR_SEND,$CMD_SPACE);
-#	return 0 if !$this->sendRequest($sock,$sel,$seq,'space',$request);
-#	return 0 if !$this->waitReply();
-#		# NAVQRY <--51412  0800 0d010f00 9b010000                                                         ........
-#		#	# send: SPACE DATABASE
-#		# NAVQRY -->51412  0c00 09000f00 9b010000 00000000                                                ............
-#		# 	# recv: COUNT DATABASE number=0
 
 
 sub clearLog
@@ -349,6 +329,89 @@ sub navQueryLog
 		close AFILE;
 	}
 }
+
+
+
+#---------------------------------------------
+# parseNavPacket
+#---------------------------------------------
+# The bits are starting to look like 1=delete, 2=add, 3=modify
+#
+#       dir		cmd		what		seq		data
+#
+#		recv	EVENT	WHAT		0/1										0 seems to be 'start' and 1 seems to be 'end'
+#																			what appears to have 'generally' been changed
+#																			specific MODIFY recvs may be included with uuids and bits
+#		send	COUNT	0			seq
+#		recv	NUMBER	0			seq		count							count of used items (per WHAT?)
+#
+#		send	CONTEXT DATABASE	seq
+#		recv	CONTEXT	DATABASE	seq		counter							non standard reply
+#
+#		send	ITEM	WHAT		seq		uuid							atomic command, returns DATA;
+#		send	FIND	WHAT		seq		hex16_name						atomic command, returns UUID (used to be DELETE)
+#
+#		recv	EXIST	WHAT		seq		success_code					reply to a successful delete (from sending UUID)
+#		send	EXIST	WHAT		seq		action		hex16_name			atomic command BUT required for modify_item()
+#											070000000   testGroup1....
+#											0a000000	uuid				deleting a folder
+#
+#											this magic number may indicate something bitwise
+#
+#		info	LIST	0			same	00000000 00000000				send/receive for listing indexes
+#		info	LIST	0			same	uuid							received with uuid at end of DATA series
+#
+#		send	CONTEXT	WHAT		seq										establishes WHAT context
+#		recv	CONTEXT	WHAT		seq		success_code
+#		info	CONTEXT	0			same	uuid			  bits
+#
+#											00000000 00000000 1n00000000	1n indicates DICTIONARY, n is 9,a
+#											zzzzzzzz zzzzzzzz 0n00000000	0n indicates ITEM		 n is 1,3
+#											zzzzzzzz zzzzzzzz 0300000000	I send for create_item() and modify_item()
+#
+#		send	DATA	WHAT		seq		07000000 uuid					i use, after exist, for modify_item
+#		recv	DATA	WHAT		seq		success code					establishes WHAT context
+#
+#
+#		send	UUID	WHAT		seq		uuid							REALLY seems to mean 'delete' on a send, and info on a recv
+#		recv	UUID	WHAT		seq		success_code	uuid			reply to FIND
+#
+#		send	MODIFY 	WHAT		seq		uuid							I send this with no bits to start create_item()
+#		recv	MODIFY	WHAT		seq		uuid 			bits			Received within EVENT series with specific uuid and bits 0,1, or 2
+#
+#	the context of a BUFFER is determined by the previous WHAT establishing primary message
+#
+#		recv	BUFFER	WHAT		seq		success code					a response to an EXIST uuid call to delete a folder (no actual buffer)
+#
+#		info	BUFFER	0			seq		dict_buffer_data				on send, CONTEXT bits(0x1n) the buffer is some kind of allocation scheme
+#																			on recv, CONTEXT bits(0x1n) indicatss an INDEX (or dictionary if you prefer)
+#		info	BUFFER  0			seq		item buffer						on send/recv bits(0x0n) indicates an ITEM buffer, uuid given previously in series
+#
+#
+#		send	EVERB	GROUP		seq
+#		recv	AVERB	GROUP		seq		0n000000						non standard, not understood reply
+#
+#		BVERB	never seen
+#		FVERB	never seen
+#
+# Outgoing NavPackets (groups of messages) may be sent
+# one message per packet, and must maintain context between
+# message parts to produce meaningful output.
+#
+# However, we never glean any information from outgoing
+# packets, and so they don't produced a $rec return value.
+#
+# Incoming NavPackets are usually sent in a burst where
+# one packet contains a complete set of messages. Typically
+# the series refers to a single thing, WAYPOINT, ROUTE, or
+# GROUP and an INDEX or ITEM.
+#
+# The exception is EVENTS which APPEAR to be allowed to
+# include multiple MODIFY receives, and so return a
+# list of records.  Events are not clearly understood,
+# as it seems like not all modified records are notified,
+# but almost always we receive EVENTS for all WHATs.
+# More thought needed.
 
 
 sub parseNavPacket
@@ -443,7 +506,7 @@ sub parseNavPacket
 
 		if ($is_reply && !$num &&
 			# replies that don't carry success codes
-			$command ne 'COUNT' &&
+			$command ne 'NUMBER' &&
 			$command ne 'MODIFY' &&
 			$command ne 'EVENT')
 		{
@@ -513,7 +576,7 @@ sub parseNavPacket
 				my $uuid .= unpack('H*',substr($data,$data_offset,8));
 				$answer .= $uuid;
 			}
-			elsif ($command eq "COUNT")
+			elsif ($command eq "NUMBER")
 			{
 				my $count = unpack('V',substr($data,$data_offset,4));
 				$answer .= "number=".$count;
@@ -528,7 +591,7 @@ sub parseNavPacket
 				   $command eq 'LIST' ||
 				   $command eq 'BUFFER' ||
 				   $command eq 'LIST' ||
-				   $command eq 'DELETE')
+				   $command eq 'UUID')
 			{
 				my $uuid = '';
 				my $bits = 0;

@@ -157,7 +157,7 @@ sub createWaypoint
 		date => int($now / $SECS_PER_DAY),
 		time => int($now % $SECS_PER_DAY), });
 	my $data = unpack('H*',$buffer);
-	return queueNQCommand($navqry,$API_CREATE_ITEM,$WHAT_WAYPOINT,$name,$uuid,$data);
+	return queueNQCommand($navqry,$API_NEW_ITEM,$WHAT_WAYPOINT,$name,$uuid,$data);
 }
 
 sub deleteWaypoint
@@ -166,7 +166,7 @@ sub deleteWaypoint
 	showCommand("deleteWaypoint($wp_num)");
 	my $uuid = std_uuid($STD_WP_UUID,$wp_num);
 	my $name = "testWaypoint$wp_num";
-	return queueNQCommand($navqry,$API_DELETE_ITEM,$WHAT_WAYPOINT,$name,$uuid,undef);
+	return queueNQCommand($navqry,$API_DEL_ITEM,$WHAT_WAYPOINT,$name,$uuid,undef);
 }
 
 
@@ -178,7 +178,7 @@ sub createRoute
 	my $uuid = std_uuid($STD_ROUTE_UUID,$route_num);
 	my $name = "testRoute$route_num";
 	my $data = emptyRoute($name,$bits);
-	return queueNQCommand($navqry,$API_CREATE_ITEM,$WHAT_ROUTE,$name,$uuid,$data);
+	return queueNQCommand($navqry,$API_NEW_ITEM,$WHAT_ROUTE,$name,$uuid,$data);
 }
 
 sub deleteRoute
@@ -187,7 +187,7 @@ sub deleteRoute
 	showCommand("deleteRoute($route_num)");
 	my $uuid = std_uuid($STD_ROUTE_UUID,$route_num);
 	my $name = "testRoute$route_num";
-	return queueNQCommand($navqry,$API_DELETE_ITEM,$WHAT_ROUTE,$name,$uuid,undef);
+	return queueNQCommand($navqry,$API_DEL_ITEM,$WHAT_ROUTE,$name,$uuid,undef);
 }
 
 sub routeWaypoint
@@ -204,7 +204,7 @@ sub routeWaypoint
 	# my $data = modifyRoute($old_data,$wp_uuid,$add);
 	# return if !$data;
 
-	return queueNQCommand($navqry,$API_MODIFY_ITEM,$WHAT_ROUTE,$name,$uuid,$data);
+	return queueNQCommand($navqry,$API_MOD_ITEM,$WHAT_ROUTE,$name,$uuid,$data);
 }
 
 sub createGroup
@@ -214,7 +214,7 @@ sub createGroup
 	my $uuid = std_uuid($STD_GROUP_UUID,$group_num);
 	my $name = "testGroup$group_num";
 	my $data = emptyGroup($name);
-	return queueNQCommand($navqry,$API_CREATE_ITEM,$WHAT_GROUP,$name,$uuid,$data);
+	return queueNQCommand($navqry,$API_NEW_ITEM,$WHAT_GROUP,$name,$uuid,$data);
 }
 
 sub deleteGroup
@@ -223,7 +223,7 @@ sub deleteGroup
 	showCommand("deleteGroup($group_num)");
 	my $uuid = std_uuid($STD_GROUP_UUID,$group_num);
 	my $name = "testGroup$group_num";
-	return queueNQCommand($navqry,$API_DELETE_ITEM,$WHAT_GROUP,$name,$uuid,undef);
+	return queueNQCommand($navqry,$API_DEL_ITEM,$WHAT_GROUP,$name,$uuid,undef);
 }
 
 
@@ -279,7 +279,7 @@ sub setWaypointGroup
 		push @{$group->{uuids}},$wp_uuid;
 		my $buffer = buildNQGroup($group);
 		my $data = unpack('H*',$buffer);
-		return queueNQCommand($navqry,$API_MODIFY_ITEM,$WHAT_GROUP,$group_name,$group_uuid,$data);
+		return queueNQCommand($navqry,$API_MOD_ITEM,$WHAT_GROUP,$group_name,$group_uuid,$data);
 	}
 }
 

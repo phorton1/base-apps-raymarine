@@ -102,6 +102,15 @@ sub handleCommand
         my ($wp_num,$group_num) = split(/\s+/,$rpart);
 		setWaypointGroup($wp_num,$group_num);
 	}
+	elsif ($lpart eq 'log')
+	{
+		my $msg =
+			"\n--------------------------------------------------------------------------\n".
+			"# $rpart\n".
+			"--------------------------------------------------------------------------\n\n";
+		navQueryLog($msg,'rns.log');
+		navQueryLog($msg,'shark.log');
+	}
 
     # showCharacterizedCommands(0);
     # showCharacterizedCommands(1);
