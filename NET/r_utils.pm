@@ -275,10 +275,16 @@ sub packetWireHeader
 }
 
 
+# I think the old way of doing this got confused
+# I was using a shared variable, saving the value of length(2) packets
+# and then prepending them before continuing.
 
-my %declared_len:shared;	# by port
-	# Used on sniffer packets to rebuild them for parseNavQuery
+# I am now changing it to use a thread local global variable
+# and just adding the bytes to the buffer until it is longer
+# than two.
 
+
+my %built_buffers;	# by port
 
 
 
@@ -305,25 +311,19 @@ sub showPacket
 		# remember the length of the packet if it's length is 2
 		# or prepend it onto the current packet if available
 
-		if (length($raw_data) == 2)
-		{
-			my $use_len = unpack('v',$raw_data);
-			$declared_len{$dest_port} = $use_len;
-			# print "declared_len($dest_port)=$use_len\n";
-			return;
-		}
-		my $use_len = $declared_len{$dest_port};
-		$declared_len{$dest_port} = -1;
-		if ($use_len && $use_len != -1)
-		{
-			my $prepend = pack('v',$use_len);
-			$raw_data = $prepend.$raw_data;
-			# warning(0,0,"prepending($use_len) to raw packet");
-		}
+		$built_buffers{$dest_port} ||= '';
+		$built_buffers{$dest_port} .= $raw_data;
+		my $buffer = $built_buffers{$dest_port};
+		return if length($buffer) <= 2;
+
+		$built_buffers{$dest_port} = '';
 
 		# parse and display and/or log the packet
 
-		my $text = parseNQPacket($is_reply,$client_port,$raw_data);
+		my $rec = parseNQPacket(1,$is_reply,$client_port,$buffer);
+			# 1=with_text
+
+		my $text = $rec->{text};
 		navQueryLog($text,"rns.log");
 
 		my $color = $rayport->{color};

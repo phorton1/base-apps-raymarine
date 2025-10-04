@@ -122,6 +122,15 @@ sub serialThread
                     $buffer =~ s/^\s+|\s$//g;
                     handleCommandLine() if length($buffer);
                 }
+                elsif (ord($char) == 0x08)   # backspace
+                {
+                    my $len = length($buffer);
+                    if ($len)
+                    {
+                        $buffer = substr($buffer,0,$len-1);
+                        $CONSOLE->Write(' '.$char);
+                    }
+                }
                 else
                 {
                     $buffer .= $char;

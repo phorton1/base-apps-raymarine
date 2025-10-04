@@ -125,11 +125,6 @@ sub doNavQuery
 }
 
 
-my $offset_seconds = timegm(localtime()) -  time();
-	# local epoch seconds - utc epoch seconds
-my $offset_hours   = $offset_seconds / 3600;
-printf("Local offset from GMT: %+d hours\n", $offset_hours);
-
 
 sub createWaypoint
 {
@@ -193,18 +188,20 @@ sub deleteRoute
 sub routeWaypoint
 {
 	my ($route_num,$wp_num,$add) = @_;
-	showCommand("outeWaypoint($route_num) wp_num($wp_num) add($add)");
-	my $uuid = std_uuid($STD_ROUTE_UUID,$route_num);
+	showCommand("routeWaypoint($route_num) wp_num($wp_num) add($add)");
+	my $route_uuid = std_uuid($STD_ROUTE_UUID,$route_num);
 	my $wp_uuid = std_uuid($STD_WP_UUID,$wp_num);
-	my $name = "testRoute$route_num";
-	my $data = emptyRoute($name,0);
+	my $route_name = "testRoute$route_num";
 
-	# my $old_data = $self->{routes}->{$uuid};
-	# return error("Could not find this->route->($uuid)") if !$old_data;
-	# my $data = modifyRoute($old_data,$wp_uuid,$add);
-	# return if !$data;
+	return if !wait_queue_command($API_GET_ITEM,$WHAT_ROUTE,$route_name,$wp_uuid,$wp_uuid);
+	my $route = $navqry->{routes}->{$route_uuid};
+	return error("Could not find route($route_name) $route_uuid") if !$route;
+				 
+	display_hash(0,0,"got route",$route);
+	my $uuids = $route->{uuids};
+	push @$uuids,$wp_uuid if $add;
 
-	return queueNQCommand($navqry,$API_MOD_ITEM,$WHAT_ROUTE,$name,$uuid,$data);
+	return queueNQCommand($navqry,$API_MOD_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,$route);
 }
 
 sub createGroup
@@ -266,21 +263,57 @@ sub setWaypointGroup
 	my $wp_uuid = std_uuid($STD_WP_UUID,$wp_num);
 	my $wp_name = "testWaypoint$wp_num";
 	my $group_name = $group_num ? "testGroup$group_num" : 'My Waypoints';
-	my $group_uuid = $group_num ? std_uuid($STD_GROUP_UUID,$group_num) : '';
-
-	return if !wait_queue_command($API_GET_ITEM,$WHAT_WAYPOINT,$wp_name,$wp_uuid,undef);
-	my $wp = $navqry->{waypoints}->{$wp_uuid};
-	display_hash(0,0,"got waypoint",$wp);
+	my $group_uuid;
+	my $group;
 
 	if ($group_num)
 	{
-		my $group = $navqry->{groups}->{$group_uuid};
-		return error("Could not find navqry->groups->($group_uuid)") if !$group;
+		$group_uuid = std_uuid($STD_GROUP_UUID,$group_num);
+		$group = $navqry->{groups}->{$group_uuid};
+		return error("Could not group($group_uuid)") if !$group;
+
+		display_hash(0,0,"got group",$group);
 		push @{$group->{uuids}},$wp_uuid;
-		my $buffer = buildNQGroup($group);
-		my $data = unpack('H*',$buffer);
-		return queueNQCommand($navqry,$API_MOD_ITEM,$WHAT_GROUP,$group_name,$group_uuid,$data);
 	}
+	else
+	{
+		my $wp = $navqry->{waypoints}->{$wp_uuid};
+		return error("Could not find WP($wp_uuid)") if !$wp;
+		display_hash(0,1,"got waypoint",$wp);
+
+		$group_uuid = $wp->{uuids}->[0];
+		return error("No uuids on waypoint($wp_uuid)") if !$group_uuid;
+
+		$group = $navqry->{groups}->{$group_uuid};
+		return error("Could not find navqry->groups->($group_uuid)") if !$group;
+		display_hash(0,1,"got group",$group);
+
+		my $num = 0;
+		my $index = -1;
+		my $uuids = $group->{uuids};
+		for my $uuid (@$uuids)
+		{
+			if ($uuid eq $wp_uuid)
+			{
+				$index = $num;
+				last;
+			}
+			$num++;
+		}
+
+		return error("Could not find wp_uuid($wp_uuid) in group($group->{name})")
+			if $index == -1;
+		display(0,1,"removing wp_uuid($wp_uuid) at index($index)");
+
+		my @unshared_uuids = @$uuids;
+		splice @unshared_uuids,$index,1;
+		$group->{uuids} = shared_clone(\@unshared_uuids);
+	}
+
+	my $buffer = buildNQGroup($group);
+	my $data = unpack('H*',$buffer);
+	return queueNQCommand($navqry,$API_MOD_ITEM,$WHAT_GROUP,$group_name,$group_uuid,$data);
+
 }
 
 
