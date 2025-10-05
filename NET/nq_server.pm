@@ -494,7 +494,7 @@ sub kml_section
 			'groupStyle' :
 			"routeStyle$folder->{color}";
 
-		$kml .= kml_start_folder($style, $class."_".$folder_name, $folder_name);
+		$kml .= kml_start_folder($style, $class."_".$folder_uuid, $folder_name);
 
 		my $wp_uuids = $folder->{uuids};
 
@@ -506,16 +506,16 @@ sub kml_section
 		{
 			my $wp = $all_waypoints->{$wp_uuid};
 
-			# The id is set uniquely for Route waypoints but
-			# the same for waypoints within different Groups.
+			# The id is set uniquely for Route waypoints with $folder-uuid, but
+			# to just the waypoint uuid (the same) for waypoints within different Groups.
 			# This gives a modicum of control over the visibility
 			# of Group waypoints within GE, which remembers visibility
 			# by $id, when moving waypoints between Groups.
 			
 			# my $id = $wp->{name};
 			my $id = $class eq 'group' ?
-				$class.'_wp_'.$wp->{name} :
-				$class.'_'.$folder_name.'_wp_'.$wp->{name};
+				$class.'_'.$wp_uuid :
+				$class.'_'.$folder_name.'_'.$wp_uuid;
 
 			$kml .= kml_waypoint($style,$id, $wp);
 		}

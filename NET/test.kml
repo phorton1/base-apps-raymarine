@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:kml="http://www.opengis.net/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
 <NetworkLinkControl>
-<cookie>version=25</cookie>
+<cookie>version=33</cookie>
 <linkName>NAVQRY</linkName>
 </NetworkLinkControl>
 <Document>
@@ -159,7 +159,7 @@
 <name>testWaypoint1</name>
 <styleUrl>groupStyle</styleUrl>
 <Point>
-<coordinates>-82.2465588,9.3256009,0</coordinates>
+<coordinates>-82.2632289,9.3342816,0</coordinates>
 </Point>
 </Placemark>
 <Placemark id="group_wp_testWaypoint2">
@@ -210,14 +210,14 @@
 <name>testRoute1 Track</name>
 <styleUrl>routeStyle5</styleUrl>
 <LineString>
-<coordinates>-82.2465588,9.3256009,0 -82.204624,9.2721199,0 -82.197158,9.255866,0</coordinates>
+<coordinates>-82.2632289,9.3342816,0 -82.204624,9.2721199,0 -82.197158,9.255866,0</coordinates>
 </LineString>
 </Placemark>
 <Placemark id="route_testRoute1_wp_testWaypoint1">
 <name>testWaypoint1</name>
 <styleUrl>routeStyle5</styleUrl>
 <Point>
-<coordinates>-82.2465588,9.3256009,0</coordinates>
+<coordinates>-82.2632289,9.3342816,0</coordinates>
 </Point>
 </Placemark>
 <Placemark id="route_testRoute1_wp_testWaypoint2">
