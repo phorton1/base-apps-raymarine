@@ -24,6 +24,7 @@ use r_NAVSTAT;
 use r_FILESYS;
 use r_NAVQRY;
 use nq_api;
+use nq_server;
 use r_characterize;
 use s_resources;
 use s_frame;
@@ -63,7 +64,10 @@ sub handleCommand
     {
         setNavQueryAutoRefresh($rpart);
     }
-
+	elsif ($lpart eq 'kml')
+	{
+		buildNavQueryKML();
+	}
 	elsif ($lpart eq 'c')
 	{
 		display(0,0,"Clear Shark Log File");
@@ -300,11 +304,8 @@ if (1)  # openListenSocket())
     display(0,0,"filesysThread detached");
 }
 
-#   if (0)
-#   {
-#       my $gps_thread = threads->create(\&tcp_thread,'GPS',9876,$gps_script);
-#       $gps_thread->detach();
-#   }
+startNQServer() if 1;
+
 
 r_NAVQRY->startNavQuery() if 1;
 

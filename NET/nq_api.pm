@@ -281,12 +281,18 @@ sub setWaypointGroup
 		return error("Could not find WP($wp_uuid)") if !$wp;
 		display_hash(0,1,"got waypoint",$wp);
 
-		$group_uuid = $wp->{uuids}->[0];
-		return error("No uuids on waypoint($wp_uuid)") if !$group_uuid;
+		my $wp_uuids = $wp->{uuids};
+		return error("No uuids on waypoint($wp_uuid)") if !$wp_uuids;
 
-		$group = $navqry->{groups}->{$group_uuid};
-		return error("Could not find navqry->groups->($group_uuid)") if !$group;
-		display_hash(0,1,"got group",$group);
+		for my $try_uuid (@$wp_uuids)
+		{
+			$group = $navqry->{groups}->{$try_uuid};
+			$group_uuid = $try_uuid if $group;
+			last if $group;
+		}
+
+		return error("Could not find wp group_uuid") if !$group;
+		display_hash(0,1,"got group($group_uuid)",$group);
 
 		my $num = 0;
 		my $index = -1;

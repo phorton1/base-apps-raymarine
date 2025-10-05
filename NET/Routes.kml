@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:kml="http://www.opengis.net/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
+<Folder id="section_Routes">
+	<name>Routes</name>
+	<styleUrl>sectionStyle</styleUrl>
+	<Folder id="route_testRoute1">
+		<name>testRoute1</name>
+		<open>1</open>
+		<styleUrl>#routeStyle5</styleUrl>
+		<Placemark id="testRoute1">
+			<name>testRoute1 Track</name>
+			<styleUrl>#routeStyle5</styleUrl>
+			<LineString>
+				<coordinates>
+					-82.2465588,9.3256009,0 -82.204624,9.2721199,0 -82.197158,9.255865999999999,0 
+				</coordinates>
+			</LineString>
+		</Placemark>
+		<Placemark id="route_testRoute1_wp_testWaypoint1">
+			<name>testWaypoint1</name>
+			<styleUrl>#routeStyle5</styleUrl>
+			<Point>
+				<coordinates>-82.2465588,9.3256009,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark id="route_testRoute1_wp_testWaypoint2">
+			<name>testWaypoint2</name>
+			<styleUrl>#routeStyle5</styleUrl>
+			<Point>
+				<coordinates>-82.204624,9.2721199,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark id="route_testRoute1_wp_testWaypoint3">
+			<name>testWaypoint3</name>
+			<styleUrl>#routeStyle5</styleUrl>
+			<Point>
+				<coordinates>-82.197158,9.255865999999999,0</coordinates>
+			</Point>
+		</Placemark>
+	</Folder>
+	<atom:link rel="app" href="https://www.google.com/earth/about/versions/#earth-pro" title="Google Earth Pro 7.3.6.10201"></atom:link>
+</Folder>
+</kml>

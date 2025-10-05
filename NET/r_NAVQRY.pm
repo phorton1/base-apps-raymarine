@@ -194,6 +194,13 @@ sub queueNQCommand
 # utilities
 #-------------------------------------------------
 
+sub incVersion
+{
+	my ($this) = @_;
+	$this->{version}++;
+	display($dbg,0,"incVersion($this->{version})");
+}
+
 sub name16_hex
 	# return hex representation of max16 name + null
 {
@@ -350,8 +357,7 @@ sub update_item_request
 	my $hash_name = lc($what_name)."s";
 	my $hash = $this->{$hash_name};
 	$hash->{$uuid} = $reply->{item};
-	$this->{version}++;		# notify UI
-	display($dbg+1,0,"bumped to version($this->{version})");
+	$this->incVersion();		# notify UI
 	return 1;
 }
 
@@ -499,6 +505,7 @@ sub delete_item
 
 	my $hash_name = lc($what_name)."s";
 	delete $this->{$hash_name}->{$uuid};
+	$this->incVersion();		# notify UI
 	return 1;
 }
 
@@ -659,15 +666,30 @@ sub readSocket
 			my $evt_mask = $reply->{evt_mask} || 0;
 			for my $mod (@$mods)
 			{
+				my $hash_name = lc($NAV_WHAT{$mod->{what}}).'s';
 				warning($dbg,1,sprintf(
 					"MOD(%02x=%s) uuid(%s) bits(%02x) evt_mask(%08x)",
 					$mod->{what},
-					$NAV_WHAT{$mod->{what}},
+					$hash_name,
 					$mod->{uuid},
 					$mod->{bits},
 					$evt_mask));
-				$this->queueNQCommand($API_GET_ITEM,$mod->{what},'event_item',$mod->{uuid},undef,undef)
-					if $WITH_MOD_PROCESSING;
+				if ($mod->{bits} == 1)
+				{
+					my $hash = $this->{$hash_name};
+					my $exists = $hash->{$mod->{uuid}};
+					if ($exists)
+					{
+						warning($dbg,2,"deleting $hash_name($mod->{uuid}) $exists->{name}");
+						delete $hash->{$mod->{uuid}};
+						$this->incVersion();
+					}
+				}
+				else
+				{
+					$this->queueNQCommand($API_GET_ITEM,$mod->{what},'event_item',$mod->{uuid},undef,undef)
+						if $WITH_MOD_PROCESSING;
+				}
 			}
 		}
 		push @{$this->{replies}},$reply;
