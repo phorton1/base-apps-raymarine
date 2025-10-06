@@ -135,8 +135,16 @@ sub genPlacemark
 	my ($name,$rec,$style) = @_;
 	my $sym_type = 'Flag';
 	my $dt = $rec->{date} ? fshDateTimeToStr($rec->{date},$rec->{time}) : '';
-	my $descrip = $rec->{comment} ? $rec->{comment}."<br>" : '';
-	$descrip .= "Date: $dt" if $rec->{date};
+
+	my $descrip = '';
+	if ($dt || $rec->{comment})
+	{
+		$descrip .= '<![CDATA[';
+		$descrip .= $rec->{comment} ? $rec->{comment}."<br>" : '';
+			# ."<br>" breaks the kml
+		$descrip .= "Date: $dt" if $rec->{date};
+		$descrip .= ']]>';
+	}
 
 	addLine(0,"<Placemark>");
 	addLine(1,"<name>$name</name>");

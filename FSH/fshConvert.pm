@@ -47,12 +47,37 @@ use apps::raymarine::FSH::genKML;
 # main
 #---------------------------------------
 
-my $ifilename = "/Archive/ARCHIVE.FSH";	# ARCHIVE2_FROM_OLD_E80.FSH";
-    # in current directory
-my $ofilename = "output/created_from_ARCHIVE_FSH.kml";
+my $SRC_DIR = '/base/apps/raymarine/FSH';
+my $DEFAULT_INFILE = "/Archive/ARCHIVE.FSH";	# ARCHIVE2_FROM_OLD_E80.FSH";
+my $DEFAULT_OUTFILE = 'output/created_from_ARCHIVE_FSH.kml';
+
+my $ifilename = $ARGV[0];
+my $ofilename = $ARGV[1];
+
+
+if ($ifilename)
+{
+	display(0,0,"input file  = $ifilename");
+}
+else
+{
+	$ifilename = $DEFAULT_INFILE;
+	warning(0,0,"using default input file = $ifilename")
+}
+
+if ($ofilename)
+{
+	display(0,0,"output file = $ofilename");
+}
+else
+{
+	$ofilename = "$SRC_DIR/$DEFAULT_OUTFILE";
+	warning(0,0,"using default output file = $ofilename")
+}
 
 my $all_blocks = fshFileToBlocks($ifilename);
 
+# specify any extension except GPX or KML to not write a file
 
 if ($all_blocks && processBlocks($all_blocks))
 {

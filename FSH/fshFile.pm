@@ -195,7 +195,7 @@ sub fshFileToBlocks
 {
     my ($filename) = @_;
     display(0,0,"fshFileToBlocks($filename)");
-    open(my $fh, '<:raw', $filename) or die "Could not open file: $!";
+    open(my $fh, '<:raw', $filename) or die "Could not open file($filename): $!";
 
     $file_offset = 0;
     $all_blocks = [];
