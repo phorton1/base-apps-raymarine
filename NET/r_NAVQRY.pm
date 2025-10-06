@@ -34,7 +34,7 @@ use nq_parse;
 use nq_packet;
 use r_utils;
 
-my $dbg = 0;
+my $dbg = 1;
 
 
 my $WITH_MOD_PROCESSING = 1;
@@ -44,8 +44,8 @@ my $COMMAND_TIMEOUT 		= 3;
 my $REFRESH_INTERVAL		= 5;
 my $RECONNECT_INTERVAL		= 15;
 
-my $SHOW_OUTPUT = 0;
-my $SHOW_INPUT = 0;
+our $SHOW_NAVQRY_OUTPUT = 0;
+our $SHOW_NAVQRY_INPUT = 0;
 my $DBG_WAIT = 1;
 
 # my $SUCCESS_SIG = '00000400';
@@ -89,6 +89,9 @@ BEGIN
 		$ROUTE_COLOR_PURPLE
 		$ROUTE_COLOR_BLACK
 		$NUM_ROUTE_COLORS
+
+		$SHOW_NAVQRY_OUTPUT
+		$SHOW_NAVQRY_INPUT
 
 	);
 }
@@ -173,9 +176,13 @@ sub queueNQCommand
 	return error("Not running") if !$this->{running};
 
 	my $cmd_name = apiCommandName($api_command);
-	my $msg = "# queueNQCommand($api_command=$cmd_name) what($what) name($name) uuid($uuid) data(".($data?length($data):'empty').")\n";
-	print $msg;
-	navQueryLog($msg,"shark.log");
+
+	if ($SHOW_NAVQRY_OUTPUT)
+	{
+		my $msg = "# queueNQCommand($api_command=$cmd_name) what($what) name($name) uuid($uuid) data(".($data?length($data):'empty').")\n";
+		print $msg;
+		navQueryLog($msg,"shark.log");
+	}
 	
 	my $command = shared_clone({
 		api_command => $api_command,
@@ -245,16 +252,19 @@ sub sendRequest
 	}
 
 	my $text = "# sendRequest($seq) $name\n";
-	my $rec = parseNQPacket(1,0,$NAVQUERY_PORT,$request);
+	my $rec = parseNQPacket($SHOW_NAVQRY_OUTPUT,0,$NAVQUERY_PORT,$request);
 		# 1=with_text, 0=is_reply
-	$text .= $rec->{text};
-	
-	my $color = $UTILS_COLOR_LIGHT_CYAN;
-	setConsoleColor($color) if $color;
-	print $text;
-	setConsoleColor() if $color;
-	navQueryLog($text,'shark.log');
+	if ($SHOW_NAVQRY_OUTPUT)
+	{
+		$text .= $rec->{text};
 
+		my $color = $UTILS_COLOR_LIGHT_CYAN;
+		setConsoleColor($color) if $color;
+		print $text;
+		setConsoleColor() if $color;
+		navQueryLog($text,'shark.log');
+	}
+	
 	my $hdr = substr($request,0,2);
 	my $data = substr($request,2);
 	if (!$sock->send($hdr))
@@ -643,11 +653,10 @@ sub readSocket
 
 	if (length($this->{buffer}) > 2)
 	{
-		my $WITH_TEXT = 1;
-		my $reply = parseNQPacket($WITH_TEXT,1,$NAVQUERY_PORT,$this->{buffer},$this);
+		my $reply = parseNQPacket($SHOW_NAVQRY_INPUT,1,$NAVQUERY_PORT,$this->{buffer},$this);
 			# 1=is_reply
 
-		if ($WITH_TEXT)
+		if ($SHOW_NAVQRY_INPUT)
 		{
 			my $text = $reply->{text};
 			my $color = $UTILS_COLOR_LIGHT_BLUE;

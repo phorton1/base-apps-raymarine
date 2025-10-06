@@ -14,11 +14,13 @@ use Wx::Event qw(
 	EVT_LIST_ITEM_ACTIVATED
 	EVT_LIST_COL_CLICK
 	EVT_CONTEXT_MENU
-	EVT_MENU );
+	EVT_MENU
+	EVT_COMBOBOX );
 use Pub::Utils;
 use Pub::WX::Window;
 use Pub::WX::Dialogs;;
 use r_utils;
+use r_RAYDP;
 use r_FILESYS;
 use s_resources;
 use dlgProgress;
@@ -30,6 +32,10 @@ my $dbg_dl = 1;			# downloads
 my $dbg_rr = 0;			# request and replies
 
 
+my $ID_SELECT_COMBO = 1002;
+my $COMBO_LEFT = 100;
+	# from right of window
+
 
 my $TOP_MARGIN = 50;
 my $LEFT_MARGIN = 10;
@@ -40,7 +46,6 @@ my $SIZE_WIDTH = 80;
 my $COL_MODE = 0;
 my $COL_SIZE = 1;
 my $COL_NAME = 2;
-
 
 my $STAGE_DIRS = 0;
 my $STAGE_FILES = 1;
@@ -71,6 +76,32 @@ sub appendPath
 }
 
 
+sub checkFileSysPorts
+{
+	my ($this) = @_;
+
+	$this->{cur_filesys_id} ||= '';
+	$this->{filesys_ids} ||= [];
+	$this->{filesys_rayports} ||= {};
+
+	my $any_added = 0;
+	my $my_ids = $this->{filesys_ids};
+	my $my_rayports = $this->{filesys_rayports};
+	my $global_rayports = getRayPorts();
+	for my $rayport (@$global_rayports)
+	{
+		next if $rayport->{name} ne 'FILESYS';
+		my $id = raydpIdIfKnown($rayport->{id});	# ID or known name
+		$this->{cur_filesys_id} = $id if isCurrentFILESYSRayport($rayport);
+		next if $my_rayports->{$id};	# already know about it
+		push @$my_ids,$id;
+		$my_rayports->{$id} = $rayport;
+		$any_added++;
+	}
+	return $any_added;
+}
+
+
 sub new
 {
 	my ($class,$frame,$book,$id,$data) = @_;
@@ -81,6 +112,12 @@ sub new
 	$this->SetFont($font_fixed);
 	$this->{status_ctrl} = Wx::StaticText->new($this,-1,'',[10,10]);
 	$this->{command_ctrl} = Wx::StaticText->new($this,-1,'',[100,10]);
+
+	$this->checkFileSysPorts();
+	$this->{device_combo} = Wx::ComboBox->new($this, $ID_SELECT_COMBO,
+		$this->{cur_filesys_id}, [400,10],[90,25],
+		$this->{filesys_ids},wxCB_READONLY);
+
 	$this->{path_ctrl} = Wx::StaticText->new($this,-1,'',[10,30]);
     my $ctrl = Wx::ListCtrl->new($this,-1,[0,$TOP_MARGIN],[-1,-1],
 		wxLC_REPORT); # | wxLC_EDIT_LABELS);
@@ -107,13 +144,13 @@ sub new
 	
 	$this->SetFont($font_fixed);
 
-
 	EVT_SIZE($this,\&onSize);
 	EVT_IDLE($this,\&onIdle);
     EVT_LIST_ITEM_ACTIVATED($ctrl,-1,\&onDoubleClick);
 	EVT_LIST_COL_CLICK($ctrl,-1,\&onClickColHeader);
     EVT_CONTEXT_MENU($ctrl,\&onContextMenu);
 	EVT_MENU($this,$CMD_DOWNLOAD,\&downloadSelected);
+	EVT_COMBOBOX($this,$ID_SELECT_COMBO,\&onFileDeviceCombo);
 
 	$this->onSize();
 	
@@ -126,16 +163,19 @@ sub onSize
 	my $sz = $this->GetSize();
     my $width = $sz->GetWidth();
     my $height = $sz->GetHeight();
-    my $ctrl = $this->{list_ctrl};
 
-	$ctrl->SetSize([$width,$height-$TOP_MARGIN]);
+	my $combo_left = $width - $COMBO_LEFT;
+	$this->{device_combo}->Move($combo_left,10);
 
-	my $mode_width = $ctrl->GetColumnWidth($COL_MODE);
-	my $size_width = $ctrl->GetColumnWidth($COL_SIZE);
+    my $list_ctrl = $this->{list_ctrl};
+	$list_ctrl->SetSize([$width,$height-$TOP_MARGIN]);
 
-	$ctrl->SetColumnWidth(0,$mode_width);
-	$ctrl->SetColumnWidth(1,$SIZE_WIDTH);
-	$ctrl->SetColumnWidth(2,$width-$mode_width-$SIZE_WIDTH);
+	my $mode_width = $list_ctrl->GetColumnWidth($COL_MODE);
+	my $size_width = $list_ctrl->GetColumnWidth($COL_SIZE);
+
+	$list_ctrl->SetColumnWidth(0,$mode_width);
+	$list_ctrl->SetColumnWidth(1,$SIZE_WIDTH);
+	$list_ctrl->SetColumnWidth(2,$width-$mode_width-$SIZE_WIDTH);
 
 }
 
@@ -177,6 +217,24 @@ sub onDoubleClick
 	{
 		$this->downloadOneFile($name);
 	}
+}
+
+
+sub onFileDeviceCombo
+	# reset filter and repopulate
+	# on any checkbox clicks
+{
+	my ($this,$event) = @_;
+	# my $id = $event->GetId();
+	my $combo = $event->GetEventObject();
+	my $selected = $combo->GetValue();
+	my $rayport = $this->{filesys_rayports}->{$selected};
+	return error("huh? could not find rayport($selected)")
+		if !$rayport;
+	display(0,0,"Changing cur_filesys_id to $selected");
+	setFILESYSRayPort($rayport);
+	$this->{cur_filesys_id} = $selected;
+	$this->{started} = 0;	# trigger a get of /
 }
 
 

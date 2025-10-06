@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:kml="http://www.opengis.net/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
 <NetworkLinkControl>
-<cookie>version=33</cookie>
+<cookie>version=10</cookie>
 <linkName>NAVQRY</linkName>
 </NetworkLinkControl>
 <Document>
@@ -130,108 +130,14 @@
 <Folder id="section_Groups">
 <name>Groups</name><styleUrl>sectionStyle</styleUrl>
 <open>1</open>
-<Folder id="group__My Waypoints">
+<Folder id="group_1234567812345678">
 <name>_My Waypoints</name><styleUrl>groupStyle</styleUrl>
 <open>1</open>
-<Placemark id="group_wp_testWaypoint3">
-<name>testWaypoint3</name>
+<Placemark id="group_81b237a63d006ff1">
+<name>Popa06</name>
 <styleUrl>groupStyle</styleUrl>
 <Point>
-<coordinates>-82.197158,9.255866,0</coordinates>
-</Point>
-</Placemark>
-</Folder>
-<Folder id="group_New Folder">
-<name>New Folder</name><styleUrl>groupStyle</styleUrl>
-<open>1</open>
-<Placemark id="group_wp_ffff me">
-<name>ffff me</name>
-<styleUrl>groupStyle</styleUrl>
-<Point>
-<coordinates>-82.1844165,9.2400333,0</coordinates>
-</Point>
-</Placemark>
-</Folder>
-<Folder id="group_testGroup1">
-<name>testGroup1</name><styleUrl>groupStyle</styleUrl>
-<open>1</open>
-<Placemark id="group_wp_testWaypoint1">
-<name>testWaypoint1</name>
-<styleUrl>groupStyle</styleUrl>
-<Point>
-<coordinates>-82.2632289,9.3342816,0</coordinates>
-</Point>
-</Placemark>
-<Placemark id="group_wp_testWaypoint2">
-<name>testWaypoint2</name>
-<styleUrl>groupStyle</styleUrl>
-<Point>
-<coordinates>-82.204624,9.2721199,0</coordinates>
-</Point>
-</Placemark>
-<Placemark id="group_wp_testWaypoint7">
-<name>testWaypoint7</name>
-<styleUrl>groupStyle</styleUrl>
-<Point>
-<coordinates>-82.1555769,9.208679,0</coordinates>
-</Point>
-</Placemark>
-<Placemark id="group_wp_testWaypoint8">
-<name>testWaypoint8</name>
-<styleUrl>groupStyle</styleUrl>
-<Point>
-<coordinates>-82.157985,9.20267,0</coordinates>
-</Point>
-</Placemark>
-<Placemark id="group_wp_testWaypoint9">
-<name>testWaypoint9</name>
-<styleUrl>groupStyle</styleUrl>
-<Point>
-<coordinates>-82.152427,9.200271,0</coordinates>
-</Point>
-</Placemark>
-</Folder>
-<Folder id="group_testGroup2">
-<name>testGroup2</name><styleUrl>groupStyle</styleUrl>
-<open>1</open>
-</Folder>
-<Folder id="group_testGroup3">
-<name>testGroup3</name><styleUrl>groupStyle</styleUrl>
-<open>1</open>
-</Folder>
-</Folder>
-<Folder id="section_Routes">
-<name>Routes</name><styleUrl>sectionStyle</styleUrl>
-<open>1</open>
-<Folder id="route_testRoute1">
-<name>testRoute1</name><styleUrl>routeStyle5</styleUrl>
-<open>1</open>
-<Placemark id="testRoute1">
-<name>testRoute1 Track</name>
-<styleUrl>routeStyle5</styleUrl>
-<LineString>
-<coordinates>-82.2632289,9.3342816,0 -82.204624,9.2721199,0 -82.197158,9.255866,0</coordinates>
-</LineString>
-</Placemark>
-<Placemark id="route_testRoute1_wp_testWaypoint1">
-<name>testWaypoint1</name>
-<styleUrl>routeStyle5</styleUrl>
-<Point>
-<coordinates>-82.2632289,9.3342816,0</coordinates>
-</Point>
-</Placemark>
-<Placemark id="route_testRoute1_wp_testWaypoint2">
-<name>testWaypoint2</name>
-<styleUrl>routeStyle5</styleUrl>
-<Point>
-<coordinates>-82.204624,9.2721199,0</coordinates>
-</Point>
-</Placemark>
-<Placemark id="route_testRoute1_wp_testWaypoint3">
-<name>testWaypoint3</name>
-<styleUrl>routeStyle5</styleUrl>
-<Point>
-<coordinates>-82.197158,9.255866,0</coordinates>
+<coordinates>-82.1556142,9.2087677,0</coordinates>
 </Point>
 </Placemark>
 </Folder>

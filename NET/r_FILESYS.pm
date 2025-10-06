@@ -45,6 +45,8 @@ BEGIN
     our @EXPORT = qw(
 
         filesysThread
+		setFILESYSRayPort
+		isCurrentFILESYSRayport
 
 		$FILE_STATE_ILLEGAL
 		$FILE_STATE_INIT
@@ -143,6 +145,37 @@ our $FAT_FILE     	 = 0x20;
 
 my $filesys_ip:shared		= '';
 my $filesys_port:shared 	= 0;
+
+sub setFILESYSRayPort
+{
+	my ($rayport) = @_;
+	if ($filesys_ip ne $rayport->{ip} ||
+		$filesys_port != $rayport->{port})
+	{
+		$filesys_ip = $rayport->{ip};
+		$filesys_port = $rayport->{port};
+		warning(0,0,"changing rayport(FILESYS) to $filesys_ip:$filesys_port");
+	}
+	else
+	{
+		warning(0,0,"did not change rayport(FILESYS); already was $filesys_ip:$filesys_port");
+	}
+}
+
+sub isCurrentFILESYSRayport
+{
+	my ($rayport) = @_;
+	return 1 if
+		$filesys_ip eq $rayport->{ip} &&
+		$filesys_port == $rayport->{port};
+	return 0;
+}
+
+
+
+
+
+
 
 my $file_state:shared       = $FILE_STATE_INIT;
 my $file_error:shared       = '';

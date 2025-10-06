@@ -20,15 +20,15 @@ use Win32::Console;
 use s_resources;
 use winRAYDP;
 use winFILESYS;
-
-
 use base qw(Pub::WX::Frame);
 
 
 sub new
 {
 	my ($class, $parent) = @_;
-	my $this = $class->SUPER::new($parent);
+	my $rect = Wx::Rect->new(200,100,1100,800);
+
+	my $this = $class->SUPER::new($parent,$rect);
 
 	EVT_MENU($this, $WIN_RAYDP, \&onCommand);
 	EVT_MENU($this, $WIN_FILESYS, \&onCommand);

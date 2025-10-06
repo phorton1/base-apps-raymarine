@@ -47,6 +47,10 @@ BEGIN
 }
 
 
+
+
+
+
 #-----------------------------------------
 # handleCommand()
 #-----------------------------------------
@@ -56,7 +60,17 @@ sub handleCommand
     my ($lpart,$rpart) = @_;
     display(0,0,"handleCommand left($lpart) right($rpart)");
 
-	if ($lpart eq 'q')
+
+	if ($lpart eq 'w')
+	{
+		wakeup_e80
+	}
+
+	#-----------------------------------------------------
+	# new 2nd E80 above
+	#-----------------------------------------------------
+
+	elsif ($lpart eq 'q')
     {
         doNavQuery();
     }
@@ -187,12 +201,11 @@ sub sniffer_thread
             my $len = length($packet->{raw_data});
             # display($dbg_shark+1,1,"got $packet->{proto} packet len($len)");
             if ($packet->{udp} &&
-                # $packet->{dest_ip} eq $RAYDP_IP &&
                 $packet->{dest_port} == $RAYDP_PORT)
             {
-                if (decodeRAYDP($packet) &&
-                    $rayport_raydp &&
-                    $rayport_raydp->{mon_out})
+                decodeRAYDP($packet);
+				if ($rayport_raydp &&
+                    $rayport_raydp->{mon_to})
                 {
                     # one time monitoring of new RAYDP ports
                     showPacket($rayport_raydp,$packet,0);
@@ -204,30 +217,11 @@ sub sniffer_thread
             my $ray_src = findRayPort($packet->{src_ip},$packet->{src_port});
             my $ray_dest = findRayPort($packet->{dest_ip},$packet->{dest_port});
 
-            # my $dest_rns_filesys = $packet->{dest_port} == $RNS_FILESYS_LISTEN_PORT ? {
-            #     color => $UTILS_COLOR_BROWN,
-            #     multi => 0, } : 0;
-            # my $dest_filesys = $packet->{dest_port} == $FILESYS_LISTEN_PORT ? {
-            #     color => $UTILS_COLOR_BROWN,
-            #     multi => 0, } : 0;
-            # if (0 && $dest_18433)
-            # {
-            #     my $raw_data = $packet->{raw_data};
-            #     my ($num_packets,$packet_num,$bytes) = unpack('v3',substr($raw_data,12,6));
-            #     showPacket($dest_18433,$packet,0);
-            # }
-            # elsif (0 && $dest_18432)
-            # {
-            #     my $raw_data = $packet->{raw_data};
-            #     showPacket($dest_18432,$packet,0);
-            # }
-            # els
-
-            if ($ray_src && $ray_src->{mon_out})
+            if ($ray_src && $ray_src->{mon_to})
             {
                 showPacket($ray_src,$packet,0);
             }
-            elsif ($ray_dest && $ray_dest->{mon_in})
+            elsif ($ray_dest && $ray_dest->{mon_from})
             {
                 showPacket($ray_dest,$packet,1);
                 if (0 && $ray_dest->{name} eq "NAVSTAT")
@@ -295,7 +289,7 @@ if ($LOCAL_UDP_SOCKET)
     display(0,0,"alive_thread detached");
 }
 
-if (1)  # openListenSocket())
+if (1)  # filesysThread())
 {
     display(0,0,"initing filesysThread");
     my $filesys_thread = threads->create(\&filesysThread);

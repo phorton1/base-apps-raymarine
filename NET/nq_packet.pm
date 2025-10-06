@@ -270,6 +270,10 @@ sub init_context
 
 	# re-initialize context if $is_reply changes
 	
+	$is_reply ||= 0;
+	$context->{is_reply} ||= 0;
+		# avoid warnings - one of these is undefined often
+
 	return $context if
 		defined($context->{is_reply}) &&
 		$context->{is_reply} == $is_reply;
@@ -362,7 +366,7 @@ sub parseNQPacket
 
 	my $arrow;
     my $first_header;
-    my $header_len;
+    my $header_len = 0;
 	if ($with_text)
 	{
 		$arrow = $is_reply ? '-->' : '<--';
@@ -414,7 +418,7 @@ sub parseNQPacket
 
 		# the actual data starts after the cmd_word, 0f00, and the dword sequence number
 		# MODIFY and EVENT dont have sequence numbers on replies
-		
+
 		my $data_offset = 4;
 		if (!$is_reply || (
 			$C != $CMD_MODIFY &&
@@ -422,7 +426,7 @@ sub parseNQPacket
 		{
 			my $seq_num = unpack('V',substr($data,$data_offset,4));
 			display($dbg_nq,0,"seq_num=$seq_num");
-			
+
 			$context->{seq_num} ||= $seq_num;
 			$data_offset += 4;
 		}

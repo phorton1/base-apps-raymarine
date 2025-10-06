@@ -61,10 +61,8 @@ use strict;
 use warnings;
 use threads;
 use threads::shared;
-use Time::HiRes qw(sleep time);
 use r_utils;
 use Socket;
-use IO::Select;
 use Pub::Utils;
 
 my $dbg_raydp = 1;
@@ -215,7 +213,7 @@ my $RNS_INIT  	= 0;			# starts happening when RNS starts
 my $UNDER_WAY 	= 0;			# emitted by E80 while "underway"
 my $FILESYS 	= 0;			# requests made TO the filesystem
 my $MY_GPS 		= $UNDER_WAY;	# the "GPS" protocol needs further exploration
-my $MY_NAV 		= 0;			# the important Waypoint, Route, and Group management tcp protocol
+my $MY_NAV 		= 1;			# the important Waypoint, Route, and Group management tcp protocol
 my $RAYDP		= 0;
 my $FILE		= 0;
 my $FILE_RNS 	= 0;
@@ -236,28 +234,127 @@ my $PORT_DEFAULTS  = {
 	# idea' is the standard func that *should* corresond to the port
 	# and is always true so far
 
-	2048 => { idea=>35,	name=>'',			proto=>'!tcp',	mon_from=>1,			mon_to=>$UNDER_WAY,		multi=>1,	color=>0,	 },
-	2049 => { idea=>5,	name=>'FILESYS',	proto=>'udp',	mon_from=>$FILESYS,		mon_to=>1,				multi=>1,	color=>$UTILS_COLOR_CYAN,    },
-	2050 => { idea=>16,	name=>'Database',	proto=>'tcp',	mon_from=>$MY_GPS,		mon_to=>$MY_GPS,		multi=>1,	color=>0,    },
-	2051 => { idea=>16,	name=>'navstat',	proto=>'!tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-	2052 => { idea=>15,	name=>'NAVQRY',		proto=>'tcp',	mon_from=>$MY_NAV,		mon_to=>$MY_NAV,		multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },	#
-	2053 => { idea=>19,	name=>'Track',		proto=>'tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-		# discovered tcp port
-	2054 => { idea=>7,	name=>'',			proto=>'udp',	mon_from=>$RNS_INIT,	mon_to=>$UNDER_WAY,		multi=>1,	color=>$UTILS_COLOR_LIGHT_CYAN,    },
+	2048 => { idea=>35,	name=>'',			proto=>'!tcp',	mon_from=>1,			mon_to=>$UNDER_WAY,	multi=>1,	color=>0,	 },
+	2049 => { idea=>5,	name=>'FILESYS',	proto=>'udp',	mon_from=>$FILESYS,	mon_to=>1,				multi=>1,	color=>$UTILS_COLOR_CYAN,    },
+	2050 => { idea=>16,	name=>'navstat',	proto=>'udp',	mon_from=>$MY_GPS,	mon_to=>$MY_GPS,		multi=>1,	color=>0,    },
+	2051 => { idea=>16,	name=>'navstat',	proto=>'!tcp',	mon_from=>1,		mon_to=>1,				multi=>1,	color=>0,    },
+	2052 => { idea=>15,	name=>'NAVQRY',		proto=>'tcp',	mon_from=>$MY_NAV,	mon_to=>$MY_NAV,		multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },	#
+	2053 => { idea=>19,	name=>'TRACK',		proto=>'tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
+		# Start Track:
+		# 	0500 			0a001300 01
+		#		0500 		0a001300 03
+		# 	0500			0a001300 00
+		# Change Course
+		#	0500			0a001300 00
+		# Stop Track - Discard
+		#	0500            0a001300 00
+		#		0500 		0a001300 02
+		#		0500 		0a001300 01
+		# Stop Track - Save (brings up Edit Name box 'Track 10')
+		#	0500            0a001300 00
+		#		0500 		0a001300 02
+		#		0500 		0a001300 04
+		#					0d000b00 13 	00 81b237a6 3d008fd9 00 		that looks like a uuid
+		#		0500 		0a001300 01
+		#		0500		0a001300 01
+		# Change track name to ABCDEFHIJKLL
+		#
+		#	--->			0d000b00 13 	00 81b237a6 3d008fd9 01						looks like a continuation of a message from above
+		#
+		# Hit OK
+
+		# Start and save another track Track 11
+		#
+		#	0500   			0a001300 01
+		#		0500		0a001300 03
+		#	0500			0a001300 00
+		#	0500			0a001300 00
+		#		0500		0a001300 02
+		#		0500		0a001300 04
+		#					0d000b00 13 	00 81b237 a63d00c1d9 00
+		#		0500 		0a001300 01
+		#		0500		0a001300 01
+
+		# Delete Track11
+		#
+		#	--->			0d000b00 13		00 81b237a6 3d00c1d9 02
+		#
+		# Delete Track10 (now ABCDEFHIJKLL
+		#
+		#	--->			0d000b00 13 	00 81b237a6 3d008fd9 02                                             ......7.=....
+
+		# (25156,0) FSH/fshBlocks.pm[126]               decodeTRK[14] 80B2-37AD-0100-FFA1
+		# (25156,0) FSH/fshBlocks.pm[141]                 point_count(13)  (0,0)
+		# (25156,0) FSH/fshBlocks.pm[183]               decodeMTA[15] 81B2-37A6-3C00-F4E5
+		# (25156,0) FSH/fshBlocks.pm[223]                 track name(testTrack1) guid = 80B2-37AD-0100-FFA1
+		# Delete testTrack1
+		#
+		#	--->			0d000b00 13		00 81b237a6 3d008fd9 02                                             ......7.=....
+		#
+		# Man that's close to the MTA uuid	   81b23786 3c00f4e5
+		# 	fsh track uuid					   80b237ad 0100ffa1
+
+
+
+	2054 => { idea=>7,	name=>'',			proto=>'udp',	mon_from=>$RNS_INIT,	mon_to=>$UNDER_WAY,	multi=>1,	color=>$UTILS_COLOR_LIGHT_CYAN,    },
 	2055 => { idea=>22,	name=>'',			proto=>'tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-		# new tcp port
+		# This one shows packets like xxxx0200 which would be func(2)
+		# - no new TCP Server Connections were noted on the E80
+		# - no new TCP Tx numbers appear either.
+		# There is a leading word(0900) which is the length,
+		# followed by a func(22) command word, and some data bytes
+		#
+		#		0900
+		#					00001600 00570200 00
+		#		0900
+		#					00001600 00570200 00
+		#			0900 	00001600 01670100 00
+		#		0900    	00001600 00570200 00
+		#			0900 	00001600 01670100 00
+		#			0900 	00001600 02df0100 00
+		#			0900 	00001600 031f0100 00
+		#
+		# This might just be an artifact of TCP packeting ...
+
 	2056 => { idea=>8,	name=>'',			proto=>'!tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
 	2058 => { idea=>-2,	name=>'',			proto=>'',		mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-		# think its udo and requires requires RNS
-
 	2560 => { idea=>35,	name=>'',			proto=>'!tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
+
 	2561 => { idea=>5,	name=>'',			proto=>'!tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
+
 	2562 => { idea=>16,	name=>'NAVSTAT',	proto=>'udp',	mon_from=>$UNDER_WAY,	mon_to=>1,				multi=>1,	color=>$UTILS_COLOR_GREEN,    },
 	2563 => { idea=>8,	name=>'',			proto=>'udp',	mon_from=>$UNDER_WAY,	mon_to=>1,				multi=>1,	color=>0,    },
+		# This one is advertised under func(8) which matches te 2nd word of the packet
+		# which definitely contain lat/lon pairs
+		#
+		#		00000800 05f40500 dc000000 01000000 aa23f807 8f4f0000 00000000 00000000
+		#				 00000000 00000000 7eaf6805 ecdbface 072a0230 004f0001 082d0234 013e0001
+		#				 0a5802b4 00330001 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 07080a01 02020000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+		#				 00000000 00000000 00000000 00000000 0001
 
-	5800 => { idea=>0,	name=>'RAYDP',		proto=>'mcast',	mon_from=>1,			mon_to=>$RAYDP,			multi=>1,	color=>$UTILS_COLOR_LIGHT_BLUE,    },
-	5801 => { idea=>27,	name=>'Alarm',		proto=>'mcast',	mon_from=>$UNDER_WAY,	mon_to=>1,				multi=>1,	color=>$UTILS_COLOR_BLUE,    },
+
+	5800 => { idea=>0,	name=>'RAYDP',		proto=>'mcast',	mon_from=>1,			mon_to=>$RAYDP,		multi=>1,	color=>$UTILS_COLOR_LIGHT_BLUE,    },
+	5801 => { idea=>27,	name=>'ALARM',		proto=>'mcast',	mon_from=>$UNDER_WAY,	mon_to=>1,				multi=>1,	color=>$UTILS_COLOR_BLUE,    },
+		# 2nd word matches func
+		# 		03001b00 c8f1000a 00000000
 	5802 => { idea=>27,	name=>'alarm',		proto=>'!tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
+		# this failed tcp/ip connection while underway
 
 	# these empirical port numbers carry fake funcs of 105, 106
 
@@ -576,73 +673,6 @@ sub decodeRAYDP
 #----------------------------------------------------
 # tcpListenerThread
 #----------------------------------------------------
-# the sleeps are because r_sniffer takes a while to get
-# the packets and it is possible for us to write after
-# we have received the reply, but before sniffer got
-# a chance to show the full reply.
-
-sub subSend
-{
-	my ($sock,$seq,$template,) = @_;
-	my $hex_seq = unpack('H*',pack('V',$seq));
-	$template =~ s/\s+//g;
-	$template =~ s/{seq}/$hex_seq/g;
-	$sock->send(pack('H*',$template));
-	sleep(0.1) if length($template) <= 4;
-}
-
-
-sub sendNextRequest
-{
-	my ($sock,$lines,$seq) = @_;
-	my $hex_seq = unpack('H*',pack('V',$seq));
-
-	print "script($seq/".scalar(@$lines).")\n";
-	
-	# find next request start
-	
-	my $send_arrow = '<--';
-	my $recv_arrow = '-->';
-
-	my $started = 0;
-
-	while (1)
-	{
-		my $line = shift @$lines;
-		my $arrow = '';
-
-		$arrow = $1 if $line =~ s/.*?($send_arrow|$recv_arrow)\s+\d+\.\d+\.\d+\.\d+:\d+\s+//;
-
-		# print "started($started) $arrow '$line'\n";
-
-		return if $arrow eq $recv_arrow && $started;
-		if ($arrow eq $send_arrow)
-		{
-			$line =~ s/   .*$//;
-			my @dwords = split(/ /,$line);
-			$dwords[1] = '{seq}' if @dwords > 2;
-			my $new_line = join(' ',@dwords);
-			# print "sending $new_line\n";
-			subSend($sock,$seq,$new_line);
-			$started = 1;
-		}
-		else
-		{
-			# print "skipping $arrow '$line'\n";
-		}
-		if (!@$lines)
-		{
-			display(0,0,"END OF SCRIPT");
-			return;
-		}
-	}
-}
-
-
-
-
-my $next_tcp_port:shared = 11000;
-	# something I can see
 
 sub tcpListenerThread
 	# Simply establishes a TCP connection (or fails) and listens.
@@ -652,13 +682,15 @@ sub tcpListenerThread
 
 	display(0,0,"tcpListenerThread($ip,$port)");
 
+	my $sel;
 	my $sock;
+
 	my $tries = 1;
 	while ($tries-- && !$sock)
 	{
 		$sock = IO::Socket::INET->new(
 			LocalAddr => $LOCAL_IP,
-			LocalPort => $next_tcp_port++,
+			# LocalPort => $NAVQUERY_PORT,
 			PeerAddr  => $ip,
 			PeerPort  => $port,
 			Proto     => 'tcp',
@@ -677,54 +709,9 @@ sub tcpListenerThread
 	}
 
 	display(0,0,"tcpListener started on $ip:$port");
-
-	my $seq = 0;
-	my $lines;
-	my $sel = IO::Select->new($sock);
 	while (1)
 	{
-		if ($port == 2050)	# send Database changed queries
-		{
-			if (!$seq)
-			{
-				my $script = getTextFile("docs/junk/rnsDatabaseStartup.txt");
-				display(0,0,"length of script=".length($script));
-				my @lines = split(/\n/,$script);
-				$lines = \@lines;
-				display(0,1,"got ".scalar(@$lines)." llines");
-			}
-			elsif (@$lines)
-			{
-				if (sendNextRequest($sock,$lines,$seq))
-				{
-					my $reply = '';
-					my $time = time();
-					while (length($reply) <= 4)
-					{
-						if ($sel->can_read(2))
-						{
-							my $buf;
-							recv($sock,$buf,4096,0);
-							$reply .= $buf if $buf;
-						}
-						last if time() > $time + 2;
-					}
-				}
-				sleep(0.2);
-			}
-			else
-			{
-				$sock->send(pack('H*','0400'));
-				$sock->send(pack('H*','00051000'));
-				sleep(2);
-			}
-		}
-		else
-		{
-			sleep(10);
-		}
-		$seq++;
-
+		sleep(10);
 	}
 }
 

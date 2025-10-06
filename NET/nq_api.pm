@@ -108,6 +108,7 @@ sub emptyRoute
 sub showCommand
 {
 	my ($msg) = @_;
+	return if !$SHOW_NAVQRY_OUTPUT;	# in r_NAVQRY.pm
 	$msg = "\n\n".
 		"#------------------------------------------------------------------\n".
 		"# $msg\n".
