@@ -13,6 +13,7 @@ use IO::Socket::Multicast;
 use Time::HiRes qw(sleep);
 use Wx qw(:everything);
 use Pub::Utils;
+use s_resources;
 use wp_parse;
 use wp_packet;
 
@@ -91,6 +92,17 @@ BEGIN
     );
 }
 
+
+#--------------------------------
+# main
+#--------------------------------
+
+Pub::Utils::initUtils();
+# createSTDOUTSemaphore("buddySTDOUT");
+setStandardTempDir($appName);
+setStandardDataDir($appName);
+
+
 # The global $UDP_SEND_SOCKET is opened
 # in the main thread at the outer perl
 # level so-as to be available from threads
@@ -104,6 +116,12 @@ $LOCAL_UDP_SOCKET ?
 	display(0,0,"LOCAL_UDP_SOCKET opened") :
 	error("Could not open UDP_SEND_SOCKET");
 
+
+
+
+#-------------------------------------------
+# colors
+#-------------------------------------------
 # console colors
 # given names for monitor dropdown
 

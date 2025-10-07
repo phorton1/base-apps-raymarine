@@ -67,7 +67,7 @@ BEGIN
  	use Exporter qw( import );
     our @EXPORT = qw(
 
-		startNavQuery
+		startWPMGR
 		$wpmgr
 
 		$API_NONE
@@ -138,7 +138,7 @@ sub apiCommandName
 }
 
 
-sub startNavQuery
+sub startWPMGR
 {
 	my ($class) = @_;
 	display($dbg,0,"initing $class");
@@ -149,7 +149,7 @@ sub startNavQuery
 	$this->{next_seqnum} = 1;
 	$this->{command_queue} = shared_clone([]);
 	$this->{replies} = shared_clone([]);
-	$this->{version} = 0;
+	$this->{version} = 1;
 	$this->{waypoints} = shared_clone({});
 	$this->{routes} = shared_clone({});
 	$this->{groups} = shared_clone({});
@@ -766,7 +766,7 @@ sub listenerThread
 	my $rayport = findRayPortByName('WPMGR');
 	while (!$rayport)
 	{
-		display($dbg,1,"waiting for rayport(WPMGR)");
+		display($dbg-1,1,"waiting for rayport(WPMGR)");
 		sleep(1);
 		$rayport = findRayPortByName('WPMGR');
 	}

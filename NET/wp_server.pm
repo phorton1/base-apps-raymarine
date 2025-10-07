@@ -12,6 +12,7 @@ use threads::shared;
 use Time::HiRes qw(time);
 use Math::Trig qw(deg2rad );
 use Pub::Utils;
+use Pub::ServerUtils;
 use Pub::HTTP::ServerBase;
 use Pub::HTTP::Response;
 use r_WPMGR;
@@ -19,15 +20,15 @@ use wp_parse;
 use base qw(Pub::HTTP::ServerBase);
 
 my $dbg = 0;
-my $dbg_kml = 1;
+my $dbg_kml = 0;
 
 
 BEGIN
 {
  	use Exporter qw( import );
 	our @EXPORT = qw(
-		startNQServer
-		buildNavQueryKML
+		startWPServer
+		kml_WPMGR
 	);
 }
 
@@ -38,21 +39,30 @@ my $SERVER_PORT = 9882;
 my $SRC_DIR = "/base/apps/raymarine/NET";
 my $NETWORK_LINK = "http://localhost:9882/navqry.kml";
 
+
+my $wp_server;
 my $server_version:shared = -1;
 my $wpmgr_kml:shared = kml_header(0,$server_version).kml_footer(0);
+my $wpmgr_cache_filename = "$temp_dir/wpmgr_cache.kml";
 
 
+#------------------------
+# main
+#-----------------------
+
+Pub::ServerUtils::initServerUtils(0,'');
+	# 0 == DOESNT NEEDS WIFI
+	# '' == LINUX PID FILE	$wp_server = wp_server->new();
 
 
 #-----------------------
 # startNQServer
 #-----------------------
 
-my $wp_server;
-
-sub startNQServer
+sub startWPServer
 {
 	display($dbg,0,"starting wp_erver");
+
 	$wp_server = wp_server->new();
 	$wp_server->start();
 	display($dbg,0,"finished starting wp_server");
@@ -71,7 +81,7 @@ sub new
 
 	my $params = {
 
-		HTTP_DEBUG_SERVER => -1,
+		HTTP_DEBUG_SERVER => -1,	# POSITIVE NUMBERS MEAN MORE DEBUGGING
 			# 0 is nominal debug level showing one line per request and response
 		HTTP_DEBUG_REQUEST => 0,
 		HTTP_DEBUG_RESPONSE => 0,
@@ -157,13 +167,16 @@ sub handle_request
 	}
 	elsif ($uri eq '/navqry.kml')
 	{
-		my $params = $request->{params};
-		my $param_version = $params->{version};
-		$param_version = -2 if !defined($param_version);
-		display($dbg+1,1,"param_version($param_version)");
-		my $kml = buildNavQueryKML($param_version);
-		$response = http_ok($request,$kml);
-		$response->{headers}->{'content-type'} = 'application/vnd.google-earth.kml+xml';
+		my $kml = kml_WPMGR($request->{params});
+		if ($kml)
+		{
+			$response = http_ok($request,$kml);
+			$response->{headers}->{'content-type'} = 'application/vnd.google-earth.kml+xml';
+		}
+		else
+		{
+			$response = http_error($request,"No kml was created");
+		}
 	}
 
 	#------------------------------------------
@@ -534,20 +547,35 @@ sub kml_section
 
 my $test_version:shared = 100;
 
-sub buildNavQueryKML
+sub kml_WPMGR
 {
-	my ($param_version) = @_;
-	my $wpmgr_version = $wpmgr ? $wpmgr->{version} : -1;
+	my ($params) = @_;
+	my $param_version = $params->{version};
+	$param_version ||= 0;
+
+	my $wpmgr_version = $wpmgr ? $wpmgr->{version} : 0;
 	my $changed = $server_version == $wpmgr_version ? 0 : 1;
 	my $update = !$changed && $param_version == $server_version ? 1 : 0;
-	#$wpmgr_version >= 0 ? 1 : 0;
 
-	# display($dbg_kml-$changed,
-	display($dbg_kml,
-		1,"buildNavQueryKML($param_version,$server_version,$wpmgr_version) changed($changed) update($update)");
+	display($dbg_kml,1,"kml_WPMGR($param_version,$server_version,$wpmgr_version) changed($changed) update($update)");
 
+	if (!$wpmgr)
+	{
+		error("No wpmgr object in kml_WPMGR");
+		return '';
+	}
+
+	# if wpmgr is not running, deliver the cachefile if one exists
+
+	if (!$wpmgr->{running} && -f $wpmgr_cache_filename)
+	{
+		warning($dbg_kml-1,0,"wpmgr not running; returning $wpmgr_cache_filename");
+		return getTextFile($wpmgr_cache_filename);
+	}
+
+	# Otherwise, create kml from $wmpmgr hashes
+	
 	my $kml = kml_header($update,$wpmgr_version);
-
 
 	if ($changed)
 	{
@@ -570,18 +598,8 @@ sub buildNavQueryKML
 	
 	$kml .= kml_footer($update);
 	
-
-	if (1 || $dbg_kml < -1)
-	{
-		if ($dbg_kml < -1 && $changed)
-		{
-			print "---------------------------------------\n";
-			print $kml;
-			print "---------------------------------------\n";
-		}
-		printVarToFile(1,"test.kml",$kml, 1) if $changed;
-	}
-
+	printVarToFile(1,$wpmgr_cache_filename,$kml, 1)
+		if $changed && $wpmgr_cache_filename;
 
 	return $kml;
 }

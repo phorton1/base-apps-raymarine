@@ -25,7 +25,7 @@ BEGIN
  	use Exporter qw( import );
     our @EXPORT = qw(
 
-		doNavQuery
+		queryWaypoints
 
 		createWaypoint
 		deleteWaypoint
@@ -119,9 +119,9 @@ sub showCommand
 
 
 
-sub doNavQuery
+sub queryWaypoints
 {
-	showCommand("doNavQuery()");
+	showCommand("queryWaypoints()");
 	return queueWPMGRCommand($wpmgr,$API_DO_QUERY,0,0,0,0);
 }
 

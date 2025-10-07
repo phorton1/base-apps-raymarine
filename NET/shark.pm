@@ -71,7 +71,7 @@ sub handleCommand
 
 	elsif ($lpart eq 'q')
     {
-        doNavQuery();
+        queryWaypoints();
     }
     elsif ($lpart eq 'auto')
     {
@@ -79,7 +79,11 @@ sub handleCommand
     }
 	elsif ($lpart eq 'kml')
 	{
-		buildNavQueryKML();
+		my $kml = kml_WPMGR();
+		print "\n------------------------------------------------------\n";
+		print "WPMGR kml\n";
+		print "\n------------------------------------------------------\n";
+		print "$kml\n";
 	}
 	elsif ($lpart eq 'c')
 	{
@@ -263,9 +267,7 @@ display(0,0,"shark.pm initializing");
 
 initRAYSYS();
 
-
 startSerialThread() if 1;
-
 
 if ($LOCAL_UDP_SOCKET)
 {
@@ -286,10 +288,9 @@ if (1)  # filesysThread())
     display(0,0,"filesysThread detached");
 }
 
-startNQServer() if 1;
+r_WPMGR->startWPMGR() if 1;
 
-
-r_WPMGR->startNavQuery() if 1;
+startWPServer() if 1;
 
 
 # the sniffer is started last because it has a blocking
