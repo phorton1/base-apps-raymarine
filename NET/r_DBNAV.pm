@@ -1,5 +1,5 @@
 #---------------------------------------
-# r_NAVSTAT.pm
+# r_DBNAV.pm
 #---------------------------------------
 # This package endeavors to decode NAVSTAT udp multicast packet.
 #
@@ -13,7 +13,7 @@
 # The code herein is currently working poorly after a rapid
 # port, without much debugging, from raynet_old.pm
 
-package r_NAVSTAT;
+package r_DBNAV;
 use strict;
 use warnings;
 use r_utils;
@@ -24,7 +24,7 @@ BEGIN
 {
  	use Exporter qw( import );
 	our @EXPORT = qw (
-		decodeNAVSTAT
+		decodeDBNAV
 	);
 }
 
@@ -344,7 +344,7 @@ sub showLL
 
 
 
-sub decodeNAVSTAT
+sub decodeDBNAV
 {
 	my ($packet) = @_;
 	my $raw = $packet->{raw_data};
@@ -379,7 +379,7 @@ sub decodeNAVSTAT
 	print $text;
 	setConsoleColor();
 
-}	# decodeNAVSTAT()
+}	# decodeDBNAV()
 
 
 

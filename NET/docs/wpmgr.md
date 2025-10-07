@@ -1,10 +1,10 @@
-# NAVQRY
+# WPMGR
 
-NAVQRY is func(15) as advertised by RAYDP. That is 0x00f0 as a word.
+WPMGR is func(15) as advertised by RAYSYS. That is 0x00f0 as a word.
 The func is represented in hex streams as 0f00 and is seen all over the place
 
 The communication takes place via a TCP connection established by the
-client to the NAVQRY (2052) port on the MFD (E80).
+client to the WPMGR (2052) port on the MFD (E80).
 
 
 ### Connection Implementation Details
@@ -23,7 +23,7 @@ the E80 being re-booted or reconnected.
 
 ## Message Structure Overview
 
-The data structures involved in the communications between NAVQRY
+The data structures involved in the communications between WPMGR
 and a client are complicated.  Each blast between them can consist
 of multiple *messages* in a single, or two *packets*.
 
@@ -71,7 +71,7 @@ A **message** is a length delimited record that has
 
 - a **length word** that specifies the length of the message
 - a **command word** that specifies the content and semantics of the message
-- the NAVQRY *func word* **0f00** following the **command word**
+- the WPMGR *func word* **0f00** following the **command word**
 - usually a **dword seq_num** that tags a *reply* to a *request*
 - possible **data** that follows
 
@@ -80,26 +80,26 @@ terminolgically, within the command word is **the command**
 which is the low order nibble of the command word.
 
 - A **request** is a series one or more *messages*
-  sent from the client to NAVQRY, always in two packets.
+  sent from the client to WPMGR, always in two packets.
 - A **reply** is a series of one or more messages
-  sent from NAVQRY to the client in response to a request,
+  sent from WPMGR to the client in response to a request,
   always in two packets.
 - An **event** is a series of one ore more messages
-  sent from NAVQRY to the client, always sent in a
+  sent from WPMGR to the client, always sent in a
   single packet, though several events may happen
   in rapid succession.
 
-Here is an example request sent from the client to NAVQRY
+Here is an example request sent from the client to WPMGR
 
-	NAVQRY <-- 1000
-	NAVQRY <-- 02020f00 01000000 00000000 00000000
+	WPMGR <-- 1000
+	WPMGR <-- 02020f00 01000000 00000000 00000000
 
 In this example
 
 - the *length* is 1000 == 0x0010 == 16 bytes
 - the *command word* is 0202
 - the *func word* is **always 0F00** == 0x00f0 == 15,
-  the NAVQRY function
+  the WPMGR function
 - the *seq_num* is 01000000 = 0x00000001== 1
 - the *data* is 00000000 00000000
 
@@ -113,11 +113,11 @@ the remainder of the packet, whose length is known from TCP,
 will conisted of additional dword(length)-message paris that
 are parsed until the end of the packet.
 
-Here is a *reply* from NAVQRY to RNS, in two packets, that consists
+Here is a *reply* from WPMGR to RNS, in two packets, that consists
 of four messages. The start of each message is labelled with a >.
 
-	NAVQRY --> >0c00
-	NAVQRY -->  06000f00  24000000  00000400 >14000002  0f002400  0000db82  99b8f567  e68e0100
+	WPMGR --> >0c00
+	WPMGR -->  06000f00  24000000  00000400 >14000002  0f002400  0000db82  99b8f567  e68e0100
 	            0000>3e00 01020f00  24000000  32000000  1a438d05  88f100cf  7cce9b06  fa8c8bc5
 	            00000000  00000000  00000000  02ffffff  ffffffea  86000086  4f000200  00000000
 	            5770>1000 02020f00  24000000  db8299b8  f567e68e
@@ -208,7 +208,7 @@ coming last, after the *what* context nibble.
 There is a definite correlation that 0x4 means "Routes" and 0x08 means "Groups".
 
 0x0 meaning "Waypoints" seems to be "implied" to some degree, indicating that
-perhaps the whole purport of NAVQRY is to be a **Waypoint Manager** and that
+perhaps the whole purport of WPMGR is to be a **Waypoint Manager** and that
 either we are specifically talking about waypoints (0) or *additionally*
 talking about Routes and Groups, both of which contain waypoints.
 
@@ -514,7 +514,7 @@ correspond to a "get_waypoint" 1000-0202 0f00 {seq_num} {uuid} messaage of
 ## Command Structure
 
 Commands are sent to the server preceded by a word that indicates their length
-This command gets a dictionary (a listing of the uuids) for WAYPOINTS, ROUTES,
+This command gets a dictionary (a listing of the uuids) for WPMGRS, ROUTES,
 or GROUPS depending on the context set by preceding commands.
 
 	tcp(2)  10.0.241.54:2052 <-- 10.0.241.200:52811		1000
@@ -552,7 +552,7 @@ YZ=01
 
 
 
-## GET ALL WAYPOINTS
+## GET ALL WPMGRS
 
 The conversation starts with
 
@@ -621,7 +621,7 @@ wp(6)
    000060 (96)         57 61 79 70 6f 69 6e 74 20 31 32 41 ee 82 99<fe>   Waypoint 12A....
    000070 (112)        f5 67 e6 8e 10 00 02 02 0f 00 08 00 00 00{81 b2    .g..............
    000080 (128)        37 a6 39 00 e6 cc}                                 7.9...
-(9544,4)  NET/r_NAVQRY.pm[98]               ERROR - waypoint(6) uuid(81b237a63900e6cc) changed at byte(111) old(d3) new(fe)
+(9544,4)  NET/r_WPMGR.pm[98]               ERROR - waypoint(6) uuid(81b237a63900e6cc) changed at byte(111) old(d3) new(fe)
 
 When the length of the waypoint name changes, the length of the packet changes.
 Changing the sort position of the name within the list caused all waypoints after

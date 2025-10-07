@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #-------------------------------------------------------------------------
-# winRAYDP.pm
+# winRAYSYS.pm
 #-------------------------------------------------------------------------
 # A Window reflecting the Raynet Discovery Protocol
 # that allows for control of shark monitoring.
@@ -9,7 +9,7 @@
 
 
 
-package winRAYDP;
+package winRAYSYS;
 use strict;
 use warnings;
 use Wx qw(:everything);
@@ -20,7 +20,8 @@ use Wx::Event qw(
 use Pub::Utils;
 use Pub::WX::Window;
 use r_utils;
-use r_RAYDP;
+use r_RAYSYS;
+use r_WPMGR;
 use base qw(Wx::ScrolledWindow MyWX::Window);
 
 my $dbg_win = 0;
@@ -43,8 +44,11 @@ my $COL_COLOR		= 93;	# width 14
 my $COL_TOTAL		= 107;
 
 
-my $ID_MON_RAYDP_ALIVE	= 901;
+my $ID_MON_RAYSYS_ALIVE	= 901;
 my $ID_SORT_BY			= 902;
+my $ID_SHOW_WPMGR_INPUT   = 903;
+my $ID_SHOW_WPMGR_OUTPUT  = 904;
+
 
 my $SORT_BYS = ['func','port','num'];
 
@@ -70,8 +74,8 @@ sub new
 {
 	my ($class,$frame,$book,$id,$data) = @_;
 	my $this = $class->SUPER::new($book,$id);
-	display(0,0,"winRAYDP::new() called");
-	$this->MyWindow($frame,$book,$id,"RAYDP");
+	display(0,0,"winRAYSYS::new() called");
+	$this->MyWindow($frame,$book,$id,"RAYSYS");
 
 	$this->SetFont($font_fixed);
 	
@@ -83,8 +87,14 @@ sub new
 	# Wx::StaticText->new($this,-1,"static text",[10,10]);
 	# EVT_CLOSE($this,\&onClose);
 
-	my $alive = Wx::CheckBox->new($this,$ID_MON_RAYDP_ALIVE,"monitor RAYDP alive",[10,10]);
-	$alive->SetValue(1) if $MONITOR_RAYDP_ALIVE;
+	my $alive = Wx::CheckBox->new($this,$ID_MON_RAYSYS_ALIVE,"monitor RAYSYS alive",[10,10]);
+	$alive->SetValue(1) if $MONITOR_RAYSYS_ALIVE;
+
+	Wx::StaticText->new($this,-1,"Monitor WPMGR",[500,10]);
+	my $wpmgr_input = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_INPUT,"in",[630,10]);
+	$wpmgr_input->SetValue(1) if $SHOW_WPMGR_INPUT;
+	my $wpmgr_output = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_OUTPUT,"out",[680,10]);
+	$wpmgr_output->SetValue(1) if $SHOW_WPMGR_OUTPUT;
 
 	Wx::StaticText->new($this,-1,'Sort by',[320,12]);
 	Wx::ComboBox->new($this, $ID_SORT_BY, $$SORT_BYS[0],
@@ -249,7 +259,7 @@ sub onIdle
 			$from_box->SetValue(1) if $rayport->{mon_from};
 			$to_box->SetValue(1) if $rayport->{mon_to};
 			$multi->SetValue(1) if $rayport->{multi};
-			$listen->SetValue(1) if $rayport->{listen};		# local to winRAYDP layer
+			$listen->SetValue(1) if $rayport->{listen};		# local to winRAYSYS layer
 
 			$listen->Enable(0) if $rayport->{proto} =~ /mcast|udp/ || $rayport->{listen};
 
@@ -288,10 +298,20 @@ sub onCheckBox
 	my ($this,$event) = @_;
 	my $id = $event->GetId();
 	my $checked = $event->IsChecked() || 0;
-	if ($id == $ID_MON_RAYDP_ALIVE)
+	if ($id == $ID_MON_RAYSYS_ALIVE)
 	{
-		$MONITOR_RAYDP_ALIVE = $checked;
-		warning(0,0,"MON_RAYDP_ALIVE=$MONITOR_RAYDP_ALIVE");
+		$MONITOR_RAYSYS_ALIVE = $checked;
+		warning(0,0,"MON_RAYDP_ALIVE=$MONITOR_RAYSYS_ALIVE");
+	}
+	elsif ($id == $ID_SHOW_WPMGR_INPUT)
+	{
+		$SHOW_WPMGR_INPUT = $checked;
+		warning(0,0,"SHOW_WPMGR_INPUT=$SHOW_WPMGR_INPUT");
+	}
+	elsif ($id == $ID_SHOW_WPMGR_OUTPUT)
+	{
+		$SHOW_WPMGR_OUTPUT = $checked;
+		warning(0,0,"SHOW_OUTPUT_INPUT=$SHOW_WPMGR_OUTPUT");
 	}
 	else
 	{

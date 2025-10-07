@@ -23,7 +23,7 @@ use IO::Socket::INET;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use r_utils;
-use r_RAYDP;
+use r_RAYSYS;
 
 my $dbg_fs = 0;
 
@@ -450,7 +450,7 @@ sub filesysThread
 
     display($dbg_fs,0,"listen socket opened");
 
-	# get the FILESYS ip:port from RAYDP
+	# get the FILESYS ip:port from RAYSYS
 
 	my $rayport = findRayPortByName('FILESYS');
 	while (!$rayport)

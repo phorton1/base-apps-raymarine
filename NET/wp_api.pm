@@ -1,8 +1,8 @@
 #---------------------------------------------
-# nq_api.pm
+# wp_api.pm
 #---------------------------------------------
 
-package nq_api;
+package wp_api;
 use strict;
 use warnings;
 use threads;
@@ -15,9 +15,9 @@ use Time::HiRes qw(sleep time);
 use Time::Local;
 use Pub::Utils;
 use r_utils;
-use r_RAYDP;
-use r_NAVQRY;
-use nq_parse;
+use r_RAYSYS;
+use r_WPMGR;
+use wp_parse;
 
 
 BEGIN
@@ -108,7 +108,7 @@ sub emptyRoute
 sub showCommand
 {
 	my ($msg) = @_;
-	return if !$SHOW_NAVQRY_OUTPUT;	# in r_NAVQRY.pm
+	return if !$SHOW_WPMGR_OUTPUT;	# in r_WPMGR.pm
 	$msg = "\n\n".
 		"#------------------------------------------------------------------\n".
 		"# $msg\n".
@@ -122,7 +122,7 @@ sub showCommand
 sub doNavQuery
 {
 	showCommand("doNavQuery()");
-	return queueNQCommand($navqry,$API_DO_QUERY,0,0,0,undef);
+	return queueWPMGRCommand($navqry,$API_DO_QUERY,0,0,0,0);
 }
 
 
@@ -153,7 +153,7 @@ sub createWaypoint
 		date => int($now / $SECS_PER_DAY),
 		time => int($now % $SECS_PER_DAY), });
 	my $data = unpack('H*',$buffer);
-	return queueNQCommand($navqry,$API_NEW_ITEM,$WHAT_WAYPOINT,$name,$uuid,$data);
+	return queueWPMGRCommand($navqry,$API_NEW_ITEM,$WHAT_WAYPOINT,$name,$uuid,$data);
 }
 
 sub deleteWaypoint
@@ -162,7 +162,7 @@ sub deleteWaypoint
 	showCommand("deleteWaypoint($wp_num)");
 	my $uuid = std_uuid($STD_WP_UUID,$wp_num);
 	my $name = "testWaypoint$wp_num";
-	return queueNQCommand($navqry,$API_DEL_ITEM,$WHAT_WAYPOINT,$name,$uuid,undef);
+	return queueWPMGRCommand($navqry,$API_DEL_ITEM,$WHAT_WAYPOINT,$name,$uuid,0);
 }
 
 
@@ -174,7 +174,7 @@ sub createRoute
 	my $uuid = std_uuid($STD_ROUTE_UUID,$route_num);
 	my $name = "testRoute$route_num";
 	my $data = emptyRoute($name,$bits);
-	return queueNQCommand($navqry,$API_NEW_ITEM,$WHAT_ROUTE,$name,$uuid,$data);
+	return queueWPMGRCommand($navqry,$API_NEW_ITEM,$WHAT_ROUTE,$name,$uuid,$data);
 }
 
 sub deleteRoute
@@ -183,7 +183,7 @@ sub deleteRoute
 	showCommand("deleteRoute($route_num)");
 	my $uuid = std_uuid($STD_ROUTE_UUID,$route_num);
 	my $name = "testRoute$route_num";
-	return queueNQCommand($navqry,$API_DEL_ITEM,$WHAT_ROUTE,$name,$uuid,undef);
+	return queueWPMGRCommand($navqry,$API_DEL_ITEM,$WHAT_ROUTE,$name,$uuid,0);
 }
 
 sub routeWaypoint
@@ -202,7 +202,7 @@ sub routeWaypoint
 	my $uuids = $route->{uuids};
 	push @$uuids,$wp_uuid if $add;
 
-	return queueNQCommand($navqry,$API_MOD_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,$route);
+	return queueWPMGRCommand($navqry,$API_MOD_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,$route);
 }
 
 sub createGroup
@@ -212,7 +212,7 @@ sub createGroup
 	my $uuid = std_uuid($STD_GROUP_UUID,$group_num);
 	my $name = "testGroup$group_num";
 	my $data = emptyGroup($name);
-	return queueNQCommand($navqry,$API_NEW_ITEM,$WHAT_GROUP,$name,$uuid,$data);
+	return queueWPMGRCommand($navqry,$API_NEW_ITEM,$WHAT_GROUP,$name,$uuid,$data);
 }
 
 sub deleteGroup
@@ -221,7 +221,7 @@ sub deleteGroup
 	showCommand("deleteGroup($group_num)");
 	my $uuid = std_uuid($STD_GROUP_UUID,$group_num);
 	my $name = "testGroup$group_num";
-	return queueNQCommand($navqry,$API_DEL_ITEM,$WHAT_GROUP,$name,$uuid,undef);
+	return queueWPMGRCommand($navqry,$API_DEL_ITEM,$WHAT_GROUP,$name,$uuid,0);
 }
 
 
@@ -235,7 +235,7 @@ sub commandBusy
 sub wait_queue_command
 {
 	my (@params) = @_;
-	return 0 if !queueNQCommand($navqry,@params);
+	return 0 if !queueWPMGRCommand($navqry,@params);
 	while (commandBusy())
 	{
 		display_hash(0,0,"wait_queue_command",$navqry);
@@ -319,7 +319,7 @@ sub setWaypointGroup
 
 	my $buffer = buildNQGroup($group);
 	my $data = unpack('H*',$buffer);
-	return queueNQCommand($navqry,$API_MOD_ITEM,$WHAT_GROUP,$group_name,$group_uuid,$data);
+	return queueWPMGRCommand($navqry,$API_MOD_ITEM,$WHAT_GROUP,$group_name,$group_uuid,$data);
 
 }
 

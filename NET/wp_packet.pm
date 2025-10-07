@@ -1,7 +1,7 @@
 #---------------------------------------------
-# nq_packet.pm
+# wp_packet.pm
 #---------------------------------------------
-# Parses stateful NAVQRY Requests and Replies.
+# Parses stateful WPMGR Requests and Replies.
 # A Request or Reply is a series of Messages.
 #
 # The BUFFER message contains the actual WAYPOINTS, ROUTES, and/or GROUPS
@@ -9,12 +9,12 @@
 #
 # There's a fairly substantial difference between wanting to
 # see whats going on, and coding the most efficient minimum
-# functionality needed to support NAVQRY.
+# functionality needed to support WPMGR.
 #
 # - display() statements, even without being output, take time to evaluate.
 # - generating a huge amount of text that I probably wont need in a "real"
 #   implementation takes even more time.
-# - constantly monitoring all ethernet traffic to all RAYDP ports using tshark
+# - constantly monitoring all ethernet traffic to all RAYSYS ports using tshark
 #   "just in case" is a huge hit.
 # - writing it all to a log file is a disk hit.
 #
@@ -23,22 +23,23 @@
 # using tshark.
 #
 # There is still the issue of the way "waitReply()" is decoupled from
-# read_buf() in r_NAVQRY.pm, and the fact that "events" (incluing
+# read_buf() in r_WPMGR.pm, and the fact that "events" (incluing
 # CMD_MONITOR) just don't fit into that scheme. Yet I am so close.
 #
 # - Instead of relying on a Query to get records, I *should* be using
 #   events, although RNS itself essentially does a query at startup.
 # - Real multi-cast listenters would be more efficient than tshark.
 
-package nq_packet;
+package wp_packet;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
+use Time::HiRes qw(time sleep);
 use Pub::Utils;
-use nq_parse;
+use wp_parse;
 
-my $dbg_nq = 1;
+my $dbg_wpp = 1;
 
 
 BEGIN
@@ -46,7 +47,7 @@ BEGIN
  	use Exporter qw( import );
 	our @EXPORT = qw(
 
-		parseNQPacket
+		parseWPMGR
 
 		$SUCCESS_SIG
 
@@ -237,7 +238,7 @@ my %PARSE_RULES = (
 
 
 #--------------------------------------------------
-# parseNQPacket
+# parseWPMGR
 #--------------------------------------------------
 # The nav_context is used to maintain state for the
 # messages within a Request or Reply.  It is a hash
@@ -260,13 +261,20 @@ my %PARSE_RULES = (
 my %nav_context:shared;
 
 sub init_context
+	# We assume serialized replies never come in multiple packets,
+	# so the context is re-initialized on EVERY reply, but only
+	# on is_reply changes for sends.
 {
-	my ($client_port,$is_reply,$D) = @_;
-	display($dbg_nq,0,"init_context client_port($client_port) is_reply($is_reply) D($D)=".$NAV_DIRECTION{$D});
+	my ($client_port,$is_reply,$D,$force) = @_;
+	$is_reply ||= 0;
+	display($dbg_wpp+1,0,"init_context called client_port($client_port) is_reply($is_reply) D($D)=".$NAV_DIRECTION{$D}." force($force)");
 
-	my $context = $nav_context{$client_port};
-	$context = $nav_context{$client_port} = shared_clone({})
+
+	my $key = "$is_reply.$client_port";
+	my $context = $nav_context{$key};
+	$context = $nav_context{$key} = shared_clone({})
 		if !$context;
+	display_hash($dbg_wpp+2,1,"initial($key)",$context);
 
 	# re-initialize context if $is_reply changes
 	
@@ -274,11 +282,12 @@ sub init_context
 	$context->{is_reply} ||= 0;
 		# avoid warnings - one of these is undefined often
 
-	return $context if
+	return $context if !$force &&
 		defined($context->{is_reply}) &&
 		$context->{is_reply} == $is_reply;
 
-	display($dbg_nq,0,"initialize context client_port($client_port) is_reply($is_reply) D($D)=".$NAV_DIRECTION{$D});
+	display($dbg_wpp,0,"INITIALIZE CONTEXT client_port($client_port) is_reply($is_reply) D($D)=".$NAV_DIRECTION{$D}." force($force)");
+	# display(0,1,"context_mods="._def($context->{mods}));
 
 	# return if $D == $DIR_INFO || (
 	# 	defined($context->{dir}) &&
@@ -291,15 +300,18 @@ sub init_context
 	$context->{is_reply} = $is_reply;
 	$context->{seq_num} = 0;
 	$context->{is_event} = 0;
+
+	display_hash($dbg_wpp+2,1,"returning fucking($key)",$context);
 	return $context;
 }
 
 
-sub parseNQPacket
+sub parseWPMGR
 	# For the text with normal packets, it's src_port --> dest_port
-	# 	but for nav packets, its NAVQRY <-> client_port
+	# 	but for nav packets, its WPMGR <-> client_port
 	#
-	# $is_reply is passed in as one when the source is NOT NAVQRY
+	# $is_reply is passed in as one when the source is NOT
+	#	the WPMGR service
 	# $client_port differentiates this program, shark, from RNS
 	#	and is used as the key to the nav_context hash.
 	# $raw_data is a fully re-assembled Request or Reply which
@@ -357,10 +369,9 @@ sub parseNQPacket
 	# mods[] is included, but generally ignored for regular requests
 	# 	     and is really only meaningful for event processing
 
-
 {
 	my ($with_text,$is_reply,$client_port,$raw_data) = @_;
-	display($dbg_nq,0,"parseNQPacket($is_reply,$client_port) ".unpack('H*',$raw_data));
+	display($dbg_wpp,0,"parseWPMGR($is_reply,$client_port) ".unpack('H*',$raw_data));
 
 	# create the header
 
@@ -370,7 +381,7 @@ sub parseNQPacket
 	if ($with_text)
 	{
 		$arrow = $is_reply ? '-->' : '<--';
-		$first_header = pad('NAVQRY',7).$arrow.' '.pad($client_port,7);
+		$first_header = pad('WPMGR',6).$arrow.' '.pad($client_port,7);
 		$header_len = length($first_header);
 	}
 	
@@ -379,7 +390,7 @@ sub parseNQPacket
 	my $num = 0;
 	my $text = '';
 	my $offset = 0;
-	my $rec = shared_clone({});
+	my $rec;
 	my $packet_len = length($raw_data);
 
 	while ($offset < $packet_len)
@@ -404,13 +415,43 @@ sub parseNQPacket
 		my $command = $NAV_COMMAND{$C};
 		my $what = $NAV_WHAT{$W};
 
-		my $context = init_context($client_port,$is_reply,$D);
+		my $context = init_context($client_port,$is_reply,$D,$num==0);
+			# Force context initialization for ALL replies,
+			# - we assume all replies come in single (possibly rebuilt) packets
+			# - a regular WPMGR repl
+			
 		$context->{what} = $W if $W || $D != $DIR_INFO;
 		my $show_what = $NAV_WHAT{$context->{what}};
 
-		display($dbg_nq,1,"PART($num) offset($offset) dir($dir) command($command) what($what) context($show_what) dict($context->}) uuid($context->uuid})");
-		display($dbg_nq+1,2,"data=".unpack('H*',$data));
+		display($dbg_wpp,1,"PART($num) offset($offset) dir($dir) command($command) what($what) context($show_what) dict($context->}) uuid($context->uuid})");
+		display($dbg_wpp+1,2,"data=".unpack('H*',$data));
 
+		if (!$rec)
+		{
+			# Weirdest bug ever.
+			# Somehow, {mods}, gets into the $context, even though
+			# I only assign it to rec after
+			#
+			#	$rec = shared_clone($context);
+			#
+			# I really don't understand, but, by explicitly
+			# stripping out that key and making a new hash
+			# and share_cloning a ref to that, I can get on
+			# with my work.
+
+			display_hash($dbg_wpp+2,1,"before clone(context)",$context);
+
+			my %clean;
+			for my $k (keys %$context)
+			{
+				next if $k eq 'mods';  # skip ghost key
+				$clean{$k} = $context->{$k};
+			}
+			$rec = shared_clone(\%clean);
+
+			display_hash($dbg_wpp+2,1,"after clone",$rec);
+		}
+		
 		# advance outer loop to next message
 
 		$offset += 2 + $data_len;
@@ -425,9 +466,9 @@ sub parseNQPacket
 			$C != $CMD_EVENT ))
 		{
 			my $seq_num = unpack('V',substr($data,$data_offset,4));
-			display($dbg_nq,0,"seq_num=$seq_num");
+			display($dbg_wpp,0,"seq_num=$seq_num");
 
-			$context->{seq_num} ||= $seq_num;
+			$rec->{seq_num} = $context->{seq_num} ||= $seq_num;
 			$data_offset += 4;
 		}
 
@@ -469,10 +510,8 @@ sub parseNQPacket
 		$rec->{text} = $text;
 	}
 
-	# merge and return
+	display_hash($dbg_wpp+2,0,"parseWPMGR() returning",$rec);
 	
-	mergeHash($rec,$nav_context{$client_port});
-	# display_hash(0,8,"rec",$rec);
 	return $rec;
 }
 
@@ -489,7 +528,7 @@ sub parsePiece
 		{
 			my $detail_level = 2;
 			my $show_what = $NAV_WHAT{$context->{what}};
-			my $item = parseNQRecord($show_what,substr($data,$$pdata));
+			my $item = parseWPMGRRecord($show_what,substr($data,$$pdata));
 			$text = displayNQRecord($item,$show_what,$indent,$detail_level)
 				if $with_text;
 			$rec->{item} = $item;
@@ -562,14 +601,18 @@ sub parsePiece
 		{
 			if ($value & 0x10)
 			{
-				$context->{is_dict} = 1;
+				$rec->{is_dict} = $context->{is_dict} = 1;
 				$rec->{dict_uuids} = shared_clone([]);
+				display($dbg_wpp+1,0,"setting is_dict bit");
 			}
 		}
 		elsif ($piece eq 'evt_flag')
 		{
 			$rec->{is_event} = 1;
 			$rec->{evt_mask} ||= 0;
+				# Since all replies are atomic, the is_event from init_context()
+				# is only used to set the initial record to zero. is_event is
+				# never normalized back into the context.
 
 			my $mask = $context->{what};
 			$mask |= 1;					# add in specific 1=waypoints
@@ -580,9 +623,7 @@ sub parsePiece
 		{
 			my $what = $context->{what};
 			my $uuid = $rec->{uuid};
-
-			my $mods = $rec->{mods};
-			$mods = $rec->{mods} = shared_clone([]) if !$mods;
+			my $mods = $rec->{mods} = shared_clone([]) if !exists($rec->{mods});
 			my $mod = shared_clone({
 				what => $what,
 				uuid => $uuid,

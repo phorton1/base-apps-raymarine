@@ -19,7 +19,7 @@ BEGIN
 		$appName
         $resources
 
-        $WIN_RAYDP
+        $WIN_RAYSYS
 		$WIN_FILESYS
 		$CMD_DOWNLOAD
     );
@@ -31,7 +31,7 @@ our $appName = "shark";
 # commands added to the view menu, by setting
 # the 'command_id' member on the notebook info.
 
-our ($WIN_RAYDP,
+our ($WIN_RAYSYS,
 	 $WIN_FILESYS,
 
 	 $CMD_DOWNLOAD ) = (10000..11000);
@@ -41,7 +41,7 @@ our ($WIN_RAYDP,
 # This is a bit archaic and the first field is not used
 
 my $pane_data = {
-	$WIN_RAYDP		=> ['Unused String1',		'content'	],
+	$WIN_RAYSYS		=> ['Unused String1',		'content'	],
 	$WIN_FILESYS	=> ['Unused String1',		'content'	],
 };
 
@@ -52,7 +52,7 @@ my $pane_data = {
 
 my $command_data = {
 	%{$resources->{command_data}},
-	$WIN_RAYDP     => ['RayDP', 	'Raynet Discover Protocol'],
+	$WIN_RAYSYS     => ['RayDP', 	'Raynet Discover Protocol'],
 	$WIN_FILESYS   => ['FileSys', 	'Removable Media Fiile System'],
 	$CMD_DOWNLOAD  => ['Download',	'Download Selected Items'],
 };
@@ -87,7 +87,7 @@ my $file_menu = [];
 # on top of the baae class view menu
 
 my $view_menu = [
-	$WIN_RAYDP,
+	$WIN_RAYSYS,
 	$WIN_FILESYS,
 	$ID_SEPARATOR,
 	@{$resources->{view_menu}}

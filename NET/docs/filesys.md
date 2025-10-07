@@ -1,8 +1,8 @@
 # FILESYS - Raynet File System Port/Protocol
 
-Func(5) is advertised by RAYDP over multicast on 224.0.0.1:580 as the following bytes
+Func(5) is advertised by RAYSYS over multicast on 224.0.0.1:580 as the following bytes
 
-    RAYDP --> 00000000 37a681b2 05000000 01001e00 01081100 c2261ee0 010a0000 36f1000a 01080000 01
+    RAYSYS --> 00000000 37a681b2 05000000 01001e00 01081100 c2261ee0 010a0000 36f1000a 01080000 01
 
 Which is parsed as
 
@@ -10,10 +10,10 @@ Which is parsed as
 - mcast_ip(224.30.38.194) mcast_port(2561)
 - ip(10.0.241.54) port(2049) flags(1)
 
-Thus, RAYDP presents a multicast ip:port 224.30.38.194:2561 for func(5).
+Thus, RAYSYS presents a multicast ip:port 224.30.38.194:2561 for func(5).
 I am not sure what that is for or how it is used.
 
-RAYDP presents a second, non-multicast ip:port 10.0.241.54:**2049** for func(5).
+RAYSYS presents a second, non-multicast ip:port 10.0.241.54:**2049** for func(5).
 10.0.241.54 is the IP address of my E80. I have learned that this address for
 func(5) can be used with UDP to access the file system on the CF card in my E80,
 and I call this address the **FILESYS port**

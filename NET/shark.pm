@@ -19,13 +19,12 @@ use IO::Select;
 use r_utils;
 use r_serial;
 use r_sniffer;
-use r_RAYDP;
-use r_NAVSTAT;
+use r_RAYSYS;
+use r_DBNAV;
 use r_FILESYS;
-use r_NAVQRY;
-use nq_api;
-use nq_server;
-use r_characterize;
+use r_WPMGR;
+use wp_api;
+use wp_server;
 use s_resources;
 use s_frame;
 use base 'Wx::App';
@@ -189,9 +188,9 @@ sub sniffer_thread
         # if there is no traffic on the ethernet port, i.e. the E80 is off,
         # and that causes threads->create() to subsequently block.
 
-    my $rayport_raydp = findRayPortByName('RAYDP');
-    my $rayport_file = findRayPortByName('FILE');
-    my $rayport_file_rns = findRayPortByName('FILE');
+    my $rayport_raysys = findRayPortByName('RAYSYS');
+    my $rayport_my_file = findRayPortByName('MY_FILE');
+    my $rayport_file_rns = findRayPortByName('FILE_RNS');
 
     while (1)
     {
@@ -203,12 +202,12 @@ sub sniffer_thread
             if ($packet->{udp} &&
                 $packet->{dest_port} == $RAYDP_PORT)
             {
-                decodeRAYDP($packet);
-				if ($rayport_raydp &&
-                    $rayport_raydp->{mon_to})
+                decodeRAYSYS($packet);
+				if ($rayport_raysys &&
+                    $rayport_raysys->{mon_to})
                 {
-                    # one time monitoring of new RAYDP ports
-                    showPacket($rayport_raydp,$packet,0);
+                    # one time monitoring of new RAYSYS ports
+                    showPacket($rayport_raysys,$packet,0);
                 }
                 next;
             }
@@ -224,22 +223,11 @@ sub sniffer_thread
             elsif ($ray_dest && $ray_dest->{mon_from})
             {
                 showPacket($ray_dest,$packet,1);
-                if (0 && $ray_dest->{name} eq "NAVSTAT")
+                if (0 && $ray_dest->{name} eq "DBNAV")
                 {
-                    decodeNAVSTAT($packet);
+                    decodeDBNAV($packet);
                 }
             }
-
-            # elsif ($packet->{tcp} && $packet->{src_ip} eq '10.0.241.200')
-            # {
-            #     # print "ray_src("._def($ray_src).") ray_dest("._def($ray_dest).") ";
-            #     print packetWireHeader($packet,0)."$packet->{hex32}\n";
-            # }
-            # elsif ($packet->{tcp} && $packet->{src_ip} eq '10.0.241.54')
-            # {
-            #     # print "ray_src("._def($ray_src).") ray_dest("._def($ray_dest).") ";
-            #     print packetWireHeader($packet,1)."$packet->{hex32}\n";
-            # }
         }
         else
         {
@@ -273,7 +261,7 @@ sub alive_thread
 
 display(0,0,"shark.pm initializing");
 
-initRAYDP();
+initRAYSYS();
 
 
 startSerialThread() if 1;
@@ -301,7 +289,7 @@ if (1)  # filesysThread())
 startNQServer() if 1;
 
 
-r_NAVQRY->startNavQuery() if 1;
+r_WPMGR->startNavQuery() if 1;
 
 
 # the sniffer is started last because it has a blocking

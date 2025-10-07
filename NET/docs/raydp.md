@@ -1,1 +1,1 @@
-# RAYDP - Raynet Discovery Protocol
+# RAYSYS - Raynet Discovery Protocol

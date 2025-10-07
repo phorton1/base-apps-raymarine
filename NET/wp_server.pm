@@ -1,10 +1,10 @@
 #-----------------------------------------------------
-# nq_server.pm
+# wp_server.pm
 #-----------------------------------------------------
-# Serves the NAVQRY database to Google Earth via network links
+# Serves the WAYPOINT database to Google Earth via network links
 
 
-package nq_server;
+package wp_server;
 use strict;
 use warnings;
 use threads;
@@ -14,11 +14,12 @@ use Math::Trig qw(deg2rad );
 use Pub::Utils;
 use Pub::HTTP::ServerBase;
 use Pub::HTTP::Response;
-use r_NAVQRY;
-use nq_parse;
+use r_WPMGR;
+use wp_parse;
 use base qw(Pub::HTTP::ServerBase);
 
 my $dbg = 0;
+my $dbg_kml = 1;
 
 
 BEGIN
@@ -47,14 +48,14 @@ my $navqry_kml:shared = kml_header(0,$server_version).kml_footer(0);
 # startNQServer
 #-----------------------
 
-my $nq_server;
+my $wp_server;
 
 sub startNQServer
 {
-	display($dbg,0,"starting nq_erver");
-	$nq_server = nq_server->new();
-	$nq_server->start();
-	display($dbg,0,"finished starting nq_server");
+	display($dbg,0,"starting wp_erver");
+	$wp_server = wp_server->new();
+	$wp_server->start();
+	display($dbg,0,"finished starting wp_server");
 }
 
 sub new
@@ -251,7 +252,7 @@ sub kml_header
 	# $kml .= "<maxSessionLength>-1</maxSessionLength>$EOL";
 	$kml .= "<cookie>version=$navqry_version</cookie>$EOL";
 	# $kml .= "<message>RAYQRY version($navqry_version)</message>$EOL";
-	$kml .= "<linkName>NAVQRY</linkName>$EOL";
+	$kml .= "<linkName>Waypoint Manager</linkName>$EOL";
 	#	doesn't change
 	# $kml .= "<linkDescription>...</linkDescription>$EOL";;
 	# $kml .= "<linkSnippet maxLines="2">...</linkSnippet>$EOL";
@@ -267,7 +268,7 @@ sub kml_header
 	{
 		$kml .= "</NetworkLinkControl>$EOL";
 		$kml .= "<Document>$EOL";
-		$kml .= "<name>NAVQRY</name>$EOL";
+		$kml .= "<name>WAYPOINT</name>$EOL";
 
 		if (0)
 		{
@@ -292,7 +293,7 @@ sub kml_end_folder
 sub kml_start_folder
 {
 	my ($style,$id,$name) = @_;
-	display($dbg,0,"kml_folder_string($style,$name)");
+	display($dbg_kml,0,"kml_folder_string($style,$name)");
 	my $kml = "<Folder id=\"$id\">$EOL";
 	$kml .= "<name>$name</name>";
 	$kml .= "<styleUrl>$style</styleUrl>$EOL";
@@ -364,7 +365,7 @@ sub kml_route_string
 {
 	my ($style,$route_name,$waypoints) = @_;
 	return '' if !@$waypoints;
-	display($dbg,0,"kml_route_string($style,$route_name)");
+	display($dbg_kml,0,"kml_route_string($style,$route_name)");
 
 	# Build coordinates string
 
@@ -401,7 +402,7 @@ sub kml_route_string
 sub kml_waypoint
 {
 	my ($style, $id, $wp) = @_;
-	display($dbg,0,"kml_waypoint($style,$wp->{name})");
+	display($dbg_kml,0,"kml_waypoint($style,$wp->{name})");
 	my $lat = $wp->{lat}/$SCALE_LATLON;
 	my $lon = $wp->{lon}/$SCALE_LATLON;
 
@@ -440,7 +441,7 @@ sub kml_section
 	my $section_name = CapFirst($hash_name);		# name of the outer folder
 	my $folders = $navqry->{$hash_name};	# items in inner folder (groups or routes with uuids[])
 	my $all_waypoints = $navqry->{waypoints};
-	display($dbg,0,"kml_section($class)");
+	display($dbg_kml,0,"kml_section($class)");
 
 	# build fake My Waypoints group
 
@@ -454,7 +455,7 @@ sub kml_section
 			my $folder = $folders->{$folder_uuid};
 			for my $wp_uuid (@{$folder->{uuids}})
 			{
-				display($dbg+1,1,"found waypoint($wp_uuid) in group($folder->{name}");
+				display($dbg_kml+1,1,"found waypoint($wp_uuid) in group($folder->{name}");
 				$in_group{$wp_uuid} = 1;
 			}
 		}
@@ -463,10 +464,10 @@ sub kml_section
 		for my $wp_uuid (sort { cmpByName($all_waypoints,$a,$b) } keys %$all_waypoints)
 		{
 			my $wp = $all_waypoints->{$wp_uuid};
-			display($dbg+1,1,"checking waypoint($wp_uuid) $wp->{name}");
+			display($dbg_kml+1,1,"checking waypoint($wp_uuid) $wp->{name}");
 			if (!$in_group{$wp_uuid})
 			{
-				display($dbg,2,"adding waypoint($wp_uuid) $wp->{name} to _My Waypoints");
+				display($dbg_kml,2,"adding waypoint($wp_uuid) $wp->{name} to _My Waypoints");
 				push @my_waypoints,$wp_uuid
 			}
 		}
@@ -501,7 +502,7 @@ sub kml_section
 		$kml .= kml_route_string($style,$folder_name,$wp_uuids)
 			if $class eq 'route';
 
-		display($dbg,1,"generating ".scalar(@$wp_uuids)." waypoints in $folder_name");
+		display($dbg_kml,1,"generating ".scalar(@$wp_uuids)." waypoints in $folder_name");
 		for my $wp_uuid (sort { cmpByName($all_waypoints,$a,$b) } @$wp_uuids)
 		{
 			my $wp = $all_waypoints->{$wp_uuid};
@@ -541,7 +542,9 @@ sub buildNavQueryKML
 	my $update = !$changed && $param_version == $server_version ? 1 : 0;
 	#$navqry_version >= 0 ? 1 : 0;
 
-	display($dbg+1,1,"buildNavQueryKML($param_version,$server_version,$navqry_version) changed($changed) update($update)");
+	# display($dbg_kml-$changed,
+	display($dbg_kml,
+		1,"buildNavQueryKML($param_version,$server_version,$navqry_version) changed($changed) update($update)");
 
 	my $kml = kml_header($update,$navqry_version);
 
@@ -567,14 +570,19 @@ sub buildNavQueryKML
 	
 	$kml .= kml_footer($update);
 	
-	if ($dbg < -1)
+
+	if (1 || $dbg_kml < -1)
 	{
-		print "---------------------------------------\n";
-		print $kml;
-		print "---------------------------------------\n";
+		if ($dbg_kml < -1 && $changed)
+		{
+			print "---------------------------------------\n";
+			print $kml;
+			print "---------------------------------------\n";
+		}
+		printVarToFile(1,"test.kml",$kml, 1) if $changed;
 	}
 
-	printVarToFile(1,"test.kml",$kml, 1) if $changed && $dbg <= 0;
+
 	return $kml;
 }
 

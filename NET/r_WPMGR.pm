@@ -1,7 +1,9 @@
 #---------------------------------------------
-# r_NEWQRY.pm
+# r_WPMGR.pm
 #---------------------------------------------
-# state of affairs:
+# WPMGR is the Waypoints, Routes, and Groups manager service
+#
+# current status:
 #
 # Can create and delete Waypoints, Routes, and Groups.
 # Deleting a Group with Waypoints in it, moves them to My Waypoints.
@@ -17,7 +19,7 @@
 # - Dont know how to add or remove Waypoints from Routes.
 
 
-package r_NAVQRY;
+package r_WPMGR;
 use strict;
 use warnings;
 use threads;
@@ -29,9 +31,9 @@ use IO::Socket::INET;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use r_utils;
-use r_RAYDP;
-use nq_parse;
-use nq_packet;
+use r_RAYSYS;
+use wp_parse;
+use wp_packet;
 use r_utils;
 
 my $dbg = 1;
@@ -44,8 +46,9 @@ my $COMMAND_TIMEOUT 		= 3;
 my $REFRESH_INTERVAL		= 5;
 my $RECONNECT_INTERVAL		= 15;
 
-our $SHOW_NAVQRY_OUTPUT = 0;
-our $SHOW_NAVQRY_INPUT = 0;
+our $SHOW_WPMGR_OUTPUT:shared 	= 0;
+our $SHOW_WPMGR_INPUT:shared 	= 0;
+
 my $DBG_WAIT = 1;
 
 # my $SUCCESS_SIG = '00000400';
@@ -75,7 +78,7 @@ BEGIN
 		$API_MOD_ITEM
 
 		apiCommandName
-		queueNQCommand
+		queueWPMGRCommand
 
 		$WHAT_WAYPOINT
 		$WHAT_ROUTE
@@ -90,21 +93,19 @@ BEGIN
 		$ROUTE_COLOR_BLACK
 		$NUM_ROUTE_COLORS
 
-		$SHOW_NAVQRY_OUTPUT
-		$SHOW_NAVQRY_INPUT
+		$SHOW_WPMGR_OUTPUT
+		$SHOW_WPMGR_INPUT
 
 	);
 }
 
 
+our $navqry:shared;
+my $slow_down:shared = 0;
+	# re-entrancy protection
 
-
-
-our $NAVQRY_FUNC		= 0x000f;
-	# F000 in streams
-
-# WCDD = 0xDDWC
-
+my $WPMGR_FUNC		= 0x000f;
+	# 16 = 0xf0 == 'F000' in streams
 
 
 our $ROUTE_COLOR_RED 	= 0;
@@ -115,11 +116,9 @@ our $ROUTE_COLOR_PURPLE	= 4;
 our $ROUTE_COLOR_BLACK	= 5;
 our $NUM_ROUTE_COLORS   = 6;
 
-	# red, yellow, green, blue, purple, black
 
-
-
-our $navqry:shared;
+my $out_color = $UTILS_COLOR_LIGHT_CYAN;
+my $in_color = $UTILS_COLOR_LIGHT_BLUE;
 
 
 
@@ -168,29 +167,42 @@ sub startNavQuery
 
 
 
-sub queueNQCommand
+sub queueWPMGRCommand
 {
-	my ($this,$api_command,$what,$name,$uuid,$data,$params) = @_;
-	return error("No 'this' in queueNQCommand") if !$this;
+	my ($this,$api_command,$what,$name,$uuid,$data) = @_;
+	$data ||= 0;
+	return error("No 'this' in queueWPMGRCommand") if !$this;
 	return error("Not started") if !$this->{started};
 	return error("Not running") if !$this->{running};
 
 	my $cmd_name = apiCommandName($api_command);
 
-	if ($SHOW_NAVQRY_OUTPUT)
+	if ($SHOW_WPMGR_OUTPUT)
 	{
-		my $msg = "# queueNQCommand($api_command=$cmd_name) what($what) name($name) uuid($uuid) data(".($data?length($data):'empty').")\n";
+		my $msg = "# queueWPMGRCommand($api_command=$cmd_name) what($what) name($name) uuid($uuid) data(".($data?length($data):'empty').")\n";
 		print $msg;
 		navQueryLog($msg,"shark.log");
 	}
-	
+
+	for my $exist (@{$this->{command_queue}})
+	{
+		if ($exist->{api_command} == $api_command &&
+			$exist->{what} == $what	&&
+			$exist->{name} eq $name	&&
+			$exist->{uuid} eq $uuid	&&
+			$exist->{data} eq $data)
+		{
+			warning($dbg-1,0,"not enquiing duplicate api_command($api_command)");
+			return 1;
+		}
+	}
 	my $command = shared_clone({
 		api_command => $api_command,
 		what => $what,
 		name => $name,
 		uuid => $uuid,
-		data => $data,
-		params => $params });
+		data => $data });
+		# params => $params });
 	push @{$this->{command_queue}},$command;
 
 	return 1;
@@ -233,7 +245,7 @@ sub createMsg
 	my $msg =
 		pack('v',$len).
 		pack('v',$cmd_word).
-		pack('v',$NAVQRY_FUNC).
+		pack('v',$WPMGR_FUNC).
 		($seq >= 0 ? pack('V',$seq) : '').
 		$data;
 
@@ -251,18 +263,21 @@ sub sendRequest
 		return 0;
 	}
 
-	my $text = "# sendRequest($seq) $name\n";
-	my $rec = parseNQPacket($SHOW_NAVQRY_OUTPUT,0,$NAVQUERY_PORT,$request);
-		# 1=with_text, 0=is_reply
-	if ($SHOW_NAVQRY_OUTPUT)
+	if ($SHOW_WPMGR_OUTPUT)
 	{
-		$text .= $rec->{text};
+		while ($slow_down) { sleep(0.1); }
+		$slow_down = 1;
 
-		my $color = $UTILS_COLOR_LIGHT_CYAN;
-		setConsoleColor($color) if $color;
+		my $text = "# sendRequest($seq) $name\n";
+		my $rec = parseWPMGR($SHOW_WPMGR_OUTPUT,0,$WPMGR_PORT,$request);
+		$text .= $rec->{text};
+		# 1=with_text, 0=is_reply		$text .= $rec->{text};
+		setConsoleColor($out_color) if $out_color;
 		print $text;
-		setConsoleColor() if $color;
+		setConsoleColor() if $out_color;
 		navQueryLog($text,'shark.log');
+
+		$slow_down = 0;
 	}
 	
 	my $hdr = substr($request,0,2);
@@ -308,6 +323,7 @@ sub waitReply
 					if ($got_success != $expect_success)
 					{
 						error("waitReply($seq) expected success($expect_success) but got($got_success)");
+						# display_hash($dbg,1,"offending reply",$reply);
 						return 0;
 					}
 				}
@@ -315,13 +331,15 @@ sub waitReply
 				display($dbg,1,"waitReply($seq) returning OK reply");
 				return $reply;
 			}
+			else
+			{
+				# display_hash($dbg+1,1,"skipping reply",$reply);
+			}
 		}
 
 		if (time() > $start + $COMMAND_TIMEOUT)
 		{
 			error("Command($seq) $name timed out");
-			# $this->{started} = 0;
-			# $this->{reconnect_time} = time();
 			return '';
 		}
 
@@ -363,7 +381,7 @@ sub update_item_request
 	my $reply = $this->waitReply(1);
 	return 0 if !$reply;
 	return error("No {item} in $name $what_name reply") if !$reply->{item};
-
+	display(0,0,"got $what_name($uuid) = '$reply->{item}->{name}'");
 	my $hash_name = lc($what_name)."s";
 	my $hash = $this->{$hash_name};
 	$hash->{$uuid} = $reply->{item};
@@ -403,7 +421,7 @@ sub query_one
 
 	my $hash_name = lc($what_name)."s";
 	my $hash = $this->{$hash_name};
-	warning($dbg,1,"keys($hash_name) = ".join(" ",keys %$hash));
+	display($dbg+1,1,"keys($hash_name) = ".join(" ",keys %$hash));
 	return 1;
 }
 
@@ -530,6 +548,8 @@ sub get_item
 	display($dbg,0,"get_item($what=$what_name) $uuid $name");
 
 	my $seq = $this->{next_seqnum}++;
+
+
 	my $request = createMsg($seq,$DIR_SEND,$CMD_ITEM,$what,$uuid);
 	return $this->update_item_request($sock,$sel,$seq,$what,'get',$uuid,$request);
 }
@@ -583,7 +603,7 @@ sub openSocket
 		display($dbg,0,"opening navQuery socket");
 		my $sock = IO::Socket::INET->new(
 			LocalAddr => $LOCAL_IP,
-			LocalPort => $NAVQUERY_PORT,
+			LocalPort => $WPMGR_PORT,
 			PeerAddr  => $this->{nav_ip},
 			PeerPort  => $this->{nav_port},
 			Proto     => 'tcp',
@@ -653,56 +673,71 @@ sub readSocket
 
 	if (length($this->{buffer}) > 2)
 	{
-		my $reply = parseNQPacket($SHOW_NAVQRY_INPUT,1,$NAVQUERY_PORT,$this->{buffer},$this);
+		while ($slow_down) { sleep(0.1); }
+		$slow_down = 1;
+
+		my $reply = parseWPMGR($SHOW_WPMGR_INPUT,1,$WPMGR_PORT,$this->{buffer},$this);
 			# 1=is_reply
 
-		if ($SHOW_NAVQRY_INPUT)
+		if ($SHOW_WPMGR_INPUT)
 		{
 			my $text = $reply->{text};
-			my $color = $UTILS_COLOR_LIGHT_BLUE;
-			setConsoleColor($color) if $color;
+			setConsoleColor($in_color);
 			print $text;
-			setConsoleColor() if $color;
+			setConsoleColor() if $in_color;
 			navQueryLog($text,'shark.log');
 		}
+
 
 		# EVENTS are not pushed onto the reply queue
 		# Instead, they can generate additional API_GET_ITEM commands
 
-		my $mods = $reply->{mods};
-		if ($mods)
+
+		if ($WITH_MOD_PROCESSING)
 		{
-			my $evt_mask = $reply->{evt_mask} || 0;
-			for my $mod (@$mods)
+			my $mods = $reply->{mods};
+			# delete $reply->{mods} if $mods;
+			if ($mods && !$reply->{item})
 			{
-				my $hash_name = lc($NAV_WHAT{$mod->{what}}).'s';
-				warning($dbg,1,sprintf(
-					"MOD(%02x=%s) uuid(%s) bits(%02x) evt_mask(%08x)",
-					$mod->{what},
-					$hash_name,
-					$mod->{uuid},
-					$mod->{bits},
-					$evt_mask));
-				if ($mod->{bits} == 1)
+				warning($dbg+1,1,"found ".scalar(@$mods)." mods");
+				my $evt_mask = $reply->{evt_mask} || 0;
+				for my $mod (@$mods)
 				{
-					my $hash = $this->{$hash_name};
-					my $exists = $hash->{$mod->{uuid}};
-					if ($exists)
+					my $hash_name = lc($NAV_WHAT{$mod->{what}}).'s';
+					warning($dbg+1,2,sprintf(
+						"MOD(%02x=%s) uuid(%s) bits(%02x) evt_mask(%08x)",
+						$mod->{what},
+						$hash_name,
+						$mod->{uuid},
+						$mod->{bits},
+						$evt_mask));
+
+					# delete it, or ..
+
+					if ($mod->{bits} == 1)
 					{
-						warning($dbg,2,"deleting $hash_name($mod->{uuid}) $exists->{name}");
-						delete $hash->{$mod->{uuid}};
-						$this->incVersion();
+						my $hash = $this->{$hash_name};
+						my $exists = $hash->{$mod->{uuid}};
+						if ($exists)
+						{
+							warning($dbg,2,"deleting $hash_name($mod->{uuid}) $exists->{name}");
+							delete $hash->{$mod->{uuid}};
+							$this->incVersion();
+						}
 					}
-				}
-				else
-				{
-					$this->queueNQCommand($API_GET_ITEM,$mod->{what},'event_item',$mod->{uuid},undef,undef)
-						if $WITH_MOD_PROCESSING;
-				}
-			}
-		}
+					else	# enque a GET_ITEM command for th emod
+					{
+						warning($dbg,0,"enquing mod($mod->{what}) uuid($mod->{uuid})");
+						$this->queueWPMGRCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef,undef);
+					}
+
+				}	# for each mod
+			}	# $mods
+		}	# $WITH_MOD_PROCESSING
+
 		push @{$this->{replies}},$reply;
 		$this->{buffer} = '';
+		$slow_down = 0;
 		return 1;
 	}
 
@@ -715,18 +750,18 @@ sub listenerThread
 	my ($this) = @_;
     display($dbg,0,"starting listenerThread");
 
-	# get NAVQRY ip:port
+	# get WAYPOINT ip:port
 
-	my $rayport = findRayPortByName('NAVQRY');
+	my $rayport = findRayPortByName('WPMGR');
 	while (!$rayport)
 	{
-		display($dbg,1,"waiting for rayport(NAVQRY)");
+		display($dbg,1,"waiting for rayport(WPMGR)");
 		sleep(1);
-		$rayport = findRayPortByName('NAVQRY');
+		$rayport = findRayPortByName('WPMGR');
 	}
 	$this->{nav_ip} = $rayport->{ip};
 	$this->{nav_port} = $rayport->{port};
-	display($dbg,1,"found rayport(NAVQRY) at $this->{nav_ip}:$this->{nav_port}");
+	display($dbg,1,"found rayport(WPMGR) at $this->{nav_ip}:$this->{nav_port}");
 	display($dbg,0,"starting listenerThread loop");
 
 	my $sock;
@@ -736,17 +771,22 @@ sub listenerThread
 		next if !$this->openSocket(\$sock,\$sel);
 		next if $this->readSocket($sock,$sel) < 0;
 
-		if (!$this->{busy} && @{$this->{command_queue}})
+		if (!$this->{busy})
 		{
-			my $command = shift @{$this->{command_queue}};
-			$this->{busy} = 1;
-			
-			display($dbg,0,"creating cmd_thread");
-			my $cmd_thread = threads->create(\&commandThread,$this,$sock,$sel,$command);
-			display($dbg,0,"nav_thread cmd_thread");
-			$cmd_thread->detach();
-			display($dbg,0,"cmd_thread detached");
-		}
+			if (@{$this->{command_queue}})
+			{
+				my $command = shift @{$this->{command_queue}};
+				$this->{busy} = 1;
+
+				display($dbg,0,"creating cmd_thread");
+				my $cmd_thread = threads->create(\&commandThread,$this,$sock,$sel,$command);
+				display($dbg,0,"nav_thread cmd_thread");
+				$cmd_thread->detach();
+				display($dbg,0,"cmd_thread detached");
+			}
+		}	# !busy
+
+		sleep(0.1);
 	}
 
 }	# listenerThread

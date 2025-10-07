@@ -33,7 +33,7 @@ my $dbg = 0;
 #			01000000 00000000 37a681b2 39020000 36f1000a 0022cc23 ce33c237 cd35d833 ccf3dc33 cc33c033 cc33cc33 cc33cc33 4417c432 02000100
 #                                               ^ 10.0.241.254 = the E80's IP address
 
-# semi-known "fixed" RAYDP information
+# semi-known "fixed" RAYSYS information
 
 my $RAYDP_GROUP = '224.0.0.1';		# radar: SEATALK_HS_ANNOUNCE_GROUP in RMControl.cpp
 my $RAYDP_PORT  = 5800;			    # radar: SEATALK_HS_ANNOUNCE_PORT in RMControl.cpp
@@ -47,11 +47,11 @@ my $sock_send;      # generic udp (unicast) socket with dest specified in each s
 
 my $E80TCP_IP;
 my $E80TCP_PORT;
-    # Discovered from RAYDP
+    # Discovered from RAYSYS
 
 
 my $raydp_info:shared = shared_clone({});
-    # hash by (len:type) of RAYDP packets encountered
+    # hash by (len:type) of RAYSYS packets encountered
     # where each record contains various fields
 
 
@@ -141,7 +141,7 @@ sub decodeStuff
 
 
 
-sub decodeRAYDP
+sub decodeRAYSYS
 {
 	my ($orig_raw) = @_;
 	my $len = length($orig_raw);
@@ -226,7 +226,7 @@ sub decodeRAYDP
     
     return $rec->{count};
 
-}	# decodeRAYDP()
+}	# decodeRAYSYS()
 
 
 
@@ -235,11 +235,11 @@ sub decodeRAYDP
 #------------------------------------
 
 
-my $sock_raydp = openMulticastSocket(1,'RAYDP',$RAYDP_GROUP,$RAYDP_PORT);
+my $sock_raydp = openMulticastSocket(1,'RAYSYS',$RAYDP_GROUP,$RAYDP_PORT);
 if (!$sock_raydp)
 {
     wakeupE80();
-    $sock_raydp = openMulticastSocket(0,'RAYDP',$RAYDP_GROUP,$RAYDP_PORT);
+    $sock_raydp = openMulticastSocket(0,'RAYSYS',$RAYDP_GROUP,$RAYDP_PORT);
     exit(0) if !$sock_raydp;
 }
 
@@ -247,7 +247,7 @@ my $sel = IO::Select->new();
 $sel->add($sock_raydp);
 
 # gets the $E80TCP_IP and PORT, but also does three full sets of
-# RAYDP broadcasts to make  sure we have em all
+# RAYSYS broadcasts to make  sure we have em all
 
 my $count = 0;
 while (!$E80TCP_IP || $count<=3)
@@ -257,7 +257,7 @@ while (!$E80TCP_IP || $count<=3)
 	{
 		my $raw;
 		recv ($sock, $raw, 4096, 0);
-        $count = decodeRAYDP($raw);
+        $count = decodeRAYSYS($raw);
     }
 }
 

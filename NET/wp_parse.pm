@@ -1,11 +1,11 @@
 #---------------------------------------------
-# nq_parse.pm
+# wp_parse.pm
 #---------------------------------------------
-# Routines to parse NAVQRY messages, and the
+# Routines to parse WPMGR messages, and the
 # BUFFERS within them into Waypoints, Routes, and Groups.
 
 
-package nq_parse;
+package wp_parse;
 use strict;
 use warnings;
 use threads;
@@ -25,12 +25,12 @@ BEGIN
  	use Exporter qw( import );
     our @EXPORT = qw(
 
-		parseNQRecord
+		parseWPMGRRecord
 		displayNQRecord
 
-		parseNQWaypoint
-		parseNQRoute
-		parseNQGroup
+		parseWPMGRWaypoint
+		parseWPMGRRoute
+		parseWPMGRGroup
 		
 		buildNQWaypoint
 		buildNQRoute
@@ -119,7 +119,7 @@ my $ROUTE_HDR2_SPECS = [
 ];		# 34 = e039 - 0x39e = 926
 
 # Points, which never seems to be populated by E80 or RNS
-# are only shown at $NAVQRY_ROUTE_DETAIL >= 2
+# are only shown at $detail >= 2
 
 my $ROUTE_PT_SIZE = 10;
 my $ROUTE_PT_SPECS = [
@@ -130,12 +130,12 @@ my $ROUTE_PT_SPECS = [
 ];
 
 
-sub parseNQRecord
+sub parseWPMGRRecord
 {
 	my ($kind,$buffer) = @_;
-	return parseNQWaypoint($buffer) if $kind eq 'WAYPOINT';
-	return parseNQRoute($buffer) if $kind eq 'ROUTE';
-	return parseNQGroup($buffer) if $kind eq 'GROUP';
+	return parseWPMGRWaypoint($buffer) if $kind eq 'WAYPOINT';
+	return parseWPMGRRoute($buffer) if $kind eq 'ROUTE';
+	return parseWPMGRGroup($buffer) if $kind eq 'GROUP';
 }
 
 
@@ -143,9 +143,7 @@ sub parseNQRecord
 #--------------------------------------------------------------
 # parseWaypointBuffer
 #--------------------------------------------------------------
-# Methods ripped off from E80_Nave and/or FSH
-# Not yet re-applied after reworking whole NAVQRY
-# as well as a bunch of FSH stuff
+
 
 sub padRight
 {
@@ -441,7 +439,7 @@ sub packRecord
 # parse a group
 #------------------------------------
 
-sub parseNQGroup
+sub parseWPMGRGroup
 	# The message itself starts with
 	#		len	 command  seqnum
     #       5e00 01020f00 0f000000
@@ -469,7 +467,7 @@ sub parseNQGroup
 {
 	my ($buffer) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_group,0,"parseNQGroup len($buf_len)");
+	display($dbg_group,0,"parseWPMGRGroup len($buf_len)");
 
 	my $offset = 0;
 	my $rec = unpackRecord('group_hdr',$GROUP_REC_SPECS, $buffer, $offset, $GROUP_REC_SIZE);
@@ -520,7 +518,7 @@ sub buildNQGroup
 	}
 
 	$buffer = pack('V',length($buffer)).$buffer;
-	parseNQGroup($buffer);	# debug check
+	parseWPMGRGroup($buffer);	# debug check
 	return $buffer;
 }
 
@@ -530,7 +528,7 @@ sub buildNQGroup
 # parse a route
 #------------------------------------
 
-sub parseNQRoute
+sub parseWPMGRRoute
 	# The message itself starts with
 	#		len	 command  seqnum
     #       5e00 01020f00 0f000000
@@ -551,7 +549,7 @@ sub parseNQRoute
 {
 	my ($buffer) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_route,0,"parseNQRoute len($buf_len)");
+	display($dbg_route,0,"parseWPMGRRoute len($buf_len)");
 
 	my $offset = 0;
 	my $rec = unpackRecord('hdr1',$ROUTE_HDR1_SPECS, $buffer, $offset, $ROUTE_HDR1_SIZE);
@@ -634,7 +632,7 @@ sub buildNQRoute
 	}
 
 	$buffer = pack('V',length($buffer)).$buffer;
-	parseNQRoute($buffer);	# debug check
+	parseWPMGRRoute($buffer);	# debug check
 	return $buffer;
 }
 
@@ -644,8 +642,8 @@ sub buildNQRoute
 # parse a waypoint
 #------------------------------------
 
-sub parseNQWaypoint
-	# The NAVQRY message itself starts with
+sub parseWPMGRWaypoint
+	# The WAYPOINT message itself starts with
 	#       len  command  seqnum
 	# 		5b00 01020f00 43000000
 	# after which the buffer starts with a dword(big_len) for the number
@@ -664,7 +662,7 @@ sub parseNQWaypoint
 {
 	my ($buffer) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_wp,0,"parseNQWaypoint len($buf_len)");
+	display($dbg_wp,0,"parseWPMGRWaypoint len($buf_len)");
 	if ($buf_len < $WP_REC_SIZE)
 	{
 		warning($dbg_wp,1,"buffer($buf_len) is less than WP_REC_SIZE($WP_REC_SIZE) in length");
@@ -717,7 +715,7 @@ sub buildNQWaypoint
 	}
 
 	$buffer = pack('V',length($buffer)).$buffer;
-	parseNQWaypoint($buffer);	# debug check
+	parseWPMGRWaypoint($buffer);	# debug check
 	return $buffer;
 }
 

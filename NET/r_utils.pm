@@ -13,8 +13,8 @@ use IO::Socket::Multicast;
 use Time::HiRes qw(sleep);
 use Wx qw(:everything);
 use Pub::Utils;
-use nq_parse;
-use nq_packet;
+use wp_parse;
+use wp_packet;
 
 my $dbg_nq = 0;
 
@@ -32,7 +32,7 @@ our $LOCAL_UDP_PORT = 8765;                 # arbitrary but recognizable
 
 our $FILESYS_LISTEN_PORT		= 0x4801;   # 18433
 our $RNS_FILESYS_LISTEN_PORT	= 0x4800;	# 18432
-our $NAVQUERY_PORT 				= 9877;
+our $WPMGR_PORT 				= 9877;
 
 
 BEGIN
@@ -51,7 +51,7 @@ BEGIN
 
 		$FILESYS_LISTEN_PORT
 		$RNS_FILESYS_LISTEN_PORT
-		$NAVQUERY_PORT
+		$WPMGR_PORT
 
 		sendUDPPacket
 		sendAlive
@@ -288,7 +288,7 @@ my %built_buffers;	# by port
 
 
 
-my $MON_SELF_NAVQRY = 0;
+my $MON_SELF_WPMGR = 0;
 
 
 sub showPacket
@@ -296,7 +296,7 @@ sub showPacket
 	my ($rayport,$packet,$backwards) = @_;
 	return if length($packet->{raw_data}) == 1;		# skip keep-aives
 
-	if ($rayport->{name} eq 'NAVQRY')
+	if ($rayport->{name} eq 'WPMGR')
 	{
 		my $src_port = $packet->{src_port};
 		my $dest_port = $packet->{dest_port};
@@ -306,7 +306,7 @@ sub showPacket
 
 		# temporary for lack of a better UI
 		
-		return if $client_port == $NAVQUERY_PORT && !$MON_SELF_NAVQRY;
+		return if $client_port == $WPMGR_PORT && !$MON_SELF_WPMGR;
 		
 		# remember the length of the packet if it's length is 2
 		# or prepend it onto the current packet if available
@@ -320,7 +320,7 @@ sub showPacket
 
 		# parse and display and/or log the packet
 
-		my $rec = parseNQPacket(1,$is_reply,$client_port,$buffer);
+		my $rec = parseWPMGR(1,$is_reply,$client_port,$buffer);
 			# 1=with_text
 
 		my $text = $rec->{text};

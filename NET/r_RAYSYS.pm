@@ -1,84 +1,103 @@
 #---------------------------------------------
-# r_RAYDP.pm
+# r_RAYSYS.pm
 #---------------------------------------------
-# RAYDP is the RAYNET Discovery Protocol.
+# RAYSYS is the heart of RAYNET (Seatalk HS ethernet)
+# It is named RAYSYS because it is listed as "System" in the
+# E80 ethernet diagnostics Services dialog.
 #
-# This package contains methods to decode RAYDP packets
-# and builds a list of ip addresses and ports advertised
-# on the known RAYDP udp multicast port 224.0.0.1:5800
+# RAYSYS is, essentially, a service discovery protocol, like SSDP,
+# that broadcasts the Services (functions) available via RAYNET,
+# over a known udp multicast address.
 #
-# The packets each essentially describe a virtul device
-# which may have one or more ip:ports associated with it.
-# Each virtual device is primarily known by it's FUNC,
-# a small integer, currently in the range from 1 to 34.
-# Each ip:port that is discovered creates a "rayport",
-# that are added to a list and which can be accessed
-# and used by the rest of the system.
+#		224.0.0.1:5800
 #
-# For rayports which have detailed, or surmised knowledge
-# about how to use it, we give the rayport the NAME of a
-# PROTOCOL which is used to communicate with the virtual
-# device, and, hopefully, documented in some level of detail.
+# This package parses those multicast messages into a list of
+# available Services with given ip:port addresses for each Service,
+# as well as doing quite a bit of other stuff.
 #
-# The protocols, and their funcs, that I somewhat understand
-# at this point are:
+# Each Service runs on a Device, some of which are actual physical E80's,
+# and others which are virtual devices, like a running RNS program.
+# Each Device has an 'id', some of which are known physical E80's,
+# and others that are made up by me, or by RNS.
 #
-#	RADAR(1) 	- access to the Radar as presented by the MFD
-#	FILESYS(5) 	- access to the removable media in the MFD
-#	NAVQRY(15) 	- access to the Wapoints, Routes, and Groups on the MFD
-#	NAVSTAT(16) - rapid readonly messages about the Navigation Statu
-#	GPS(16) 	- surmised slower updates about the gps?
-#	ALIVE(27) 	- a slower, once per second or so, port that sends
-#				  out regular repeating messages
+# Services may advertise a UDP address, a TCP address, or both.
 #
-# In addition, there are a number of secondary ports that are
-# setup in order to monitor their traffic. At this time that includes
-# RAYDP itself, as well as monitoring TCP traffic of the FILESYS protocol,
-# either from me (this application) or RNS.
+# In all cases, the IP:PORT of the particular addresss
+# can also be used to uniquely identify the Service, and the
+# specific the internet protocol (udp/tcp), as well as defining
+# the Protocol used to decode and create the packets sent and
+# received to/from the Service on that specific ip:port and
+# internet protocol.
 #
-# TODO
+# Therefore the list of Services is actually kept as a list of records.
+# and a hash of pointers to those records by {ip:port}. Each record
+# includes the Service func number, and there is no record for a Service
+# itself, per-se.
+#
+# I call these RayPorts,  Each rayport has a 'name'.
+#
+# I have generally tried to use names that correlate to those E80 ethernet
+# diagnostics Services dialog, but a few I invented to be more catchy and
+# easier to type, like FILESYS instead of CFCard.
+#
+#------------------------------------------------------------------------
+#
+# This code is not perfect. RAYNET presents a large number of Services,
+# only some of which I have 'solved' and been able to use with the E80,
+# some that I have identified, but have never seen packets for because
+# they are related to specific hardware that I don't have, and some of
+# which, to date, remain unidentified and uncorrelated with the Services
+# shown in the E80 ethernet diagnostics.
+#
+# Nonetheless, this package contains my best overview of the entire
+# RAYNET set of Services and Protocols.
+#
+# Each Service has a func() number associated with it, and as mentioned
+# above, may have one or more udp or tcp addresses associated with it.
+# Some (Most) Services are only advertised by the Master E80 in the system.
+# A few, like FILESYS (read-only accesses the CF Card) are also advertised by
+# the Slave, and others are advertised by RNS when it runs, apparently as
+# a second pseudo-master.
+#
+# Finally, this package is overloaded with program and UI support,
+# for monitoring and probing the services, and I have added 'fake'
+# rayports to take advantage of the UI to control and probe specific
+# ip:ports that are not, per-se, advertised by RAYSYS.
+#
+#---------------------------------------------------------------------
+# TODO:
 #
 # 	I have not yet added the known 52 byte packet for RADAR
-#		The structure of the RAYDP packet, as well as detailed
+#		The structure of the RAYSYS packet, as well as detailed
 #		knowledge of the RADAR protocol can be found in
 #		RMRadar_pi/RMControl.cpp
 #
-#	There is one 56 byte long RAYDP packet that does not match
+#	There is one 56 byte long RAYSYS packet that does not match
 #		the structure of all the others (does not start with
-#		type,id,func), that has a leading 01 byte, that I
-#		have not figured out yet.
+#		type,id,func), that has a leading 01 byte, that I have
+#		not figured out yet.
 #
-#		UNKNOWN PACKET(56)
-#			01000000 00000000 37a681b2 39020000 [36f1000a] 0023ad01 5cd87304 01000000
-#			00000000 37a681b2 39220000 [36f1000a] 0033cc33 02000100
+#		01000000 00000000 37a681b2 39020000 [36f1000a] 0023ad01 5cd87304 01000000
+#		00000000 37a681b2 39220000 [36f1000a] 0033cc33 02000100
 #
-#			[36f1000a] == 10.0.241.54
+#		[36f1000a] == 10.0.241.54, the ip address of my master E80
 
-# mysterioius magic FILESYS key: 9a9d0100
 
-package r_RAYDP;
+package r_RAYSYS;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(sleep time);
-use r_utils;
 use Socket;
 use IO::Select;
 use Pub::Utils;
+use r_utils;
+use rayports;
+
+
 
 my $dbg_raydp = 1;
-
-our %KNOWN_E80_IDS = (
-	'37a681b2' =>	'E80 #1',
-	'37ad80b2' =>	'E80 #2' );
-sub raydpIdIfKnown
-{
-	my ($id) = @_;
-	my $e80 = $KNOWN_E80_IDS{$id};
-	return $e80 if $e80;
-	return $id;
-}
 
 
 
@@ -87,192 +106,36 @@ BEGIN
  	use Exporter qw( import );
     our @EXPORT = qw(
 
-        $MONITOR_RAYDP_ALIVE
+        $MONITOR_RAYSYS_ALIVE
 
-		initRAYDP
+		initRAYSYS
+        decodeRAYSYS
 
         findRayPort
         getRayPorts
 		findRayPortByName
-
-		raydpIdIfKnown
-
-        decodeRAYDP
-
-		%KNOWN_E80_IDS
 
 		tcpListenerThread
     );
 }
 
 
-# A RAYDP "device" represents a unique func:id pair that was broadcast
-#   to the RAYDP udp multicast group and which exposes raydp "ports"
-# RAYDP  "port" is protocol (tcp/ip) ip_address, and port within a
-#   raydp device. A device typically exposes a tcp port and a multicast
-#   udp port, though some only expose a single tcp port and no udp ports,
-#   and some expose multiple tcp ports along with a single udp port
-# We have tentatively named some of the funcs, but that is a work in progress.
-
-# devices apparently send out keep alive messaes and
-# join the multicast group with their own listeners.
-# This global variable allows the UI to turn the monitoring
-# of those keep alive messages on or off
-
-our $MONITOR_RAYDP_ALIVE:shared = 0;
+our $MONITOR_RAYSYS_ALIVE:shared = 0;
+	# RAYSYS sends out one broadcast message that is not a service descriptor
+	# but rather, apparently a keep alive.  I only show debugging on newly
+	# discovered Services, but this boolean allows the UI to control the
+	# visualizaton of those keep alive packets.
 
 
-my $KNOWN_UNDECODED = [
-	# 56
+my $KNOWN_UNDECODED = [		# as yet length(56) messages that I see often and which have my master E80's ip address in them.
 	pack("H*","010000000000000037a681b23902000036f1000a0033cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc3302000100"),
 	pack("H*","010000000000000037a681b23902000036f1000a0033cc33cc32c433cc33cc33cc33cc33cc33cc37cc33c833cc33cc33cc33cc3302000100"),
 ];
 
 
-# Devices found, sorted by length,func
-#
-#   len(28) type(0) id(37a681b2) func( 7) x(01001e00,06080800) ip(10.0.241.54) port(2054)
-#   len(28) type(0) id(37a681b2) func(15) x(01001e00,04080800) ip(10.0.241.54) port(2052)
-#   len(28) type(0) id(37a681b2) func(19) x(01001e00,05080800) ip(10.0.241.54) port(2053)
-#   len(28) type(0) id(37a681b2) func(22) x(01001e00,07080800) ip(10.0.241.54) port(2055)
-#   len(36) type(0) id(37a681b2) func( 8) x(09001e00,08081000) mcast_ip(224.30.38.196) mcast_port(2563) tcp_ip(10.0.241.54)  tcp_port(2056)
-#   len(36) type(0) id(37a681b2) func(27) x(01001e00,aa161000) mcast_ip(224.0.0.2)     mcast_port(5801) tcp_ip(10.0.241.54)  tcp_port(5802)
-#   len(36) type(0) id(ffffffff) func(27) x(01001e00,aa161000) mcast_ip(224.0.0.2)     mcast_port(5801) tcp_ip(10.0.241.200) tcp_port(5802)
-#   len(36) type(0) id(37a681b2) func(35) x(01001e00,00081000) mcast_ip(224.30.38.193) mcast_port(2560) tcp_ip(10.0.241.54)  tcp_port(2048)
-#   len(37) type(0) id(37a681b2) func( 5) x(01001e00,01081100) mcast_ip(224.30.38.194) mcast_port(2561) tcp_ip(10.0.241.54)  tcp_port(2049) flags(1)
-#   len(40) type(0) id(37a681b2) func(16) x(01001e00,02081400) tcp_ip(10.0.241.54) tcp_port1(2050) tcp_port2(2051) mcast_ip(224.30.38.195) mcast_port(2562)
-#
-# Port found, sorted by port number with the PROTOCOLS I associate with them
-#
-#---------------------------------------------------------------------------
-#   35	tcp	10.0.241.54		2048
-#   5	tcp	10.0.241.54		2049					FILESYS
-#   16	tcp	10.0.241.54		2050					GPS
-#   16	tcp	10.0.241.54		2051
-#   15	tcp	10.0.241.54		2052					NAVQRY
-#   19	tcp	10.0.241.54		2053
-#   7	tcp	10.0.241.54		2054
-#   22	tcp	10.0.241.54		2055
-#   8	tcp	10.0.241.54		2056
-#   35	udp	224.30.38.193	2560
-#   5	udp	224.30.38.194	2561
-#   16	udp	224.30.38.195	2562					NAVSTAT
-#   8	udp	224.30.38.196	2563
-#  *0*	udp 224.0.0.1		5800					RAYDP itself, RNS at $LOCAL_IP also advertises this
-#   27	udp	224.0.0.2		5801	in 				ALIVE - Alarm - Two advertisments, one port once RNS starts
-#   27	tcp	10.0.241.54		5802
-#   27	tcp	10.0.241.200	5802
-
-# Services enumerated on E80 Menu-System Diagnostis-External Interfaces-Ethernet
-# when pressing the "Services" button			connection counts for TCP by client/server
-#
-#	Radar			UDP rx/tx										== RADAR(1)
-#	Fishfinder		UDP rx/tx
-#	Database!!		UDP rx/tx 	TCP rx/tx		TCP Server Cons
-#   Waypoint					TCP rx/tx		TCP Server Cons		== NAVQRY(15)
-#   Track!!						TCP rx/tx		TCP Server Cons
-#	Navigation					TCP rx/tx 		TCP Server Cons		== NAVSTAT?
-#   Chart			UDP rx/tx
-#	CF Access		UDP rx/tx										== FILESYS(5)
-#	GPS				UDP rx/tx
-#	DGOS			UDP rx/tx
-#	Compass			UDP rx/tx
-#	Navtext			UDP rx/tx
-#	AIS				UDP rx/tx
-#   Autopilot		UDP rx/tx
-#	Alarm			UDP rx/tx										== ALIVE
-#	Sys				UDP rx/tx										== RAYDP
-#	GVM							TCP rx/tx 		TCP Server Cons
-#	Monitor!!					TCP rx/tx 		TCP Server Cons
-#	Keyboard		UDP rx/tx
-#	RML Monitors	UDP rx/tx
-
-
-# my $E80_IP = '10.0.241.54';
-# my $REGISTER_PORT = 2049;
-# UUU fucking DDDDD PPPPP ????
-
-# 5801 appears to get keep alive messages from the E80
-
-#    'Default',
-#    'Blue',
-#    'Green',
-#    'Cyan',
-#    'Red',
-#    'Magenta',
-#    'Brown',
-#    'Light Gray',
-#    'Gray',
-#    'Light Blue',
-#    'Light Green',
-#    'Light Cyan',
-#    'Light Red',
-#    'Light Magenta',
-#    'Yellow',
-#    'White',
-
-my $RNS_INIT  	= 0;			# starts happening when RNS starts
-my $UNDER_WAY 	= 0;			# emitted by E80 while "underway"
-my $FILESYS 	= 0;			# requests made TO the filesystem
-my $MY_GPS 		= $UNDER_WAY;	# the "GPS" protocol needs further exploration
-my $MY_NAV 		= 0;			# the important Waypoint, Route, and Group management tcp protocol
-my $RAYDP		= 0;
-my $FILE		= 0;
-my $FILE_RNS 	= 0;
-
-
-# The ports that hav mon_from or mon_to set to one(1) are those I have never seen mcast packets from.
-# The ones I have seen can be turned on or off for program start up by the variables above.
-# For ports with known protocols or observed traffic the internet protocol for the port
-# is listed below.
-
-my $IP_SERVER = 1;
-my $IP_MCAST  = 8;
-
-
-my $PORT_DEFAULTS  = {
-
-	# most of these take on the IP address of the master,
-	# idea' is the standard func that *should* corresond to the port
-	# and is always true so far
-
-	2048 => { idea=>35,	name=>'',			proto=>'!tcp',	mon_from=>1,			mon_to=>$UNDER_WAY,		multi=>1,	color=>0,	 },
-	2049 => { idea=>5,	name=>'FILESYS',	proto=>'udp',	mon_from=>$FILESYS,		mon_to=>1,				multi=>1,	color=>$UTILS_COLOR_CYAN,    },
-	2050 => { idea=>16,	name=>'Database',	proto=>'tcp',	mon_from=>$MY_GPS,		mon_to=>$MY_GPS,		multi=>1,	color=>0,    },
-	2051 => { idea=>16,	name=>'navstat',	proto=>'!tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-	2052 => { idea=>15,	name=>'NAVQRY',		proto=>'tcp',	mon_from=>$MY_NAV,		mon_to=>$MY_NAV,		multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },	#
-	2053 => { idea=>19,	name=>'Track',		proto=>'tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-		# discovered tcp port
-	2054 => { idea=>7,	name=>'',			proto=>'udp',	mon_from=>$RNS_INIT,	mon_to=>$UNDER_WAY,		multi=>1,	color=>$UTILS_COLOR_LIGHT_CYAN,    },
-	2055 => { idea=>22,	name=>'',			proto=>'tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-		# new tcp port
-	2056 => { idea=>8,	name=>'',			proto=>'!tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-	2058 => { idea=>-2,	name=>'',			proto=>'',		mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-		# think its udo and requires requires RNS
-
-	2560 => { idea=>35,	name=>'',			proto=>'!tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-	2561 => { idea=>5,	name=>'',			proto=>'!tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-	2562 => { idea=>16,	name=>'NAVSTAT',	proto=>'udp',	mon_from=>$UNDER_WAY,	mon_to=>1,				multi=>1,	color=>$UTILS_COLOR_GREEN,    },
-	2563 => { idea=>8,	name=>'',			proto=>'udp',	mon_from=>$UNDER_WAY,	mon_to=>1,				multi=>1,	color=>0,    },
-
-	5800 => { idea=>0,	name=>'RAYDP',		proto=>'mcast',	mon_from=>1,			mon_to=>$RAYDP,			multi=>1,	color=>$UTILS_COLOR_LIGHT_BLUE,    },
-	5801 => { idea=>27,	name=>'Alarm',		proto=>'mcast',	mon_from=>$UNDER_WAY,	mon_to=>1,				multi=>1,	color=>$UTILS_COLOR_BLUE,    },
-	5802 => { idea=>27,	name=>'alarm',		proto=>'!tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-
-	# these empirical port numbers carry fake funcs of 105, 106
-
-	$FILESYS_LISTEN_PORT =>		# 18433
-			{ idea=>5,	name=>'MY_FILE',	proto=>'udp',	mon_from=>$FILE,		mon_to=>1,				multi=>0,	color=>$UTILS_COLOR_BROWN,    },
-	$RNS_FILESYS_LISTEN_PORT =>	# 18432
-			{ idea=>5,	name=>'FILE_RNS',	proto=>'udp',	mon_from=>$FILE_RNS,	mon_to=>1,				multi=>1,	color=>$UTILS_COLOR_BROWN,    },
-};
-
-
-
-
 
 my $devices:shared = shared_clone({});
-    # a hash of all unique RAYDP udp descriptor packets by func:id
+    # a hash of all unique RAYSYS udp descriptor packets by func:id
 my $ports = shared_clone([]);
 my $ports_by_addr:shared = shared_clone({});
     # a list of all ports in order they're found,
@@ -281,11 +144,11 @@ my $duplicate_unknown:shared = shared_clone({});
 
 
 
-sub initRAYDP
+sub initRAYSYS
 {
-	display(0,0,"creating default RAYDP ports");
+	display(0,0,"creating default RAYSYS ports");
 	# The ip addresses have to be turned into inet ip's,
-	# and then unpacked into the numbers that RAYDP would
+	# and then unpacked into the numbers that RAYSYS would
 	# have given for them.
 	_addPort({func => 0, id=>'sys'},
 		unpack('N',inet_aton($RAYDP_IP)),
@@ -358,11 +221,11 @@ sub _addPort
     my $found = $ports_by_addr->{$addr};
     if (!$found)
     {
-		my $def = $PORT_DEFAULTS->{$port};
+		my $def = $RAYPORT_DEFAULTS->{$port};
 
 		if (!$def)
 		{
-			error("NO DEFINITION FOR RAYDP PORT($port)");
+			error("NO DEFINITION FOR RAYSYS PORT($port)");
 			$def = {
 				name=>'unknown',
 				proto=>'',
@@ -386,7 +249,7 @@ sub _addPort
             func    => $rec->{func},    # the function is??
 			id      => raydpIdIfKnown($rec->{id}),
 
-            # for wxWidgets winRAYDP
+            # for wxWidgets winRAYSYS
 
 			name    => $def->{name},
             mon_from => $def->{mon_from} || 0,
@@ -439,7 +302,7 @@ sub _decode_header
 
 
 
-sub decodeRAYDP
+sub decodeRAYSYS
     # MAIN ENTRY POINT from shark.pm that gets called
     # with all packets that are sent to the $RAYDP_GROUP
     # and $RAYDP_PORT.
@@ -451,14 +314,14 @@ sub decodeRAYDP
     my ($packet) = @_;
     my $raw = $packet->{raw_data};
     my $len = length($raw);
-    display($dbg_raydp,0,"decodeRAYDP($len)");
+    display($dbg_raydp,0,"decodeRAYSYS($len)");
 
     # packets we can skip merely based on the raw contents
 
     if ($raw eq $RAYDP_ALIVE_PACKET)
     {
         print packetWireHeader($packet,0)."RAYDP_ALIVE_PACKET\n"
-            if $MONITOR_RAYDP_ALIVE;
+            if $MONITOR_RAYSYS_ALIVE;
         return 0;
     }
     if ($raw eq $RAYDP_WAKEUP_PACKET)
@@ -467,7 +330,7 @@ sub decodeRAYDP
         return 0;
     }
 
-    # parse the RAYDP packet for header fields
+    # parse the RAYSYS packet for header fields
 
     my ($type, $id, $func, $x1, $x2) = unpack('VH8VH8H8', $raw);
     my $rec = shared_clone({
@@ -495,14 +358,14 @@ sub decodeRAYDP
 		$found->{raw} = $rec->{raw};
     }
 
-    # set the count and return if the RAYDP packet has already been parsed
+    # set the count and return if the RAYSYS packet has already been parsed
 
     my $count = $found ? $found->{count} : 0;
     $count++;
     $rec->{count} = $count;
     return 0 if $found;
 
-    # PARSE AND ADD A NEW RAYDP RECORD
+    # PARSE AND ADD A NEW RAYSYS RECORD
 
     my $text2 = '';
     my $text1 = sprintf("len(%d) type(%d) id(%s) func(%2d) x(%s,%s)", $len, $type, $id, $func, $x1, $x2);
@@ -576,12 +439,16 @@ sub decodeRAYDP
 #----------------------------------------------------
 # tcpListenerThread
 #----------------------------------------------------
-# the sleeps are because r_sniffer takes a while to get
-# the packets and it is possible for us to write after
-# we have received the reply, but before sniffer got
-# a chance to show the full reply.
+# Implements a tcp listener socket that can also
+# 	replay previously captured debugging output.
+# The sleeps are because r_sniffer takes a while to get
+# 	the packets and it is possible for us to write after
+# 	we have received the reply, but before sniffer got
+# 	a chance to show the full reply.
+
 
 sub subSend
+	# Send one packet parsed from a script (captured debug output)
 {
 	my ($sock,$seq,$template,) = @_;
 	my $hex_seq = unpack('H*',pack('V',$seq));
@@ -593,7 +460,19 @@ sub subSend
 
 
 sub sendNextRequest
+	# Continue parsing the script
+	#
+	# 	(a) get to the next line <-- to the given port
+	#	(b) send that line as a packet
+	#	(c) continue parsing and sending lines until
+	#       you get to a --> from the port, or
+	#		we run out of script
+	#
+	# Needs to be more robust to work with scripts that
+	# have intermingled events, or output to/from other
+	# ports. Currently works with docs/junk/rnsDatabaseStartup.txt
 {
+
 	my ($sock,$lines,$seq) = @_;
 	my $hex_seq = unpack('H*',pack('V',$seq));
 
@@ -687,7 +566,8 @@ sub tcpListenerThread
 		{
 			if (!$seq)
 			{
-				my $script = getTextFile("docs/junk/rnsDatabaseStartup.txt");
+				my $script_file = "docs/junk/rnsDatabaseStartup.txt";
+				my $script = getTextFile($script_file);
 				display(0,0,"length of script=".length($script));
 				my @lines = split(/\n/,$script);
 				$lines = \@lines;
