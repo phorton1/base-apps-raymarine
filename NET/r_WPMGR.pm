@@ -68,7 +68,7 @@ BEGIN
     our @EXPORT = qw(
 
 		startNavQuery
-		$navqry
+		$wpmgr
 
 		$API_NONE
 		$API_DO_QUERY
@@ -100,7 +100,7 @@ BEGIN
 }
 
 
-our $navqry:shared;
+our $wpmgr:shared;
 my $slow_down:shared = 0;
 	# re-entrancy protection
 
@@ -156,7 +156,7 @@ sub startNavQuery
 		# hashes of buffers by uuid, where the
 		# buffer starts with the big_len
 
-	$navqry = $this;
+	$wpmgr = $this;
 
 	display($dbg,0,"creating listen_thread");
     my $listen_thread = threads->create(\&listenerThread,$this);
@@ -213,11 +213,19 @@ sub queueWPMGRCommand
 # utilities
 #-------------------------------------------------
 
+sub getVersion
+{
+	my ($this) = @_;
+	return $this->{version};
+}
+
+
 sub incVersion
 {
 	my ($this) = @_;
 	$this->{version}++;
 	display($dbg,0,"incVersion($this->{version})");
+	return $this->{version};
 }
 
 sub name16_hex
@@ -384,8 +392,11 @@ sub update_item_request
 	display(0,0,"got $what_name($uuid) = '$reply->{item}->{name}'");
 	my $hash_name = lc($what_name)."s";
 	my $hash = $this->{$hash_name};
-	$hash->{$uuid} = $reply->{item};
-	$this->incVersion();		# notify UI
+
+	my $item = $reply->{item};
+	$item->{version} = $this->incVersion();
+	$hash->{$uuid} = $item;
+			# notify UI
 	return 1;
 }
 

@@ -39,7 +39,7 @@ my $SRC_DIR = "/base/apps/raymarine/NET";
 my $NETWORK_LINK = "http://localhost:9882/navqry.kml";
 
 my $server_version:shared = -1;
-my $navqry_kml:shared = kml_header(0,$server_version).kml_footer(0);
+my $wpmgr_kml:shared = kml_header(0,$server_version).kml_footer(0);
 
 
 
@@ -239,7 +239,7 @@ sub kml_footer
 
 sub kml_header
 {
-	my ($update,$navqry_version) = @_;
+	my ($update,$wpmgr_version) = @_;
 	
 	my $kml = '<?xml version="1.0" encoding="UTF-8"?>'.$EOL;
 	$kml .= '<kml xmlns="http://www.opengis.net/kml/2.2" ';
@@ -250,8 +250,8 @@ sub kml_header
 	$kml .= "<NetworkLinkControl>$EOL";
 	# $kml .= "<minRefreshPeriod>0</minRefreshPeriod>$EOL";
 	# $kml .= "<maxSessionLength>-1</maxSessionLength>$EOL";
-	$kml .= "<cookie>version=$navqry_version</cookie>$EOL";
-	# $kml .= "<message>RAYQRY version($navqry_version)</message>$EOL";
+	$kml .= "<cookie>version=$wpmgr_version</cookie>$EOL";
+	# $kml .= "<message>RAYQRY version($wpmgr_version)</message>$EOL";
 	$kml .= "<linkName>Waypoint Manager</linkName>$EOL";
 	#	doesn't change
 	# $kml .= "<linkDescription>...</linkDescription>$EOL";;
@@ -372,7 +372,7 @@ sub kml_route_string
 	my $coord_str = '';
 	foreach my $uuid (@$waypoints)
 	{
-		my $wp = $navqry->{waypoints}->{$uuid};
+		my $wp = $wpmgr->{waypoints}->{$uuid};
 		my $lat = $wp->{lat}/$SCALE_LATLON;
 		my $lon = $wp->{lon}/$SCALE_LATLON;
 
@@ -439,8 +439,8 @@ sub kml_section
 	my ($class) = @_;				# the class is the style used for self and children
 	my $hash_name = $class.'s';			# $what is the key into the navqry hashes
 	my $section_name = CapFirst($hash_name);		# name of the outer folder
-	my $folders = $navqry->{$hash_name};	# items in inner folder (groups or routes with uuids[])
-	my $all_waypoints = $navqry->{waypoints};
+	my $folders = $wpmgr->{$hash_name};	# items in inner folder (groups or routes with uuids[])
+	my $all_waypoints = $wpmgr->{waypoints};
 	display($dbg_kml,0,"kml_section($class)");
 
 	# build fake My Waypoints group
@@ -537,35 +537,35 @@ my $test_version:shared = 100;
 sub buildNavQueryKML
 {
 	my ($param_version) = @_;
-	my $navqry_version = $navqry ? $navqry->{version} : -1;
-	my $changed = $server_version == $navqry_version ? 0 : 1;
+	my $wpmgr_version = $wpmgr ? $wpmgr->{version} : -1;
+	my $changed = $server_version == $wpmgr_version ? 0 : 1;
 	my $update = !$changed && $param_version == $server_version ? 1 : 0;
-	#$navqry_version >= 0 ? 1 : 0;
+	#$wpmgr_version >= 0 ? 1 : 0;
 
 	# display($dbg_kml-$changed,
 	display($dbg_kml,
-		1,"buildNavQueryKML($param_version,$server_version,$navqry_version) changed($changed) update($update)");
+		1,"buildNavQueryKML($param_version,$server_version,$wpmgr_version) changed($changed) update($update)");
 
-	my $kml = kml_header($update,$navqry_version);
+	my $kml = kml_header($update,$wpmgr_version);
 
 
 	if ($changed)
 	{
-		$server_version = $navqry_version;
+		$server_version = $wpmgr_version;
 
 		my $inner_kml = '';
-		if ($navqry && keys %{$navqry->{waypoints}})
+		if ($wpmgr && keys %{$wpmgr->{waypoints}})
 		{
 			$inner_kml .= kml_global_styles();
 			$inner_kml .= kml_section('group');
 			$inner_kml .= kml_section('route');
 		}
-		$navqry_kml = $inner_kml;
+		$wpmgr_kml = $inner_kml;
 		$kml .= $inner_kml;
 	}
 	elsif (!$update)
 	{
-		$kml .= $navqry_kml;
+		$kml .= $wpmgr_kml;
 	}
 	
 	$kml .= kml_footer($update);
