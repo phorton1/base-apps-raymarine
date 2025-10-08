@@ -116,6 +116,7 @@ BEGIN
 		findRayPortByName
 
 		tcpListenerThread
+		probeTCP
     );
 }
 
@@ -139,7 +140,7 @@ my $devices:shared = shared_clone({});
 my $ports = shared_clone([]);
 my $ports_by_addr:shared = shared_clone({});
     # a list of all ports in order they're found,
-    # and ahash of them by addr
+    # and a hash of them by addr (ip:port)
 my $duplicate_unknown:shared = shared_clone({});
 
 
@@ -446,6 +447,24 @@ sub decodeRAYSYS
 # 	we have received the reply, but before sniffer got
 # 	a chance to show the full reply.
 
+my $PROBE_STATE_ERROR 	= -1;	# tcp listener could not start
+my $PROBE_STATE_NONE 	= 0;	# tcp listener not running
+my $PROBE_STATE_RUNNING = 1;	# probe script started
+my $PROBE_STATE_START 	= 2;
+my $PROBE_STATE_DONE 	= 0;
+
+
+my %probe;
+
+
+sub probeTCP
+{
+	my ($ip,$port) = @_;
+	my $rayport = findRayPort($ip,$port);
+	my $rayname = $rayport ? $rayport->{name} : 'NOT IN RAYSYS PORT LIST';
+	display(0,0,"probeTCP($ip,$port) name='$rayname'");
+}
+
 
 sub subSend
 	# Send one packet parsed from a script (captured debug output)
@@ -528,8 +547,9 @@ sub tcpListenerThread
 	# Relies on r_sniffer to see the packets via tshark.
 {
 	my ($ip,$port) = @_;
-
-	display(0,0,"tcpListenerThread($ip,$port)");
+	my $rayport = findRayPort($ip,$port);
+	my $rayname = $rayport ? $rayport->{name} : 'NOT IN RAYSYS PORT LIST';
+	display(0,0,"tcpListenerThread($ip,$port) name='$rayname'");
 
 	my $sock;
 	my $tries = 1;
@@ -566,7 +586,10 @@ sub tcpListenerThread
 		{
 			if (!$seq)
 			{
-				my $script_file = "docs/junk/rnsDatabaseStartup.txt";
+				my $script_file = "$data_dir/rnsDatabaseProbe.txt";
+					# obtained by setting up to monitior Database TCP Port
+					# and then freshly starting RNS
+					
 				my $script = getTextFile($script_file);
 				display(0,0,"length of script=".length($script));
 				my @lines = split(/\n/,$script);

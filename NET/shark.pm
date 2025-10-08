@@ -220,11 +220,11 @@ sub sniffer_thread
             my $ray_src = findRayPort($packet->{src_ip},$packet->{src_port});
             my $ray_dest = findRayPort($packet->{dest_ip},$packet->{dest_port});
 
-            if ($ray_src && $ray_src->{mon_to})
+            if ($ray_src && $ray_src->{mon_from})
             {
                 showPacket($ray_src,$packet,0);
             }
-            elsif ($ray_dest && $ray_dest->{mon_from})
+            elsif ($ray_dest && $ray_dest->{mon_to})
             {
                 showPacket($ray_dest,$packet,1);
                 if (0 && $ray_dest->{name} eq "DBNAV")

@@ -101,66 +101,51 @@ sub raydpIdIfKnown
 # connections which is handy in probing the E80 to correlate func numbers
 # to specific Services
 #
+# In the remainder of thises comments, I have named the RayPorts according
+# to a convention.
+#
+#		UPPERCASE 	- a rayport that with known Raymarine function
+#					  that I have decoded and implemented
+#		Capitalized	- a rayport that with known Raymarine function
+#					  that I have connected to, seen traffic,
+#					  and/or communicated with
+#   	lowercase   - a rayport with known Raymrine function,
+#					  that I have not seen packets from
+#		lowercase?	- a rarport with a possible known Raymarine function
+#   	blank		- a rayport for which I have no clue
+#
+#
 #									My Name
-#									if diff		known func
-#   Raymarine Name  UDP		TCP		or addl*	(Service ID)
+#											known func
+#   Raymarine Name  TCP		UDP				(Service ID)	notes
 #	-------------------------------------------------------------------------
-#	Radar			UDP 						1
-#	Fishfinder		UDP 			SONAR
-#	Database		UDP  	TCP		DBNAV*		16
-#   Waypoint				TCP		WPMGR		15
-#   Track					TCP					19
-#	Navigation				TCP 	NAVSTAT
-#   Chart			UDP
-#	CF Access		UDP 			FILESYS		5
-#	GPS				UDP
-#	DGOS			UDP
-#	Compass			UDP
-#	Navtext			UDP
-#	AIS				UDP
-#   Autopilot		UDP
-#	Alarm			UDP
-#	Sys				UDP 			RAYSYS		0	note that I assign this func(0)
-#	GVM						TCP
-#	Monitor					TCP 	MON
-#	Keyboard		UDP 			KBD
-#	RML Monitors	UDP 			RMLMON
+#	Radar					UDP 	Radar		1			extensively document in docs/reference/RMRadar_pi-master.zip
+#	Fishfinder				UDP 	sonar
+#	Database		TCP				Database	16			probed with playback script enough to get events
+#	   Database     		MCAST	DBNAV		16			previously E80NAV/NAVSTAT, have decoded many mcast packets;
+#   Waypoint		TCP				WPMGR		15			can read/write WRGs; get waypoints while TB AP engaged
+#   Track			TCP				Track		19			when E80 Track is on, I get short event packets as track points presumably added
+#	Navigation		TCP 			Navig		7			once connected and TB AP engaged I get 100-150 byte length delimited packets every second or so
+#   Chart					UDP		chart
+#	CF Access				MCAST 	FILESYS		5			uses listener UDP port in requests; can read,traverse,and download; have UI
+#	GPS						UDP		gps
+#	DGPS					UDP		dgps
+#	Compass					UDP		compass
+#	Navtext					UDP		navtext
+#	AIS						UDP		ais
+#   Autopilot				UDP		pilot
+#	Alarm					MCAST	alarm					broadcast by master E80 & RNS
+#	Sys						MCAST 	RAYSYS		0			well known main advertisement
+#	GVM				TCP				Gvm
+#	Monitor			TCP				monitor
+#	  Monitor				UDP		monitor
+#	Keyboard				UDP 	kbd
+#	RML Monitors			UDP 	rmlmon
 #
 # * I am still probing DATABASE, but had previously parsed, with some
 # 	success, the packets that arrived from its UDP port, that I first
 # 	called E80NAV, then NAVSTAT, and now call DBNAV.
 
-
-#------------------------------------------------------------------------
-# BY PORT (quick list)
-#------------------------------------------------------------------------
-# I find it useful sometime to look at the list of Rayports either sorted by
-# their Service func() numbers, but more often, I find it easier to look at
-# the list of rayports sorted by their port number.  The internet protocol
-# is only shown if I know that it is actually used for that port
-#
-#			known
-#			internet								known
-#	func	protocol	ip							service
-#	------------------------------------------------------------------------
-#   35					10.0.241.54			2048
-#   5					10.0.241.54			2049	FILESYS
-#   16					10.0.241.54			2050	DATABASE
-#   16					10.0.241.54			2051	DATABASE
-#   15					10.0.241.54			2052	WAYPOINT
-#   19					10.0.241.54			2053	TRACK
-#   7					10.0.241.54			2054
-#   22					10.0.241.54			2055
-#   8					10.0.241.54			2056
-#	?					?					2058
-#   35		mcast		224.30.38.193		2560
-#   5		mcast		224.30.38.194		2561	FILESYS
-#   16		mcast		224.30.38.195		2562	NAVSTAT
-#   8		mcast		224.30.38.196		2563
-#  *0*		mcast 		224.0.0.1			5800	RAYSYS 	RNS also advertises this, but there's only one Rayport
-#   27		mcast		224.0.0.2			5801	ALARM 	RNS also advertises this, but there's only one Rayport
-#   27					10.0.241.54			5802	ALARM	as advertised by master E80
-#   27					10.0.241.200		5802	ALARM	as advertised by RNS running on my laptop
 
 
 #--------------------------------------------------------------------------------------
@@ -221,20 +206,6 @@ my $FILE_RNS 	= 0;
 #				  and the connection failed
 #		blank   - means I dont know if it's udp or tcp
 #
-# In the below defaults, I have named the RayPorts according
-# to a convention.
-#
-#		UPPERCASE 	- a rayport that I have decoded or strongly feel I understand
-#		Capitalized	- a rayport that I have conclusively correlated with a named
-# 					  service and internet protocol on the E80, and believe is
-#					  the primary client API to the E80.
-#   	lowercase   - a rayport that I believe correlates to to a known Service,
-#					  but which I do not claim to undertand or know how to use it
-#					  likely a 'secondary' api to the service
-#		lowercase?	- a question mark indicates a rayport that *might* be correlated
-#					  with a given service, but I'm not sure
-#   	blank		- a rayport for which I have no clue about what Service it belongs to,
-#					  and what kind of protocol to use with the port.
 
 
 
@@ -246,31 +217,33 @@ our $RAYPORT_DEFAULTS  = {
 	# 	(determined by actaual RAYSYS packets) is the
 	# 	deifnitive number
 
-	2048 => { sid => 35,	name => '',			proto=>'!tcp',	mon_from=>1,			mon_to=>$UNDER_WAY,		multi=>1,	color=>0,	 },
-	2049 => { sid => 5,		name => 'FILESYS',	proto=>'udp',	mon_from=>$FILESYS,		mon_to=>1,				multi=>1,	color=>$UTILS_COLOR_CYAN,    },
-	2050 => { sid => 16,	name => 'DATABASE',	proto=>'tcp',	mon_from=>$MY_DB,		mon_to=>$MY_DB,			multi=>1,	color=>0,    },
-	2051 => { sid => 16,	name => 'database',	proto=>'!tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-	2052 => { sid => 15,	name => 'WPMGR',	proto=>'tcp',	mon_from=>$MY_WPS,		mon_to=>$MY_WPS,		multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },	#
-	2053 => { sid => 19,	name => 'TRACK',	proto=>'tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-	2054 => { sid => 7,		name => '',			proto=>'udp',	mon_from=>$RNS_INIT,	mon_to=>$UNDER_WAY,		multi=>1,	color=>$UTILS_COLOR_LIGHT_CYAN,    },
-	2055 => { sid => 22,	name => '',			proto=>'tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-	2056 => { sid => 8,		name => '',			proto=>'!tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-	2058 => { sid => -2,	name => '',			proto=>'',		mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-	2560 => { sid => 35,	name => '',			proto=>'!tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-	2561 => { sid => 5,		name => '',			proto=>'!tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
-	2562 => { sid => 16,	name => 'DBNAV',	proto=>'udp',	mon_from=>$MY_NAV,		mon_to=>1,				multi=>1,	color=>$UTILS_COLOR_GREEN,    },
-	2563 => { sid => 8,		name => '',			proto=>'udp',	mon_from=>$UNDER_WAY,	mon_to=>1,				multi=>1,	color=>0,    },
+	2048 => { sid => 35,	name => '',			proto=>'udp',	mon_from=>$UNDER_WAY,	mon_to=>1,			multi=>1,	color=>0,	 },
+	2049 => { sid => 5,		name => 'FILESYS',	proto=>'udp',	mon_from=>1,			mon_to=>$FILESYS,	multi=>1,	color=>$UTILS_COLOR_CYAN,    },
+	2050 => { sid => 16,	name => 'Database',	proto=>'tcp',	mon_from=>$MY_DB,		mon_to=>$MY_DB,		multi=>1,	color=>0,    },
+	2051 => { sid => 16,	name => 'database',	proto=>'udp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
+	2052 => { sid => 15,	name => 'WPMGR',	proto=>'tcp',	mon_from=>$MY_WPS,		mon_to=>$MY_WPS,	multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },	#
+	2053 => { sid => 19,	name => 'Track',	proto=>'tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
+	2054 => { sid => 7,		name => 'Navig',	proto=>'tcp',	mon_from=>$UNDER_WAY,	mon_to=>$RNS_INIT,	multi=>1,	color=>$UTILS_COLOR_LIGHT_CYAN,    },
+	2055 => { sid => 22,	name => '',			proto=>'tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
+	2056 => { sid => 8,		name => '',			proto=>'!tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
+	2058 => { sid => -2,	name => '',			proto=>'',		mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
+	2560 => { sid => 35,	name => '',			proto=>'mcast',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
+	2561 => { sid => 5,		name => '',			proto=>'mcast',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
+	2562 => { sid => 16,	name => 'DBNAV',	proto=>'mcast',	mon_from=>1,			mon_to=>$MY_NAV,	multi=>1,	color=>$UTILS_COLOR_GREEN,    },
+	2563 => { sid => 8,		name => '',			proto=>'mcast',	mon_from=>1,			mon_to=>$UNDER_WAY,	multi=>1,	color=>0,    },
+	5800 => { sid => 0,		name => 'RAYSYS',	proto=>'mcast',	mon_from=>1,			mon_to=>$RAYSYS,	multi=>1,	color=>$UTILS_COLOR_LIGHT_BLUE,    },
+	5801 => { sid => 27,	name => 'ALARM',	proto=>'mcast',	mon_from=>1,			mon_to=>$UNDER_WAY,	multi=>1,	color=>$UTILS_COLOR_BLUE,    },
+	5802 => { sid => 27,	name => 'alarm',	proto=>'!tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
 
-	5800 => { sid => 0,		name => 'RAYSYS',	proto=>'mcast',	mon_from=>1,			mon_to=>$RAYSYS,		multi=>1,	color=>$UTILS_COLOR_LIGHT_BLUE,    },
-	5801 => { sid => 27,	name => 'ALARM',	proto=>'mcast',	mon_from=>$UNDER_WAY,	mon_to=>1,				multi=>1,	color=>$UTILS_COLOR_BLUE,    },
-	5802 => { sid => 27,	name => 'alarm',	proto=>'!tcp',	mon_from=>1,			mon_to=>1,				multi=>1,	color=>0,    },
+		# There is something weird here. I have ALARM mon_from=>$underway, but on the screen they come out
+		# as 	udp(12) 224.0.0.2:5801 <-- 10.0.241.54:1211 03001b00 36f1000a 00000000    which is "to"
 
 	# these empirical port numbers carry fake funcs of 105, 106
 
 	$FILESYS_LISTEN_PORT =>		# 18433
-			{ idea=>5,	name=>'MY_FILE',	proto=>'udp',	mon_from=>$FILE,		mon_to=>1,				multi=>0,	color=>$UTILS_COLOR_BROWN,    },
+			{ sid=>5,		name=>'MY_FILE',	proto=>'udp',	mon_from=>1,			mon_to=>$FILE,		multi=>0,	color=>$UTILS_COLOR_BROWN,    },
 	$RNS_FILESYS_LISTEN_PORT =>	# 18432
-			{ idea=>5,	name=>'FILE_RNS',	proto=>'udp',	mon_from=>$FILE_RNS,	mon_to=>1,				multi=>1,	color=>$UTILS_COLOR_BROWN,    },
+			{ sid=>5,		name=>'FILE_RNS',	proto=>'udp',	mon_from=>1,			mon_to=>$FILE_RNS,	multi=>1,	color=>$UTILS_COLOR_BROWN,    },
 };
 
 

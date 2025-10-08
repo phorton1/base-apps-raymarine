@@ -22,6 +22,7 @@ use Pub::WX::Window;
 use r_utils;
 use r_RAYSYS;
 use r_WPMGR;
+use tcpListener;
 use base qw(Wx::ScrolledWindow MyWX::Window);
 
 my $dbg_win = 0;
@@ -50,7 +51,7 @@ my $ID_SHOW_WPMGR_INPUT   = 903;
 my $ID_SHOW_WPMGR_OUTPUT  = 904;
 
 
-my $SORT_BYS = ['func','port','num'];
+my $SORT_BYS = ['port','func','num'];
 
 
 
@@ -261,7 +262,7 @@ sub onIdle
 			$multi->SetValue(1) if $rayport->{multi};
 			$listen->SetValue(1) if $rayport->{listen};		# local to winRAYSYS layer
 
-			$listen->Enable(0) if $rayport->{proto} =~ /mcast|udp/ || $rayport->{listen};
+			$listen->Enable(0) if $rayport->{proto} =~ /mcast|udp/;# || $rayport->{listen};
 
 			my $color = $color_names[$rayport->{color}];
 			my $combo_id = $COLOR_ID_BASE + $i;
@@ -345,13 +346,20 @@ sub onCheckBox
 
 		if ($field eq 'listen')
 		{
-			warning(0,0,"starting tcpListenerThread for func($rayport->{func} $rayport->{addr} $rayport->{proto} $rayport->{name}");
-			my $box = $event->GetEventObject();
-			$box->Enable(0);
-			my $thread = threads->create(\&tcpListenerThread,$rayport->{ip},$rayport->{port});
-			display(0,0,"alive_thread created");
-			$thread->detach();
-			display(0,0,"alive_thread detached");
+			if ($checked)
+			{
+				warning(0,0,"starting tcpListener for func($rayport->{func} $rayport->{addr} $rayport->{proto} $rayport->{name}");
+				my $box = $event->GetEventObject();
+				# $box->Enable(0);
+				tcpListener->startTcpListener($rayport->{ip},$rayport->{port});
+			}
+			else
+			{
+				warning(0,0,"starting tcpListener for func($rayport->{func} $rayport->{addr} $rayport->{proto} $rayport->{name}");
+				my $box = $event->GetEventObject();
+				# $box->Enable(0);
+				tcpListener::stopTcpListener($rayport->{ip},$rayport->{port});
+			}
 		}
 
 		warning(0,0,"$rayport->{name}($checked) $rayport->{proto} $rayport->{addr}");
