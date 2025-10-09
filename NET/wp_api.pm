@@ -14,10 +14,12 @@ use IO::Socket::INET;
 use Time::HiRes qw(sleep time);
 use Time::Local;
 use Pub::Utils;
+use r_units;
 use r_utils;
 use r_RAYSYS;
 use r_WPMGR;
 use wp_parse;
+
 
 
 BEGIN
@@ -77,7 +79,7 @@ sub std_uuid
 sub emptyGroup
 {
 	my ($name) = @_;
-	my $buffer = buildNQGroup({ name => $name });
+	my $buffer = buildWPGroup({ name => $name });
 	my $ret_hex = unpack('H*',$buffer);
 	return $ret_hex;
 }
@@ -91,7 +93,7 @@ sub emptyRoute
 	my ($name,$bits) = @_;
 	$bits = 0 if !defined($bits);
 	my $name_len = length($name);
-	my $buffer = buildNQRoute({
+	my $buffer = buildWPRoute({
 		name => $name,
 		bits => $bits,
 		color => $next_color++ % $NUM_ROUTE_COLORS, });
@@ -141,7 +143,7 @@ sub createWaypoint
 		# to the Menu-System Settings-Date and Time-Offset that might be entered.
 		# So, for now, I send them as local times for clarity in debugging.
 
-	my $buffer = buildNQWaypoint({
+	my $buffer = buildWPWaypoint({
 		name => $name,
 		comment => "wpComment$wp_num",
 		lat => int($$lat_lon[0] * $SCALE_LATLON),
@@ -317,7 +319,7 @@ sub setWaypointGroup
 		$group->{uuids} = shared_clone(\@unshared_uuids);
 	}
 
-	my $buffer = buildNQGroup($group);
+	my $buffer = buildWPGroup($group);
 	my $data = unpack('H*',$buffer);
 	return queueWPMGRCommand($wpmgr,$API_MOD_ITEM,$WHAT_GROUP,$group_name,$group_uuid,$data);
 

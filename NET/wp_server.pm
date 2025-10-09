@@ -15,6 +15,7 @@ use Pub::Utils;
 use Pub::ServerUtils;
 use Pub::HTTP::ServerBase;
 use Pub::HTTP::Response;
+use r_units;
 use r_WPMGR;
 use wp_parse;
 use base qw(Pub::HTTP::ServerBase);

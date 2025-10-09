@@ -66,8 +66,6 @@ BEGIN
 
 		navQueryLog
 		clearLog
-		
-		degreeMinutes
 
 		@color_names
 		$color_values
@@ -247,15 +245,6 @@ sub wakeup_e80
 }
 
 
-
-sub degreeMinutes
-{
-	my $DEG_CHAR = chr(0xB0);
-	my ($ll) = @_;
-	my $deg = int($ll);
-	my $min = round(abs($ll - $deg) * 60,3);
-	return "$deg$DEG_CHAR$min";
-}
 
 
 sub setConsoleColor

@@ -1,0 +1,28 @@
+What if the database is a stream?
+
+starting after the
+	cmdword(0300)
+	func(0100) = databae
+
+	dword(NUM_FIELDS)
+
+The for each field there is
+	dword(table_ref)
+	word(type)
+	word(length)
+	and length bytes of data
+
+This works except for the simplest record, there would be an extra
+	dword(table_ref) = 0e060000 at the end with no more data
+
+Containing a dword(type:length)
+
+										table?
+	type	len			field			preceded by
+	2a00	0200		HEAD(DEV)		4700 0000
+	2a00	0200		HEAD(ABS)		1a00 0000												undifferentated
+	0100	0200		SOG				0400 0000
+	0400	0400		TIME			1200 0000
+	0300	0200		DATE			1300 0000
+	3c00	0800		LATLON			4400 0000
+	0e00	0400		DEPTH			0900 0000

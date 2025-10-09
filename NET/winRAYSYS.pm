@@ -45,13 +45,12 @@ my $COL_COLOR		= 93;	# width 14
 my $COL_TOTAL		= 107;
 
 
-my $ID_MON_RAYSYS_ALIVE	= 901;
-my $ID_SORT_BY			= 902;
+my $ID_SORT_BY			  = 902;
 my $ID_SHOW_WPMGR_INPUT   = 903;
 my $ID_SHOW_WPMGR_OUTPUT  = 904;
 
 
-my $SORT_BYS = ['port','func','num'];
+my $SORT_BYS = ['port','func','device','num'];
 
 
 
@@ -85,23 +84,19 @@ sub new
 	my $CHAR_WIDTH = $this->{CHAR_WIDTH} = $dc->GetCharWidth();
 	display($dbg_win,1,"CHAR_WIDTH=$CHAR_WIDTH");
 
-	# Wx::StaticText->new($this,-1,"static text",[10,10]);
-	# EVT_CLOSE($this,\&onClose);
 
-	my $alive = Wx::CheckBox->new($this,$ID_MON_RAYSYS_ALIVE,"monitor RAYSYS alive",[10,10]);
-	$alive->SetValue(1) if $MONITOR_RAYSYS_ALIVE;
+	Wx::StaticText->new($this,-1,'Sort by',[10,13]);
+	Wx::ComboBox->new($this, $ID_SORT_BY, $$SORT_BYS[0],
+		[84,10],wxDefaultSize,$SORT_BYS,wxCB_READONLY);
 
-	Wx::StaticText->new($this,-1,"Monitor WPMGR",[500,10]);
-	my $wpmgr_input = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_INPUT,"in",[630,10]);
+	Wx::StaticText->new($this,-1,"Monitor WPMGR",[200,13]);
+	my $wpmgr_input = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_INPUT,"in",[330,13]);
 	$wpmgr_input->SetValue(1) if $SHOW_WPMGR_INPUT;
-	my $wpmgr_output = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_OUTPUT,"out",[680,10]);
+	my $wpmgr_output = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_OUTPUT,"out",[380,13]);
 	$wpmgr_output->SetValue(1) if $SHOW_WPMGR_OUTPUT;
 
-	Wx::StaticText->new($this,-1,'Sort by',[320,12]);
-	Wx::ComboBox->new($this, $ID_SORT_BY, $$SORT_BYS[0],
-		[400,10],wxDefaultSize,$SORT_BYS,wxCB_READONLY);
 
-	$this->{sort_by} = 'func';
+	$this->{sort_by} = $$SORT_BYS[0];
 	$this->{slots} = [];
 		# the id:ip:port occupying this y position in the table
 	$this->{rayports} = {};
@@ -142,6 +137,15 @@ sub cmpRecords
 		$cmp = $portA <=> $portB;
 		return $cmp if $cmp;
 		$cmp = $idA cmp $idB;
+		return $cmp if $cmp;
+		$cmp = $funcA <=> $funcB;
+		return $cmp if $cmp;
+	}
+	elsif ($sort_by eq 'device')
+	{
+		$cmp = $idA cmp $idB;
+		return $cmp if $cmp;
+		$cmp = $portA <=> $portB;
 		return $cmp if $cmp;
 		$cmp = $funcA <=> $funcB;
 		return $cmp if $cmp;
@@ -238,7 +242,7 @@ sub onIdle
 			my $port = $rayport->{port};
 			my $key = "$ip:$port";
 
-			display(0,0,"adding rayport".
+			display($dbg_win+1,0,"adding rayport".
 				"$rayport->{func}:$rayport->{name} $rayport->{proto} $rayport->{addr} ".
 				"in($rayport->{mon_from}) out($rayport->{mon_to}) ".
 				"color($rayport->{color}) multi($rayport->{multi})");
@@ -270,7 +274,7 @@ sub onIdle
 				[$this->X($COL_COLOR),$ypos-2],wxDefaultSize,\@color_names,wxCB_READONLY);
 
 			push @$slots,{
-				key => $key,
+				key 		=> $key,
 				ctrl_func 	=> Wx::StaticText->new($this,-1,$rayport->{func},[$this->X($COL_FUNC),$ypos]),
 				ctrl_id		=> Wx::StaticText->new($this,-1,$rayport->{id},[$this->X($COL_FUNCID),$ypos]),
 				ctrl_name 	=> Wx::StaticText->new($this,-1,$rayport->{name},[$this->X($COL_NAME),$ypos]),
@@ -299,12 +303,8 @@ sub onCheckBox
 	my ($this,$event) = @_;
 	my $id = $event->GetId();
 	my $checked = $event->IsChecked() || 0;
-	if ($id == $ID_MON_RAYSYS_ALIVE)
-	{
-		$MONITOR_RAYSYS_ALIVE = $checked;
-		warning(0,0,"MON_RAYDP_ALIVE=$MONITOR_RAYSYS_ALIVE");
-	}
-	elsif ($id == $ID_SHOW_WPMGR_INPUT)
+
+	if ($id == $ID_SHOW_WPMGR_INPUT)
 	{
 		$SHOW_WPMGR_INPUT = $checked;
 		warning(0,0,"SHOW_WPMGR_INPUT=$SHOW_WPMGR_INPUT");
@@ -362,7 +362,7 @@ sub onCheckBox
 			}
 		}
 
-		warning(0,0,"$rayport->{name}($checked) $rayport->{proto} $rayport->{addr}");
+		warning(0,0,"$rayport->{name} CHECKED($checked) $rayport->{proto} $rayport->{addr}");
 	}
 }
 

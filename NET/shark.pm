@@ -25,6 +25,7 @@ use r_FILESYS;
 use r_WPMGR;
 use wp_api;
 use wp_server;
+use tcpListener;
 use s_resources;
 use s_frame;
 use base 'Wx::App';
@@ -59,8 +60,12 @@ sub handleCommand
     my ($lpart,$rpart) = @_;
     display(0,0,"handleCommand left($lpart) right($rpart)");
 
+	if ($lpart eq 'probe')
+	{
+		tcpNumberedProbe($rpart);
+	}
 
-	if ($lpart eq 'w')
+	elsif ($lpart eq 'w')
 	{
 		wakeup_e80
 	}
@@ -227,7 +232,7 @@ sub sniffer_thread
             elsif ($ray_dest && $ray_dest->{mon_to})
             {
                 showPacket($ray_dest,$packet,1);
-                if (0 && $ray_dest->{name} eq "DBNAV")
+                if (1 && $ray_dest->{name} eq "DBNAV")
                 {
                     decodeDBNAV($packet);
                 }

@@ -389,7 +389,10 @@ sub update_item_request
 	my $reply = $this->waitReply(1);
 	return 0 if !$reply;
 	return error("No {item} in $name $what_name reply") if !$reply->{item};
-	display(0,0,"got $what_name($uuid) = '$reply->{item}->{name}'");
+
+	my $dbg_got = 1;
+	display($dbg_got,0,"got $what_name($uuid) = '$reply->{item}->{name}'");
+
 	my $hash_name = lc($what_name)."s";
 	my $hash = $this->{$hash_name};
 

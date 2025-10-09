@@ -10,8 +10,8 @@ use strict;
 use warnings;
 use threads;
 use threads::shared;
-use POSIX qw(floor pow atan tan);
 use Pub::Utils;
+use r_units;
 
 
 my $dbg_wp = 1;
@@ -26,15 +26,15 @@ BEGIN
     our @EXPORT = qw(
 
 		parseWPMGRRecord
-		displayNQRecord
+		WPRecordToText
 
-		parseWPMGRWaypoint
-		parseWPMGRRoute
-		parseWPMGRGroup
+		parseWPWaypoint
+		parseWPRoute
+		parseWPGroup
 		
-		buildNQWaypoint
-		buildNQRoute
-		buildNQGroup
+		buildWPWaypoint
+		buildWPRoute
+		buildWPGroup
 
 		unpackRecord
 		packRecord
@@ -42,18 +42,8 @@ BEGIN
 		latLonToNorthEast
 		northEastToLatLon
 
-		$SCALE_LATLON
-		$METERS_PER_NM
-		$FEET_PER_METER
-		$SECS_PER_DAY
-
     );
 }
-
-our $SCALE_LATLON 	= 1e7;
-our $METERS_PER_NM 	= 1852;
-our $FEET_PER_METER  = 3.28084;
-our $SECS_PER_DAY 	= 86400;
 
 
 my $SPEC_DETAIL = 0;
@@ -133,17 +123,21 @@ my $ROUTE_PT_SPECS = [
 sub parseWPMGRRecord
 {
 	my ($kind,$buffer) = @_;
-	return parseWPMGRWaypoint($buffer) if $kind eq 'WAYPOINT';
-	return parseWPMGRRoute($buffer) if $kind eq 'ROUTE';
-	return parseWPMGRGroup($buffer) if $kind eq 'GROUP';
+	return parseWPWaypoint($buffer) if $kind eq 'WAYPOINT';
+	return parseWPRoute($buffer) if $kind eq 'ROUTE';
+	return parseWPGroup($buffer) if $kind eq 'GROUP';
 }
 
 
 
 #--------------------------------------------------------------
-# parseWaypointBuffer
+# WPRecordToText
 #--------------------------------------------------------------
-
+# The outputXXX() methods are denormalized from decodeXXX() methods because
+# we are using the record  containing properly unpacked (native) values, and,
+# in order to show the hex, and properly align them for output,
+# each method is the only one to know how to repack into a hex format
+# and do the alignment padding.
 
 sub padRight
 {
@@ -162,20 +156,13 @@ sub addOutput
 	return $text."\n";
 }
 
-sub deg_to_degmin
-{
-    my ($decimal_deg) = @_;
-    my $degrees = int($decimal_deg);
-    my $minutes = abs($decimal_deg - $degrees) * 60;
-    return sprintf("%d°%.3f", $degrees, $minutes);
-}
 
 sub outputLL
 {
 	my ($raw,$value,$scale) = @_;
 	$value /= $SCALE_LATLON if $scale;
 	my $hex = unpack('H*',pack('V',$raw));
-	my $degmin = deg_to_degmin($value);
+	my $degmin = degreeMinutes($value);
 	my $degrees = padRight(sprintf("%0.3f",$value),8);
 	return "($hex) $degrees = ".padRight($degmin,12);
 }
@@ -196,7 +183,7 @@ sub outputDepth
 	return sprintf "($hex) FEET = %0.2f",($value/100)*$FEET_PER_METER;
 }
 
-sub unpackDate
+sub outputDate
 {
 	my ($date_int) = @_;
 	my $hex = unpack("H*",pack('v',$date_int));
@@ -210,7 +197,7 @@ sub unpackDate
 	return "($hex)     $year-$mon-$mday";
 }
 
-sub unpackTime
+sub outputTime
 	# time encoded directly as seconds
 	# THIS IS DIFFERENT THAN E80 NAV THAT GETS THEM AS 1/10000's of a second
 {
@@ -228,98 +215,7 @@ sub unpackTime
 }
 
 
-
-my $FSH_LAT_SCALE = 107.1709342;  # same scale used in forward transform
-my $LONG_SCALE = 0x7fffffff;  # 2147483647
-my $M_PI = 3.14159265358979323846;
-my $M_PI_2 = $M_PI / 2;
-
-
-sub northEastToLatLon	# from FSH
-    # Convert mercator north,east coords to lat/lon.
-    # From blackbox.ai, based on https://wiki.openstreetmap.org/wiki/ARCHIVE.FSH
-    # In my first 'fishfarm' test case, I expected 5.263N minutes but got 5.261N
-    #   0.001 minutes == approx 1.8553 meters, so this is physically off by about 4 meters.
-    #   More testing will be required to see if it's close on other coordinates.
-    #   The original fshfunc.c implies an accuracy of 10cm, but that's only for the
-    #   the iteration, not the actual value.
-{
-    my ($north, $east) = @_;
-
-    my $FSH_LAT_SCALE = 107.1709342;
-        # Northing in FSH is prescaled by this (empirically determined)
-        # Original comment said "probably 107.1710725 is more accurate, not sure"
-        # but that makes mine worse, not better.
-    # my $FSH_LAT_SCALE = 107.1705000;
-        # experimental value gave me 5.263 for fishfarm
-
-    my $longitude = ($east / $LONG_SCALE) * 180.0;
-    my $N = $north / $FSH_LAT_SCALE;
-
-    # WGS84 ellipsoid parameters
-    my $a = 6378137;  # semi-major axis
-    my $e = 0.08181919;  # eccentricity
-
-    # Iterative calculation for latitude
-    my $phi = $M_PI_2;  # Initial guess
-    my $phi0;
-    my $IT_ACCURACY = 1.5E-8;
-    my $MAX_IT = 32;
-    my $i = 0;
-
-    do {
-        $phi0 = $phi;
-        my $esin = $e * sin($phi0);
-        $phi = $M_PI_2 - 2.0 * atan(exp(-$N / $a) * pow((1 - $esin) / (1 + $esin), $e / 2));
-        $i++;
-    } while (abs($phi - $phi0) > $IT_ACCURACY && $i < $MAX_IT);
-
-    # Convert radians to degrees
-    my $latitude = $phi * 180 / $M_PI;
-
-	my $lat = sprintf("%.6f",$latitude);
-	my $lon = sprintf("%.6f",$longitude);
-
-	#display($dbg,0,"northEastToLatLon($north,$east) ==> $lat,$lon");
-	#latLonToNorthEast($lat,$lon);
-
-    return {
-        lat => $lat,
-        lon => $lon };
-}
-
-
-sub latLonToNorthEast
-	# from copilot
-{
-    my ($lat_deg, $lon_deg) = @_;
-
-    # WGS84 ellipsoid parameters
-    my $a = 6378137;       # semi-major axis
-    my $e = 0.08181919;    # eccentricity
-
-    # Convert degrees to radians
-    my $lat_rad = $lat_deg * $M_PI / 180.0;
-
-    # Mercator projection formula for northing
-    my $esin = $e * sin($lat_rad);
-    my $N = $a * log(tan($M_PI / 4 + $lat_rad / 2) * ((1 - $esin) / (1 + $esin)) ** ($e / 2));
-
-    # Apply FSH scaling
-    my $north = int($N * $FSH_LAT_SCALE + 0.5);
-
-    # Easting is linear
-    my $east = int(($lon_deg / 180.0) * $LONG_SCALE + 0.5);
-
-    return {
-        north => $north,
-        east  => $east
-    };
-}
-
-
-
-sub displayNQRecord
+sub WPRecordToText
 {
 	my ($rec,$kind,$indent,$detail_level) = @_;
 	my $pad = pad('',$indent);
@@ -350,13 +246,17 @@ sub displayNQRecord
 				my $val = $rec->{$key};
 				$val = 0 if !defined($val);
 				my $extra = '';
+
+
 				$extra = outputLL($val,$val,1) if $key =~ /^(lat|lon)/;
 				$extra = outputLL($val,$alt_coords->{lat}) if $key eq 'north';
 				$extra = outputLL($val,$alt_coords->{lon}) if $key eq 'east';
-				$extra = unpackDate($val) if $key eq 'date';
-				$extra = unpackTime($val) if $key eq 'time';
+				$extra = outputDate($val) if $key eq 'date';
+				$extra = outputTime($val) if $key eq 'time';
 				$extra = outputDistance($val) if $key eq 'distance';
 				$extra = outputDepth($val) if $key eq 'depth';
+
+
 				$text .= addOutput($pad,$key,$val,$extra);
 			}
 		}
@@ -377,7 +277,9 @@ sub displayNQRecord
 }
 
 
-
+#-------------------------------------
+# pack and unpack native records
+#-------------------------------------
 
 sub unpackRecord
 {
@@ -436,10 +338,10 @@ sub packRecord
 
 
 #------------------------------------
-# parse a group
+# WPGroups
 #------------------------------------
 
-sub parseWPMGRGroup
+sub parseWPGroup
 	# The message itself starts with
 	#		len	 command  seqnum
     #       5e00 01020f00 0f000000
@@ -467,7 +369,7 @@ sub parseWPMGRGroup
 {
 	my ($buffer) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_group,0,"parseWPMGRGroup len($buf_len)");
+	display($dbg_group,0,"parseWPGroup len($buf_len)");
 
 	my $offset = 0;
 	my $rec = unpackRecord('group_hdr',$GROUP_REC_SPECS, $buffer, $offset, $GROUP_REC_SIZE);
@@ -495,7 +397,7 @@ sub parseWPMGRGroup
 }
 
 
-sub buildNQGroup
+sub buildWPGroup
 {
 	my ($rec) = @_;
 	my $name = $rec->{name} || '';
@@ -507,7 +409,7 @@ sub buildNQGroup
 	$rec->{uuids} = $uuids;
 	$rec->{num_uuids} = @$uuids;
 
-	display($dbg_wp,0,"buildNQGroup($rec->{name}");
+	display($dbg_wp,0,"buildWPGroup($rec->{name}");
 	my $buffer = packRecord('GROUP',$rec,$GROUP_REC_SPECS);
 	$buffer .= $name;
 	$buffer .= $comment;
@@ -518,17 +420,17 @@ sub buildNQGroup
 	}
 
 	$buffer = pack('V',length($buffer)).$buffer;
-	parseWPMGRGroup($buffer);	# debug check
+	parseWPGroup($buffer);	# debug check
 	return $buffer;
 }
 
 
 
 #------------------------------------
-# parse a route
+# WPRoutes
 #------------------------------------
 
-sub parseWPMGRRoute
+sub parseWPRoute
 	# The message itself starts with
 	#		len	 command  seqnum
     #       5e00 01020f00 0f000000
@@ -549,7 +451,7 @@ sub parseWPMGRRoute
 {
 	my ($buffer) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_route,0,"parseWPMGRRoute len($buf_len)");
+	display($dbg_route,0,"parseWPRoute len($buf_len)");
 
 	my $offset = 0;
 	my $rec = unpackRecord('hdr1',$ROUTE_HDR1_SPECS, $buffer, $offset, $ROUTE_HDR1_SIZE);
@@ -598,7 +500,7 @@ sub parseWPMGRRoute
 }
 
 
-sub buildNQRoute
+sub buildWPRoute
 {
 	my ($rec) = @_;
 	my $name = $rec->{name} || '';
@@ -612,7 +514,7 @@ sub buildNQRoute
 	$rec->{points} = $uuids;
 	my $num_wpts = $rec->{num_wpts} = @$uuids;
 
-	display($dbg_wp,0,"buildNQRoute($rec->{name}");
+	display($dbg_wp,0,"buildWPRoute($rec->{name}");
 	my $buffer = packRecord('ROUTE_HDR1',$rec,$ROUTE_HDR1_SPECS);
 	$buffer .= $name;
 	$buffer .= $comment;
@@ -632,17 +534,17 @@ sub buildNQRoute
 	}
 
 	$buffer = pack('V',length($buffer)).$buffer;
-	parseWPMGRRoute($buffer);	# debug check
+	parseWPRoute($buffer);	# debug check
 	return $buffer;
 }
 
 
 
 #------------------------------------
-# parse a waypoint
+# WPWaypoints
 #------------------------------------
 
-sub parseWPMGRWaypoint
+sub parseWPWaypoint
 	# The WAYPOINT message itself starts with
 	#       len  command  seqnum
 	# 		5b00 01020f00 43000000
@@ -662,7 +564,7 @@ sub parseWPMGRWaypoint
 {
 	my ($buffer) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_wp,0,"parseWPMGRWaypoint len($buf_len)");
+	display($dbg_wp,0,"parseWPWaypoint len($buf_len)");
 	if ($buf_len < $WP_REC_SIZE)
 	{
 		warning($dbg_wp,1,"buffer($buf_len) is less than WP_REC_SIZE($WP_REC_SIZE) in length");
@@ -695,7 +597,7 @@ sub parseWPMGRWaypoint
 }
 
 
-sub buildNQWaypoint
+sub buildWPWaypoint
 {
 	my ($rec) = @_;
 	my $name = $rec->{name} || '';
@@ -703,7 +605,7 @@ sub buildNQWaypoint
 	$rec->{name_len} = length($name);
 	$rec->{cmt_len} = length($comment);
 	
-	display($dbg_wp,0,"buildNQWaypoint($rec->{name}");
+	display($dbg_wp,0,"buildWPWaypoint($rec->{name}");
 	my $buffer = packRecord('WAYPOINT',$rec,$WP_REC_SPECS);
 	$buffer .= $name;
 	$buffer .= $comment;
@@ -715,7 +617,7 @@ sub buildNQWaypoint
 	}
 
 	$buffer = pack('V',length($buffer)).$buffer;
-	parseWPMGRWaypoint($buffer);	# debug check
+	parseWPWaypoint($buffer);	# debug check
 	return $buffer;
 }
 

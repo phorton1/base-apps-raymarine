@@ -529,7 +529,7 @@ sub parsePiece
 			my $detail_level = 2;
 			my $show_what = $NAV_WHAT{$context->{what}};
 			my $item = parseWPMGRRecord($show_what,substr($data,$$pdata));
-			$text = displayNQRecord($item,$show_what,$indent,$detail_level)
+			$text = WPRecordToText($item,$show_what,$indent,$detail_level)
 				if $with_text;
 			$rec->{item} = $item;
 		}

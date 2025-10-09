@@ -1,0 +1,46 @@
+udp(417)  224.30.38.195:2562   <-- 10.0.241.54:1217      00031000 1c000000 03000000 01000200 02020506 00000400 00000100 02000202   ................................
+                                                         05060000 09000000 0e000400 2c010000 05060000 0a000000 c3800200 00000506   ............,...................
+                                                         00001800 00002a00 020040f3 0a050000 19000000 01000200 00000a05 00001a00   ......*...@.....................
+                                                         00002a00 0200b865 05060000 1c000000 11800200 d1fd0a05 00003400 00000e00   ..*....e..................4.....
+                                                         0400d056 00000506 00004400 00003c00 0800b8d1 8f055321 fbce0a05 00004800   ...V......D...<.......S!......H.
+                                                         00002a00 0200e767 0e060000 49000000 2a000200 00000a05 00005500 0000a880   ..*....g....I...*.........U.....
+                                                         02000401 0a050000 58000000 00000200 63000506 00005900 00002a00 020036df   ........X.......c.....Y...*...6.
+                                                         05060000 5a000000 00000200 3e000506 00005b00 00002a00 020014cd 05060000   ....Z.......>.....[...*.........
+                                                         62000000 27800200 2c010705 00006700 00002a00 0200e767 0e060000 6a000000   b...'...,.....g...*....g....j...
+                                                         0d000400 ce1d0000 05060000 6c000000 55000100 01050600 008b0000 00710001   ............l...U............q..
+                                                         00000a05 00009300 00007300 0800bfe0 9e067a9d 84c50a05 0000c200 00005400   ..........s.......z...........T.
+                                                         0100000a 050000d0 00000005 000400cc 0500000a 050000f2 0000002a 0002003c   ...........................*...<
+                                                         f30a0500 00f30000 002a0002 006bf50a 050000f4 00000001 00020000 000a0500   .........*...k..................
+                                                         00                                                                        .
+    DATABASE command(0300) func(16) num_fields(28),
+
+        COG=heading=149, TRUE Wind=90, apparent wind 327.4 relative to bow
+        offset(8)=3 type(0100) len(2) subtype(05060000) SOG(0202) = 10.0
+        offset(22)=4 type(0100) len(2) subtype(05060000) SOG(0202) = 10.0
+        offset(36)=9 type(0e00) len(4) subtype(05060000) DEPTH(2c010000) = 9.84     DEPTH in FEET I sent it
+        offset(52)=10 type(c380) len(2) subtype(05060000) -------------- = 0000
+        offset(66)=24 type(2a00) len(2) subtype(0a050000) HEAD(40f3) = 356.79       MAGETIC NORTH st lattitude 9 or so
+        offset(80)=25 type(0100) len(2) subtype(0a050000) SOG(0000) = 0.0
+        offset(94)=26 type(2a00) len(2) subtype(05060000) HEAD(b865) = 149.20       TRUE COG == heading
+        offset(108)=28 type(1180) len(2) subtype(0a050000) -------------- = d1fd
+        offset(122)=52 type(0e00) len(4) subtype(05060000) DEPTH(d0560000) = 729.13  MY MISCALCULATED chart depth in feet (should be / 10)
+        offset(138)=68 type(3c00) len(8) subtype(0a050000) LATLON(b8d18f055321fbce) = LAT 9.331142      9°19.868
+                                                                                      LON -82.240273    -82°14.416
+        offset(158)=72 type(2a00) len(2) subtype(0e060000) HEAD(e767) = 152.40       TRUE wind over ground (direction its GOING)
+        offset(172)=73 type(2a00) len(2) subtype(0a050000) HEAD(0000) = 0.00
+        offset(186)=85 type(a880) len(2) subtype(0a050000) -------------- = 0401
+        offset(200)=88 type(0000) len(2) subtype(05060000) UNKNOWN = 6300
+        offset(214)=89 type(2a00) len(2) subtype(05060000) HEAD(36df) = 327.40      APPARENT relative to bow (direction its COMING from)
+        offset(228)=90 type(0000) len(2) subtype(05060000) UNKNOWN = 3e00
+        offset(242)=91 type(2a00) len(2) subtype(05060000) HEAD(14cd) = 300.80      TRUE WIND relative to BOW
+        offset(256)=98 type(2780) len(2) subtype(07050000) -------------- = 2c01
+        offset(270)=103 type(2a00) len(2) subtype(0e060000) HEAD(e767) = 152.40     TRUE wind over ground (direction its GOING)
+        offset(284)=106 type(0d00) len(4) subtype(05060000) UNKNOWN = ce1d0000
+        offset(300)=108 type(5500) len(1) subtype(05060000) UNKNOWN = 01
+        offset(313)=139 type(7100) len(1) subtype(0a050000) UNKNOWN = 00
+        offset(326)=147 type(7300) len(8) subtype(0a050000) UNKNOWN = bfe09e067a9d84c5
+        offset(346)=194 type(5400) len(1) subtype(0a050000) UNKNOWN = 00
+        offset(359)=208 type(0500) len(4) subtype(0a050000) UNKNOWN = cc050000
+        offset(375)=242 type(2a00) len(2) subtype(0a050000) HEAD(3cf3) = 356.77     MAGETIC NORTH again with jitter?
+        offset(389)=243 type(2a00) len(2) subtype(0a050000) HEAD(6bf5) = 359.97     0 with jitter?
+        offset(403)=244 type(0100) len(2) subtype(0a050000) SOG(0000) = 0.0

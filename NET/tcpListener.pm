@@ -32,6 +32,10 @@ BEGIN
     our @EXPORT = qw(
 		startTcpListener
 		startTcpProbe
+
+		sendTCPMessage
+		tcpNumberedProbe
+		
     );
 }
 
@@ -52,6 +56,8 @@ my $next_tcp_port:shared = 11000;
 	# something I can identify in traffic
 my %listeners:shared;
 	# key = $rayname
+my $most_recent_listener:shared = shared_clone({});
+
 
 
 
@@ -83,11 +89,13 @@ sub startTcpListener
 		rayname 	=> $rayname,
 		running		=> 0,
 		stopping	=> 0,
+		seq			=> 1,
 		error		=> '',
 		state   	=> $PROBE_STATE_NONE,
 		fileroot	=> lc($rayname), });
 	bless $this,$class;
 	$listeners{$rayname} = $this;
+	$most_recent_listener = $this;
 	my $tcp_thread = threads->create(\&tcpListenerThread,$this);
 	display(0,1,"$rayname tcp_thread created");
 	$tcp_thread->detach();
@@ -101,7 +109,8 @@ sub probeFilename
 	# and copying rns.log to "$data_dir/".lc($rayport->{name})."Probe.txt".
 {
 	my ($this) = @_;
-	return "$data_dir/$this->{fileroot}"."Probe.txt";
+	my $number = $this->{probe_number} || '';
+	return "$data_dir/$this->{fileroot}"."Probe$number.txt";
 }
 
 sub probeStateName
@@ -133,6 +142,20 @@ sub setProbeState
 }
 
 
+
+sub tcpNumberedProbe
+	# send a numbered probe to the most recent listener
+{
+	my ($number) = @_;
+	my $listener = $most_recent_listener;
+	display(0,0,"tcpNumberedProbe($listener->{rayname},$number)");
+	$listener->{probe_number} = $number;
+	startTcpProbe($listener->{rayname},1);
+	$most_recent_listener
+}
+
+
+
 sub startTcpProbe
 {
 	my ($rayname,$start) = @_;
@@ -156,7 +179,7 @@ sub startTcpProbe
 		display(0,1,"found ".scalar(@lines)." in $filename");
 
 		$this->{filename} = $filename;
-		$this->{seq} = 0;
+		# $this->{seq} = 0;
 		$this->{lines} = shared_clone(\@lines);
 		$this->{line_num} = 0;
 		$this->{num_lines} = @lines;
@@ -231,6 +254,10 @@ sub sendNextRequest
 			next;
 		}
 
+		# get rid of any other comments
+
+		$line =~ s/#.*$//;
+
 		my $arrow = '';
 
 		$arrow = $1 if $line =~ s/.*?($send_arrow|$recv_arrow)\s+\d+\.\d+\.\d+\.\d+:\d+\s+//;
@@ -240,8 +267,10 @@ sub sendNextRequest
 		return 1 if $arrow eq $recv_arrow && $started;
 		if ($arrow eq $send_arrow)
 		{
-			$line =~ s/   .*$//;
-			my @dwords = split(/ /,$line);
+			$line =~ s/   .*$// if $line =~ /   .*$/;
+			my @dwords = split(/\s+/,$line);
+			print "line='$line\n";
+			print "dwords(".scalar(@dwords).") = ".join(' ',@dwords)."\n";
 			$dwords[1] = '{seq}' if @dwords > 2;
 			my $new_line = join(' ',@dwords);
 			# print "sending $new_line\n";

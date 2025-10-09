@@ -106,33 +106,26 @@ BEGIN
  	use Exporter qw( import );
     our @EXPORT = qw(
 
-        $MONITOR_RAYSYS_ALIVE
-
 		initRAYSYS
         decodeRAYSYS
 
         findRayPort
         getRayPorts
 		findRayPortByName
-
-		tcpListenerThread
-		probeTCP
     );
 }
 
 
-our $MONITOR_RAYSYS_ALIVE:shared = 0;
-	# RAYSYS sends out one broadcast message that is not a service descriptor
-	# but rather, apparently a keep alive.  I only show debugging on newly
-	# discovered Services, but this boolean allows the UI to control the
-	# visualizaton of those keep alive packets.
 
-
-my $KNOWN_UNDECODED = [		# as yet length(56) messages that I see often and which have my master E80's ip address in them.
-	pack("H*","010000000000000037a681b23902000036f1000a0033cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc3302000100"),
-	pack("H*","010000000000000037a681b23902000036f1000a0033cc33cc32c433cc33cc33cc33cc33cc33cc37cc33c833cc33cc33cc33cc3302000100"),
-];
-
+# IDENT PACKETS START with 01
+#
+#                                ---ID--- VERS     ---IP---                                                                       MASTER v
+#	E80 #1 M - 01000000 00000000 37a681b2 39020000 36f1000a 0033cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 02000100
+#	E80 #1 S - 01000000 00000000 37ad80b2 39020000 53f0000a 0033cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 02000000
+#
+#	E80 #1 S - 01000000 00000000 37a681b2 39020000 36f1000a 0033cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 02000000
+#	E80 #2 M - 01000000 00000000 37ad80b2 39020000 53f0000a 0033cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 02000100
+#   RNS      - 01000000 03000000 ffffffff 76020000 018e7680 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 0000
 
 
 my $devices:shared = shared_clone({});
@@ -141,7 +134,12 @@ my $ports = shared_clone([]);
 my $ports_by_addr:shared = shared_clone({});
     # a list of all ports in order they're found,
     # and a hash of them by addr (ip:port)
-my $duplicate_unknown:shared = shared_clone({});
+my %unknown:shared;
+	# a hash by raw bytes of all unknown messages shown once
+my %duplicates:shared;
+	# if id:func matches, we will still add the device
+
+	
 
 
 
@@ -152,13 +150,13 @@ sub initRAYSYS
 	# and then unpacked into the numbers that RAYSYS would
 	# have given for them.
 	_addPort({func => 0, id=>'sys'},
-		unpack('N',inet_aton($RAYDP_IP)),
+		$RAYDP_IP,
 		$RAYDP_PORT);
-	_addPort({func => 500,id=>'default'},
-		unpack('N',inet_aton($LOCAL_IP)),
+	_addPort({func => 500,id=>'shark'},
+		$LOCAL_IP,
 		$RNS_FILESYS_LISTEN_PORT);
-	_addPort({func => 5-1,id=>'default'},
-		unpack('N',inet_aton($LOCAL_IP)),
+	_addPort({func => 501,id=>'shark'},
+		$LOCAL_IP,
 		$FILESYS_LISTEN_PORT);
 }
 
@@ -217,9 +215,9 @@ sub is_multicast
 sub _addPort
 {
     my ($rec,$ip,$port) = @_;
-    my $ip_str = inet_ntoa(pack('N', $ip));
-    my $addr = "$ip_str:$port";
+    my $addr = "$ip:$port";
     my $found = $ports_by_addr->{$addr};
+	my $proto = '';
     if (!$found)
     {
 		my $def = $RAYPORT_DEFAULTS->{$port};
@@ -236,23 +234,23 @@ sub _addPort
 				color=>0 };
 		}
 
+
+		$proto = $def->{proto};
+
 		# warning(0,0,"adding port $proto $addr in($def->{mon_from}) out($def->{mon_to}) color($def->{color}) multi($def->{multi})");
 
 		my $port_counter = @$ports;
-		my $proto = $def->{proto};
-		$proto ||= 'mcast' if is_multicast($ip_str);
+		$proto = 'mcast' if is_multicast($ip);
         my $ray_port = shared_clone({
 			num		=> $port_counter,
             proto   => $def->{proto},
-            ip      => $ip_str,
+            ip      => $ip,
             port    => $port,
             addr    => $addr,
             func    => $rec->{func},    # the function is??
 			id      => raydpIdIfKnown($rec->{id}),
 
-            # for wxWidgets winRAYSYS
-
-			name    => $def->{name},
+ 			name    => $def->{name},
             mon_from => $def->{mon_from} || 0,
             mon_to => $def->{mon_to} || 0,
             color => $def->{color} || 0,
@@ -294,11 +292,22 @@ sub _decode_header
         if ($field =~ /ip/)
         {
             $value = inet_ntoa(pack('N', $value));
-            $rec->{"str_$field"} = $value;
+            $rec->{$field} = $value;
         }
-        $text .= "$field($value) ";
+
+		if ($field =~ /^port/)	# for non-multicast ports, show my guess as to the internet protocol
+		{
+			my $def = $RAYPORT_DEFAULTS->{$value};
+			my $guess = $def ? $def->{proto} : '';
+
+			$text .= "$field($value)='$guess' ";
+		}
+		else
+		{
+			$text .= "$field($value) ";
+		}
     }
-    return $text;
+	return $text;
 }
 
 
@@ -319,13 +328,7 @@ sub decodeRAYSYS
 
     # packets we can skip merely based on the raw contents
 
-    if ($raw eq $RAYDP_ALIVE_PACKET)
-    {
-        print packetWireHeader($packet,0)."RAYDP_ALIVE_PACKET\n"
-            if $MONITOR_RAYSYS_ALIVE;
-        return 0;
-    }
-    if ($raw eq $RAYDP_WAKEUP_PACKET)
+	if ($raw eq $RAYDP_WAKEUP_PACKET)
     {
         print packetWireHeader($packet,0)."RAYDP_WAKEUP_PACKET: ".unpack("H*",$raw)."\n";
         return 0;
@@ -333,8 +336,11 @@ sub decodeRAYSYS
 
     # parse the RAYSYS packet for header fields
 
+	my $src ="$packet->{src_ip}:$packet->{src_port}";
     my ($type, $id, $func, $x1, $x2) = unpack('VH8VH8H8', $raw);
+	$id = raydpIdIfKnown($id);
     my $rec = shared_clone({
+		src   => $src,
         raw   => $raw,
         len   => $len,
         type  => $type,
@@ -344,19 +350,37 @@ sub decodeRAYSYS
         x2    => $x2,
     });
 
+	# we will only continue to parse if the the func:id has
+	# not been previously found, but we want to see
+	# duplicate or changed advertisements of the same function
+	# one time
 
-    # implementation error if the key is not unique enough
-
-    my $key = sprintf("$func:$id");
+    my $key = "$func.$id";
     my $found = $devices->{$key};
-    if ($found && $rec->{raw} ne $found->{raw})
+    if ($found && (
+		$rec->{src} ne $src ||
+		$rec->{raw} ne $found->{raw}))
     {
+		my $what_diff = '';
+		$what_diff .= 'SRC ' if $rec->{src} ne $src;
+		$what_diff .= 'RAW ' if $rec->{raw} ne $found->{raw};
+		my $src_msg = '';
+		$src_msg = "old_src($rec->{src}) new_src($src) " if $rec->{src} ne $src;
+
+		my $dup_key = "$func.$id.$src";
+		my $found_dup = $duplicates{$dup_key};
+
 		setConsoleColor($DISPLAY_COLOR_ERROR);
-		print packetWireHeader($packet,0)."SKIPPING CHANGED RAYDP_PACKET len($len) func($func) id($id)!!\n";
-		print "old=".unpack("H*",$found->{raw})."\n";
-		print "new=".unpack("H*",$rec->{raw})."\n";
+		my $header = packetWireHeader($packet,0);
+		my $pad = pad('',length($header));
+		print $header."RAYDP $what_diff CHANGED PACKET len($len) func($func) id($id) $src_msg!!\n";
+		if ($rec->{raw} ne $found->{raw})
+		{
+			print parse_dwords($pad."old=",$rec->{raw},1);
+			print parse_dwords($pad."new=",$found->{raw},1);
+			$found->{raw} = $rec->{raw};
+		}
 		setConsoleColor();
-		$found->{raw} = $rec->{raw};
     }
 
     # set the count and return if the RAYSYS packet has already been parsed
@@ -369,7 +393,12 @@ sub decodeRAYSYS
     # PARSE AND ADD A NEW RAYSYS RECORD
 
     my $text2 = '';
-    my $text1 = sprintf("len(%d) type(%d) id(%s) func(%2d) x(%s,%s)", $len, $type, $id, $func, $x1, $x2);
+
+	my $func_name = $KNOWN_FUNCS{$func} || 'func';
+	my $func_str = pad("$func_name($func)",12);
+
+	my $id_str = pad($id,8);
+    my $text1 = "$len:$type $id_str $func_str x($x1,$x2)";
     my $payload = $len > 20 ? substr($raw, 5 * 4) : '';
 
     if ($len == 28)
@@ -379,53 +408,52 @@ sub decodeRAYSYS
     }
     elsif ($len == 36)
     {
-        $text2 = _decode_header(0,$rec, $payload, qw(mcast_ip mcast_port tcp_ip tcp_port));
+        $text2 = _decode_header(0,$rec, $payload, qw(mcast_ip mcast_port ip port));
         _addPort($rec,$rec->{mcast_ip},$rec->{mcast_port});
-        _addPort($rec,$rec->{tcp_ip},$rec->{tcp_port});
+        _addPort($rec,$rec->{ip},$rec->{port});
     }
     elsif ($len == 37)
     {
-        $text2 = _decode_header(1, $rec, $payload, qw(mcast_ip mcast_port tcp_ip tcp_port));
+        $text2 = _decode_header(1, $rec, $payload, qw(mcast_ip mcast_port ip port));
         _addPort($rec,$rec->{mcast_ip},$rec->{mcast_port});
-        _addPort($rec,$rec->{tcp_ip},$rec->{tcp_port});
+       _addPort($rec,$rec->{ip},$rec->{port});
     }
     elsif ($len == 40)
     {
-        $text2 = _decode_header(0,$rec, $payload, qw(tcp_ip tcp_port1 tcp_port2 mcast_ip mcast_port));
+        $text2 = _decode_header(0,$rec, $payload, qw(ip port1 port2 mcast_ip mcast_port));
         _addPort($rec,$rec->{mcast_ip},$rec->{mcast_port});
-        _addPort($rec,$rec->{tcp_ip},$rec->{tcp_port1});
-        _addPort($rec,$rec->{tcp_ip},$rec->{tcp_port2});
+        _addPort($rec,$rec->{ip},$rec->{port1});
+        _addPort($rec,$rec->{ip},$rec->{port2});
     }
 
-    # packets that we skip but display
+    # unknown packets that show the first time we see them
 
     else
 	{
-		my $matched = '';
-		for my $match (@$KNOWN_UNDECODED)
+		return 0 if $unknown{$raw};
+		$unknown{$raw} = 1;
+
+		my $name = 'UNKNOWN';
+		if (unpack('C',$raw) == 1)	# length($raw) == 56 || length($raw) == 54)
 		{
-			if ($raw eq $match)
-			{
-				$matched = "KNOWN UNDECODED PACKET($len)";
-				last;
-			}
+			$name = 'IDENT';
+			my $ident_id = raydpIdIfKnown(unpack('H*',substr($raw,8,4)));
+			my $version = unpack('v',substr($raw,12,2))/100;
+			my $ip = inet_ntoa(pack('N', unpack('V',substr($raw,16,4))));
+			my $is_master = $len == 56 ? unpack('v',substr($raw,54,2)) : -1;
+			my $role =
+				$is_master == -1 ? "UNDEFINED" :
+				$is_master ? "MASTER" : "SLAVE";
+
+			$text2 = "id($ident_id) vers($version) ip($ip) role($role)";
 		}
-		if ($matched)
-		{
-			$text1 = $matched;
-		}
-		else
-		{
-			if (!$duplicate_unknown->{$raw})
-			{
-				$duplicate_unknown->{$raw} = 1;
-				setConsoleColor($DISPLAY_COLOR_WARNING);
-				print packetWireHeader($packet,0)."UNKNOWN PACKET($len) ".unpack("H*",$rec->{raw})."\n";
-				setConsoleColor();
-				return 1;
-			}
-			return 0;
-		}
+
+		my $header = packetWireHeader($packet,0);
+		setConsoleColor($DISPLAY_COLOR_WARNING);
+		print $header."$name($len) $text2\n";
+		print parse_dwords(pad('',length($header)),$raw,1);
+		setConsoleColor();
+		return 1;
     }
 
     setConsoleColor($DISPLAY_COLOR_LOG);
@@ -435,201 +463,6 @@ sub decodeRAYSYS
 	return 1;
 }
 
-
-
-#----------------------------------------------------
-# tcpListenerThread
-#----------------------------------------------------
-# Implements a tcp listener socket that can also
-# 	replay previously captured debugging output.
-# The sleeps are because r_sniffer takes a while to get
-# 	the packets and it is possible for us to write after
-# 	we have received the reply, but before sniffer got
-# 	a chance to show the full reply.
-
-my $PROBE_STATE_ERROR 	= -1;	# tcp listener could not start
-my $PROBE_STATE_NONE 	= 0;	# tcp listener not running
-my $PROBE_STATE_RUNNING = 1;	# probe script started
-my $PROBE_STATE_START 	= 2;
-my $PROBE_STATE_DONE 	= 0;
-
-
-my %probe;
-
-
-sub probeTCP
-{
-	my ($ip,$port) = @_;
-	my $rayport = findRayPort($ip,$port);
-	my $rayname = $rayport ? $rayport->{name} : 'NOT IN RAYSYS PORT LIST';
-	display(0,0,"probeTCP($ip,$port) name='$rayname'");
-}
-
-
-sub subSend
-	# Send one packet parsed from a script (captured debug output)
-{
-	my ($sock,$seq,$template,) = @_;
-	my $hex_seq = unpack('H*',pack('V',$seq));
-	$template =~ s/\s+//g;
-	$template =~ s/{seq}/$hex_seq/g;
-	$sock->send(pack('H*',$template));
-	sleep(0.1) if length($template) <= 4;
-}
-
-
-sub sendNextRequest
-	# Continue parsing the script
-	#
-	# 	(a) get to the next line <-- to the given port
-	#	(b) send that line as a packet
-	#	(c) continue parsing and sending lines until
-	#       you get to a --> from the port, or
-	#		we run out of script
-	#
-	# Needs to be more robust to work with scripts that
-	# have intermingled events, or output to/from other
-	# ports. Currently works with docs/junk/rnsDatabaseStartup.txt
-{
-
-	my ($sock,$lines,$seq) = @_;
-	my $hex_seq = unpack('H*',pack('V',$seq));
-
-	print "script($seq/".scalar(@$lines).")\n";
-	
-	# find next request start
-	
-	my $send_arrow = '<--';
-	my $recv_arrow = '-->';
-
-	my $started = 0;
-
-	while (1)
-	{
-		my $line = shift @$lines;
-		my $arrow = '';
-
-		$arrow = $1 if $line =~ s/.*?($send_arrow|$recv_arrow)\s+\d+\.\d+\.\d+\.\d+:\d+\s+//;
-
-		# print "started($started) $arrow '$line'\n";
-
-		return if $arrow eq $recv_arrow && $started;
-		if ($arrow eq $send_arrow)
-		{
-			$line =~ s/   .*$//;
-			my @dwords = split(/ /,$line);
-			$dwords[1] = '{seq}' if @dwords > 2;
-			my $new_line = join(' ',@dwords);
-			# print "sending $new_line\n";
-			subSend($sock,$seq,$new_line);
-			$started = 1;
-		}
-		else
-		{
-			# print "skipping $arrow '$line'\n";
-		}
-		if (!@$lines)
-		{
-			display(0,0,"END OF SCRIPT");
-			return;
-		}
-	}
-}
-
-
-
-
-my $next_tcp_port:shared = 11000;
-	# something I can see
-
-sub tcpListenerThread
-	# Simply establishes a TCP connection (or fails) and listens.
-	# Relies on r_sniffer to see the packets via tshark.
-{
-	my ($ip,$port) = @_;
-	my $rayport = findRayPort($ip,$port);
-	my $rayname = $rayport ? $rayport->{name} : 'NOT IN RAYSYS PORT LIST';
-	display(0,0,"tcpListenerThread($ip,$port) name='$rayname'");
-
-	my $sock;
-	my $tries = 1;
-	while ($tries-- && !$sock)
-	{
-		$sock = IO::Socket::INET->new(
-			LocalAddr => $LOCAL_IP,
-			LocalPort => $next_tcp_port++,
-			PeerAddr  => $ip,
-			PeerPort  => $port,
-			Proto     => 'tcp',
-			Reuse	  => 1,	# allows open even if windows is timing it out
-			Timeout	  => 3 );
-		if (!$sock)
-		{
-			error("Could not open tcpListener socket $ip:$port\n$!");
-			sleep(2);
-		}
-	}
-	if (!$sock)
-	{
-		error("quitting tcpListenerThread($ip:$port)");
-		return;
-	}
-
-	display(0,0,"tcpListener started on $ip:$port");
-
-	my $seq = 0;
-	my $lines;
-	my $sel = IO::Select->new($sock);
-	while (1)
-	{
-		if ($port == 2050)	# send Database changed queries
-		{
-			if (!$seq)
-			{
-				my $script_file = "$data_dir/rnsDatabaseProbe.txt";
-					# obtained by setting up to monitior Database TCP Port
-					# and then freshly starting RNS
-					
-				my $script = getTextFile($script_file);
-				display(0,0,"length of script=".length($script));
-				my @lines = split(/\n/,$script);
-				$lines = \@lines;
-				display(0,1,"got ".scalar(@$lines)." llines");
-			}
-			elsif (@$lines)
-			{
-				if (sendNextRequest($sock,$lines,$seq))
-				{
-					my $reply = '';
-					my $time = time();
-					while (length($reply) <= 4)
-					{
-						if ($sel->can_read(2))
-						{
-							my $buf;
-							recv($sock,$buf,4096,0);
-							$reply .= $buf if $buf;
-						}
-						last if time() > $time + 2;
-					}
-				}
-				sleep(0.2);
-			}
-			else
-			{
-				$sock->send(pack('H*','0400'));
-				$sock->send(pack('H*','00051000'));
-				sleep(2);
-			}
-		}
-		else
-		{
-			sleep(10);
-		}
-		$seq++;
-
-	}
-}
 
 
 

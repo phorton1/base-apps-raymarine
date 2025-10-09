@@ -1,0 +1,41 @@
+
+    # get the actual track uuids with ARCHIVE.FSH from E80 #2
+    #       (17616,0) FSH/fshFile.pm[157]                   000008CE  [14 ] BLK_TRK guid(80b237ad 0100ffa1) len(190)
+    #       (17616,0) FSH/fshFile.pm[157]                   0000099A  [15 ] BLK_MTA guid(81b237a6 3c00f4e5) len(66)
+    #       (17616,0) FSH/fshFile.pm[157]                   000009EA  [16 ] BLK_TRK guid(80b237ad 0300504d) len(78)
+    #       (17616,0) FSH/fshFile.pm[157]                   00000A46  [17 ] BLK_MTA guid(81b237a6 3d00ceb8) len(66)
+    #       (17616,0) FSH/fshFile.pm[157]                   00000A96  [18 ] BLK_TRK guid(80b237ad 0300514d) len(50)
+    #       (17616,0) FSH/fshFile.pm[157]                   00000AD6  [19 ] BLK_MTA guid(81b237a6 3d00aae0) len(66)
+    #       (17616,0) FSH/fshFile.pm[157]                   00000B26  [20 ] BLK_TRK guid(80b237ad 0300524d) len(1044)
+    #       (17616,0) FSH/fshFile.pm[157]                   00000F48  [21 ] BLK_MTA guid(81b237a6 3f0064a4) len(66)
+    #
+    #   converted to my format like 81b2 37a6 4100 8a4d
+
+    # cmd(6) = DATA
+    # cmd(c) = FIND
+    # testTrack1 = 74657374 54726163 6B31
+    # as a hex16: 74657374 54726163 6B3100ef efefefef ef
+    # try again with MTA uuids
+
+    # command 8 crashed E80 #1
+
+# YAY THIS GOT THE TRACK!!
+
+tcp(2)    10.0.241.54:2053     <-- 10.0.241.200:11000    1000
+tcp(16)   10.0.241.54:2053     <-- 10.0.241.200:11000    05p011300 07000000 81b237a6 3f0064a4                                       ..........7...RM
+tcp(2)    10.0.241.54:2053     --> 10.0.241.200:11000    0c00                                                                      ..
+tcp(94)   10.0.241.54:2053     --> 10.0.241.200:11000    07001300 07000000 00000400 14000002 13000700 00000000 00000000 00001900   ................................
+
+    # lets take a little closer look at this reply to cmd(2) direction(1) with a MTA uuid
+    # and, perhaps, compare it to a FSH MTA
+    #
+    #  <--  1000 02011300 07000000 81b237a6 3f0064a4
+    #  -->  0c00 01001300 13000000 00000400
+    #       1400 00021300 13000000 81b237a6 410033c1 0c000000
+    #       4500 01021300 13000000 39000000                         12  len(69) big_len(57)
+    #            00000000 00000000 0000004b                         24  doesnt look like an MTA because the first byte would 01 followed by a l, followed by uint16 number of track points
+    #            99a506ad 4a84c500                                  32
+    #            00000000 00c56a9f 06814884 c500002c 01000005       52
+    #            81b237a6 3f00efef                                  60  looks like junk, a partial uuid, in the buffer
+    #            efefefef efefefef ef                               69
+    #       1000 02021300 13000000 81b237a6 410033c1                and thats not the uuid I asked for

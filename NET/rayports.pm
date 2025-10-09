@@ -23,7 +23,7 @@ BEGIN
 
 		%KNOWN_E80_IDS
 		raydpIdIfKnown
-
+		%KNOWN_FUNCS
 		$RAYPORT_DEFAULTS
     );
 }
@@ -38,7 +38,8 @@ BEGIN
 
 our %KNOWN_E80_IDS = (
 	'37a681b2' =>	'E80 #1',
-	'37ad80b2' =>	'E80 #2' );
+	'37ad80b2' =>	'E80 #2',
+	'ffffffff' =>	'RNS' );
 
 sub raydpIdIfKnown
 {
@@ -146,6 +147,14 @@ sub raydpIdIfKnown
 # 	success, the packets that arrived from its UDP port, that I first
 # 	called E80NAV, then NAVSTAT, and now call DBNAV.
 
+our %KNOWN_FUNCS = (
+		0	=> 'RAYSYS',
+		1	=> 'Radar',
+		5	=> 'FILESYS',
+		7	=> 'Navig',
+		15	=> 'WPMGR',
+		16	=> 'Database',
+		19	=> 'Track', );
 
 
 #--------------------------------------------------------------------------------------
@@ -191,6 +200,8 @@ my $RAYSYS		= 0;
 my $FILE		= 0;
 my $FILE_RNS 	= 0;
 
+my $EXPLORING 	= 0;
+
 
 # The ports that have mon_from or mon_to set to one(1) are those I have never seen
 # packets to/from.
@@ -202,7 +213,7 @@ my $FILE_RNS 	= 0;
 #		mcast	- defined by the ip address
 #		udp		- means I have seen udp traffic, or surmised it is udp from services list
 #		tcp 	- means I have connected to it
-#		!tcp	- means I have surmised it is likely tcp, tried connecting to it,
+#		udp	- means I have surmised it is likely tcp, tried connecting to it,
 #				  and the connection failed
 #		blank   - means I dont know if it's udp or tcp
 #
@@ -217,6 +228,10 @@ our $RAYPORT_DEFAULTS  = {
 	# 	(determined by actaual RAYSYS packets) is the
 	# 	deifnitive number
 
+	# No new ports show up on bare E80 with chart card
+
+	# 2048-2055 show up on bare E80 
+
 	2048 => { sid => 35,	name => '',			proto=>'udp',	mon_from=>$UNDER_WAY,	mon_to=>1,			multi=>1,	color=>0,	 },
 	2049 => { sid => 5,		name => 'FILESYS',	proto=>'udp',	mon_from=>1,			mon_to=>$FILESYS,	multi=>1,	color=>$UTILS_COLOR_CYAN,    },
 	2050 => { sid => 16,	name => 'Database',	proto=>'tcp',	mon_from=>$MY_DB,		mon_to=>$MY_DB,		multi=>1,	color=>0,    },
@@ -224,19 +239,38 @@ our $RAYPORT_DEFAULTS  = {
 	2052 => { sid => 15,	name => 'WPMGR',	proto=>'tcp',	mon_from=>$MY_WPS,		mon_to=>$MY_WPS,	multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },	#
 	2053 => { sid => 19,	name => 'Track',	proto=>'tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
 	2054 => { sid => 7,		name => 'Navig',	proto=>'tcp',	mon_from=>$UNDER_WAY,	mon_to=>$RNS_INIT,	multi=>1,	color=>$UTILS_COLOR_LIGHT_CYAN,    },
-	2055 => { sid => 22,	name => '',			proto=>'tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
-	2056 => { sid => 8,		name => '',			proto=>'!tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
+	2055 => { sid => 22,	name => 'Unknown1',	proto=>'tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
+		# am able to connect with TCP, but no new connections show in E80 Services list
+		# immediatly starts receiving 9 byte messags with command_word(0000) func(1600) dword(00570200) byte(00)
+
+	# 2056,2058 do not show up on bare E80
+
+	2056 => { sid => 8,		name => '',			proto=>'udp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
+		# shows up after turning on TB compass and GPS device
 	2058 => { sid => -2,	name => '',			proto=>'',		mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
+
+	# 2560-2563 show up on bare E80
+
 	2560 => { sid => 35,	name => '',			proto=>'mcast',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
 	2561 => { sid => 5,		name => '',			proto=>'mcast',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
 	2562 => { sid => 16,	name => 'DBNAV',	proto=>'mcast',	mon_from=>1,			mon_to=>$MY_NAV,	multi=>1,	color=>$UTILS_COLOR_GREEN,    },
-	2563 => { sid => 8,		name => '',			proto=>'mcast',	mon_from=>1,			mon_to=>$UNDER_WAY,	multi=>1,	color=>0,    },
-	5800 => { sid => 0,		name => 'RAYSYS',	proto=>'mcast',	mon_from=>1,			mon_to=>$RAYSYS,	multi=>1,	color=>$UTILS_COLOR_LIGHT_BLUE,    },
-	5801 => { sid => 27,	name => 'ALARM',	proto=>'mcast',	mon_from=>1,			mon_to=>$UNDER_WAY,	multi=>1,	color=>$UTILS_COLOR_BLUE,    },
-	5802 => { sid => 27,	name => 'alarm',	proto=>'!tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
+		# E80 starts broadcasting these when TB autopilot instrument exists and RNS is running
+	2563 => { sid => 8,		name => '',			proto=>'mcast',	mon_from=>1,			mon_to=>$EXPLORING,	multi=>0,	color=>$UTILS_COLOR_LIGHT_MAGENTA,    },
+		# start getting udp packets when RNS is started and UNDER_WAY = heading and fix
+		# 		224.30.38.196:2563   <-- 10.0.241.54:1219
+		#			00000800 05f40500 dc000000 01000000 74f88210 914f0000 00000000 00000000
+		# no new Service UDP byte tx/rx seen
 
-		# There is something weird here. I have ALARM mon_from=>$underway, but on the screen they come out
-		# as 	udp(12) 224.0.0.2:5801 <-- 10.0.241.54:1211 03001b00 36f1000a 00000000    which is "to"
+
+	# 5800 added by me
+
+	5800 => { sid => 0,		name => 'RAYSYS',	proto=>'mcast',	mon_from=>1,			mon_to=>$RAYSYS,	multi=>1,	color=>$UTILS_COLOR_LIGHT_BLUE,    },
+
+	# 5801-5802 show up on bare E80
+
+	5801 => { sid => 27,	name => 'ALARM',	proto=>'mcast',	mon_from=>1,			mon_to=>$UNDER_WAY,	multi=>1,	color=>$UTILS_COLOR_BLUE,    },
+	5802 => { sid => 27,	name => 'alarm',	proto=>'udp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
+		# RNS adds alarm udp port at id(ffffffff) with no chart card
 
 	# these empirical port numbers carry fake funcs of 105, 106
 
