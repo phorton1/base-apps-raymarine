@@ -22,7 +22,7 @@ use Pub::WX::Window;
 use r_utils;
 use r_RAYSYS;
 use r_WPMGR;
-use tcpListener;
+use tcpBase;
 use base qw(Wx::ScrolledWindow MyWX::Window);
 
 my $dbg_win = 0;
@@ -46,8 +46,11 @@ my $COL_TOTAL		= 107;
 
 
 my $ID_SORT_BY			  = 902;
-my $ID_SHOW_WPMGR_INPUT   = 903;
-my $ID_SHOW_WPMGR_OUTPUT  = 904;
+
+my $ID_SHOW_WPMGR_TCP_INPUT   	= 903;
+my $ID_SHOW_WPMGR_TCP_OUTPUT  	= 904;
+my $ID_SHOW_WPMGR_PARSED_INPUT  = 905;
+my $ID_SHOW_WPMGR_PARSED_OUTPUT = 906;
 
 
 my $SORT_BYS = ['port','func','device','num'];
@@ -89,11 +92,16 @@ sub new
 	Wx::ComboBox->new($this, $ID_SORT_BY, $$SORT_BYS[0],
 		[84,10],wxDefaultSize,$SORT_BYS,wxCB_READONLY);
 
-	Wx::StaticText->new($this,-1,"Monitor WPMGR",[200,13]);
-	my $wpmgr_input = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_INPUT,"in",[330,13]);
-	$wpmgr_input->SetValue(1) if $SHOW_WPMGR_INPUT;
-	my $wpmgr_output = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_OUTPUT,"out",[380,13]);
-	$wpmgr_output->SetValue(1) if $SHOW_WPMGR_OUTPUT;
+	Wx::StaticText->new($this,-1,"Monitor WPMGR   Raw ",[200,13]);
+	my $box = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_TCP_INPUT,"in",[400,13]);
+	$box->SetValue(1) if $wpmgr->{show_input};
+	$box = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_TCP_OUTPUT,"out",[500,13]);
+	$box->SetValue(1) if $wpmgr->{show_output};
+	Wx::StaticText->new($this,-1,"  Parsed ",[600,13]);
+	$box = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_PARSED_INPUT,"in",[700,13]);
+	$box->SetValue(1) if $SHOW_WPMGR_PARSED_INPUT;
+	$box = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_PARSED_OUTPUT,"out",[800,13]);
+	$box->SetValue(1) if $SHOW_WPMGR_PARSED_OUTPUT;
 
 
 	$this->{sort_by} = $$SORT_BYS[0];
@@ -304,15 +312,25 @@ sub onCheckBox
 	my $id = $event->GetId();
 	my $checked = $event->IsChecked() || 0;
 
-	if ($id == $ID_SHOW_WPMGR_INPUT)
+	if ($id == $ID_SHOW_WPMGR_TCP_INPUT)
 	{
-		$SHOW_WPMGR_INPUT = $checked;
-		warning(0,0,"SHOW_WPMGR_INPUT=$SHOW_WPMGR_INPUT");
+		$wpmgr->{show_input} = $checked;
+		display(0,0,"wpmgr->{show_input}=$checked");
 	}
-	elsif ($id == $ID_SHOW_WPMGR_OUTPUT)
+	elsif ($id == $ID_SHOW_WPMGR_TCP_OUTPUT)
 	{
-		$SHOW_WPMGR_OUTPUT = $checked;
-		warning(0,0,"SHOW_OUTPUT_INPUT=$SHOW_WPMGR_OUTPUT");
+		$wpmgr->{show_output} = $checked;
+		display(0,0,"wpmgr->{show_output}=$checked");
+	}
+	elsif ($id == $ID_SHOW_WPMGR_PARSED_INPUT)
+	{
+		$SHOW_WPMGR_PARSED_INPUT = $checked;
+		display(0,0,"SHOW_WPMGR_PARSED_INPUT=$SHOW_WPMGR_PARSED_INPUT");
+	}
+	elsif ($id == $ID_SHOW_WPMGR_PARSED_OUTPUT)
+	{
+		$SHOW_WPMGR_PARSED_OUTPUT = $checked;
+		display(0,0,"SHOW_WPMGR_PARSED_OUTPUT=$SHOW_WPMGR_PARSED_OUTPUT");
 	}
 	else
 	{
@@ -343,26 +361,37 @@ sub onCheckBox
 		my $key = $slot->{key};
 		my $rayport = $this->{rayports}->{$key};
 		$rayport->{$field} = $checked;
-
+		display(0,0,"$rayport->{name} $field($checked) $rayport->{proto} $rayport->{addr}");
 		if ($field eq 'listen')
 		{
 			if ($checked)
 			{
-				warning(0,0,"starting tcpListener for func($rayport->{func} $rayport->{addr} $rayport->{proto} $rayport->{name}");
-				my $box = $event->GetEventObject();
+				display(0,1,"starting tcpBase for func($rayport->{func} $rayport->{addr} $rayport->{proto} $rayport->{name}");
+				return error("already started!") if findTcpBase($rayport->{ip},$rayport->{ip});
+				# my $box = $event->GetEventObject();
 				# $box->Enable(0);
-				tcpListener->startTcpListener($rayport->{ip},$rayport->{port});
+				my $base = tcpBase->new({
+					remote_ip => $rayport->{ip},
+					remote_port => $rayport->{port},
+					EXIT_ON_CLOSE => 1,
+					show_input => 1,
+					show_output => 1,
+					in_color => $rayport->{color},
+					out_color => $rayport->{color} });
+				$base->start();
+
+				# tcpListener->startTcpListener($rayport->{ip},$rayport->{port});
 			}
 			else
 			{
-				warning(0,0,"starting tcpListener for func($rayport->{func} $rayport->{addr} $rayport->{proto} $rayport->{name}");
-				my $box = $event->GetEventObject();
-				# $box->Enable(0);
-				tcpListener::stopTcpListener($rayport->{ip},$rayport->{port});
+				display(0,1,"stopping tcpBase for func($rayport->{func}) $rayport->{addr} $rayport->{proto} $rayport->{name}");
+				my $base = findTcpBase($rayport->{ip},$rayport->{port});
+				return error("could not find tcpBase!") if !$base;
+				$base->stop();
 			}
 		}
 
-		warning(0,0,"$rayport->{name} CHECKED($checked) $rayport->{proto} $rayport->{addr}");
+
 	}
 }
 

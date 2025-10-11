@@ -28,7 +28,7 @@ use r_RAYSYS;
 my $dbg_fs = 0;
 
 
-my $FILE_REQUEST_TIMEOUT    = 30;        # seconds
+my $FILE_REQUEST_TIMEOUT    = 60;        # seconds
 
 our $FILE_STATE_ILLEGAL   = -9; 	# used only to init change detection in winFILESYS
 our $FILE_STATE_INIT 	  = -3;
@@ -437,6 +437,7 @@ sub filesysThread
 
     my $sock = IO::Socket::INET->new(
             LocalPort => $FILESYS_LISTEN_PORT,
+			LocalAddr => '0.0.0.0',	# required
             Proto     => 'udp',
             ReuseAddr => 1 );
     if (!$sock)

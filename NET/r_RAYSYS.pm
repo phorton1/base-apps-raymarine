@@ -119,7 +119,7 @@ BEGIN
 
 # IDENT PACKETS START with 01
 #
-#                                ---ID--- VERS     ---IP---                                                                       MASTER v
+#                       _D_TYPE_ ---ID--- VERS     ---IP---                                                                       MASTER v
 #	E80 #1 M - 01000000 00000000 37a681b2 39020000 36f1000a 0033cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 02000100
 #	E80 #1 S - 01000000 00000000 37ad80b2 39020000 53f0000a 0033cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 02000000
 #
@@ -127,6 +127,24 @@ BEGIN
 #	E80 #2 M - 01000000 00000000 37ad80b2 39020000 53f0000a 0033cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 02000100
 #   RNS      - 01000000 03000000 ffffffff 76020000 018e7680 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 0000
 
+my %RAY_DEVICE_TYPE =(
+	0 	=> 'E80',
+	1 	=> 'E120',
+	2 	=> 'DSM300',
+	3 	=> 'RAYTECH',
+	4 	=> 'SR100',
+	5 	=> 'GPM400',
+	6 	=> 'GVM400',
+	7 	=> 'DSM400',
+	8 	=> 'DSM30',
+	9 	=> 'DIGITAL OPEN ARRAY',
+	10	=> 'DIGITAL RADOME',
+	11  => 'SEATALK HS RADOME', );
+	#  12 = []
+	#  13+ = Unknown
+
+
+#	0x3300 = 13056, an unlikely port number
 
 my $devices:shared = shared_clone({});
     # a hash of all unique RAYSYS udp descriptor packets by func:id
@@ -140,6 +158,9 @@ my %duplicates:shared;
 	# if id:func matches, we will still add the device
 
 	
+my $HIDDEN_PORT1 = 6668;
+my $E80_1_IP = '10.0.241.54';
+
 
 
 
@@ -152,12 +173,15 @@ sub initRAYSYS
 	_addPort({func => 0, id=>'sys'},
 		$RAYDP_IP,
 		$RAYDP_PORT);
-	_addPort({func => 500,id=>'shark'},
+	_addPort({func => 500,id=>$SHARK_DEVICE_ID},
 		$LOCAL_IP,
 		$RNS_FILESYS_LISTEN_PORT);
-	_addPort({func => 501,id=>'shark'},
+	_addPort({func => 501,id=>$SHARK_DEVICE_ID},
 		$LOCAL_IP,
 		$FILESYS_LISTEN_PORT);
+	_addPort({func => -1, id=>'E80 #1', },
+		$E80_1_IP,
+		$HIDDEN_PORT1 );
 }
 
 
@@ -437,6 +461,7 @@ sub decodeRAYSYS
 		if (unpack('C',$raw) == 1)	# length($raw) == 56 || length($raw) == 54)
 		{
 			$name = 'IDENT';
+			my $type = unpack('V',substr($raw,4,4));
 			my $ident_id = raydpIdIfKnown(unpack('H*',substr($raw,8,4)));
 			my $version = unpack('v',substr($raw,12,2))/100;
 			my $ip = inet_ntoa(pack('N', unpack('V',substr($raw,16,4))));
@@ -445,7 +470,8 @@ sub decodeRAYSYS
 				$is_master == -1 ? "UNDEFINED" :
 				$is_master ? "MASTER" : "SLAVE";
 
-			$text2 = "id($ident_id) vers($version) ip($ip) role($role)";
+			my $typename = $RAY_DEVICE_TYPE{$type} || "$type=unknown";
+			$text2 = "type($typename) id($ident_id) vers($version) ip($ip) role($role)";
 		}
 
 		my $header = packetWireHeader($packet,0);

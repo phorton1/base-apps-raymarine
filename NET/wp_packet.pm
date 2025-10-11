@@ -405,7 +405,7 @@ sub parseWPMGR
 			$text .= r_utils::parse_dwords($header.$hex_len.' ',$data,1);
 		}
 		
-		# get the comand word and move past {seq_num}
+		# get the comand word
 
 		my $command_word = unpack('v',$data);
 		my $D = $command_word & 0xf00;	# substr($hex_data,3,1);
@@ -430,7 +430,7 @@ sub parseWPMGR
 		{
 			# Weirdest bug ever.
 			# Somehow, {mods}, gets into the $context, even though
-			# I only assign it to rec after
+			# I only assign it to $rec after
 			#
 			#	$rec = shared_clone($context);
 			#

@@ -110,7 +110,7 @@ sub emptyRoute
 sub showCommand
 {
 	my ($msg) = @_;
-	return if !$SHOW_WPMGR_OUTPUT;	# in r_WPMGR.pm
+	return if !$SHOW_WPMGR_PARSED_OUTPUT;	# in r_WPMGR.pm
 	$msg = "\n\n".
 		"#------------------------------------------------------------------\n".
 		"# $msg\n".

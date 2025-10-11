@@ -31,7 +31,7 @@ our $LOCAL_UDP_PORT = 8765;                 # arbitrary but recognizable
 
 # static and known udp listening ports
 
-our $FILESYS_LISTEN_PORT		= 0x4801;   # 18433
+our $FILESYS_LISTEN_PORT		= 12001;	# 0x4801;   # 18433
 our $RNS_FILESYS_LISTEN_PORT	= 0x4800;	# 18432
 our $WPMGR_PORT 				= 9877;
 
@@ -53,6 +53,8 @@ BEGIN
 		$FILESYS_LISTEN_PORT
 		$RNS_FILESYS_LISTEN_PORT
 		$WPMGR_PORT
+
+
 
 		sendUDPPacket
 		sendAlive
@@ -167,9 +169,12 @@ our $color_light_grey    = Wx::Colour->new(0xF0, 0xF0, 0xF0);		# winCommitRight 
 our $color_medium_grey   = Wx::Colour->new(0xC0, 0xC0, 0xC0);		# winInfoLeft selected item
 
 
+
 #---------------------------------
 # methods
 #---------------------------------
+
+
 
 
 sub clearLog

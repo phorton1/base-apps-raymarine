@@ -17,6 +17,7 @@ use Pub::HTTP::ServerBase;
 use Pub::HTTP::Response;
 use r_units;
 use r_WPMGR;
+use r_TRACK;
 use wp_parse;
 use base qw(Pub::HTTP::ServerBase);
 
@@ -30,6 +31,7 @@ BEGIN
 	our @EXPORT = qw(
 		startWPServer
 		kml_WPMGR
+		showLocalDatabase
 	);
 }
 
@@ -606,6 +608,37 @@ sub kml_WPMGR
 }
 
 
+#-------------------------------------
+# shark support
+#-------------------------------------
+
+sub showThings
+{
+	my ($is_wpmgr,$what) = @_;
+	my $hash = $is_wpmgr ? $wpmgr->{$what} : $track_mgr->{$what};
+	my @uuids = keys %$hash;
+	@uuids = sort { cmpByName($hash,$a,$b) } @uuids;
+
+	print "-------------------------------------------------------------\n";
+	print uc($what)."(".scalar(@uuids).")\n";
+	print "-------------------------------------------------------------\n";
+	for my $uuid (@uuids)
+	{
+		my $thing = $hash->{$uuid};
+		print "    $uuid ".$thing->{name}."\n";
+	}
+}
+
+
+
+
+sub showLocalDatabase
+{
+	showThings(1,'waypoints');
+	showThings(1,'routes');
+	showThings(1,'groups');
+	showThings(0,'tracks');
+}
 
 
 1;

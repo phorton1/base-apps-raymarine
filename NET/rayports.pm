@@ -25,9 +25,12 @@ BEGIN
 		raydpIdIfKnown
 		%KNOWN_FUNCS
 		$RAYPORT_DEFAULTS
+
+		$SHARK_DEVICE_ID
     );
 }
 
+our $SHARK_DEVICE_ID = 'aaaaaaaa';
 
 
 # I use a friendly name in place of the Service's id for
@@ -39,7 +42,8 @@ BEGIN
 our %KNOWN_E80_IDS = (
 	'37a681b2' =>	'E80 #1',
 	'37ad80b2' =>	'E80 #2',
-	'ffffffff' =>	'RNS' );
+	'ffffffff' =>	'RNS',
+	$SHARK_DEVICE_ID =>   'shark' );
 
 sub raydpIdIfKnown
 {
@@ -137,8 +141,8 @@ sub raydpIdIfKnown
 #   Autopilot				UDP		pilot
 #	Alarm					MCAST	alarm					broadcast by master E80 & RNS
 #	Sys						MCAST 	RAYSYS		0			well known main advertisement
-#	GVM				TCP				Gvm
-#	Monitor			TCP				monitor
+#	GVM				TCP				Gvm						TCP PORT YET TO BE IDENTIFIED
+#	Monitor			TCP				monitor					audio-video module - TCP PORT YET TO BE IDENTIFIED
 #	  Monitor				UDP		monitor
 #	Keyboard				UDP 	kbd
 #	RML Monitors			UDP 	rmlmon
@@ -234,20 +238,21 @@ our $RAYPORT_DEFAULTS  = {
 
 	2048 => { sid => 35,	name => '',			proto=>'udp',	mon_from=>$UNDER_WAY,	mon_to=>1,			multi=>1,	color=>0,	 },
 	2049 => { sid => 5,		name => 'FILESYS',	proto=>'udp',	mon_from=>1,			mon_to=>$FILESYS,	multi=>1,	color=>$UTILS_COLOR_CYAN,    },
-	2050 => { sid => 16,	name => 'Database',	proto=>'tcp',	mon_from=>$MY_DB,		mon_to=>$MY_DB,		multi=>1,	color=>0,    },
+	2050 => { sid => 16,	name => 'Database',	proto=>'tcp',	mon_from=>$MY_DB,		mon_to=>$MY_DB,		multi=>1,	color=>$UTILS_COLOR_WHITE,    },
 	2051 => { sid => 16,	name => 'database',	proto=>'udp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
 	2052 => { sid => 15,	name => 'WPMGR',	proto=>'tcp',	mon_from=>$MY_WPS,		mon_to=>$MY_WPS,	multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },	#
-	2053 => { sid => 19,	name => 'Track',	proto=>'tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
+	2053 => { sid => 19,	name => 'TRACK',	proto=>'tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
 	2054 => { sid => 7,		name => 'Navig',	proto=>'tcp',	mon_from=>$UNDER_WAY,	mon_to=>$RNS_INIT,	multi=>1,	color=>$UTILS_COLOR_LIGHT_CYAN,    },
-	2055 => { sid => 22,	name => 'Unknown1',	proto=>'tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
-		# am able to connect with TCP, but no new connections show in E80 Services list
-		# immediatly starts receiving 9 byte messags with command_word(0000) func(1600) dword(00570200) byte(00)
+	2055 => { sid => 22,	name => 'Unknown1',	proto=>'tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>$UTILS_COLOR_LIGHT_MAGENTA,    },
+		# I am able to connect with TCP with 2055 , but no new connections show in E80 Services list
+		# Immediatly starts receiving 9 byte messags with command_word(0000) func(1600) dword(00570200) byte(00)
 
 	# 2056,2058 do not show up on bare E80
 
 	2056 => { sid => 8,		name => '',			proto=>'udp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
 		# shows up after turning on TB compass and GPS device
 	2058 => { sid => -2,	name => '',			proto=>'',		mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
+		# I saw this somewhere in the vestigial past, but don't know for sure now
 
 	# 2560-2563 show up on bare E80
 
@@ -272,10 +277,14 @@ our $RAYPORT_DEFAULTS  = {
 	5802 => { sid => 27,	name => 'alarm',	proto=>'udp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
 		# RNS adds alarm udp port at id(ffffffff) with no chart card
 
+	# these found by port scan and here as reminders (they will never be advertised
+	
+	6668 => { sid => -1,	name => 'hidden1',	proto=>'tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>$UTILS_COLOR_LIGHT_MAGENTA,    },
+
 	# these empirical port numbers carry fake funcs of 105, 106
 
 	$FILESYS_LISTEN_PORT =>		# 18433
-			{ sid=>5,		name=>'MY_FILE',	proto=>'udp',	mon_from=>1,			mon_to=>$FILE,		multi=>0,	color=>$UTILS_COLOR_BROWN,    },
+			{ sid=>5,		name=>'MY_FILE',	proto=>'udp',	mon_from=>1,			mon_to=>$FILE,		multi=>1,	color=>$UTILS_COLOR_BROWN,    },
 	$RNS_FILESYS_LISTEN_PORT =>	# 18432
 			{ sid=>5,		name=>'FILE_RNS',	proto=>'udp',	mon_from=>1,			mon_to=>$FILE_RNS,	multi=>1,	color=>$UTILS_COLOR_BROWN,    },
 };

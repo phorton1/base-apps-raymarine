@@ -28,6 +28,8 @@ BEGIN
 		northEastToLatLon
 		latLonToNorthEast
 
+		name16_hex
+
     );
 }
 
@@ -48,6 +50,15 @@ my $FSH_LAT_SCALE = 107.1709342;  # same scale used in forward transform
 my $LONG_SCALE = 0x7fffffff;  # 2147483647
 
 
+
+sub name16_hex
+	# return hex representation of max16 name + null
+{
+	my ($name) = @_;
+	while (length($name) < 16) { $name .= "\x00" }
+	$name .= "\x00";
+	return unpack('H*',$name);
+}
 
 
 sub degreeMinutes

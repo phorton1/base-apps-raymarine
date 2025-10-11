@@ -42,6 +42,9 @@ BEGIN
 		latLonToNorthEast
 		northEastToLatLon
 
+		parseTrack
+		parseMTA
+
     );
 }
 
@@ -619,6 +622,91 @@ sub buildWPWaypoint
 	$buffer = pack('V',length($buffer)).$buffer;
 	parseWPWaypoint($buffer);	# debug check
 	return $buffer;
+}
+
+
+#-------------------------------------------------
+# trackMTA
+#-------------------------------------------------
+
+
+my $MTA_REC_SIZE = 56;
+my $MTA_REC_SPECS = [
+	k1_1         => [ 1,	1,		'c',     ],   #   0     char a;                   // always 0x01
+	cnt1         => [ 0,	2,		's',     ],   #   1     int16_t cnt;              // number of track points
+	cnt2         => [ 0,	2,		's',     ],   #   3     int16_t _cnt;             // same as cnt
+	k2_0         => [ 1,	2,		's',     ],   #   5     int16_t b;                // unknown, always 0
+	length       => [ 0,	4,		'l',     ],   #   7     int32_t length;           // approx. track length in m
+	north_start  => [ 0,	4,		'l',     ],   #   11    int32_t north_start;      // Northing of first track point
+	east_start   => [ 0,	4,		'l',     ],   #   15    int32_t east_start;       // Easting of first track point
+	temp_start   => [ 0,	2,		'S',     ],   #   19    uint16_t tempr_start;     // temperature of first track point
+	depth_start  => [ 0,	4,		'l',     ],   #   21    int32_t depth_start;      // depth of first track point
+	north_end    => [ 0,	4,		'l',     ],   #   25    int32_t north_end;        // Northing of last track point
+	east_end     => [ 0,	4,		'l',     ],   #   29    int32_t east_end;         // Easting of last track point
+	temp_end     => [ 0,	2,		'S',     ],   #   33    uint16_t tempr_end;       // temperature last track point
+	depth_end    => [ 0,	4,		'l',     ],   #   35    int32_t depth_end;        // depth of last track point
+	color        => [ 0,	1,		'c',     ],   #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
+	name         => [ 0,	16,		'Z16',   ],   #   40    char name[16];            // name of track, string not terminated
+	u1           => [ 1,	1,		'C',     ],   #   56    char j;                   // unknown, never 0 in my files, always 0 according to parsefsh
+	u2     	 	 => [ 0,	1,		'c',     ],   #   57    uint8_t guid_cnt;         // nr of guids following this header (always 1 in my files)
+];
+
+
+my $TRACK_HDR_SIZE = 8;
+my $TRACK_HEADER_SPECS = [
+	a 			=> [ 0,		4,		'V',	 ],	 # 0 	int32_t a;        // unknown, always 0
+	cnt			=> [ 0,		2,		'v',	 ],	 # 4	int16_t cnt;
+	b			=> [ 0,		2,		'v',	 ],	 # 6	int16_t cnt;
+];
+
+
+my $TRACK_PT_SIZE = 14;
+my $TRACK_PT_SPECS = [
+	north		=> [ 0,		4,		'v',	],	#  0	int32_t north 		// prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
+	east		=> [ 0,		4,		'v',	],	#  4 	int33_t east
+	tempr		=> [ 0,		2,		'v',	],	#  8	uint16_t tempr;      // temperature in Kelvin * 100
+	depth		=> [ 0,		2,		'v',	],	# 10	int16_t depth;       // depth in cm
+	c			=> [ 0,		2,		'v',	],	# 12	int16_t c;           // unknown, always 0
+];
+
+
+my $dbg_track = 0;
+
+sub parseMTA
+{
+	my ($buffer) = @_;
+	my $buf_len = length($buffer);
+	display($dbg_track,0,"parseMTA len($buf_len)");
+	my $offset = 0;
+	my $rec = unpackRecord('mta',$MTA_REC_SPECS, $buffer, $offset, $MTA_REC_SIZE);
+	display($dbg_track,1,"found MTA($rec->{name}) with $rec->{cnt1} points");
+	display_hash($dbg_track,1,"parsetMTA($rec->{name}) returning",$rec);
+	return $rec;
+}
+
+
+sub parseTrack
+{
+	my ($buffer) = @_;
+	my $buf_len = length($buffer);
+	display($dbg_wp,0,"parseTrack len($buf_len)");
+
+	my $offset = 0;
+	my $rec = unpackRecord('track_hdr',$TRACK_HEADER_SPECS, $buffer, $offset, $TRACK_HDR_SIZE);
+	$offset += $TRACK_HDR_SIZE;
+
+	display($dbg_track,1,"found $rec->{cnt} track points points");
+
+	my $points = $rec->{points} = shared_clone([]);
+	#while ($offset <= $buf_len-$TRACK_PT_SIZE)
+	for (my $i=0; $i<$rec->{cnt}; $i++)
+	{
+		my $pt = unpackRecord('track_point',$TRACK_PT_SPECS, $buffer, $offset, $TRACK_PT_SIZE);
+		push @$points,$pt;
+		$offset += $TRACK_PT_SIZE;
+	}
+
+	return $rec;
 }
 
 

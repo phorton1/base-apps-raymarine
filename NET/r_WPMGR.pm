@@ -24,10 +24,10 @@ use strict;
 use warnings;
 use threads;
 use threads::shared;
-use Socket;
-use IO::Select;
-use IO::Handle;
-use IO::Socket::INET;
+# use Socket;
+# use IO::Select;
+# use IO::Handle;
+# use IO::Socket::INET;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use r_utils;
@@ -35,19 +35,23 @@ use r_RAYSYS;
 use wp_parse;
 use wp_packet;
 use r_utils;
+use base qw(tcpBase);
 
-my $dbg = 1;
+
+my $dbg = 0;
 
 
-my $WITH_MOD_PROCESSING = 1;
+my $WITH_MOD_PROCESSING = 0;
 
 
 my $COMMAND_TIMEOUT 		= 3;
-my $REFRESH_INTERVAL		= 5;
-my $RECONNECT_INTERVAL		= 15;
 
-our $SHOW_WPMGR_OUTPUT:shared 	= 0;
-our $SHOW_WPMGR_INPUT:shared 	= 0;
+
+our $DEFAULT_WPMGR_TCP_INPUT:shared 	= 0;
+our $DEFAULT_WPMGR_TCP_OUTPUT:shared 	= 0;
+our $SHOW_WPMGR_PARSED_INPUT:shared 	= 0;
+our $SHOW_WPMGR_PARSED_OUTPUT:shared 	= 0;
+                                  
 
 my $DBG_WAIT = 1;
 
@@ -93,8 +97,8 @@ BEGIN
 		$ROUTE_COLOR_BLACK
 		$NUM_ROUTE_COLORS
 
-		$SHOW_WPMGR_OUTPUT
-		$SHOW_WPMGR_INPUT
+		$SHOW_WPMGR_PARSED_INPUT
+		$SHOW_WPMGR_PARSED_OUTPUT
 
 	);
 }
@@ -141,12 +145,21 @@ sub apiCommandName
 sub startWPMGR
 {
 	my ($class) = @_;
-	display($dbg,0,"initing $class");
-	my $this = shared_clone({});
-	bless $this,$class;
-	$this->{started} = 1;
-	$this->{running} = 0;
-	$this->{next_seqnum} = 1;
+	display($dbg,0,"startWPMGR($class)");
+	my $this = $class->SUPER::new({
+		name => 'WPMGR',
+		local_port => $WPMGR_PORT,
+		show_input  => $DEFAULT_WPMGR_TCP_INPUT,
+		show_output => $DEFAULT_WPMGR_TCP_OUTPUT,
+		in_color	=> $UTILS_COLOR_BROWN,
+		out_color   => $UTILS_COLOR_LIGHT_CYAN, });
+
+
+	#	my $this = shared_clone({});
+	#	bless $this,$class;
+	#	$this->{started} = 1;
+	#	$this->{running} = 0;
+	#	$this->{next_seqnum} = 1;
 	$this->{command_queue} = shared_clone([]);
 	$this->{replies} = shared_clone([]);
 	$this->{version} = 1;
@@ -157,12 +170,13 @@ sub startWPMGR
 		# buffer starts with the big_len
 
 	$wpmgr = $this;
-
-	display($dbg,0,"creating listen_thread");
-    my $listen_thread = threads->create(\&listenerThread,$this);
-    display($dbg,0,"listen_thread created");
-    $listen_thread->detach();
-    display($dbg,0,"listen_thread detached");
+	$this->start();
+	
+	#	display($dbg,0,"creating listen_thread");
+    #	my $listen_thread = threads->create(\&listenerThread,$this);
+    #	display($dbg,0,"listen_thread created");
+    #	$listen_thread->detach();
+    #	display($dbg,0,"listen_thread detached");
 }
 
 
@@ -171,13 +185,15 @@ sub queueWPMGRCommand
 {
 	my ($this,$api_command,$what,$name,$uuid,$data) = @_;
 	$data ||= 0;
+	display_hash($dbg+2,0,"queueWPCommand($this)",$this);
+	
 	return error("No 'this' in queueWPMGRCommand") if !$this;
 	return error("Not started") if !$this->{started};
 	return error("Not running") if !$this->{running};
 
 	my $cmd_name = apiCommandName($api_command);
 
-	if ($SHOW_WPMGR_OUTPUT)
+	if ($SHOW_WPMGR_PARSED_OUTPUT)
 	{
 		my $msg = "# queueWPMGRCommand($api_command=$cmd_name) what($what) name($name) uuid($uuid) data(".($data?length($data):'empty').")\n";
 		print $msg;
@@ -228,14 +244,6 @@ sub incVersion
 	return $this->{version};
 }
 
-sub name16_hex
-	# return hex representation of max16 name + null
-{
-	my ($name,$opt_end) = @_;
-	while (length($name) < 16) { $name .= "\x00" }
-	$name .= $opt_end ? pack('H*',$opt_end) : "\x00";
-	return unpack('H*',$name);
-}
 
 
 sub createMsg
@@ -264,20 +272,15 @@ sub createMsg
 
 sub sendRequest
 {
-	my ($this,$sock,$sel,$seq,$name,$request) = @_;
-	if (!$sel->can_write())
-	{
-		error("Cannot write sendRequest($seq): $!");
-		return 0;
-	}
+	my ($this,$seq,$name,$request) = @_;
 
-	if ($SHOW_WPMGR_OUTPUT)
+	if ($SHOW_WPMGR_PARSED_OUTPUT)
 	{
 		while ($slow_down) { sleep(0.1); }
 		$slow_down = 1;
 
 		my $text = "# sendRequest($seq) $name\n";
-		my $rec = parseWPMGR($SHOW_WPMGR_OUTPUT,0,$WPMGR_PORT,$request);
+		my $rec = parseWPMGR($SHOW_WPMGR_PARSED_OUTPUT,0,$WPMGR_PORT,$request);
 		$text .= $rec->{text};
 		# 1=with_text, 0=is_reply		$text .= $rec->{text};
 		setConsoleColor($out_color) if $out_color;
@@ -287,20 +290,8 @@ sub sendRequest
 
 		$slow_down = 0;
 	}
-	
-	my $hdr = substr($request,0,2);
-	my $data = substr($request,2);
-	if (!$sock->send($hdr))
-	{
-		error("Could not send header($seq)\n$!");
-		return 0;
-	}
-	if (!$sock->send($data))
-	{
-		error("Could not send header($seq)\n$!");
-		return 0;
-	}
 
+	$this->sendPacket($request);
 	$this->{wait_seq} = $seq;
 	$this->{wait_name} = $name;
 	return 1
@@ -310,11 +301,11 @@ sub sendRequest
 sub waitReply
 {
 	my ($this,$expect_success) = @_;
-	my $seq = $this->{wait_seq};
-	my $name = $this->{wait_name};
+	my $seq = $this->{wait_seq} ;
+	my $name = $this->{wait_name} || '';
 	my $start = time();
 
-	display($dbg+1,0,"waitReply($seq) $name");
+	display($dbg+10,"waitReply($seq) $name");
 
 	while ($this->{started})
 	{
@@ -322,7 +313,7 @@ sub waitReply
 		if (@$replies)
 		{
 			my $reply = shift @$replies;
-			display($dbg+1,1,"got reply seq($reply->{seq_num}) is_event($reply->{is_event})",$reply);
+			display_hash($dbg+1,1,"got reply seq($reply->{seq_num}) is_event($reply->{is_event})",$reply);
 			if ($reply->{seq_num} == $seq)
 			{
 				if ($expect_success)
@@ -383,9 +374,9 @@ my $dict_buffer = '28000000 00000000 00000000 00000000 00000000 00000000'.
 
 sub update_item_request
 {
-	my ($this,$sock,$sel,$seq,$what,$name,$uuid,$request) = @_;
+	my ($this,$seq,$what,$name,$uuid,$request) = @_;
 	my $what_name = $NAV_WHAT{$what};
-	return 0 if !$this->sendRequest($sock,$sel,$seq,"$name $what_name",$request);
+	return 0 if !$this->sendRequest($seq,"$name $what_name",$request);
 	my $reply = $this->waitReply(1);
 	return 0 if !$reply;
 	return error("No {item} in $name $what_name reply") if !$reply->{item};
@@ -406,7 +397,7 @@ sub update_item_request
 
 sub query_one
 {
-	my ($this,$sock,$sel,$what) = @_;
+	my ($this,$what) = @_;
 	my $what_name = $NAV_WHAT{$what};
 	display($dbg,0,"query_one($what_name)");
 
@@ -417,7 +408,7 @@ sub query_one
 		createMsg($seq,$DIR_INFO,$CMD_BUFFER,0,$dict_buffer).
 		createMsg($seq,$DIR_INFO,$CMD_LIST,0,'00000000 00000000');
 
-	return 0 if !$this->sendRequest($sock,$sel,$seq,"$what_name DICT",$request);
+	return 0 if !$this->sendRequest($seq,"$what_name DICT",$request);
 	my $reply = $this->waitReply(1);
 	return 0 if !$reply;
 	return error("dictionary $what_name reply does not have is_dict(1) or {dict_uuids}")
@@ -429,7 +420,7 @@ sub query_one
 	{
 		$seq = $this->{next_seqnum}++;
 		$request = createMsg($seq,$DIR_SEND,$CMD_ITEM,$what,$uuid);
-		return 0 if !$this->update_item_request($sock,$sel,$seq,$what,"query($num)",$uuid,$request);
+		return 0 if !$this->update_item_request($seq,$what,"query($num)",$uuid,$request);
 		$num++;
 	}
 
@@ -443,12 +434,12 @@ sub query_one
 sub do_query
 	# get all Waypoints, Routes, and Groups from the E80
 {
-	my ($this,$sock,$sel) = @_;
+	my ($this) = @_;
 	print "do_query()\n";
 
-	return 0 if !$this->query_one($sock,$sel,$WHAT_WAYPOINT);
-	return 0 if !$this->query_one($sock,$sel,$WHAT_ROUTE);
-	return 0 if !$this->query_one($sock,$sel,$WHAT_GROUP);
+	return 0 if !$this->query_one($WHAT_WAYPOINT);
+	return 0 if !$this->query_one($WHAT_ROUTE);
+	return 0 if !$this->query_one($WHAT_GROUP);
 	return 1;
 }
 
@@ -456,7 +447,7 @@ sub do_query
 
 sub create_item
 {
-	my ($this,$sock,$sel,$command) = @_;
+	my ($this,$command) = @_;
 	my $what = $command->{what};
 	my $what_name = $NAV_WHAT{$what};
 	my $uuid = $command->{uuid};
@@ -468,14 +459,14 @@ sub create_item
 
 	my $seq = $this->{next_seqnum}++;
 	my $request = createMsg($seq,$DIR_SEND,$CMD_FIND,$what,name16_hex($name));
-	return 0 if !$this->sendRequest($sock,$sel,$seq,"$what_name name must not exist",$request);
+	return 0 if !$this->sendRequest($seq,"$what_name name must not exist",$request);
 	return 0 if !$this->waitReply(-1);
 
 	# check the uuid
 
 	$seq = $this->{next_seqnum}++;
 	$request = createMsg($seq,$DIR_SEND,$CMD_ITEM,$what,$uuid);
-	return 0 if !$this->sendRequest($sock,$sel,$seq,"$what_name uuid must not exist",$request);
+	return 0 if !$this->sendRequest($seq,"$what_name uuid must not exist",$request);
 	return 0 if !$this->waitReply(-1);
 
 	# create the item
@@ -488,7 +479,7 @@ sub create_item
 		createMsg($seq,$DIR_INFO,$CMD_BUFFER,	0,		$data).
 		createMsg($seq,$DIR_INFO,$CMD_LIST,		0,		'00000000 00000000'); # $uuid);
 
-	return 0 if !$this->sendRequest($sock,$sel,$seq,"$name $what_name",$request);
+	return 0 if !$this->sendRequest($seq,"$name $what_name",$request);
 	return 0 if !$this->waitReply(1);
 	return 1;
 }
@@ -497,7 +488,7 @@ sub create_item
 
 sub modify_item
 {
-	my ($this,$sock,$sel,$command) = @_;
+	my ($this,$command) = @_;
 	my $what = $command->{what};
 	my $what_name = $NAV_WHAT{$what};
 	my $uuid = $command->{uuid};
@@ -513,7 +504,7 @@ sub modify_item
 	# MUST apparently do $CMD_EXIST before the $CMD_DATA
 	
 	$request = createMsg($seq,$DIR_SEND,$CMD_EXIST,$what,'07000000'.$uuid);	# '15000000'.$uuid);
-	return 0 if !$this->sendRequest($sock,$sel,$seq,"modify1 $what_name",$request);
+	return 0 if !$this->sendRequest($seq,"modify1 $what_name",$request);
 	return 0 if !$this->waitReply(1);
 
 	# These messages are sent separatly by RNS for groups
@@ -524,7 +515,7 @@ sub modify_item
 		createMsg($seq,$DIR_INFO,$CMD_CONTEXT,	0,		$uuid.'00000000').	#.'03000000').
 		createMsg($seq,$DIR_INFO,$CMD_BUFFER,	0,		$data).
 		createMsg($seq,$DIR_INFO,$CMD_LIST,		0,		$uuid);
-	return 0 if !$this->sendRequest($sock,$sel,$seq,"modify $what_name",$request);
+	return 0 if !$this->sendRequest($seq,"modify $what_name",$request);
 	return 0 if !$this->waitReply(1);
 	return 1;
 }
@@ -533,7 +524,7 @@ sub modify_item
 sub delete_item
 	 # name just included for nicety debugging
 {
-	my ($this,$sock,$sel,$command) = @_;
+	my ($this,$command) = @_;
 	my $what = $command->{what};
 	my $what_name = $NAV_WHAT{$what};
 	my $uuid = $command->{uuid};
@@ -542,7 +533,7 @@ sub delete_item
 
 	my $seq = $this->{next_seqnum}++;
 	my $request = createMsg($seq,$DIR_SEND,$CMD_UUID,$what,$uuid);
-	return 0 if !$this->sendRequest($sock,$sel,$seq,"delete $what_name",$request);
+	return 0 if !$this->sendRequest($seq,"delete $what_name",$request);
 	return 0 if !$this->waitReply(1);
 
 	my $hash_name = lc($what_name)."s";
@@ -554,7 +545,7 @@ sub delete_item
 
 sub get_item
 {
-	my ($this,$sock,$sel,$command) = @_;
+	my ($this,$command) = @_;
 	my $what = $command->{what};
 	my $what_name = $NAV_WHAT{$what};
 	my $uuid = $command->{uuid};
@@ -565,25 +556,25 @@ sub get_item
 
 
 	my $request = createMsg($seq,$DIR_SEND,$CMD_ITEM,$what,$uuid);
-	return $this->update_item_request($sock,$sel,$seq,$what,'get',$uuid,$request);
+	return $this->update_item_request($seq,$what,'get',$uuid,$request);
 }
 
 
 
 sub commandThread
 {
-	my ($this,$sock,$sel,$command) = @_;
+	my ($this,$command) = @_;
 	my $api_command = $command->{api_command};
 	my $cmd_name = apiCommandName($api_command);
 	display($dbg,0,"commandThread($api_command=$cmd_name) started");
 
 	my $rslt;
 
-	$rslt = $this->get_item($sock,$sel,$command) 		if $api_command == $API_GET_ITEM;
-	$rslt = $this->do_query($sock,$sel,$command) 		if $api_command == $API_DO_QUERY;
-	$rslt = $this->create_item($sock,$sel,$command) 	if $api_command == $API_NEW_ITEM;
-	$rslt = $this->delete_item($sock,$sel,$command) 	if $api_command == $API_DEL_ITEM;
-	$rslt = $this->modify_item($sock,$sel,$command) 	if $api_command == $API_MOD_ITEM;
+	$rslt = $this->get_item($command) 		if $api_command == $API_GET_ITEM;
+	$rslt = $this->do_query($command) 		if $api_command == $API_DO_QUERY;
+	$rslt = $this->create_item($command) 	if $api_command == $API_NEW_ITEM;
+	$rslt = $this->delete_item($command) 	if $api_command == $API_DEL_ITEM;
+	$rslt = $this->modify_item($command) 	if $api_command == $API_MOD_ITEM;
 
 	error("API $cmd_name failed") if !$rslt;
 
@@ -602,170 +593,12 @@ sub commandThread
 
 
 #========================================================================
-# listener thread
+# overriden tcpBase methods
 #========================================================================
 
-
-sub openSocket
-	# start/stop = open or close the socket
-	# based on running and started, initializing
-	# the state as needed
-{
-	my ($this,$psock,$psel) = @_;
-	if ($this->{started} && !$this->{running})
-	{
-		display($dbg,0,"opening navQuery socket");
-		my $sock = IO::Socket::INET->new(
-			LocalAddr => $LOCAL_IP,
-			LocalPort => $WPMGR_PORT,
-			PeerAddr  => $this->{nav_ip},
-			PeerPort  => $this->{nav_port},
-			Proto     => 'tcp',
-			Reuse	  => 1,	# allows open even if windows is timing it out
-			Timeout	  => 3 );
-		if ($sock)
-		{
-			display($dbg,0,"navQuery socket opened");
-
-			$this->{running} = 1;
-			$$psock = $sock;
-			$$psel = IO::Select->new($sock);
-
-			$this->{buffer} = '';
-			return 1;
-		}
-		else
-		{
-			error("Could not open navQuery socket to $this->{nav_ip}:$this->{nav_port}\n$!");
-			$this->{started} = 0;
-			$this->{reconnect_time} = time();
-			return 0;
-		}
-	}
-	elsif ($this->{running} && !$this->{started})
-	{
-		warning($dbg,0,"closing navQuerySocket");
-		$$psock->shutdown(2);
-		$$psock->close();
-		$$psock = undef;
-		$$psel = undef;
-
-		$this->{running} = 0;
-		$this->{command_time} = 0;
-		$this->{reconnect_time} = time();
-		return 0;
-	}
-	if (!$this->{running})
-	{
-		if ($this->{reconnect_time} &&
-			time() > $this->{reconnect_time} + $RECONNECT_INTERVAL)
-		{
-			$this->{reconnect_time} = 0;
-			warning($dbg,0,"AUTO RECONNECTING");
-			$this->{started} = 1;
-		}
-		sleep(1);
-		return 0;
-	}
-	return 1;
-}
-
-
-sub readSocket
-{
-	my ($this,$sock,$sel) = @_;
-
-	my $buf;
-	if ($sel->can_read(0.1))
-	{
-		recv($sock, $buf, 4096, 0);
-		if ($buf)
-		{
-			$this->{buffer} .= $buf;
-		}
-	}
-
-	if (length($this->{buffer}) > 2)
-	{
-		while ($slow_down) { sleep(0.1); }
-		$slow_down = 1;
-
-		my $reply = parseWPMGR($SHOW_WPMGR_INPUT,1,$WPMGR_PORT,$this->{buffer},$this);
-			# 1=is_reply
-
-		if ($SHOW_WPMGR_INPUT)
-		{
-			my $text = $reply->{text};
-			setConsoleColor($in_color);
-			print $text;
-			setConsoleColor() if $in_color;
-			navQueryLog($text,'shark.log');
-		}
-
-
-		# EVENTS are not pushed onto the reply queue
-		# Instead, they can generate additional API_GET_ITEM commands
-
-
-		if ($WITH_MOD_PROCESSING)
-		{
-			my $mods = $reply->{mods};
-			# delete $reply->{mods} if $mods;
-			if ($mods && !$reply->{item})
-			{
-				warning($dbg+1,1,"found ".scalar(@$mods)." mods");
-				my $evt_mask = $reply->{evt_mask} || 0;
-				for my $mod (@$mods)
-				{
-					my $hash_name = lc($NAV_WHAT{$mod->{what}}).'s';
-					warning($dbg+1,2,sprintf(
-						"MOD(%02x=%s) uuid(%s) bits(%02x) evt_mask(%08x)",
-						$mod->{what},
-						$hash_name,
-						$mod->{uuid},
-						$mod->{bits},
-						$evt_mask));
-
-					# delete it, or ..
-
-					if ($mod->{bits} == 1)
-					{
-						my $hash = $this->{$hash_name};
-						my $exists = $hash->{$mod->{uuid}};
-						if ($exists)
-						{
-							warning($dbg,2,"deleting $hash_name($mod->{uuid}) $exists->{name}");
-							delete $hash->{$mod->{uuid}};
-							$this->incVersion();
-						}
-					}
-					else	# enque a GET_ITEM command for th emod
-					{
-						warning($dbg,0,"enquing mod($mod->{what}) uuid($mod->{uuid})");
-						$this->queueWPMGRCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef,undef);
-					}
-
-				}	# for each mod
-			}	# $mods
-		}	# $WITH_MOD_PROCESSING
-
-		push @{$this->{replies}},$reply;
-		$this->{buffer} = '';
-		$slow_down = 0;
-		return 1;
-	}
-
-	return 0;
-}
-
-
-sub listenerThread
+sub waitAddress
 {
 	my ($this) = @_;
-    display($dbg,0,"starting listenerThread");
-
-	# get WAYPOINT ip:port
-
 	my $rayport = findRayPortByName('WPMGR');
 	while (!$rayport)
 	{
@@ -773,37 +606,104 @@ sub listenerThread
 		sleep(1);
 		$rayport = findRayPortByName('WPMGR');
 	}
-	$this->{nav_ip} = $rayport->{ip};
-	$this->{nav_port} = $rayport->{port};
-	display($dbg,1,"found rayport(WPMGR) at $this->{nav_ip}:$this->{nav_port}");
-	display($dbg,0,"starting listenerThread loop");
+	$this->{remote_ip} = $rayport->{ip};
+	$this->{remote_port} = $rayport->{port};
+	display($dbg,1,"found rayport(WPMGR) at $this->{remote_ip}:$this->{remote_port}");
+}
 
-	my $sock;
-	my $sel;
-    while (1)
-    {
-		next if !$this->openSocket(\$sock,\$sel);
-		next if $this->readSocket($sock,$sel) < 0;
 
-		if (!$this->{busy})
-		{
-			if (@{$this->{command_queue}})
-			{
-				my $command = shift @{$this->{command_queue}};
-				$this->{busy} = 1;
+sub handlePacket
+{
+	my ($this,$buffer) = @_;
 
-				display($dbg,0,"creating cmd_thread");
-				my $cmd_thread = threads->create(\&commandThread,$this,$sock,$sel,$command);
-				display($dbg,0,"nav_thread cmd_thread");
-				$cmd_thread->detach();
-				display($dbg,0,"cmd_thread detached");
-			}
-		}	# !busy
+	warning($dbg+1,0,"handlePacket(".length($buffer).") called");
 
-		sleep(0.1);
+	my $reply = parseWPMGR($SHOW_WPMGR_PARSED_INPUT,1,$WPMGR_PORT,$buffer,$this);
+		# 1=is_reply
+
+	if ($SHOW_WPMGR_PARSED_INPUT)
+	{
+		my $text = $reply->{text};
+		setConsoleColor($in_color);
+		print $text;
+		setConsoleColor() if $in_color;
+		navQueryLog($text,'shark.log');
 	}
 
-}	# listenerThread
+
+	# EVENTS are not pushed onto the reply queue
+	# Instead, they can generate additional API_GET_ITEM commands
+
+
+	if ($WITH_MOD_PROCESSING)
+	{
+		my $mods = $reply->{mods};
+		# delete $reply->{mods} if $mods;
+		if ($mods && !$reply->{item})
+		{
+			warning($dbg+1,1,"found ".scalar(@$mods)." mods");
+			my $evt_mask = $reply->{evt_mask} || 0;
+			for my $mod (@$mods)
+			{
+				my $hash_name = lc($NAV_WHAT{$mod->{what}}).'s';
+				warning($dbg+1,2,sprintf(
+					"MOD(%02x=%s) uuid(%s) bits(%02x) evt_mask(%08x)",
+					$mod->{what},
+					$hash_name,
+					$mod->{uuid},
+					$mod->{bits},
+					$evt_mask));
+
+				# delete it, or ..
+
+				if ($mod->{bits} == 1)
+				{
+					my $hash = $this->{$hash_name};
+					my $exists = $hash->{$mod->{uuid}};
+					if ($exists)
+					{
+						warning($dbg,2,"deleting $hash_name($mod->{uuid}) $exists->{name}");
+						delete $hash->{$mod->{uuid}};
+						$this->incVersion();
+					}
+				}
+				else	# enque a GET_ITEM command for th emod
+				{
+					warning($dbg,0,"enquing mod($mod->{what}) uuid($mod->{uuid})");
+					$this->queueWPMGRCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef,undef);
+				}
+
+			}	# for each mod
+		}	# $mods
+	}	# $WITH_MOD_PROCESSING
+
+	push @{$this->{replies}},$reply;
+
+}
+
+
+sub onIdle
+{
+	my ($this) = @_;
+
+	if (!$this->{busy})
+	{
+		if (@{$this->{command_queue}})
+		{
+			my $command = shift @{$this->{command_queue}};
+			$this->{busy} = 1;
+
+			display($dbg,0,"creating cmd_thread");
+			my $cmd_thread = threads->create(\&commandThread,$this,$command);
+			display($dbg,0,"nav_thread cmd_thread");
+			$cmd_thread->detach();
+			display($dbg,0,"cmd_thread detached");
+		}
+	}	# !busy
+}
+
+
+
 
 
 

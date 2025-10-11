@@ -1,153 +1,700 @@
 #---------------------------------------
-#	r_track.pm
+#	r_TRACK.pm
 #---------------------------------------
-#
-#	CMD(0) SEND(1) WHAT(1) {seq}		This command increments the default track name every time it is called.
-#
-#		Track <-- 0800
-#		Track <-- 10011300 {seq}
-#
-#		Track --> 1900                                                                      name16
-#		Track --> 0c001300 07000000 54726163 6b203137 00efefef efefefef ef                  ........Track 17.........
-#
-#	CMD(c) SEND(1) WHAT(0) {seq}		THIS COMMAND GOT THE LIST OF MTAs!
-#
-#
-#		Track <-- 0800
-#		Track <-- 0c011300 07000000
-#
-#	    Track --> 0c00
-#	    Track --> 07001300 07000000 00000400 14000002 13000700 00000000 00000000 00001900
-#				  00002800 01021300 07000000 1c000000 03000000 81b237a6 3d00ceb8 81b237a6
-#				  3d00aae0 81b237a6 3f0064a4 10000202 13000700 00000000 00000000 0000
-#
-#		parse:
-#
-#			0c00 07001300 07000000 00000400                     sucess returned, command 7
-#			1400 00021300 07000000 00000000 00000000 19000000
-#			2800 01021300 07000000 1c000000                     biglen(1c)=28 is len(28)=40-12
-#				03000000                                       	NUMBER OF TRACKS!!
-#				81b237a6 3d00ceb8                              	MTA UUIDS
-#				81b237a6 3d00aae0
-#				81b237a6 3f0064a4
-#			1000 02021300 07000000 00000000 00000000
-#
-#
-#	CMD(4) WHAT(0) SEND(1) {seq} {mta_uuid}						YAY THIS GOT THE TRACK!!
-#
-#		Although I cannot find the referenced TRK uuid in fshConvert
-#
-#			MTA 				= 81b237a6 3f0064a4
-#			TRK 				= 80b237ad 0300524d (not found in this reply)
-#			TRK FROM THIS REPLY = 81b237a6 4100e7d4 (not found in FSH)
-#
-#		Track <-- 1000
-#		Track <-- 05011300 {seq} 81b237a6 3f0064a4                  # <-- The MTA UUID for the track
-#		Track --> 0c00
-#		Track --> 07001300 07000000 00000400 14000002 13000700 00000000 00000000 00001900 ...
-#
-#		parse
-#
-#
-#			0c00 04001300 1b000000 00000400
-#			1400 00021300 1b000000 81b237a6 3f0064a4 0c000000           the MTA guid I asked for
-#			4500 01021300 1b000000 39000000                             12 len(69) biglen(57)
-#
-#				parsing this as an MTA works well
-#
-#					my $MTA_HEADER_SIZE = 58;
-#					my $field_specs = [             # typedef struct fsh_track_meta     // total length 58 + guid_cnt * 8 bytes
-#						k1_1         => 'c',        #   0     char a;                   // always 0x01
-#						cnt          => 's',        #   1     int16_t cnt;              // number of track points
-#						_cnt         => 's',        #   3     int16_t _cnt;             // same as cnt
-#						k2_0         => 's',        #   5     int16_t b;                // unknown, always 0
-#						length       => 'l',        #   7     int32_t length;           // approx. track length in m
-#						north_start  => 'l',        #   11    int32_t north_start;      // Northing of first track point
-#						east_start   => 'l',        #   15    int32_t east_start;       // Easting of first track point
-#						temp_start   => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
-#						depth_start  => 'l',        #   21    int32_t depth_start;      // depth of first track point
-#						north_end    => 'l',        #   25    int32_t north_end;        // Northing of last track point
-#						east_end     => 'l',        #   29    int32_t east_end;         // Easting of last track point
-#						temp_end     => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
-#						depth_end    => 'l',        #   35    int32_t depth_end;        // depth of last track point
-#						color        => 'c',        #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
-#						name         => 'Z16',      #   40    char name[16];            // name of track, string not terminated
-#						u1           => 'C',        #   56    char j;                   // unknown, never 0 in my files, always 0 according to parsefsh
-#						guid_cnt     => 'c',        #   57    uint8_t guid_cnt;         // nr of guids following this header (always 1 in my files)
-#					];
-#
-#				01                  k1_1
-#				4a00                cnt = 74
-#				4a00                _cnt
-#				0000                k2_0
-#				e0c60100            length
-#				4b99a506            north_start
-#				ad4a84c5            east_start
-#				0000                temp_start
-#				00000000            depth_start
-#				15618e06            north_end
-#				6e018ec5            east_end
-#				0000                temp_end
-#				2c010000            depth_end
-#				05                  color
-#				54726163 6b203133 00726163 6b00cc33 cc             name = Track 13
-#
-#					length=69 (from command word)
-#						No u1
-#						No guid cnt
-#
-#
-#			1000 02021300 1b000000 81b237a6 3f0064a4                    the MTA guid I asked for
-#			1400 00021300 1b000000 81b237a6 4100e7d4 0b000000           a uuid I don't recognize
-#
-#				parsing this as a TRK
-#				TRACK HEADER SIZE = 8
-#				TRACK POINT SIZE = 14
-#
-#			2004 01021300 1b000000 14040000		record length =0x420
-#
-#				typedef struct fsh_track_header
-#				{
-#					int32_t a;        // unknown, always 0
-#					int16_t cnt;      // number of track points
-#					int16_t b;        // unknown, always 0
-#				}
-#
-#					00000000				a
-#					4a00					cnt = 74
-#					0000					always zero
-#
-#
-#				typedef struct fsh_track_point
-#				{
-#					int32_t north, east; // prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
-#					uint16_t tempr;      // temperature in Kelvin * 100
-#					int16_t depth;       // depth in cm
-#					int16_t c;           // unknown, always 0
-#				}
-#
-#			4b99a506 ad4a84c5 00000000 0000
-#			e9e2a406 ad4a84c5 00000000 0000
-#			ffffffff ffffffff ffffffff ffff					 invalid points in the track; track segments?
-#			82b7a406 ad4a84c5 00000000 0000
-#			3735a406 134484c5 00000000 0000
-#			3735a406 58b281c5 00000000 0000
-#			3735a406 cb227fc5 00000000 0000
-#			3735a406 3d937cc5 00000000 0000
-#			3735a406 ae037ac5 00000000 0000
-#			3735a406 045779c5 00000000 0000
-#			ffffffff ffffffff ffffffff ffff
-#			ffffffff ffffffff ffffffff ffff
-#			c56a9f06 ad4a84c5 00000000 0000
-#			c56a9f06 ad4a84c5 00000000 0000
-#			ffffffff ffffffff ffffffff ffff
-#			c56a9f06 ad4a84c5 00000000 0000
-#			ffffffff ffffffff ffffffff ffff
-#			ffffffff ffffffff ffffffff ffff
-#			c56a9f06 ad4a84c5 00000000 0000
-#			ffffffff ffffffff ffffffff ffff
-#			c56a9f06 ad4a84c5 00000000 0000
-#			c56a9f06 ad4a84c5 00000000 0000
-#			ffffffff ffffffff ffffffff ffff
-#
-#			and so on ...
+# tracks are stored as their MTA uuids
+
+package r_TRACK;
+use strict;
+use warnings;
+use threads;
+use threads::shared;
+use Time::HiRes qw(sleep time);
+use Pub::Utils;
+use r_utils;
+use r_RAYSYS;
+use r_utils;
+use wp_parse;	# temporary?
+use base qw(tcpBase);
+
+my $dbg = 0;
+
+
+my $WITH_MOD_PROCESSING = 0;
+
+
+my $COMMAND_TIMEOUT 		= 3;
+
+
+our $DEFAULT_TRACK_TCP_INPUT:shared 	= 1;
+our $DEFAULT_TRACK_TCP_OUTPUT:shared 	= 1;
+our $SHOW_TRACK_PARSED_INPUT:shared 	= 1;
+our $SHOW_TRACK_PARSED_OUTPUT:shared 	= 1;
+
+
+my $DBG_WAIT = 1;
+
+# my $SUCCESS_SIG = '00000400';
+# my $DICT_END_RECORD_MARKER	= '10000202';
+
+our $API_NONE 		= 0;
+our $API_GET_TRACKS	= 1;
+our $API_GET_TRACK	= 2;
+
+my $out_color = $UTILS_COLOR_LIGHT_CYAN;
+my $in_color = $UTILS_COLOR_LIGHT_BLUE;
+
+our $track_mgr:shared;
+
+my $TRACK_PORT 		= 12002;
+my $TRACK_FUNC		= 0x0013;	# 19
+	# 13 = 0x13 == '1300' in streams
+
+BEGIN
+{
+ 	use Exporter qw( import );
+    our @EXPORT = qw(
+
+		startTRACK
+		getTracks
+
+		$track_mgr
+
+		$SHOW_TRACK_PARSED_INPUT
+		$SHOW_TRACK_PARSED_OUTPUT
+
+	);
+}
+
+
+
+
+my $TRACK_DIR_INFO 		= 0x000;
+my $TRACK_DIR_SEND 		= 0x100;
+my $TRACK_DIR_REPLY 	= 0x200;
+
+
+
+# commands
+
+my $TRACK_CMD_CONTEXT   = 0x00;
+my $TRACK_CMD_BUFFER	= 0x01;
+my $TRACK_CMD_END		= 0x02;		# LIST
+my $TRACK_CMD_TRACK		= 0x04;		# EXIST
+my $TRACK_CMD_GET_TRACK = 0x05;		# :-( EVENT
+my $TRACK_CMD_DICT		= 0x07;		# MODIFY?!?
+my $TRACK_CMD_GET_MTAS	= 0x0c;		# FIND
+# my $TRACK_CMD_MTA		= 0x45;
+
+# from WPMGR
+#	our $CMD_CONTEXT	= 0x0;
+#	our $CMD_BUFFER    	= 0x1;
+#	our $CMD_LIST     	= 0x2;
+#	our $CMD_ITEM		= 0x3;
+#	our $CMD_EXIST		= 0x4;
+#	our $CMD_EVENT     	= 0x5;
+#	our $CMD_DATA		= 0x6;
+#	our $CMD_MODIFY    	= 0x7;
+#	our $CMD_UUID    	= 0x8;
+#	our $CMD_NUMBER     = 0x9;
+#	our $CMD_AVERB     	= 0xa;
+#	our $CMD_BVERB     	= 0xb;
+#	our $CMD_FIND		= 0xc;
+#	our $CMD_COUNT     	= 0xd;
+#	our $CMD_EVERB    	= 0xe;
+#	our $CMD_FVERB     	= 0xf;
+
+# replies
+
+my %TRACK_COMMAND_NAME = (
+	$TRACK_CMD_CONTEXT		=> 'CONTEXT',
+	$TRACK_CMD_BUFFER			=> 'DATA',
+	$TRACK_CMD_END			=> 'END',
+	$TRACK_CMD_TRACK		=> 'TRACK',
+	$TRACK_CMD_GET_TRACK 	=> 'GET_TRACK',
+	$TRACK_CMD_DICT			=> 'DICT',
+	$TRACK_CMD_GET_MTAS		=> 'GET_MTAS',
+);
+
+
+my %PARSE_RULES = (
+
+	$TRACK_DIR_INFO 	| $TRACK_CMD_DICT 		=>	[ 'success' ],					# header for dictionary replies
+	$TRACK_DIR_REPLY	| $TRACK_CMD_CONTEXT   	=>	[ 'uuid','context_bits' ],		# uuid context for the reply; bits 01n determines dictionary
+	$TRACK_DIR_REPLY	| $TRACK_CMD_BUFFER		=> 	[ 'buffer' ],					# either a track, or a dict, based on context_bits
+	$TRACK_DIR_REPLY	| $TRACK_CMD_END		=> 	[ 'track_uuid' ],
+
+	$TRACK_DIR_INFO 	| $TRACK_CMD_TRACK 		=>	[ 'success' ],					# header for track replies
+	$TRACK_DIR_SEND		| $TRACK_CMD_END		=> 	[ 'uuid' ],						# repeats the mta uuid with no bits
+
+);
+
+
+
+
+sub parseTRACK
+{
+	my ($buffer) = @_;
+	my $offset = 0;
+	my $pack_len = length($buffer);
+	display(0,0,"parseTRACK pack_len($pack_len)");
+
+	my @parts;
+	my $num = 0;
+	while ($offset < $pack_len)
+	{
+		my $len = unpack('v',substr($buffer,$offset,2));
+		$offset += 2;
+		my $part = substr($buffer,$offset,$len);
+		push @parts,$part;
+		display(0,2,"part($num) offset($offset) len($len) = ".unpack('H*',$part));
+		$offset += $len;
+		$num++;
+	}
+
+	$num = 0;
+	my $rec = shared_clone({is_dict=>0});
+	for my $part (@parts)
+	{
+		my $offset = 0;
+		my $len = length($part);
+		my ($cmd_word,$func,$seq) = unpack('vvV',substr($part,$offset,10));
+		my $cmd = $cmd_word & 0xff;
+		my $dir = $cmd_word & 0xff00;
+		my $dir_hex = sprintf("%0x",$dir);
+		
+		my $cmd_name = $TRACK_COMMAND_NAME{$cmd} || 'WHO CARES';
+		display(0,1,"parsePart($num) offset($offset) len($len) dir($dir_hex) cmd($cmd)=$cmd_name seq($seq) part=".unpack('H*',$part));
+		$offset += 8;
+		$num++;
+
+		$rec->{seq_num} ||= $seq;
+
+		my $rule = $PARSE_RULES{ $cmd_word };
+		if (!$rule)
+		{
+			error("NO RULE");
+			next;
+		}
+		
+		for my $piece (@$rule)
+		{
+			parsePiece(
+				$rec,
+				$piece,
+				$part,
+				\$offset );	# indent buffer records a bit
+		}
+	}
+
+	display_hash(0,1,"parseTRACK returning",$rec);
+	return $rec;
+}
+
+
+
+
+my $SUCCESS_SIG = '00000400';
+
+
+sub parsePiece
+{
+	my ($rec,$piece,$part,$poffset) = @_;
+
+	my $text = '';
+
+	if ($piece eq 'buffer')
+	{
+		display(0,1,"piece(buffer) is_dict($rec->{is_dict}) is_track="._def($rec->{is_track}));
+		if (!$rec->{is_dict})
+		{
+			# skip biglen
+			my $buffer = substr($part,$$poffset+4);
+			mergeHash($rec,parseTrack($buffer)) if $rec->{is_track};
+			mergeHash($rec,parseMTA($buffer)) if !$rec->{is_track};
+		}
+		else	# if ($context->{is_reply})
+		{
+			$$poffset += 4;	# skip biglen
+			my $num = unpack('V',substr($part,$$poffset,4));
+			$$poffset += 4;
+
+			display(0,1,"piece(buffer) is_dict found $num uuids");
+			my $uuids = $rec->{uuids};
+			for (my $i=0; $i<$num; $i++)
+			{
+				my $uuid = unpack('H*',substr($part,$$poffset,8));
+				$$poffset += 8;
+				push @$uuids,$uuid;
+				display(0,2,"uuid($i)=$uuid");
+			}
+		}
+	}
+	elsif ($piece eq 'uuid')
+	{
+		my $uuid = unpack('H*',substr($part,$$poffset,8));
+		my $field = $rec->{is_track} ? 'track_uuid' : 'uuid';
+		$rec->{$field} = $uuid;
+		display(0,1,"uuid($field)=$uuid");
+		$$poffset += 8;
+	}
+	elsif ($piece eq 'track_uuid')
+	{
+		my $uuid = unpack('H*',substr($part,$$poffset,8));
+		$rec->{track_uuid} = $uuid;
+		display(0,1,"piece(track_uuid)=$uuid");
+		$rec->{is_track} = 1;
+		$$poffset += 8;
+	}
+	elsif ($piece eq 'success')
+	{
+		my $status = unpack('H*',substr($part,$$poffset,4));
+		my $ok = $status eq $SUCCESS_SIG ? 1 : 0;
+		display(0,1,"success=$ok");
+		$rec->{success} =1 if $ok;
+		$$poffset += 4;
+	}
+	else
+	{
+		my $str = substr($part,$$poffset,4);
+		my $value = unpack('V',$str);
+		$$poffset += 4;
+
+		display(0,1,"rec($piece) = '$value'");
+				
+		$rec->{$piece} = $value;
+
+		if ($piece eq 'context_bits')
+		{
+			if ($value & 0x10)
+			{
+				$rec->{is_dict} = 1;
+				$rec->{uuids} = shared_clone([]);
+				display(0,2,"setting is_dict bit");
+			}
+		}
+
+	}
+}
+
+
+
+
+#--------------------------
+# ctor
+#--------------------------
+
+
+sub startTRACK
+{
+	my ($class) = @_;
+	display($dbg,0,"startTRACK($class)");
+	my $this = $class->SUPER::new({
+		name => 'TRACK',
+		local_port => $TRACK_PORT,
+		show_input  => $DEFAULT_TRACK_TCP_INPUT,
+		show_output => $DEFAULT_TRACK_TCP_OUTPUT,
+		in_color	=> $UTILS_COLOR_BROWN,
+		out_color   => $UTILS_COLOR_LIGHT_CYAN, });
+	$this->{command_queue} = shared_clone([]);
+	$this->{replies} = shared_clone([]);
+	$this->{version} = 1;
+	$this->{tracks} = shared_clone({});
+	$this->{next_seqnum} = 1;
+	$track_mgr = $this;
+	$this->start();
+}
+
+
+#--------------------------------------
+# API
+#--------------------------------------
+
+sub apiCommandName
+{
+	my ($cmd) = @_;
+	return 'GET_TRACKS'	if $cmd == $API_GET_TRACKS;
+	return 'GET_TRACK'	if $cmd == $API_GET_TRACK;
+	return "UNKNOWN API COMMAND";
+}
+
+
+sub showCommand
+{
+	my ($msg) = @_;
+	return if !$SHOW_TRACK_PARSED_OUTPUT;	# in r_WPMGR.pm
+	$msg = "\n\n".
+		"#------------------------------------------------------------------\n".
+		"# $msg\n".
+		"#------------------------------------------------------------------\n\n";
+	print $msg;
+	navQueryLog($msg,'shark.log');
+}
+
+
+
+sub getTracks
+{
+	showCommand("getTracks()");
+	return queueTRACKCommand($track_mgr,$API_GET_TRACKS,0);
+}
+
+
+sub queueTRACKCommand
+{
+	my ($this,$api_command,$uuid) = @_;
+	display_hash($dbg+2,0,"queueTRACKCommand($this)",$this);
+
+	return error("No 'this' in queueTRACKCommand") if !$this;
+	return error("Not started") if !$this->{started};
+	return error("Not running") if !$this->{running};
+
+	my $cmd_name = apiCommandName($api_command);
+
+	if ($SHOW_TRACK_PARSED_OUTPUT)
+	{
+		my $msg = "# queueTRACKCommand($api_command=$cmd_name) uuid($uuid))\n";
+		print $msg;
+		navQueryLog($msg,"shark.log");
+	}
+
+	for my $exist (@{$this->{command_queue}})
+	{
+		if ($exist->{api_command} == $api_command &&
+			$exist->{uuid} eq $uuid)
+		{
+			warning($dbg-1,0,"not enquiing duplicate api_command($api_command)");
+			return 1;
+		}
+	}
+	my $command = shared_clone({
+		api_command => $api_command,
+		uuid => $uuid,});
+	push @{$this->{command_queue}},$command;
+	return 1;
+}
+
+
+
+#-------------------------------------------------
+# utilities
+#-------------------------------------------------
+
+sub getVersion
+{
+	my ($this) = @_;
+	return $this->{version};
+}
+
+
+sub incVersion
+{
+	my ($this) = @_;
+	$this->{version}++;
+	display($dbg,0,"incVersion($this->{version})");
+	return $this->{version};
+}
+
+
+
+sub createMsg
+{
+	my ($seq,$cmd,$uuid) = @_;
+	my $cmd_name = $TRACK_COMMAND_NAME{$cmd} || 'HUH?';
+	display($dbg,0,"createMsg($seq,$cmd,$uuid) $cmd_name");
+	my $data =
+		pack('v',$cmd | $TRACK_DIR_SEND).
+		pack('v',$TRACK_FUNC).
+		pack('V',$seq);
+	$data .= pack('H*',$uuid) if $uuid;
+	my $len = length($data);
+	my $packet = pack('v',$len).$data;
+	display($dbg,1,"msg=".unpack('H*',$packet));
+	return $packet;
+}
+
+
+
+sub sendRequest
+{
+	my ($this,$seq,$name,$request) = @_;
+
+	#	if ($SHOW_TRACK_PARSED_OUTPUT)
+	#	{
+	#		my $text = "# sendRequest($seq) $name\n";
+	#		my $rec = parseTRACK($SHOW_TRACK_PARSED_OUTPUT,0,$TRACK_PORT,$request);
+	#		$text .= $rec->{text};
+	#		# 1=with_text, 0=is_reply		$text .= $rec->{text};
+	#		setConsoleColor($out_color) if $out_color;
+	#		print $text;
+	#		setConsoleColor() if $out_color;
+	#		navQueryLog($text,'shark.log');
+	#	}
+
+	$this->sendPacket($request);
+	$this->{wait_seq} = $seq;
+	$this->{wait_name} = $name;
+	return 1
+}
+
+
+sub waitReply
+{
+	my ($this,$expect_success) = @_;
+	my $seq = $this->{wait_seq};
+	my $name = $this->{wait_name};
+	my $start = time();
+
+	display($dbg+1,0,"waitReply($seq) $name");
+
+	while ($this->{started})
+	{
+		my $replies = $this->{replies};
+		if (@$replies)
+		{
+			my $reply = shift @$replies;
+			# is_event($reply->{is_event};
+			display_hash($dbg,1,"got reply seq($reply->{seq_num})",$reply);
+			if ($reply->{seq_num} == $seq)
+			{
+				if ($expect_success)
+				{
+					my $got_success = $reply->{success} ? 1 : -1;
+					if ($got_success != $expect_success)
+					{
+						error("waitReply($seq) expected success($expect_success) but got($got_success)");
+						# display_hash($dbg,1,"offending reply",$reply);
+						return 0;
+					}
+				}
+
+				display($dbg,1,"waitReply($seq) returning OK reply");
+				return $reply;
+			}
+			else
+			{
+				# display_hash($dbg+1,1,"skipping reply",$reply);
+			}
+		}
+
+		if (time() > $start + $COMMAND_TIMEOUT)
+		{
+			error("Command($seq) $name timed out");
+			return '';
+		}
+
+		sleep(0.5);
+	}
+
+	return error("waitReply($seq) while !started");
+}
+
+
+
+
+#============================================================
+# commandThread atoms
+#============================================================
+
+
+sub get_tracks
+	# get all track_mts uuids, then all tracks
+{
+	my ($this) = @_;
+	print "get_tracks()\n";
+
+	my $seq = $this->{next_seqnum}++;
+	my $request = createMsg($seq,$TRACK_CMD_GET_MTAS,0);
+	return 0 if !$this->sendRequest($seq,"TRACKS DICT",$request);
+	my $reply = $this->waitReply(1);
+	return 0 if !$reply;
+
+	my $uuids = $reply->{uuids};
+
+	my $num = 0;
+	for my $uuid (@$uuids)
+	{
+		$this->queueTRACKCommand($API_GET_TRACK,$uuid);
+		$num++;
+	}
+
+	my $tracks = $this->{tracks};
+	display($dbg+1,1,"keys(tracks) = ".join(" ",keys %$tracks));
+	return 1;
+
+}
+
+
+sub get_track
+{
+	my ($this,$command) = @_;
+	my $uuid = $command->{uuid};
+	display($dbg,0,"get_track($uuid)");
+
+	my $seq = $this->{next_seqnum}++;
+	my $request = createMsg($seq,$TRACK_CMD_GET_TRACK,$uuid);
+	return 0 if !$this->sendRequest($seq,"get_track($uuid)",$request);
+	my $reply = $this->waitReply(1);
+	return 0 if !$reply;
+
+	#	my $track = $reply->{track};
+	#	return error("No {track} in get)track reply") if !$track;
+	#	my $mta = $reply->{mta};
+	#	return error("No {mta} in get)track reply") if !$mta;
+
+	my $dbg_got = 0;
+	warning($dbg_got,0,"got track($uuid) = '$reply->{name}'");
+
+	my $tracks = $this->{tracks};
+	$tracks->{$uuid} = $reply;
+	$reply->{version} = $this->incVersion();
+	return 1;
+}
+
+
+
+
+
+
+sub commandThread
+{
+	my ($this,$command) = @_;
+	my $api_command = $command->{api_command};
+	my $cmd_name = apiCommandName($api_command);
+	display($dbg,0,"commandThread($api_command=$cmd_name) started");
+
+	my $rslt;
+
+	$rslt = $this->get_tracks($command) if $api_command == $API_GET_TRACKS;
+	$rslt = $this->get_track($command) 	if $api_command == $API_GET_TRACK;
+
+	error("API $cmd_name failed") if !$rslt;
+
+	$this->{command_rslt} = $rslt;
+	$this->{busy} = 0;
+		# Note to self.  I used to pull the command off the queue and use
+		# {command} as the busy indicator, then set it to '' here.
+		# But I believe that I once again ran into a Perl weirdness
+		# that Perl will crash (during garbage collection) if you
+		# re-assign a a shared reference to a scalar.
+
+	display($dbg,0,"commandThread($api_command=$cmd_name) finished");
+}
+
+
+
+
+#========================================================================
+# overriden tcpBase methods
+#========================================================================
+
+sub waitAddress
+{
+	my ($this) = @_;
+	my $rayport = findRayPortByName('TRACK');
+	while (!$rayport)
+	{
+		display($dbg-1,1,"waiting for rayport(TRACK)");
+		sleep(1);
+		$rayport = findRayPortByName('TRACK');
+	}
+	$this->{remote_ip} = $rayport->{ip};
+	$this->{remote_port} = $rayport->{port};
+	display($dbg,1,"found rayport(TRACK) at $this->{remote_ip}:$this->{remote_port}");
+}
+
+
+sub handlePacket
+{
+	my ($this,$buffer) = @_;
+
+	warning($dbg+1,0,"handlePacket(".length($buffer).") called");
+
+	my $reply = parseTRACK($buffer);
+		# 1=is_reply
+
+	if (0 && $SHOW_TRACK_PARSED_INPUT)
+	{
+		my $text = $reply->{text};
+		setConsoleColor($in_color);
+		print $text;
+		setConsoleColor() if $in_color;
+		navQueryLog($text,'shark.log');
+	}
+
+
+	# EVENTS are not pushed onto the reply queue
+	# Instead, they can generate additional API_GET_ITEM commands
+
+
+	#	if ($WITH_MOD_PROCESSING)
+	#	{
+	#		my $mods = $reply->{mods};
+	#		# delete $reply->{mods} if $mods;
+	#		if ($mods && !$reply->{item})
+	#		{
+	#			warning($dbg+1,1,"found ".scalar(@$mods)." mods");
+	#			my $evt_mask = $reply->{evt_mask} || 0;
+	#			for my $mod (@$mods)
+	#			{
+	#				my $hash_name = lc($NAV_WHAT{$mod->{what}}).'s';
+	#				warning($dbg+1,2,sprintf(
+	#					"MOD(%02x=%s) uuid(%s) bits(%02x) evt_mask(%08x)",
+	#					$mod->{what},
+	#					$hash_name,
+	#					$mod->{uuid},
+	#					$mod->{bits},
+	#					$evt_mask));
+    #
+	#				# delete it, or ..
+    #
+	#				if ($mod->{bits} == 1)
+	#				{
+	#					my $hash = $this->{$hash_name};
+	#					my $exists = $hash->{$mod->{uuid}};
+	#					if ($exists)
+	#					{
+	#						warning($dbg,2,"deleting $hash_name($mod->{uuid}) $exists->{name}");
+	#						delete $hash->{$mod->{uuid}};
+	#						$this->incVersion();
+	#					}
+	#				}
+	#				else	# enque a GET_ITEM command for th emod
+	#				{
+	#					warning($dbg,0,"enquing mod($mod->{what}) uuid($mod->{uuid})");
+	#					$this->queueTRACKCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef,undef);
+	#				}
+    #
+	#			}	# for each mod
+	#		}	# $mods
+	#	}	# $WITH_MOD_PROCESSING
+
+	push @{$this->{replies}},$reply;
+
+}
+
+
+sub onIdle
+{
+	my ($this) = @_;
+
+	if (!$this->{busy})
+	{
+		if (@{$this->{command_queue}})
+		{
+			my $command = shift @{$this->{command_queue}};
+			$this->{busy} = 1;
+
+			display($dbg,0,"creating cmd_thread");
+			my $cmd_thread = threads->create(\&commandThread,$this,$command);
+			display($dbg,0,"nav_thread cmd_thread");
+			$cmd_thread->detach();
+			display($dbg,0,"cmd_thread detached");
+		}
+	}	# !busy
+}
+
+
+
+
+
+1;

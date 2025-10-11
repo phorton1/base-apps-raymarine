@@ -17,21 +17,31 @@ use IO::Handle;
 use IO::Socket::INET;
 use IO::Select;
 use r_utils;
+use rayports;
 use r_serial;
 use r_sniffer;
 use r_RAYSYS;
 use r_DBNAV;
 use r_FILESYS;
 use r_WPMGR;
+use r_TRACK;
 use wp_api;
 use wp_server;
 use tcpListener;
 use s_resources;
 use s_frame;
+use tcpScanner;
 use base 'Wx::App';
 
 
 my $dbg_shark = 0;
+
+my $WITH_FILESYS 	= 1;
+my $WITH_WPMGR		= 1;
+my $WITH_WP_SERVER	= 1;
+my $WITH_IDENT		= 0;
+my $WITH_TRACK		= 1;
+
 
 our $SEND_ALIVE:shared = 0;
 
@@ -60,9 +70,15 @@ sub handleCommand
     my ($lpart,$rpart) = @_;
     display(0,0,"handleCommand left($lpart) right($rpart)");
 
-	if ($lpart eq 'probe')
+	if ($lpart eq 'scan')
 	{
-		tcpNumberedProbe($rpart);
+		my ($low,$high) = split(/\s+/,$rpart);
+		scanRange($low,$high);
+		# tcpNumberedProbe($rpart);
+	}
+	elsif ($lpart eq 'alive')
+	{
+		showAliveScans();
 	}
 
 	elsif ($lpart eq 'w')
@@ -73,15 +89,24 @@ sub handleCommand
 	#-----------------------------------------------------
 	# new 2nd E80 above
 	#-----------------------------------------------------
+	# TRCACK
 
+	elsif ($lpart eq 'tracks')
+	{
+		getTracks();
+	}
+
+	# WPMGR
+
+	elsif ($lpart eq 'db')
+	{
+		showLocalDatabase();
+	}
 	elsif ($lpart eq 'q')
     {
         queryWaypoints();
     }
-    elsif ($lpart eq 'auto')
-    {
-        setNavQueryAutoRefresh($rpart);
-    }
+
 	elsif ($lpart eq 'kml')
 	{
 		my $kml = kml_WPMGR();
@@ -284,7 +309,8 @@ if ($LOCAL_UDP_SOCKET)
     display(0,0,"alive_thread detached");
 }
 
-if (1)  # filesysThread())
+
+if ($WITH_FILESYS)  # filesysThread())
 {
     display(0,0,"initing filesysThread");
     my $filesys_thread = threads->create(\&filesysThread);
@@ -293,10 +319,12 @@ if (1)  # filesysThread())
     display(0,0,"filesysThread detached");
 }
 
-r_WPMGR->startWPMGR() if 1;
 
-startWPServer() if 1;
+r_WPMGR->startWPMGR() if $WITH_WPMGR;
+startWPServer() if $WITH_WP_SERVER;
 
+
+r_TRACK->startTRACK() if $WITH_TRACK;
 
 # the sniffer is started last because it has a blocking
 # read in the thread which, for some reason, will cause
@@ -311,6 +339,55 @@ if (1)
     my $sniffer_thread = threads->create(\&sniffer_thread);
     $sniffer_thread->detach();
 }
+
+
+
+#---------------------------
+# FAKE IDENT inline
+#---------------------------
+
+my $SEND_IDENTS = 0;
+
+
+use IO::Socket::Multicast;
+
+my $FAKE_RNS_2  = '01000000 03000000'.$SHARK_DEVICE_ID.'76020000 018e7680 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 0000';
+my $FAKE_E80_3  = '01000000 00000000'.$SHARK_DEVICE_ID.'39020000 53f0000a 0033cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 02000000';
+
+
+my $ident_sock;
+
+if ($WITH_IDENT)
+{
+	$ident_sock = IO::Socket::Multicast->new(
+		LocalPort => $RAYDP_PORT,
+		ReuseAddr => 1,
+		Proto     => 'udp',
+	) or die "Couldn't create multicast socket: $!";
+
+	$ident_sock->mcast_add($RAYDP_IP) or die "Couldn't join multicast group: $!";
+
+	my $thr = threads->create(\&identThread,$ident_sock);
+	$thr->detach();
+}
+
+
+sub identThread
+{
+	my ($sock) = @_;
+	while (1)
+	{
+		# print "[IDENT] Send IDENT packet\n";
+
+		my $packet = $FAKE_E80_3;
+		$packet =~ s/\s+//g;
+		$packet = pack('H*',$packet);
+
+		$sock->send($packet, 0, pack_sockaddr_in($RAYDP_PORT, inet_aton($RAYDP_IP)));
+		sleep 1;
+    }
+}
+
 
 
 #----------------

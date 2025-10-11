@@ -1,0 +1,153 @@
+
+#
+#	CMD(0) SEND(1) WHAT(1) {seq}		This command increments the default track name every time it is called.
+#
+#		Track <-- 0800
+#		Track <-- 10011300 {seq}
+#
+#		Track --> 1900                                                                      name16
+#		Track --> 0c001300 07000000 54726163 6b203137 00efefef efefefef ef                  ........Track 17.........
+#
+#	CMD(c) SEND(1) WHAT(0) {seq}		THIS COMMAND GOT THE LIST OF MTAs!
+#
+#
+#		Track <-- 0800
+#		Track <-- 0c011300 07000000
+#
+#	    Track --> 0c00
+#	    Track --> 07001300 07000000 00000400 14000002 13000700 00000000 00000000 00001900
+#				  00002800 01021300 07000000 1c000000 03000000 81b237a6 3d00ceb8 81b237a6
+#				  3d00aae0 81b237a6 3f0064a4 10000202 13000700 00000000 00000000 0000
+#
+#		parse:
+#
+#			0c00 07001300 07000000 00000400                     sucess returned, command 7
+#			1400 00021300 07000000 00000000 00000000 19000000
+#			2800 01021300 07000000 1c000000                     biglen(1c)=28 is len(28)=40-12
+#				03000000                                       	NUMBER OF TRACKS!!
+#				81b237a6 3d00ceb8                              	MTA UUIDS
+#				81b237a6 3d00aae0
+#				81b237a6 3f0064a4
+#			1000 02021300 07000000 00000000 00000000
+#
+#
+#	CMD(4) WHAT(0) SEND(1) {seq} {mta_uuid}						YAY THIS GOT THE TRACK!!
+#
+#		Although I cannot find the referenced TRK uuid in fshConvert
+#
+#			MTA 				= 81b237a6 3f0064a4
+#			TRK 				= 80b237ad 0300524d (not found in this reply)
+#			TRK FROM THIS REPLY = 81b237a6 4100e7d4 (not found in FSH)
+#
+#		Track <-- 1000
+#		Track <-- 05011300 {seq} 81b237a6 3f0064a4                  # <-- The MTA UUID for the track
+#		Track --> 0c00
+#		Track --> 07001300 07000000 00000400 14000002 13000700 00000000 00000000 00001900 ...
+#
+#		parse
+#
+#
+#			0c00 04001300 1b000000 00000400
+#			1400 00021300 1b000000 81b237a6 3f0064a4 0c000000           the MTA guid I asked for
+#			4500 01021300 1b000000 39000000                             12 len(69) biglen(57)
+#
+#				parsing this as an MTA works well
+#
+#					my $MTA_HEADER_SIZE = 58;
+#					my $field_specs = [             # typedef struct fsh_track_meta     // total length 58 + guid_cnt * 8 bytes
+#						k1_1         => 'c',        #   0     char a;                   // always 0x01
+#						cnt          => 's',        #   1     int16_t cnt;              // number of track points
+#						_cnt         => 's',        #   3     int16_t _cnt;             // same as cnt
+#						k2_0         => 's',        #   5     int16_t b;                // unknown, always 0
+#						length       => 'l',        #   7     int32_t length;           // approx. track length in m
+#						north_start  => 'l',        #   11    int32_t north_start;      // Northing of first track point
+#						east_start   => 'l',        #   15    int32_t east_start;       // Easting of first track point
+#						temp_start   => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
+#						depth_start  => 'l',        #   21    int32_t depth_start;      // depth of first track point
+#						north_end    => 'l',        #   25    int32_t north_end;        // Northing of last track point
+#						east_end     => 'l',        #   29    int32_t east_end;         // Easting of last track point
+#						temp_end     => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
+#						depth_end    => 'l',        #   35    int32_t depth_end;        // depth of last track point
+#						color        => 'c',        #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
+#						name         => 'Z16',      #   40    char name[16];            // name of track, string not terminated
+#						u1           => 'C',        #   56    char j;                   // unknown, never 0 in my files, always 0 according to parsefsh
+#						guid_cnt     => 'c',        #   57    uint8_t guid_cnt;         // nr of guids following this header (always 1 in my files)
+#					];
+#
+#				01                  k1_1
+#				4a00                cnt = 74
+#				4a00                _cnt
+#				0000                k2_0
+#				e0c60100            length
+#				4b99a506            north_start
+#				ad4a84c5            east_start
+#				0000                temp_start
+#				00000000            depth_start
+#				15618e06            north_end
+#				6e018ec5            east_end
+#				0000                temp_end
+#				2c010000            depth_end
+#				05                  color
+#				54726163 6b203133 00726163 6b00cc33 cc             name = Track 13
+#
+#					length=69 (from command word)
+#						No u1
+#						No guid cnt
+#
+#
+#			1000 02021300 1b000000 81b237a6 3f0064a4                    the MTA guid I asked for
+#			1400 00021300 1b000000 81b237a6 4100e7d4 0b000000           a uuid I don't recognize
+#
+#				parsing this as a TRK
+#				TRACK HEADER SIZE = 8
+#				TRACK POINT SIZE = 14
+#
+#			2004 01021300 1b000000 14040000		record length =0x420
+#
+#				typedef struct fsh_track_header
+#				{
+#					int32_t a;        // unknown, always 0
+#					int16_t cnt;      // number of track points
+#					int16_t b;        // unknown, always 0
+#				}
+#
+#					00000000				a
+#					4a00					cnt = 74
+#					0000					always zero
+#
+#
+#				typedef struct fsh_track_point
+#				{
+#					int32_t north, east; // prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
+#					uint16_t tempr;      // temperature in Kelvin * 100
+#					int16_t depth;       // depth in cm
+#					int16_t c;           // unknown, always 0
+#				}
+#
+#			4b99a506 ad4a84c5 00000000 0000
+#			e9e2a406 ad4a84c5 00000000 0000
+#			ffffffff ffffffff ffffffff ffff					 invalid points in the track; track segments?
+#			82b7a406 ad4a84c5 00000000 0000
+#			3735a406 134484c5 00000000 0000
+#			3735a406 58b281c5 00000000 0000
+#			3735a406 cb227fc5 00000000 0000
+#			3735a406 3d937cc5 00000000 0000
+#			3735a406 ae037ac5 00000000 0000
+#			3735a406 045779c5 00000000 0000
+#			ffffffff ffffffff ffffffff ffff
+#			ffffffff ffffffff ffffffff ffff
+#			c56a9f06 ad4a84c5 00000000 0000
+#			c56a9f06 ad4a84c5 00000000 0000
+#			ffffffff ffffffff ffffffff ffff
+#			c56a9f06 ad4a84c5 00000000 0000
+#			ffffffff ffffffff ffffffff ffff
+#			ffffffff ffffffff ffffffff ffff
+#			c56a9f06 ad4a84c5 00000000 0000
+#			ffffffff ffffffff ffffffff ffff
+#			c56a9f06 ad4a84c5 00000000 0000
+#			c56a9f06 ad4a84c5 00000000 0000
+#			ffffffff ffffffff ffffffff ffff
+#
+#			and so on ...
+
+
