@@ -53,9 +53,9 @@ my $LONG_SCALE = 0x7fffffff;  # 2147483647
 sub name16_hex
 	# return hex representation of max16 name + null
 {
-	my ($name) = @_;
+	my ($name,$no_delim) = @_;
 	while (length($name) < 16) { $name .= "\x00" }
-	$name .= "\x00";
+	$name .= "\x00" if !$no_delim;
 	return unpack('H*',$name);
 }
 

@@ -92,6 +92,7 @@ BEGIN
  	use Exporter qw( import );
     our @EXPORT = qw(
 		findTcpBase
+		doProbe
 
 		$SUCCESS_SIG
     );
@@ -181,6 +182,155 @@ sub handlePacket	{ my ($this,$buffer) = @_; }
 sub commandHandler	{ my ($this,$command) = @_; }
 
 
+#-----------------------------------------------
+# probes
+#-----------------------------------------------
+
+my $dbg_probe = 0;
+
+sub doProbe
+{
+	my ($rayname,$ident) = @_;
+	display(0,0,"doProbe($rayname,$ident)");
+	my $this = findTcpBase($rayname);
+	return error("could not find tcpBase($rayname)")
+		if !$this;
+	my $probes = $this->parseProbes();
+	return if !$probes;
+	return error("Could not find probe($ident)")
+		if !$probes->{$ident};
+
+	my $rayport = findRayPortByName($rayname);
+	return error("Could not find rayport($rayname)")
+		if !$rayport;
+	warning(0,1,"queuing $rayname PROBE($ident)");
+	
+	my $command = shared_clone({
+		name => "PROBE($ident)",
+		probes => $probes,
+		ident => $ident,
+		hex_func => unpack('H*',pack('v',$rayport->{func})), });
+	push @{$this->{command_queue}},$command;
+}
+
+
+
+sub pushStep
+{
+	my ($probe,$line_num,$step,$step_text) = @_;
+	display($dbg_probe+1,1,"pushStep($line_num,$step,$step_text)");
+	$step_text =~ s/^\s+|\s+$//g;
+	
+	if ($step =~ /RAW|MSG/i && !$step_text)
+	{
+		warning("empty $step section at line $line_num");
+	}
+	else
+	{
+		my $text = uc($step);
+		$text .= " $step_text" if $step_text;
+		push @$probe,$text;
+	}
+}
+
+
+sub parseProbes
+{
+	my ($this) = @_;
+	my $rayname = $this->{rayname};
+	my $probe_file = "$data_dir/$rayname"."_probes.txt";
+	display($dbg_probe,0,"parseProbes($probe_file)");
+	my @lines = getTextLines($probe_file);
+	return error("missing or empty $probe_file") if !@lines;
+
+	my $probes = shared_clone({});
+
+	my $probe;
+	my $step = '';
+	my $step_text = '';
+	my $num_lines = @lines;
+	for (my $i=0; $i<$num_lines; $i++)
+	{
+		my $line_num = $i + 1;
+		my $line = $lines[$i];
+
+		$line =~ s/#.*$//;
+		$line =~ s/^\s+|\s+$//g;
+		next if !$line;
+
+		while ($line =~ s/{hex16\s+(.*?)}/##HERE##/)
+		{
+			my $name = $1;
+			my $data = name16_hex($name,1);	# no terminator
+			my $hex = unpack('H*',$data);
+			display($dbg_probe+1,1,"$line_num: HEX16($name)=$hex");
+			$line =~ s/##HERE##/$hex/;
+		}
+
+		if ($line =~ /^PROBE\s+(.*)$/i)
+		{
+			my $ident = $1;
+			display($dbg_probe+1,1,"$line_num: PROBE($ident)");
+
+			pushStep($probe,$line_num,$step,$step_text)
+				if $step;
+			$step = '';
+			$step_text = '';
+
+			$probe = shared_clone([]);
+			$probes->{$ident} = $probe;
+		}
+		elsif ($line =~ /^(RAW|MSG|DELAY|WAIT)(.*)$/)
+		{
+			my ($sec,$text) = ($1,$2);
+			$text =~ s/#.*$//;
+			$text =~ s/^\s|\s$//g;
+			display($dbg_probe+1,1,"$line_num: $sec $text");
+
+			# push previous step, if any
+			pushStep($probe,$line_num,$step,$step_text)
+				if $step;
+			$step = $sec;
+			$step_text = $text;
+		}
+		elsif ($probe && $line =~ /^>>>/)
+		{
+			push @$probe,$line;
+		}
+		elsif ($step && $line)
+		{
+			$step_text .= $line;
+		}
+	}
+
+	# push the dangling step if any
+	pushStep($probe,$num_lines,$step,$step_text)
+		if $step;
+	display($dbg_probe+1,0,"parse finished");
+
+	if ($dbg_probe < -1)
+	{
+		print "-------- probes ----------\n";
+		for my $key (sort keys %$probes)
+		{
+			my $probe = $probes->{$key};
+			print "PROBE($key)\n";
+			for my $line (@$probe)
+			{
+				print "    $line\n";
+			}
+		}
+		print "-------------------------\n";
+	}
+	
+	my $num_probes = keys %$probes;
+	return error("NO probes found in $probe_file!")
+		if !$num_probes;
+	display($dbg_probe,0,"parseProbes() returning $num_probes probes");
+	return $probes;
+}
+
+
 
 #----------------------------------------------
 # utilities
@@ -193,8 +343,6 @@ sub sendPacket
 		if (!$this->{connected});
 	push @{$this->{out_queue}},$buffer;
 }
-
-
 
 
 #------------------------------------------------
@@ -287,22 +435,6 @@ sub _close_socket
 	$sock->close();
 	return undef;
 
-}
-
-
-
-sub commandThread
-{
-	my ($this,$command) = @_;
-	display($dbg_tcp,0,"$this->{rayname} commandThread($command->{name}) started");
-	$this->handleCommand($command);
-	$this->{busy} = 0;
-		# Note to self.  I used to pull the command off the queue and use
-		# {command} as the busy indicator, then set it to '' here.
-		# But I believe that I once again ran into a Perl weirdness
-		# that Perl will crash (during garbage collection) if you
-		# re-assign a a shared reference to a scalar.
-	display($dbg_tcp,0,"$this->{rayname} commandThread($command->{name}) finished");
 }
 
 
@@ -459,9 +591,19 @@ sub tcpBaseThread
 							print parse_dwords($header,$client_buffer,1);
 							setConsoleColor() if $this->{in_color};
 						}
-						my $reply = $this->handlePacket($client_buffer);
-						push @{$this->{replies}},$reply if $reply;
 
+						# hook for probes to not call derived handle packet
+						
+						if ($this->{probe_wait})
+						{
+							display($dbg_probe,0,"probe WAIT completed");
+							$this->{probe_wait} = 0;
+						}
+						else
+						{
+							my $reply = $this->handlePacket($client_buffer);
+							push @{$this->{replies}},$reply if $reply;
+						}
 					}
 					$this->{connect_time} = time();
 
@@ -493,6 +635,116 @@ sub tcpBaseThread
 	$this->{running} = 0;
 	$sock = $this->close_socket($sock) if $sock;
 
+}
+
+
+
+
+
+sub commandThread
+{
+	my ($this,$command) = @_;
+	display($dbg_tcp,0,"$this->{rayname} commandThread($command->{name}) started");
+
+	if ($command->{name} =~ /^PROBE/)
+	{
+		my $save_in = $this->{show_input};
+		my $save_out = $this->{show_output};
+		$this->{show_input} = 1;
+		$this->{show_output} = 1;
+		$this->do_probe($command);
+		$this->{show_input} = $save_in;
+		$this->{show_output} = $save_out;
+	}
+	else
+	{
+		$this->handleCommand($command);
+	}
+	$this->{busy} = 0;
+		# Note to self.  I used to pull the command off the queue and use
+		# {command} as the busy indicator, then set it to '' here.
+		# But I believe that I once again ran into a Perl weirdness
+		# that Perl will crash (during garbage collection) if you
+		# re-assign a a shared reference to a scalar.
+	display($dbg_tcp,0,"$this->{rayname} commandThread($command->{name}) finished");
+}
+
+
+sub do_probe
+{
+	my ($this,$command) = @_;
+	my $ident = $command->{ident};
+	my $probes = $command->{probes};
+	my $probe = $probes->{$ident};
+	my $num_steps = @$probe;
+	display(0,0,"do_probe($ident) with $num_steps steps");
+
+	for (my $i=0; $i<$num_steps; $i++)
+	{
+		my $line = $$probe[$i];
+		display($dbg_probe+2,1,"probe line($i) = $line");
+		
+		if ($line =~ s/^>>>//)
+		{
+			print "$line\n";
+		}
+		elsif ($line =~ /^(RAW|MSG) (.*)$/)
+		{
+			my ($cmd,$text) = ($1,$2);
+			my $seq = $this->{next_seqnum}++;
+			my $hex_seq = unpack('H*',pack('v',$seq));
+
+			$text =~ s/{seq}/$hex_seq/;
+			$text =~ s/{func}/$command->{hex_func}/;
+			$text =~ s/\s//g;
+			
+			my $data = pack('H*',$text);
+			my $len = length($data);
+			
+			display($dbg_probe,1,"$cmd($len) = $text");
+
+			if ($cmd eq 'MSG')
+			{
+				display($dbg_probe+1,2,"PROBE: send len($len)");
+				$this->sendPacket(pack('v',$len))
+			}
+			display($dbg_probe+1,2,"PROBE: send $text");
+			$this->sendPacket($data);
+		}
+		elsif ($line =~ /^DELAY\s*(.*)$/)
+		{
+			my $period = $1 || 1;
+			display($dbg_probe,1,"DELAY($period)");
+			sleep($period);
+		}
+
+		# this is where it gets weird
+		# by default, this will actually call
+		# derived classes handlePacket() method,
+		# and *could* actually be used to implement waitReply,
+		# BUT especially for testing a variety of messages,
+		# we may not want to modify their parsers as we go.
+
+		elsif ($line =~ /^WAIT\s*(.*)$/)
+		{
+			my $extra = $1;
+			my $PROBE_TIMEOUT = 3;
+			$this->{probe_wait} = 1;
+			my $time = time();
+			while ($this->{probe_wait})
+			{
+				if (time() > $time + $PROBE_TIMEOUT)
+				{
+					warning($dbg_probe,0,"PROBE WAIT TIMEOUT");
+					last;
+				}
+				sleep(0.1);
+			}
+			$this->{probe_wait} = 0;
+		}
+	}
+
+	display(0,0,"PROBE($ident) FINISHED");
 }
 
 

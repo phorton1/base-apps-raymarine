@@ -28,6 +28,7 @@ use r_TRACK;
 use wp_api;
 use ray_server;
 use tcpListener;
+use tcpBase;
 use s_resources;
 use s_frame;
 use tcpScanner;
@@ -70,7 +71,13 @@ sub handleCommand
     my ($lpart,$rpart) = @_;
     display(0,0,"handleCommand left($lpart) right($rpart)");
 
-	if ($lpart eq 'scan')
+	if ($lpart eq 'p')
+	{
+		my ($rayname,$ident) = split(/\s+/,$rpart);
+		doProbe($rayname,$ident);
+	}
+
+	elsif ($lpart eq 'scan')
 	{
 		my ($low,$high) = split(/\s+/,$rpart);
 		scanRange($low,$high);
