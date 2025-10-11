@@ -24,24 +24,20 @@ use strict;
 use warnings;
 use threads;
 use threads::shared;
-# use Socket;
-# use IO::Select;
-# use IO::Handle;
-# use IO::Socket::INET;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
+use r_defs;
 use r_utils;
-use r_RAYSYS;
 use wp_parse;
 use wp_packet;
-use r_utils;
+use r_RAYSYS;
 use base qw(tcpBase);
 
 
 my $dbg = 0;
 
 
-my $WITH_MOD_PROCESSING = 0;
+my $WITH_MOD_PROCESSING = 1;
 
 
 my $COMMAND_TIMEOUT 		= 3;

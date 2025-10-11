@@ -1,5 +1,5 @@
 #-----------------------------------------------------
-# wp_server.pm
+# ray_server.pm
 #-----------------------------------------------------
 # Serves the WAYPOINT database to Google Earth via network links
 #
@@ -23,7 +23,7 @@
 
 
 
-package wp_server;
+package ray_server;
 use strict;
 use warnings;
 use threads;
@@ -65,7 +65,7 @@ my $navqry_kml:shared = kml_header(0,$server_version).kml_footer(0);
 my $next_session_id:shared = 1000;
 my $sessions = shared_clone({});
 
-my $wp_server;
+my $ray_server;
 	
 
 
@@ -81,9 +81,9 @@ my $wp_server;
 sub startNQServer
 {
 	display($dbg,0,"starting wp_erver");
-	$wp_server = wp_server->new();
-	$wp_server->start();
-	display($dbg,0,"finished starting wp_server");
+	$ray_server = ray_server->new();
+	$ray_server->start();
+	display($dbg,0,"finished starting ray_server");
 }
 
 sub new

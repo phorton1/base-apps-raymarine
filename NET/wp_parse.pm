@@ -662,8 +662,8 @@ my $TRACK_HEADER_SPECS = [
 
 my $TRACK_PT_SIZE = 14;
 my $TRACK_PT_SPECS = [
-	north		=> [ 0,		4,		'v',	],	#  0	int32_t north 		// prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
-	east		=> [ 0,		4,		'v',	],	#  4 	int33_t east
+	north		=> [ 0,		4,		'l',	],	#  0	int32_t north 		// prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
+	east		=> [ 0,		4,		'l',	],	#  4 	int33_t east
 	tempr		=> [ 0,		2,		'v',	],	#  8	uint16_t tempr;      // temperature in Kelvin * 100
 	depth		=> [ 0,		2,		'v',	],	# 10	int16_t depth;       // depth in cm
 	c			=> [ 0,		2,		'v',	],	# 12	int16_t c;           // unknown, always 0
@@ -694,13 +694,23 @@ sub parseTrack
 	my $rec = unpackRecord('track_hdr',$TRACK_HEADER_SPECS, $buffer, $offset, $TRACK_HDR_SIZE);
 	$offset += $TRACK_HDR_SIZE;
 
-	display($dbg_track,1,"found $rec->{cnt} track points points");
+	display($dbg_track,1,"found $rec->{cnt} track points");
 
 	my $points = $rec->{points} = shared_clone([]);
 	#while ($offset <= $buf_len-$TRACK_PT_SIZE)
 	for (my $i=0; $i<$rec->{cnt}; $i++)
 	{
 		my $pt = unpackRecord('track_point',$TRACK_PT_SPECS, $buffer, $offset, $TRACK_PT_SIZE);
+		my $coords = northEastToLatLon($pt->{north},$pt->{east});
+		$pt->{lat} = $coords->{lat};
+		$pt->{lon} = $coords->{lon};
+
+		display($dbg_track+1,2,sprintf("north(%0.3f) east(%0.3f) lat(%0.3f) lon(%0.3f)",
+			$pt->{north},
+			$pt->{east},
+			$pt->{lat},
+			$pt->{lon}));
+
 		push @$points,$pt;
 		$offset += $TRACK_PT_SIZE;
 	}

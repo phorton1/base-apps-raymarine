@@ -20,10 +20,8 @@ use base qw(tcpBase);
 my $dbg = 0;
 my $dbg_parse = 0;
 
-my $WITH_MOD_PROCESSING = 0;
 
-
-my $COMMAND_TIMEOUT 		= 3;
+my $WITH_MOD_PROCESSING = 1;
 
 
 our $DEFAULT_TRACK_TCP_INPUT:shared 	= 1;
@@ -34,12 +32,6 @@ our $SHOW_TRACK_PARSED_OUTPUT:shared 	= 1;
 
 my $DBG_WAIT = 1;
 
-# my $SUCCESS_SIG = '00000400';
-# my $DICT_END_RECORD_MARKER	= '10000202';
-
-our $API_NONE 		= 0;
-our $API_GET_TRACKS	= 1;
-our $API_GET_TRACK	= 2;
 
 my $out_color = $UTILS_COLOR_LIGHT_CYAN;
 my $in_color = $UTILS_COLOR_LIGHT_BLUE;
@@ -68,6 +60,22 @@ BEGIN
 
 
 
+#-----------------------------
+# API commands
+#-----------------------------
+
+our $API_NONE 		= 0;
+our $API_GET_TRACKS	= 1;
+our $API_GET_TRACK	= 2;
+
+my %API_COMMAND_NAME = (
+	$API_GET_TRACKS	 => 'GET_TRACKS',
+	$API_GET_TRACK	 => 'GET_TRACK', );
+
+
+#----------------------------------
+# TRACK PROTOCOL
+#-----------------------------------
 
 my $TRACK_DIR_INFO 		= 0x000;
 my $TRACK_DIR_SEND 		= 0x100;
@@ -79,12 +87,14 @@ my $TRACK_DIR_REPLY 	= 0x200;
 
 my $TRACK_CMD_CONTEXT   = 0x00;
 my $TRACK_CMD_BUFFER	= 0x01;
-my $TRACK_CMD_END		= 0x02;		# LIST
-my $TRACK_CMD_TRACK		= 0x04;		# EXIST
-my $TRACK_CMD_GET_TRACK = 0x05;		# :-( EVENT
-my $TRACK_CMD_DICT		= 0x07;		# MODIFY?!?
-my $TRACK_CMD_GET_MTAS	= 0x0c;		# FIND
-# my $TRACK_CMD_MTA		= 0x45;
+my $TRACK_CMD_END		= 0x02;
+my $TRACK_CMD_TRACK		= 0x04;
+my $TRACK_CMD_GET_TRACK = 0x05;
+my $TRACK_CMD_DICT		= 0x07;
+my $TRACK_CMD_EVENT		= 0x0a;		# events about the current 'active' track (start, stop, etc)
+my $TRACK_CMD_CHANGED   = 0x0b;		# events about tracks being added, modified, or deleted
+my $TRACK_CMD_GET_MTAS	= 0x0c;
+
 
 # from WPMGR
 #	our $CMD_CONTEXT	= 0x0;
@@ -113,19 +123,30 @@ my %TRACK_COMMAND_NAME = (
 	$TRACK_CMD_TRACK		=> 'TRACK',
 	$TRACK_CMD_GET_TRACK 	=> 'GET_TRACK',
 	$TRACK_CMD_DICT			=> 'DICT',
+	$TRACK_CMD_EVENT		=> 'EVENT',
+	$TRACK_CMD_CHANGED		=> 'CHANGED',
 	$TRACK_CMD_GET_MTAS		=> 'GET_MTAS',
 );
 
 
 my %PARSE_RULES = (
 
+	# needed to get dictionary
+
 	$TRACK_DIR_INFO 	| $TRACK_CMD_DICT 		=>	[ 'success' ],					# header for dictionary replies
 	$TRACK_DIR_REPLY	| $TRACK_CMD_CONTEXT   	=>	[ 'uuid','context_bits' ],		# uuid context for the reply; bits 01n determines dictionary
 	$TRACK_DIR_REPLY	| $TRACK_CMD_BUFFER		=> 	[ 'buffer' ],					# either a track, or a dict, based on context_bits
 	$TRACK_DIR_REPLY	| $TRACK_CMD_END		=> 	[ 'track_uuid' ],
 
+	# addititionally needed to get MTA and TRACK
+
 	$TRACK_DIR_INFO 	| $TRACK_CMD_TRACK 		=>	[ 'success' ],					# header for track replies
 	$TRACK_DIR_SEND		| $TRACK_CMD_END		=> 	[ 'uuid' ],						# repeats the mta uuid with no bits
+
+	# events
+
+	$TRACK_DIR_INFO		| $TRACK_CMD_CHANGED	=> 	[ 'no_seq', 'uuid','byte' ],
+	$TRACK_DIR_INFO		| $TRACK_CMD_EVENT		=> 	[ 'no_seq', 'byte' ],
 
 );
 
@@ -153,22 +174,20 @@ sub parseTRACK
 	}
 
 	$num = 0;
-	my $rec = shared_clone({is_dict=>0});
+	my $rec = shared_clone({is_dict=>0, is_event=>0, evt_mask=>0, });
 	for my $part (@parts)
 	{
 		my $offset = 0;
 		my $len = length($part);
-		my ($cmd_word,$func,$seq) = unpack('vvV',substr($part,$offset,10));
+		my ($cmd_word,$func) = unpack('vv',substr($part,$offset,4));
 		my $cmd = $cmd_word & 0xff;
 		my $dir = $cmd_word & 0xff00;
 		my $dir_hex = sprintf("%0x",$dir);
-		
-		my $cmd_name = $TRACK_COMMAND_NAME{$cmd} || 'WHO CARES';
-		display($dbg_parse,1,"parsePart($num) offset($offset) len($len) dir($dir_hex) cmd($cmd)=$cmd_name seq($seq) part="._lim(unpack('H*',$part),40));
-		$offset += 8;
-		$num++;
 
-		$rec->{seq_num} ||= $seq;
+		my $cmd_name = $TRACK_COMMAND_NAME{$cmd} || 'WHO CARES';
+		display($dbg_parse,1,"parsePart($num) offset($offset) len($len) dir($dir_hex) cmd($cmd)=$cmd_name part="._lim(unpack('H*',$part),40));
+		$offset += 4;
+		$num++;
 
 		my $rule = $PARSE_RULES{ $cmd_word };
 		if (!$rule)
@@ -176,7 +195,15 @@ sub parseTRACK
 			error("NO RULE");
 			next;
 		}
-		
+
+		if ($$rule[0] ne 'no_seq')
+		{
+			my $seq = unpack('V',substr($part,$offset,4));
+			display($dbg_parse,2,"seq=$seq");
+			$offset += 4;
+			$rec->{seq_num} ||= $seq;
+		}
+
 		for my $piece (@$rule)
 		{
 			parsePiece(
@@ -185,7 +212,24 @@ sub parseTRACK
 				$part,
 				\$offset );	# indent buffer records a bit
 		}
-	}
+
+		# post pieces processing
+
+		if ($cmd eq $TRACK_CMD_EVENT)
+		{
+			$rec->{is_event} = 1;
+			$rec->{evt_mask} |= $rec->{byte};
+		}
+		elsif ($cmd eq $TRACK_CMD_CHANGED)
+		{
+			$rec->{is_event} = 1;
+			$rec->{mods} ||= shared_clone([]);
+			push @{$rec->{mods}},shared_clone({
+				uuid=>$rec->{uuid},
+				byte=>$rec->{byte} });
+		}
+		
+	}	# for each part
 
 	display_hash($dbg_parse+1,1,"parseTRACK returning",$rec);
 	return $rec;
@@ -197,9 +241,9 @@ sub parseTRACK
 sub parsePiece
 {
 	my ($rec,$piece,$part,$poffset) = @_;
+	return if $piece eq 'no_seq';
 
 	my $text = '';
-
 	if ($piece eq 'buffer')
 	{
 		display($dbg_parse,1,"piece(buffer) is_dict($rec->{is_dict}) is_track="._def($rec->{is_track}));
@@ -250,6 +294,19 @@ sub parsePiece
 		display($dbg_parse,1,"success=$ok");
 		$rec->{success} =1 if $ok;
 		$$poffset += 4;
+	}
+	elsif ($piece eq 'byte')	# one byte flag on events
+	{
+		my $byte = unpack('C',substr($part,$$poffset++,1));
+		display($dbg_parse,1,"byte=$byte");
+		$rec->{$piece} = $byte;
+	}
+	elsif ($piece eq 'bits')	# one word flag on changed events
+	{
+		my $bits = unpack('v',substr($part,$$poffset,2));
+		display($dbg_parse,1,"bits=$bits");
+		$rec->{$piece} = $bits;
+		$$poffset += 2;
 	}
 	else
 	{
@@ -363,6 +420,7 @@ sub queueTRACKCommand
 	}
 	my $command = shared_clone({
 		api_command => $api_command,
+		name => $API_COMMAND_NAME{$api_command},
 		uuid => $uuid,});
 	push @{$this->{command_queue}},$command;
 	return 1;
@@ -527,50 +585,48 @@ sub handlePacket
 		navQueryLog($text,'shark.log');
 	}
 
-	# EVENTS are not pushed onto the reply queue
-	# Instead, they can generate additional API_GET_ITEM commands
+	# EVENTS do nothing
+	# CHANGED deletes a record or generates $API_GET_TRACK command
 
-	#	if ($WITH_MOD_PROCESSING)
-	#	{
-	#		my $mods = $reply->{mods};
-	#		# delete $reply->{mods} if $mods;
-	#		if ($mods && !$reply->{item})
-	#		{
-	#			warning($dbg+1,1,"found ".scalar(@$mods)." mods");
-	#			my $evt_mask = $reply->{evt_mask} || 0;
-	#			for my $mod (@$mods)
-	#			{
-	#				my $hash_name = lc($NAV_WHAT{$mod->{what}}).'s';
-	#				warning($dbg+1,2,sprintf(
-	#					"MOD(%02x=%s) uuid(%s) bits(%02x) evt_mask(%08x)",
-	#					$mod->{what},
-	#					$hash_name,
-	#					$mod->{uuid},
-	#					$mod->{bits},
-	#					$evt_mask));
-    #
-	#				# delete it, or ..
-    #
-	#				if ($mod->{bits} == 1)
-	#				{
-	#					my $hash = $this->{$hash_name};
-	#					my $exists = $hash->{$mod->{uuid}};
-	#					if ($exists)
-	#					{
-	#						warning($dbg,2,"deleting $hash_name($mod->{uuid}) $exists->{name}");
-	#						delete $hash->{$mod->{uuid}};
-	#						$this->incVersion();
-	#					}
-	#				}
-	#				else	# enque a GET_ITEM command for th emod
-	#				{
-	#					warning($dbg,0,"enquing mod($mod->{what}) uuid($mod->{uuid})");
-	#					$this->queueTRACKCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef,undef);
-	#				}
-    #
-	#			}	# for each mod
-	#		}	# $mods
-	#	}	# $WITH_MOD_PROCESSING
+	if ($reply->{is_event})
+	{
+		# evt_mask
+		#	start track 	= 1 , 3
+		#	discard 		= 2 , 1
+		#	save track 		= 2 , 4 , 1
+		#	new track point = 0
+
+		if ($reply->{mods} && $WITH_MOD_PROCESSING)
+		{
+			for my $mod (@{$reply->{mods}})
+			{
+				my $byte = $mod->{byte};
+				my $uuid = $mod->{uuid};
+
+				display($dbg,1,"TRACK_CHANGED($uuid,$byte)");
+
+				if ($byte == 2)	# delete it
+				{
+					my $tracks = $this->{tracks};
+					my $exists = $tracks->{$uuid};
+					if ($exists)
+					{
+						warning($dbg,2,"deleting tracks($uuid) $exists->{name}");
+						delete $tracks->{$uuid};
+						$this->incVersion();
+					}
+				}
+				else	# enqueue a GET_TRACK command
+				{
+					warning($dbg,2,"enquing GET_TRACK($uuid)");
+					$this->queueTRACKCommand($API_GET_TRACK,$uuid);
+				}
+			}	# $mods
+		}	# $WITH_MOD_PROCESSING
+
+		$reply = undef;	# event handled
+
+	}	# is_event
 
 	return $reply;
 

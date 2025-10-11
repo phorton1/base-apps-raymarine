@@ -35,7 +35,6 @@
 #	{next_seqnum};
 #	{command_queue}
 #	{replies}
-#	{version}
 #
 # private:
 #
@@ -98,6 +97,9 @@ BEGIN
     );
 }
 
+my $global_version:shared = 1;
+	# Global local 'database' version
+
 
 my %tcp_bases:shared;
 	# by $rayname
@@ -143,7 +145,6 @@ sub new
 	$this->{next_seqnum} = 1;
 	$this->{command_queue} = shared_clone([]);
 	$this->{replies} = shared_clone([]);
-	$this->{version} = 1;
 
 	return $this;
 }
@@ -203,17 +204,15 @@ sub sendPacket
 
 sub getVersion
 {
-	my ($this) = @_;
-	return $this->{version};
+	return $global_version;
 }
 
 
 sub incVersion
 {
-	my ($this) = @_;
-	$this->{version}++;
-	display($dbg_tcp+1,0,"incVersion($this->{version})");
-	return $this->{version};
+	$global_version++;
+	display($dbg_tcp+1,0,"incVersion($global_version)");
+	return $global_version;
 }
 
 
@@ -283,7 +282,7 @@ sub _close_socket
 	my ($this,$sock) = @_;
 	display($dbg_tcp,0,"closing tcp socket($this->{rayname})");
 	$this->{buffer} = '';
-	$this->{out_queue} = '';
+	$this->{out_queue} = shared_clone([]);
 	$this->{connected} = 0;
 	$sock->close();
 	return undef;
@@ -295,7 +294,7 @@ sub _close_socket
 sub commandThread
 {
 	my ($this,$command) = @_;
-	display($dbg_tcp,0,"$this->{rayname} commandThread($command) started");
+	display($dbg_tcp,0,"$this->{rayname} commandThread($command->{name}) started");
 	$this->handleCommand($command);
 	$this->{busy} = 0;
 		# Note to self.  I used to pull the command off the queue and use
@@ -303,7 +302,7 @@ sub commandThread
 		# But I believe that I once again ran into a Perl weirdness
 		# that Perl will crash (during garbage collection) if you
 		# re-assign a a shared reference to a scalar.
-	display($dbg_tcp,0,"$this->{rayname} commandThread($command) finished");
+	display($dbg_tcp,0,"$this->{rayname} commandThread($command->{name}) finished");
 }
 
 
@@ -481,7 +480,7 @@ sub tcpBaseThread
 			my $command = shift @{$this->{command_queue}};
 			$this->{busy} = 1;
 
-			display($dbg_tcp,0,"creating commandThread($rayname,$command)");
+			display($dbg_tcp,0,"creating commandThread($rayname,$command->{name})");
 			my $cmd_thread = threads->create(\&commandThread,$this,$command);
 			$cmd_thread->detach();
 		}

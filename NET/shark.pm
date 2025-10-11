@@ -26,7 +26,7 @@ use r_FILESYS;
 use r_WPMGR;
 use r_TRACK;
 use wp_api;
-use wp_server;
+use ray_server;
 use tcpListener;
 use s_resources;
 use s_frame;
@@ -91,7 +91,7 @@ sub handleCommand
 	#-----------------------------------------------------
 	# TRCACK
 
-	elsif ($lpart eq 'tracks')
+	elsif ($lpart eq 't')
 	{
 		getTracks();
 	}
@@ -109,9 +109,9 @@ sub handleCommand
 
 	elsif ($lpart eq 'kml')
 	{
-		my $kml = kml_WPMGR();
+		my $kml = kml_RAYSYS();
 		print "\n------------------------------------------------------\n";
-		print "WPMGR kml\n";
+		print "RAYSYS kml\n";
 		print "\n------------------------------------------------------\n";
 		print "$kml\n";
 	}

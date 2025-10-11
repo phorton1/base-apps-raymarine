@@ -1,10 +1,10 @@
 #-----------------------------------------------------
-# wp_server.pm
+# ray_server.pm
 #-----------------------------------------------------
 # Serves the WAYPOINT database to Google Earth via network links
 
 
-package wp_server;
+package ray_server;
 use strict;
 use warnings;
 use threads;
@@ -16,13 +16,14 @@ use Pub::ServerUtils;
 use Pub::HTTP::ServerBase;
 use Pub::HTTP::Response;
 use r_defs;
+use tcpBase;
 use r_WPMGR;
 use r_TRACK;
 use wp_parse;
 use base qw(Pub::HTTP::ServerBase);
 
 my $dbg = 0;
-my $dbg_kml = 0;
+my $dbg_kml = 1;
 
 
 BEGIN
@@ -30,7 +31,7 @@ BEGIN
  	use Exporter qw( import );
 	our @EXPORT = qw(
 		startWPServer
-		kml_WPMGR
+		kml_RAYSYS
 		showLocalDatabase
 	);
 }
@@ -40,13 +41,13 @@ my $EOL = "\r\n";
 
 my $SERVER_PORT = 9882;
 my $SRC_DIR = "/base/apps/raymarine/NET";
-my $NETWORK_LINK = "http://localhost:9882/navqry.kml";
+my $NETWORK_LINK = "http://localhost:9882/raysys.kml";
 
 
-my $wp_server;
+my $ray_server;
 my $server_version:shared = -1;
-my $wpmgr_kml:shared = kml_header(0,$server_version).kml_footer(0);
-my $wpmgr_cache_filename = "$temp_dir/wpmgr_cache.kml";
+my $server_kml:shared = kml_header(0,$server_version).kml_footer(0);
+my $server_cache_filename = "$temp_dir/server_cache.kml";
 
 
 #------------------------
@@ -55,7 +56,7 @@ my $wpmgr_cache_filename = "$temp_dir/wpmgr_cache.kml";
 
 Pub::ServerUtils::initServerUtils(0,'');
 	# 0 == DOESNT NEEDS WIFI
-	# '' == LINUX PID FILE	$wp_server = wp_server->new();
+	# '' == LINUX PID FILE	$ray_server = ray_server->new();
 
 
 #-----------------------
@@ -66,9 +67,9 @@ sub startWPServer
 {
 	display($dbg,0,"starting wp_erver");
 
-	$wp_server = wp_server->new();
-	$wp_server->start();
-	display($dbg,0,"finished starting wp_server");
+	$ray_server = ray_server->new();
+	$ray_server->start();
+	display($dbg,0,"finished starting ray_server");
 }
 
 sub new
@@ -89,7 +90,7 @@ sub new
 		HTTP_DEBUG_REQUEST => 0,
 		HTTP_DEBUG_RESPONSE => 0,
 
-		HTTP_DEBUG_QUIET_RE => 'navqry\.kml',
+		HTTP_DEBUG_QUIET_RE => 'raysys\.kml',
 			# if the request matches this RE, the request
 			# and response debug levels will be bumped by 2
 			# so that under normal circumstances, no messages
@@ -168,9 +169,9 @@ sub handle_request
 		my $text = 'this is a test';
 		$response = http_ok($request,$text);
 	}
-	elsif ($uri eq '/navqry.kml')
+	elsif ($uri eq '/raysys.kml')
 	{
-		my $kml = kml_WPMGR($request->{params});
+		my $kml = kml_RAYSYS($request->{params});
 		if ($kml)
 		{
 			$response = http_ok($request,$kml);
@@ -209,10 +210,11 @@ my $abgr_color_red 		= 'ff0000ff';
 my $abgr_color_cyan 	= 'ffffff00';
 my $abgr_color_yellow 	= 'ff00ffff';
 my $abgr_color_magenta 	= 'ffff00ff';
+my $abgr_color_dark_green 	= 'ff008800';
 
 #  0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black
 
-my @route_colors = (
+my @line_colors = (
 	$abgr_color_red,
 	$abgr_color_yellow,
 	$abgr_color_green,
@@ -221,7 +223,8 @@ my @route_colors = (
 	$abgr_color_white );
 
 
-my $route_width = 4;
+my $ROUTE_WIDTH = 4;
+my $TRACK_WIDTH = 2;
 
 # icons
 
@@ -255,7 +258,7 @@ sub kml_footer
 
 sub kml_header
 {
-	my ($update,$wpmgr_version) = @_;
+	my ($update,$local_version) = @_;
 	
 	my $kml = '<?xml version="1.0" encoding="UTF-8"?>'.$EOL;
 	$kml .= '<kml xmlns="http://www.opengis.net/kml/2.2" ';
@@ -266,9 +269,9 @@ sub kml_header
 	$kml .= "<NetworkLinkControl>$EOL";
 	# $kml .= "<minRefreshPeriod>0</minRefreshPeriod>$EOL";
 	# $kml .= "<maxSessionLength>-1</maxSessionLength>$EOL";
-	$kml .= "<cookie>version=$wpmgr_version</cookie>$EOL";
-	# $kml .= "<message>RAYQRY version($wpmgr_version)</message>$EOL";
-	$kml .= "<linkName>Waypoint Manager</linkName>$EOL";
+	$kml .= "<cookie>version=$local_version</cookie>$EOL";
+	# $kml .= "<message>version($local_version)</message>$EOL";
+	$kml .= "<linkName>RAYSYS($local_version)</linkName>$EOL";
 	#	doesn't change
 	# $kml .= "<linkDescription>...</linkDescription>$EOL";;
 	# $kml .= "<linkSnippet maxLines="2">...</linkSnippet>$EOL";
@@ -340,34 +343,37 @@ sub kml_global_styles
 
 	for (my $i=0; $i<$NUM_ROUTE_COLORS; $i++)
 	{
-		$kml .= kml_route_style($i);
+		$kml .= kml_linestyle('route',$i,$square_icon,$abgr_color_red);
+		$kml .= kml_linestyle('track',$i,$circle_icon,$abgr_color_dark_green);
 	}
 	return $kml;
 }
 
 
-sub kml_route_style
+sub kml_linestyle
 	# style for routes and things in them
 {
-	my ($color_index) = @_;
-	my $kml = '';
+	my ($what,$color_index,$icon,$icon_label_color) = @_;
 
-	$kml .= "<Style id=\"routeStyle$color_index\">$EOL";
+	my $width = $what eq 'track' ? $TRACK_WIDTH : $ROUTE_WIDTH;
+
+	my $kml = '';
+	$kml .= "<Style id=\"$what"."Style$color_index\">$EOL";
     $kml .= "<IconStyle>$EOL";
     $kml .= "<scale>0.6</scale>$EOL";
-	$kml .= "<color>$abgr_color_red</color>$EOL";
+	$kml .= "<color>$icon_label_color</color>$EOL";
     $kml .= "<Icon>$EOL";
-    $kml .= "<href>$square_icon</href>$EOL";
-	$kml .= "<color>$route_colors[$color_index]</color>$EOL";
+    $kml .= "<href>$icon</href>$EOL";
+	$kml .= "<color>$line_colors[$color_index]</color>$EOL";
     $kml .= "</Icon>$EOL";
     $kml .= "</IconStyle>$EOL";
 	$kml .= "<LabelStyle>$EOL";
     $kml .= "<scale>0.6</scale>$EOL";
-	$kml .= "<color>$abgr_color_red</color>$EOL";
+	$kml .= "<color>$icon_label_color</color>$EOL";
 	$kml .= "</LabelStyle>$EOL";
 	$kml .= "<LineStyle>$EOL";
-	$kml .= "<color>$route_colors[$color_index]</color>$EOL";
-	$kml .= "<width>$route_width</width>$EOL";
+	$kml .= "<color>$line_colors[$color_index]</color>$EOL";
+	$kml .= "<width>$width</width>$EOL";
 	$kml .= "</LineStyle>$EOL";
 	$kml .= "</Style>$EOL";
 	return $kml;
@@ -375,36 +381,49 @@ sub kml_route_style
 
 
 
-
 sub kml_route_string
 	# builds a placemark with a linestring for a route
 {
-	my ($style,$route_name,$waypoints) = @_;
-	return '' if !@$waypoints;
-	display($dbg_kml,0,"kml_route_string($style,$route_name)");
+	my ($what,$color,$name,$waypoints) = @_;
+	my @points;
+	foreach my $uuid (@$waypoints)
+	{
+		my $wp = $wpmgr->{waypoints}->{$uuid};
+		push @points,$wp;
+	}
+	return kml_line_string($what,$color,$name,\@points);
+}
+
+
+sub kml_line_string
+	# builds a placemark with a linestring for a route
+	# track points are already normal as they're from northEastToLatLon
+	# route points are 1E7
+{
+	my ($what,$color,$name,$points) = @_;
+	return '' if !@$points;
+	display($dbg_kml,0,"kml_line_string($what,$color,$name) num_pts=".scalar(@$points));
 
 	# Build coordinates string
 
 	my $coord_str = '';
-	foreach my $uuid (@$waypoints)
+	foreach my $point (@$points)
 	{
-		my $wp = $wpmgr->{waypoints}->{$uuid};
-		my $lat = $wp->{lat}/$SCALE_LATLON;
-		my $lon = $wp->{lon}/$SCALE_LATLON;
-
-		$wp ?
-			($coord_str .= "$lon,$lat,0 ") :
-			 error("Could not find wp($uuid)");
+		my $lat = $point->{lat};
+		my $lon = $point->{lon};
+		$lat /= $SCALE_LATLON if $what eq 'route';
+		$lon /= $SCALE_LATLON if $what eq 'route';
+		$coord_str .= "$lon,$lat,0 ";
 	}
 	$coord_str =~ s/\s+$//;  # trim trailing space
 
 	# Wrap in Placemark
 
 	my $kml = '';
-	$kml .= "<Placemark id=\"$route_name\">$EOL";
-	$kml .= "<name>$route_name Track</name>$EOL";
+	$kml .= "<Placemark id=\"$what"."_$name\">$EOL";
+	$kml .= "<name>$name</name>$EOL";
 	# $kml .= "<visibility>1</visibility>$EOL";
-	$kml .= "<styleUrl>$style</styleUrl>$EOL";
+	$kml .= "<styleUrl>$what"."Style$color</styleUrl>$EOL";
 	$kml .= "<LineString>$EOL";
 	$kml .= "<coordinates>$coord_str</coordinates>$EOL";
 	$kml .= "</LineString>$EOL";
@@ -515,7 +534,7 @@ sub kml_section
 
 		my $wp_uuids = $folder->{uuids};
 
-		$kml .= kml_route_string($style,$folder_name,$wp_uuids)
+		$kml .= kml_route_string('route',$folder->{color},"$folder_name Route",$wp_uuids)
 			if $class eq 'route';
 
 		display($dbg_kml,1,"generating ".scalar(@$wp_uuids)." waypoints in $folder_name");
@@ -544,65 +563,90 @@ sub kml_section
 }
 
 
+sub kml_tracks
+{
+	my $tracks = $track_mgr->{tracks};
+	my $num_tracks = keys %$tracks;
+	display($dbg_kml,0,"kml_tracks() num_tracks=$num_tracks");
+
+	my $kml = kml_start_folder('sectionStyle', "section_Tracks", 'Tracks');
+	for my $uuid (sort { cmpByName($tracks,$a,$b) } keys %$tracks)
+	{
+		my $track = $tracks->{$uuid};
+		my $name = $track->{name};
+		my $color = $track->{color};
+		my $points = $track->{points};
+
+		$kml .= kml_line_string('track',$color,$name,$points);
+	}
+	$kml .= kml_end_folder();
+	return $kml;
+}
+
+
 #------------------------------------------------------------------
 # buildNavQueryKML
 #------------------------------------------------------------------
 
 my $test_version:shared = 100;
 
-sub kml_WPMGR
+sub kml_RAYSYS
 {
 	my ($params) = @_;
 	my $param_version = $params->{version};
 	$param_version ||= 0;
 
-	my $wpmgr_version = $wpmgr ? $wpmgr->{version} : 0;
-	my $changed = $server_version == $wpmgr_version ? 0 : 1;
+	# the global local version is a tcpBase static variable
+
+	my $local_version = tcpBase::getVersion();
+	my $changed = $server_version == $local_version ? 0 : 1;
 	my $update = !$changed && $param_version == $server_version ? 1 : 0;
 
-	display($dbg_kml,1,"kml_WPMGR($param_version,$server_version,$wpmgr_version) changed($changed) update($update)");
+	display($dbg_kml,1,"kml_RAYSYS($param_version,$server_version,$local_version) changed($changed) update($update)");
 
-	if (!$wpmgr)
+	if (!$wpmgr && !$track_mgr)
 	{
-		error("No wpmgr object in kml_WPMGR");
+		if (-f $server_cache_filename)
+		{
+			warning($dbg_kml-1,0,"wpmgr not running; returning $server_cache_filename");
+			return getTextFile($server_cache_filename);
+		}
+		error("No wpmgr or track_mgr objects in kml_RAYSYS");
 		return '';
 	}
 
-	# if wpmgr is not running, deliver the cachefile if one exists
 
-	if (!$wpmgr->{running} && -f $wpmgr_cache_filename)
-	{
-		warning($dbg_kml-1,0,"wpmgr not running; returning $wpmgr_cache_filename");
-		return getTextFile($wpmgr_cache_filename);
-	}
-
-	# Otherwise, create kml from $wmpmgr hashes
+	# Otherwise, create kml from $wpmgr and $track_mgr hashes
 	
-	my $kml = kml_header($update,$wpmgr_version);
+	my $kml = kml_header($update,$local_version);
 
 	if ($changed)
 	{
-		$server_version = $wpmgr_version;
+		$server_version = $local_version;
 
-		my $inner_kml = '';
+		my $inner_kml = kml_global_styles();
 		if ($wpmgr && keys %{$wpmgr->{waypoints}})
 		{
-			$inner_kml .= kml_global_styles();
 			$inner_kml .= kml_section('group');
 			$inner_kml .= kml_section('route');
 		}
-		$wpmgr_kml = $inner_kml;
+		if ($track_mgr && keys %{$track_mgr->{tracks}})
+		{
+			$inner_kml .= kml_tracks();
+		}
+		
+		$server_kml = $inner_kml;
 		$kml .= $inner_kml;
 	}
 	elsif (!$update)
 	{
-		$kml .= $wpmgr_kml;
+		$kml .= $server_kml;
 	}
 	
 	$kml .= kml_footer($update);
 	
-	printVarToFile(1,$wpmgr_cache_filename,$kml, 1)
-		if $changed && $wpmgr_cache_filename;
+	printVarToFile(1,$server_cache_filename,$kml, 1)
+		if $changed && $server_cache_filename;
 
 	return $kml;
 }
