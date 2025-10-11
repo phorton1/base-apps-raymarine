@@ -37,6 +37,7 @@ use threads;
 use threads::shared;
 use Time::HiRes qw(time sleep);
 use Pub::Utils;
+use r_defs qw($SUCCESS_SIG);
 use wp_parse;
 
 my $dbg_wpp = 1;
@@ -48,8 +49,6 @@ BEGIN
 	our @EXPORT = qw(
 
 		parseWPMGR
-
-		$SUCCESS_SIG
 
 		%NAV_DIRECTION
 		%NAV_WHAT
@@ -111,9 +110,6 @@ our $CMD_FIND		= 0xc;
 our $CMD_COUNT     	= 0xd;
 our $CMD_EVERB    	= 0xe;
 our $CMD_FVERB     	= 0xf;
-
-
-our $SUCCESS_SIG = '00000400';
 
 
 our %NAV_DIRECTION = (
@@ -381,7 +377,7 @@ sub parseWPMGR
 	if ($with_text)
 	{
 		$arrow = $is_reply ? '-->' : '<--';
-		$first_header = pad('WPMGR',6).$arrow.' '.pad($client_port,7);
+		$first_header = pad('WPMGR',6).$arrow." ";
 		$header_len = length($first_header);
 	}
 	

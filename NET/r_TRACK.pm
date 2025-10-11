@@ -14,10 +14,11 @@ use r_utils;
 use r_RAYSYS;
 use r_utils;
 use wp_parse;	# temporary?
+use tcpBase;
 use base qw(tcpBase);
 
 my $dbg = 0;
-
+my $dbg_parse = 0;
 
 my $WITH_MOD_PROCESSING = 0;
 
@@ -136,7 +137,7 @@ sub parseTRACK
 	my ($buffer) = @_;
 	my $offset = 0;
 	my $pack_len = length($buffer);
-	display(0,0,"parseTRACK pack_len($pack_len)");
+	display($dbg_parse,0,"parseTRACK pack_len($pack_len)");
 
 	my @parts;
 	my $num = 0;
@@ -146,7 +147,7 @@ sub parseTRACK
 		$offset += 2;
 		my $part = substr($buffer,$offset,$len);
 		push @parts,$part;
-		display(0,2,"part($num) offset($offset) len($len) = ".unpack('H*',$part));
+		display($dbg_parse+1,2,"part($num) offset($offset) len($len) = ".unpack('H*',$part));
 		$offset += $len;
 		$num++;
 	}
@@ -163,7 +164,7 @@ sub parseTRACK
 		my $dir_hex = sprintf("%0x",$dir);
 		
 		my $cmd_name = $TRACK_COMMAND_NAME{$cmd} || 'WHO CARES';
-		display(0,1,"parsePart($num) offset($offset) len($len) dir($dir_hex) cmd($cmd)=$cmd_name seq($seq) part=".unpack('H*',$part));
+		display($dbg_parse,1,"parsePart($num) offset($offset) len($len) dir($dir_hex) cmd($cmd)=$cmd_name seq($seq) part="._lim(unpack('H*',$part),40));
 		$offset += 8;
 		$num++;
 
@@ -186,14 +187,11 @@ sub parseTRACK
 		}
 	}
 
-	display_hash(0,1,"parseTRACK returning",$rec);
+	display_hash($dbg_parse+1,1,"parseTRACK returning",$rec);
 	return $rec;
 }
 
 
-
-
-my $SUCCESS_SIG = '00000400';
 
 
 sub parsePiece
@@ -204,7 +202,7 @@ sub parsePiece
 
 	if ($piece eq 'buffer')
 	{
-		display(0,1,"piece(buffer) is_dict($rec->{is_dict}) is_track="._def($rec->{is_track}));
+		display($dbg_parse,1,"piece(buffer) is_dict($rec->{is_dict}) is_track="._def($rec->{is_track}));
 		if (!$rec->{is_dict})
 		{
 			# skip biglen
@@ -218,14 +216,14 @@ sub parsePiece
 			my $num = unpack('V',substr($part,$$poffset,4));
 			$$poffset += 4;
 
-			display(0,1,"piece(buffer) is_dict found $num uuids");
+			display($dbg_parse,1,"piece(buffer) is_dict found $num uuids");
 			my $uuids = $rec->{uuids};
 			for (my $i=0; $i<$num; $i++)
 			{
 				my $uuid = unpack('H*',substr($part,$$poffset,8));
 				$$poffset += 8;
 				push @$uuids,$uuid;
-				display(0,2,"uuid($i)=$uuid");
+				display($dbg_parse,2,"uuid($i)=$uuid");
 			}
 		}
 	}
@@ -234,14 +232,14 @@ sub parsePiece
 		my $uuid = unpack('H*',substr($part,$$poffset,8));
 		my $field = $rec->{is_track} ? 'track_uuid' : 'uuid';
 		$rec->{$field} = $uuid;
-		display(0,1,"uuid($field)=$uuid");
+		display($dbg_parse,1,"uuid($field)=$uuid");
 		$$poffset += 8;
 	}
 	elsif ($piece eq 'track_uuid')
 	{
 		my $uuid = unpack('H*',substr($part,$$poffset,8));
 		$rec->{track_uuid} = $uuid;
-		display(0,1,"piece(track_uuid)=$uuid");
+		display($dbg_parse,1,"piece(track_uuid)=$uuid");
 		$rec->{is_track} = 1;
 		$$poffset += 8;
 	}
@@ -249,7 +247,7 @@ sub parsePiece
 	{
 		my $status = unpack('H*',substr($part,$$poffset,4));
 		my $ok = $status eq $SUCCESS_SIG ? 1 : 0;
-		display(0,1,"success=$ok");
+		display($dbg_parse,1,"success=$ok");
 		$rec->{success} =1 if $ok;
 		$$poffset += 4;
 	}
@@ -259,7 +257,7 @@ sub parsePiece
 		my $value = unpack('V',$str);
 		$$poffset += 4;
 
-		display(0,1,"rec($piece) = '$value'");
+		display($dbg_parse,1,"rec($piece) = '$value'");
 				
 		$rec->{$piece} = $value;
 
@@ -269,7 +267,7 @@ sub parsePiece
 			{
 				$rec->{is_dict} = 1;
 				$rec->{uuids} = shared_clone([]);
-				display(0,2,"setting is_dict bit");
+				display($dbg_parse,2,"setting is_dict bit");
 			}
 		}
 
@@ -289,17 +287,14 @@ sub startTRACK
 	my ($class) = @_;
 	display($dbg,0,"startTRACK($class)");
 	my $this = $class->SUPER::new({
-		name => 'TRACK',
+		rayname => 'TRACK',
 		local_port => $TRACK_PORT,
 		show_input  => $DEFAULT_TRACK_TCP_INPUT,
 		show_output => $DEFAULT_TRACK_TCP_OUTPUT,
 		in_color	=> $UTILS_COLOR_BROWN,
 		out_color   => $UTILS_COLOR_LIGHT_CYAN, });
-	$this->{command_queue} = shared_clone([]);
-	$this->{replies} = shared_clone([]);
-	$this->{version} = 1;
+
 	$this->{tracks} = shared_clone({});
-	$this->{next_seqnum} = 1;
 	$track_mgr = $this;
 	$this->start();
 }
@@ -352,7 +347,7 @@ sub queueTRACKCommand
 
 	if ($SHOW_TRACK_PARSED_OUTPUT)
 	{
-		my $msg = "# queueTRACKCommand($api_command=$cmd_name) uuid($uuid))\n";
+		my $msg = "# queueTRACKCommand($api_command=$cmd_name) uuid($uuid)\n";
 		print $msg;
 		navQueryLog($msg,"shark.log");
 	}
@@ -378,21 +373,6 @@ sub queueTRACKCommand
 #-------------------------------------------------
 # utilities
 #-------------------------------------------------
-
-sub getVersion
-{
-	my ($this) = @_;
-	return $this->{version};
-}
-
-
-sub incVersion
-{
-	my ($this) = @_;
-	$this->{version}++;
-	display($dbg,0,"incVersion($this->{version})");
-	return $this->{version};
-}
 
 
 
@@ -437,56 +417,7 @@ sub sendRequest
 }
 
 
-sub waitReply
-{
-	my ($this,$expect_success) = @_;
-	my $seq = $this->{wait_seq};
-	my $name = $this->{wait_name};
-	my $start = time();
 
-	display($dbg+1,0,"waitReply($seq) $name");
-
-	while ($this->{started})
-	{
-		my $replies = $this->{replies};
-		if (@$replies)
-		{
-			my $reply = shift @$replies;
-			# is_event($reply->{is_event};
-			display_hash($dbg,1,"got reply seq($reply->{seq_num})",$reply);
-			if ($reply->{seq_num} == $seq)
-			{
-				if ($expect_success)
-				{
-					my $got_success = $reply->{success} ? 1 : -1;
-					if ($got_success != $expect_success)
-					{
-						error("waitReply($seq) expected success($expect_success) but got($got_success)");
-						# display_hash($dbg,1,"offending reply",$reply);
-						return 0;
-					}
-				}
-
-				display($dbg,1,"waitReply($seq) returning OK reply");
-				return $reply;
-			}
-			else
-			{
-				# display_hash($dbg+1,1,"skipping reply",$reply);
-			}
-		}
-
-		if (time() > $start + $COMMAND_TIMEOUT)
-		{
-			error("Command($seq) $name timed out");
-			return '';
-		}
-
-		sleep(0.5);
-	}
-
-	return error("waitReply($seq) while !started");
-}
 
 
 
@@ -555,29 +486,19 @@ sub get_track
 
 
 
-sub commandThread
+sub handleCommand
 {
 	my ($this,$command) = @_;
 	my $api_command = $command->{api_command};
 	my $cmd_name = apiCommandName($api_command);
-	display($dbg,0,"commandThread($api_command=$cmd_name) started");
+	display($dbg,0,"$this->{rayname} handleCommand($api_command=$cmd_name) started");
 
 	my $rslt;
-
 	$rslt = $this->get_tracks($command) if $api_command == $API_GET_TRACKS;
 	$rslt = $this->get_track($command) 	if $api_command == $API_GET_TRACK;
 
 	error("API $cmd_name failed") if !$rslt;
-
-	$this->{command_rslt} = $rslt;
-	$this->{busy} = 0;
-		# Note to self.  I used to pull the command off the queue and use
-		# {command} as the busy indicator, then set it to '' here.
-		# But I believe that I once again ran into a Perl weirdness
-		# that Perl will crash (during garbage collection) if you
-		# re-assign a a shared reference to a scalar.
-
-	display($dbg,0,"commandThread($api_command=$cmd_name) finished");
+	display($dbg,0,"$this->{rayname} handleCommand($api_command=$cmd_name) finished");
 }
 
 
@@ -586,21 +507,6 @@ sub commandThread
 #========================================================================
 # overriden tcpBase methods
 #========================================================================
-
-sub waitAddress
-{
-	my ($this) = @_;
-	my $rayport = findRayPortByName('TRACK');
-	while (!$rayport)
-	{
-		display($dbg-1,1,"waiting for rayport(TRACK)");
-		sleep(1);
-		$rayport = findRayPortByName('TRACK');
-	}
-	$this->{remote_ip} = $rayport->{ip};
-	$this->{remote_port} = $rayport->{port};
-	display($dbg,1,"found rayport(TRACK) at $this->{remote_ip}:$this->{remote_port}");
-}
 
 
 sub handlePacket
@@ -621,10 +527,8 @@ sub handlePacket
 		navQueryLog($text,'shark.log');
 	}
 
-
 	# EVENTS are not pushed onto the reply queue
 	# Instead, they can generate additional API_GET_ITEM commands
-
 
 	#	if ($WITH_MOD_PROCESSING)
 	#	{
@@ -668,29 +572,8 @@ sub handlePacket
 	#		}	# $mods
 	#	}	# $WITH_MOD_PROCESSING
 
-	push @{$this->{replies}},$reply;
+	return $reply;
 
-}
-
-
-sub onIdle
-{
-	my ($this) = @_;
-
-	if (!$this->{busy})
-	{
-		if (@{$this->{command_queue}})
-		{
-			my $command = shift @{$this->{command_queue}};
-			$this->{busy} = 1;
-
-			display($dbg,0,"creating cmd_thread");
-			my $cmd_thread = threads->create(\&commandThread,$this,$command);
-			display($dbg,0,"nav_thread cmd_thread");
-			$cmd_thread->detach();
-			display($dbg,0,"cmd_thread detached");
-		}
-	}	# !busy
 }
 
 

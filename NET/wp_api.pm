@@ -14,7 +14,7 @@ use IO::Socket::INET;
 use Time::HiRes qw(sleep time);
 use Time::Local;
 use Pub::Utils;
-use r_units;
+use r_defs;
 use r_utils;
 use r_RAYSYS;
 use r_WPMGR;

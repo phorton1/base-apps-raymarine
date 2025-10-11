@@ -11,12 +11,13 @@ use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils;
-use r_units;
+use r_defs;
 
 
 my $dbg_wp = 1;
 my $dbg_route = 1;
 my $dbg_group = 1;
+my $dbg_track = 1;
 my $dbg_unpack = 1;
 
 
@@ -630,7 +631,7 @@ sub buildWPWaypoint
 #-------------------------------------------------
 
 
-my $MTA_REC_SIZE = 56;
+my $MTA_REC_SIZE = 57;
 my $MTA_REC_SPECS = [
 	k1_1         => [ 1,	1,		'c',     ],   #   0     char a;                   // always 0x01
 	cnt1         => [ 0,	2,		's',     ],   #   1     int16_t cnt;              // number of track points
@@ -648,7 +649,6 @@ my $MTA_REC_SPECS = [
 	color        => [ 0,	1,		'c',     ],   #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
 	name         => [ 0,	16,		'Z16',   ],   #   40    char name[16];            // name of track, string not terminated
 	u1           => [ 1,	1,		'C',     ],   #   56    char j;                   // unknown, never 0 in my files, always 0 according to parsefsh
-	u2     	 	 => [ 0,	1,		'c',     ],   #   57    uint8_t guid_cnt;         // nr of guids following this header (always 1 in my files)
 ];
 
 
@@ -670,7 +670,6 @@ my $TRACK_PT_SPECS = [
 ];
 
 
-my $dbg_track = 0;
 
 sub parseMTA
 {

@@ -1,7 +1,7 @@
 #---------------------------------------------
 # tcpBase.pm
 #---------------------------------------------
-# The base class of a tcp socket handler.
+# The base class of a RAYNET tcp socket client.
 #
 #	my $obj = tcpBase->new($params);
 #	$obj->start();
@@ -10,10 +10,7 @@
 #--------------------------------------
 # construcion $params
 #--------------------------------------
-#
-#	{name} - optional, they are identified by ip:port
-#	{remote_ip}
-#	{remote_port}
+#	{rayname} - required
 #	{EXIT_ON_CLOSE}
 #	{local_port} - optional
 #	{local_ip} - optional but not recommended
@@ -24,14 +21,26 @@
 #	{CONNECT_TIMEOUT}
 #	{RECONNECT_INTERVAL}
 #	{READ_TIME} merely the time to wait for a message; NOT AN ERROR
+#	{COMMAND_TIMEOUT}
 #
-# private:
+# public read-only
 #
 #	{started}	= indicates that the thread has started
 #	{running}	= indicates that the socket has been/is open
 #   {stopping}	= indiates the the socket is in the process of closing
 #	{connected} = indicatea the socket is currently connected
 #
+# derived class support
+#
+#	{next_seqnum};
+#	{command_queue}
+#	{replies}
+#	{version}
+#
+# private:
+#
+#	{remote_ip}
+#	{remote_port}
 #	{stop_time}
 #	{connect_time}
 #	{out_queue}
@@ -41,10 +50,9 @@
 # overidden class methods
 #-----------------------------------------
 #
-#	$this->waitAddress() = set remote_ip and port and return
 #	$this->sendPacket($packet) = queue the packet for async sending
 #	$this->handlePacket($buffer)
-#	$this->onIdle();
+#	$this->commandHandler($this,$command);
 #
 #------------------
 # Ideas:
@@ -57,7 +65,6 @@
 #	Even for well known RAYNET services, these capabilities might be nice
 
 
-
 package tcpBase;
 use strict;
 use warnings;
@@ -67,6 +74,9 @@ use Time::HiRes qw(sleep time);
 use Socket;
 use IO::Select;
 use Pub::Utils;
+use rayports;
+use r_defs;
+use r_RAYSYS qw(findRayPortByName);
 use r_utils qw(parse_dwords setConsoleColor);
 
 my $dbg_tcp = -1;
@@ -75,6 +85,7 @@ my $STOP_TIMEOUT = 3;
 my $DEFAULT_CONNECT_TIMEOUT = 2;
 my $DEFAULT_RECONNECT_INTERVAL = 10;
 my $DEFAULT_READ_TIME = 0.1;
+my $DEFAULT_COMMAND_TIMEOUT = 3;
 
 
 BEGIN
@@ -82,16 +93,19 @@ BEGIN
  	use Exporter qw( import );
     our @EXPORT = qw(
 		findTcpBase
+
+		$SUCCESS_SIG
     );
 }
 
 
 my %tcp_bases:shared;
-	# for objects with identified ip addresses
+	# by $rayname
+	
 sub findTcpBase
 {
-	my ($ip,$port) = @_;
-	return $tcp_bases{"$ip:$port"};
+	my ($rayname) = @_;
+	return $tcp_bases{$rayname};
 }
 
 
@@ -107,8 +121,8 @@ sub new
 	$this->{CONNECT_TIMEOUT} ||= $DEFAULT_CONNECT_TIMEOUT,
 	$this->{RECONNECT_INTERVAL}  ||= $DEFAULT_RECONNECT_INTERVAL,
 	$this->{READ_TIME} = $DEFAULT_READ_TIME;
-		# {remote_ip}
-		# {remote_port}
+	$this->{COMMAND_TIMEOUT} = $DEFAULT_COMMAND_TIMEOUT;
+		# {rayname}
 		# {EXIT_ON_CLOSE}
 		# {local_port} - optional
 		# {local_ip} - optional but not recommended
@@ -116,10 +130,21 @@ sub new
 		# {show_output}
 		# {out_color}
 		# {in_color}
+
+	# undefined variables
+		# {remote_ip}
+		# {remote_port}
+
 	$this->{buffer} = '';
 	$this->{connect_time} = 0;
 	$this->{stop_time} = 0;
 	$this->{out_queue} = shared_clone([]);
+
+	$this->{next_seqnum} = 1;
+	$this->{command_queue} = shared_clone([]);
+	$this->{replies} = shared_clone([]);
+	$this->{version} = 1;
+
 	return $this;
 }
 
@@ -130,7 +155,7 @@ sub start
 	display(0,1,"tcpBase::start() called");
 	return error("tcpBase already started") if $this->{started};
 	$this->{started} = 1;
-	my $thread = threads->create(\&tcpBase,$this);
+	my $thread = threads->create(\&tcpBaseThread,$this);
 	$thread->detach();
 	display(0,1,"tcpBase::start() returning");
 }
@@ -145,15 +170,25 @@ sub stop
 }
 
 
+
+#----------------------------------------------
+# virtual api
+#----------------------------------------------
+
 sub waitAddress		{ my ($this) = @_; }
 sub handlePacket	{ my ($this,$buffer) = @_; }
-sub onIdle			{ my ($this) = @_; }
+sub commandHandler	{ my ($this,$command) = @_; }
 
+
+
+#----------------------------------------------
+# utilities
+#----------------------------------------------
 
 sub sendPacket
 {
 	my ($this,$buffer) = @_;
-	return error("sendPacket() no connection to $this->{remote})")
+	return error("sendPacket() no connection to $this->{rayname})")
 		if (!$this->{connected});
 	push @{$this->{out_queue}},$buffer;
 }
@@ -161,11 +196,92 @@ sub sendPacket
 
 
 
+#------------------------------------------------
+# derived/client API
+#------------------------------------------------
+
+
+sub getVersion
+{
+	my ($this) = @_;
+	return $this->{version};
+}
+
+
+sub incVersion
+{
+	my ($this) = @_;
+	$this->{version}++;
+	display($dbg_tcp+1,0,"incVersion($this->{version})");
+	return $this->{version};
+}
+
+
+sub waitReply
+{
+	my ($this,$expect_success) = @_;
+	my $rayname = $this->{rayname};
+	my $seq = $this->{wait_seq};
+	my $wait_name = $this->{wait_name};
+
+
+	my $start = time();
+
+	display($dbg_tcp+1,0,"$rayname waitReply($seq) $wait_name");
+
+	while ($this->{started})
+	{
+		my $replies = $this->{replies};
+		if (@$replies)
+		{
+			my $reply = shift @$replies;
+			# is_event($reply->{is_event};
+			display_hash($dbg_tcp+2,1,"$this->{rayname} got reply seq($reply->{seq_num})",$reply);
+			if ($reply->{seq_num} == $seq)
+			{
+				if ($expect_success)
+				{
+					my $got_success = $reply->{success} ? 1 : -1;
+					if ($got_success != $expect_success)
+					{
+						error("$rayname waitReply($seq,$wait_name) expected success($expect_success) but got($got_success)");
+						# display_hash($dbg,1,"offending reply",$reply);
+						return 0;
+					}
+				}
+
+				display($dbg_tcp,1,"$rayname waitReply($seq,$wait_name) returning OK reply");
+				return $reply;
+			}
+			else
+			{
+				# display_hash($dbg+1,1,"skipping reply",$reply);
+			}
+		}
+
+		if (time() > $start + $this->{COMMAND_TIMEOUT})
+		{
+			error("$rayname Command($seq,$wait_name) timed out");
+			return '';
+		}
+
+		sleep(0.5);
+	}
+
+	return error("waitReply($seq) while !started");
+}
+
+
+
+#======================================================================================
+# tcpBaseThread
+#======================================================================================
+
 
 sub _close_socket
 {
 	my ($this,$sock) = @_;
-	display($dbg_tcp,0,"closing tcp socket($this->{remote})");
+	display($dbg_tcp,0,"closing tcp socket($this->{rayname})");
 	$this->{buffer} = '';
 	$this->{out_queue} = '';
 	$this->{connected} = 0;
@@ -175,27 +291,52 @@ sub _close_socket
 }
 
 
-sub tcpBase
+
+sub commandThread
+{
+	my ($this,$command) = @_;
+	display($dbg_tcp,0,"$this->{rayname} commandThread($command) started");
+	$this->handleCommand($command);
+	$this->{busy} = 0;
+		# Note to self.  I used to pull the command off the queue and use
+		# {command} as the busy indicator, then set it to '' here.
+		# But I believe that I once again ran into a Perl weirdness
+		# that Perl will crash (during garbage collection) if you
+		# re-assign a a shared reference to a scalar.
+	display($dbg_tcp,0,"$this->{rayname} commandThread($command) finished");
+}
+
+
+
+sub tcpBaseThread
 {
 	my ($this) = @_;
-	$dbg_tcp < -1 ?
-		display_hash($dbg_tcp+1,0,"tcpBase() starting",$this) :
-		display($dbg_tcp,0,"tcpBase("._def($this->{name}).") "._def($this->{remote_ip}).":"._def($this->{remote_port})." starting");
+	my $rayname = $this->{rayname};
 
-	$this->waitAddress() if !$this->{remote_ip} || !$this->{remote_port};
-	if (!$this->{remote_ip} || !$this->{remote_port})
+	$dbg_tcp < -1 ?
+		display_hash($dbg_tcp+1,0,"tcpBaseThread($rayname) starting",$this) :
+		display($dbg_tcp,0,"tcpBaseThread($rayname) starting");
+
+	my $rayport = findRayPortByName($rayname);
+	while (!$rayport)
 	{
-		return error("tcpBase::waitAddress called, which means DEATH to the thread (implementation error)");
+		display($dbg_tcp-1,1,"waiting for rayport($rayname)");
+		sleep(1);
+		$rayport = findRayPortByName($rayname);
 	}
+	$this->{remote_ip} = $rayport->{ip};
+	$this->{remote_port} = $rayport->{port};
 	$this->{remote} = "$this->{remote_ip}:$this->{remote_port}";
+	display($dbg_tcp,1,"found rayport($rayname) at $this->{remote}");
+
 	$this->{local} = _def($this->{local_ip}).":"._def($this->{local_port});
-	$tcp_bases{$this->{remote}} = $this;
+	$tcp_bases{$rayname} = $this;
 
 	$this->{running} = 1;
 
 	my $sel;
 	my $sock;
-	display($dbg_tcp,0,"tcpBase($this->{remote}) running");
+	display($dbg_tcp,0,"tcpBaseThread($rayname,$this->{remote}) running");
 	while (1)
 	{
 		# handle client stopping
@@ -204,7 +345,7 @@ sub tcpBase
 		{
 			if ($this->{stopping} == 1)
 			{
-				display($dbg_tcp,1,"shutting down socket($this->{remote})");
+				display($dbg_tcp,1,"shutting down $rayname socket($this->{remote})");
 				$sock->shutdown(1);	# prevent further writes (allow FIN to be read)
 				$this->{stopping} = 2;
 				$this->{stop_time} = time();
@@ -212,7 +353,7 @@ sub tcpBase
 			elsif ($this->{stopping} == 2 &&
 				   time() > $this->{stop_time} + $STOP_TIMEOUT)
 			{
-				display($dbg_tcp+1,1,"socket($this->{remote}) shutdown timeout");
+				display($dbg_tcp+1,1,"$rayname socket($this->{remote}) shutdown timeout");
 				$sock = $this->_close_socket($sock);
 				last;
 			}
@@ -223,7 +364,7 @@ sub tcpBase
 		elsif (!$this->{stopping} &&
 				time() > $this->{connect_time} + $this->{RECONNECT_INTERVAL})
 		{
-			display($dbg_tcp,1,"connecting $this->{local} to socket($this->{remote})");
+			display($dbg_tcp,1,"connecting $rayname($this->{local}) to socket($this->{remote})");
 			$sock = IO::Socket::INET->new(
 				LocalAddr => $this->{local_ip},
 				LocalPort => $this->{local_port},
@@ -238,14 +379,14 @@ sub tcpBase
 				$this->{local_ip} = $sock->sockhost();
 				$this->{local_port} = $sock->sockport();
 				$this->{local} = "$this->{local_ip}:$this->{local_port}";
-				display($dbg_tcp,1,"$this->{local} connected to socket($this->{remote})");
+				display($dbg_tcp,2,"$rayname $this->{local} CONNECTED to socket($this->{remote})");
 				$sel = IO::Select->new($sock);
 			}
 			else
 			{
 				error("Could not connect to $this->{remote}: $!");
 				last if $this->{EXIT_ON_CLOSE};
-				display($dbg_tcp+1,1,"will retry in $this->{RECONNECT_INTERVAL} seconds");
+				display($dbg_tcp+1,2,"will retry in $this->{RECONNECT_INTERVAL} seconds");
 			}
 			$this->{connect_time} = time();
 
@@ -263,7 +404,7 @@ sub tcpBase
 				my $pack_len = length($packet);
 				if ($this->{show_output})
 				{
-					my $header = pad($this->{remote},20)." <-- ".pad($this->{local},20).pad(" len($pack_len)",9)." ";
+					my $header = "$rayname <-- ".pad(" len($pack_len)",9)." ";
 					setConsoleColor($this->{out_color}) if $this->{out_color};
 					print parse_dwords($header,$packet,1);
 					setConsoleColor() if $this->{out_color};
@@ -314,12 +455,14 @@ sub tcpBase
 						$this->{buffer} = '';
 						if ($this->{show_input})
 						{
-							my $header = pad($this->{remote},20)." --> ".pad($this->{local},20).pad(" len($buflen)",9)." ";
+							my $header = "$rayname --> ".pad(" len($buflen)",9)." ";
 							setConsoleColor($this->{in_color}) if $this->{in_color};
 							print parse_dwords($header,$client_buffer,1);
 							setConsoleColor() if $this->{in_color};
 						}
-						$this->handlePacket($client_buffer);
+						my $reply = $this->handlePacket($client_buffer);
+						push @{$this->{replies}},$reply if $reply;
+
 					}
 					$this->{connect_time} = time();
 
@@ -327,16 +470,27 @@ sub tcpBase
 			}	# can_read()
 		}	# $sock
 
-		$this->onIdle($sock,$sel)
-			if $sock &&
-			   # synonym: $this->{connected} &&
-			   !$this->{stopping};
+
+		# onIdle
+
+		if ($sock &&
+			!$this->{stopping} &&
+			!$this->{busy} &&
+			@{$this->{command_queue}})
+		{
+			my $command = shift @{$this->{command_queue}};
+			$this->{busy} = 1;
+
+			display($dbg_tcp,0,"creating commandThread($rayname,$command)");
+			my $cmd_thread = threads->create(\&commandThread,$this,$command);
+			$cmd_thread->detach();
+		}
 
 	}	# while 1
 
 
-	display($dbg_tcp,0,"exiting thread($this->{remote})");
-	delete $tcp_bases{$this->{remote}};
+	display($dbg_tcp,0,"exiting tcpBaseThread($rayname)");
+	delete $tcp_bases{$rayname};
 	$this->{running} = 0;
 	$sock = $this->close_socket($sock) if $sock;
 

@@ -1,8 +1,8 @@
 #---------------------------------------------
-# r_units.pm
+# r_defs.pm
 #---------------------------------------------
 
-package r_units;
+package r_defs;
 use strict;
 use warnings;
 use POSIX qw(floor pow atan tan);
@@ -13,6 +13,9 @@ BEGIN
 {
  	use Exporter qw( import );
     our @EXPORT = qw(
+	
+		$SUCCESS_SIG
+		name16_hex
 
 		$PI
 		$PI_OVER_2
@@ -24,15 +27,14 @@ BEGIN
 		$KNOTS_TO_METERS_PER_SEC
 
 		degreeMinutes
-		
 		northEastToLatLon
 		latLonToNorthEast
-
-		name16_hex
 
     );
 }
 
+
+our $SUCCESS_SIG = '00000400';
 
 our $PI = 3.14159265358979323846;
 our $PI_OVER_2 = $PI / 2;
@@ -42,9 +44,6 @@ our $METERS_PER_NM 	= 1852;
 our $FEET_PER_METER  = 3.28084;
 our $SECS_PER_DAY 	= 86400;
 our $KNOTS_TO_METERS_PER_SEC = 0.5144;
-
-
-
 
 my $FSH_LAT_SCALE = 107.1709342;  # same scale used in forward transform
 my $LONG_SCALE = 0x7fffffff;  # 2147483647

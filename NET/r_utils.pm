@@ -14,8 +14,12 @@ use Time::HiRes qw(sleep);
 use Wx qw(:everything);
 use Pub::Utils;
 use s_resources;
-use wp_parse;
-use wp_packet;
+
+# use wp_parse;
+# use wp_packet;
+
+
+
 
 my $dbg_nq = 0;
 
@@ -57,7 +61,6 @@ BEGIN
 
 
 		sendUDPPacket
-		sendAlive
         wakeup_e80
 
 		setConsoleColor
@@ -214,10 +217,6 @@ sub sendUDPPacket
 
 
 
-sub sendAlive
-{
-	$LOCAL_UDP_SOCKET->send($RAYDP_ALIVE_PACKET, 0, $RAYDP_ADDR);
-}
 
 
 
@@ -229,15 +228,6 @@ sub wakeup_e80
 		error("wakeup_e80() fail because UDP_SEND_SOCKET is not open");
 		return;
 	}
-
-	display(0,0,"wakeup_e80");
-
-    for (my $i = 0; $i < 5; $i++)
-    {
-		display(0,1,"sending RAYDP_ALIVE_PACKET");
-		sendAlive();
-        sleep(1);
-    }
 
     for (my $i = 0; $i < 10; $i++)
     {
@@ -300,7 +290,7 @@ my %built_buffers;	# by port
 
 
 
-my $MON_SELF_WPMGR = 0;
+my $MON_SELF_WPMGR = 1;
 
 
 sub showPacket
@@ -332,7 +322,7 @@ sub showPacket
 
 		# parse and display and/or log the packet
 
-		my $rec = parseWPMGR(1,$is_reply,$client_port,$buffer);
+		my $rec = wp_packet::parseWPMGR(1,$is_reply,$client_port,$buffer);
 			# 1=with_text
 
 		my $text = $rec->{text};

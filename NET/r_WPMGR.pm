@@ -55,8 +55,6 @@ our $SHOW_WPMGR_PARSED_OUTPUT:shared 	= 0;
 
 my $DBG_WAIT = 1;
 
-# my $SUCCESS_SIG = '00000400';
-# my $DICT_END_RECORD_MARKER	= '10000202';
 
 our $API_NONE 		= 0;
 our $API_DO_QUERY	= 1;
@@ -105,8 +103,7 @@ BEGIN
 
 
 our $wpmgr:shared;
-my $slow_down:shared = 0;
-	# re-entrancy protection
+
 
 my $WPMGR_FUNC		= 0x000f;
 	# 16 = 0xf0 == 'F000' in streams
@@ -147,22 +144,13 @@ sub startWPMGR
 	my ($class) = @_;
 	display($dbg,0,"startWPMGR($class)");
 	my $this = $class->SUPER::new({
-		name => 'WPMGR',
+		rayname => 'WPMGR',
 		local_port => $WPMGR_PORT,
 		show_input  => $DEFAULT_WPMGR_TCP_INPUT,
 		show_output => $DEFAULT_WPMGR_TCP_OUTPUT,
 		in_color	=> $UTILS_COLOR_BROWN,
-		out_color   => $UTILS_COLOR_LIGHT_CYAN, });
+		out_color   => $UTILS_COLOR_LIGHT_CYAN,  });
 
-
-	#	my $this = shared_clone({});
-	#	bless $this,$class;
-	#	$this->{started} = 1;
-	#	$this->{running} = 0;
-	#	$this->{next_seqnum} = 1;
-	$this->{command_queue} = shared_clone([]);
-	$this->{replies} = shared_clone([]);
-	$this->{version} = 1;
 	$this->{waypoints} = shared_clone({});
 	$this->{routes} = shared_clone({});
 	$this->{groups} = shared_clone({});
@@ -171,12 +159,6 @@ sub startWPMGR
 
 	$wpmgr = $this;
 	$this->start();
-	
-	#	display($dbg,0,"creating listen_thread");
-    #	my $listen_thread = threads->create(\&listenerThread,$this);
-    #	display($dbg,0,"listen_thread created");
-    #	$listen_thread->detach();
-    #	display($dbg,0,"listen_thread detached");
 }
 
 
@@ -229,22 +211,6 @@ sub queueWPMGRCommand
 # utilities
 #-------------------------------------------------
 
-sub getVersion
-{
-	my ($this) = @_;
-	return $this->{version};
-}
-
-
-sub incVersion
-{
-	my ($this) = @_;
-	$this->{version}++;
-	display($dbg,0,"incVersion($this->{version})");
-	return $this->{version};
-}
-
-
 
 sub createMsg
 {
@@ -276,9 +242,6 @@ sub sendRequest
 
 	if ($SHOW_WPMGR_PARSED_OUTPUT)
 	{
-		while ($slow_down) { sleep(0.1); }
-		$slow_down = 1;
-
 		my $text = "# sendRequest($seq) $name\n";
 		my $rec = parseWPMGR($SHOW_WPMGR_PARSED_OUTPUT,0,$WPMGR_PORT,$request);
 		$text .= $rec->{text};
@@ -287,65 +250,12 @@ sub sendRequest
 		print $text;
 		setConsoleColor() if $out_color;
 		navQueryLog($text,'shark.log');
-
-		$slow_down = 0;
 	}
 
 	$this->sendPacket($request);
 	$this->{wait_seq} = $seq;
 	$this->{wait_name} = $name;
 	return 1
-}
-
-
-sub waitReply
-{
-	my ($this,$expect_success) = @_;
-	my $seq = $this->{wait_seq} ;
-	my $name = $this->{wait_name} || '';
-	my $start = time();
-
-	display($dbg+10,"waitReply($seq) $name");
-
-	while ($this->{started})
-	{
-		my $replies = $this->{replies};
-		if (@$replies)
-		{
-			my $reply = shift @$replies;
-			display_hash($dbg+1,1,"got reply seq($reply->{seq_num}) is_event($reply->{is_event})",$reply);
-			if ($reply->{seq_num} == $seq)
-			{
-				if ($expect_success)
-				{
-					my $got_success = $reply->{success} ? 1 : -1;
-					if ($got_success != $expect_success)
-					{
-						error("waitReply($seq) expected success($expect_success) but got($got_success)");
-						# display_hash($dbg,1,"offending reply",$reply);
-						return 0;
-					}
-				}
-
-				display($dbg,1,"waitReply($seq) returning OK reply");
-				return $reply;
-			}
-			else
-			{
-				# display_hash($dbg+1,1,"skipping reply",$reply);
-			}
-		}
-
-		if (time() > $start + $COMMAND_TIMEOUT)
-		{
-			error("Command($seq) $name timed out");
-			return '';
-		}
-
-		sleep(0.5);
-	}
-
-	return error("waitReply($seq) while !started");
 }
 
 
@@ -561,12 +471,12 @@ sub get_item
 
 
 
-sub commandThread
+sub handleCommand
 {
 	my ($this,$command) = @_;
 	my $api_command = $command->{api_command};
 	my $cmd_name = apiCommandName($api_command);
-	display($dbg,0,"commandThread($api_command=$cmd_name) started");
+	display($dbg,0,"$this->{rayname} handleCommand($api_command=$cmd_name) started");
 
 	my $rslt;
 
@@ -586,7 +496,7 @@ sub commandThread
 		# that Perl will crash (during garbage collection) if you
 		# re-assign a a shared reference to a scalar.
 		
-	display($dbg,0,"commandThread($api_command=$cmd_name) finished");
+	display($dbg,0,"$this->{rayname} handleCommand($api_command=$cmd_name) finished");
 }
 
 
@@ -596,21 +506,6 @@ sub commandThread
 # overriden tcpBase methods
 #========================================================================
 
-sub waitAddress
-{
-	my ($this) = @_;
-	my $rayport = findRayPortByName('WPMGR');
-	while (!$rayport)
-	{
-		display($dbg-1,1,"waiting for rayport(WPMGR)");
-		sleep(1);
-		$rayport = findRayPortByName('WPMGR');
-	}
-	$this->{remote_ip} = $rayport->{ip};
-	$this->{remote_port} = $rayport->{port};
-	display($dbg,1,"found rayport(WPMGR) at $this->{remote_ip}:$this->{remote_port}");
-}
-
 
 sub handlePacket
 {
@@ -618,7 +513,7 @@ sub handlePacket
 
 	warning($dbg+1,0,"handlePacket(".length($buffer).") called");
 
-	my $reply = parseWPMGR($SHOW_WPMGR_PARSED_INPUT,1,$WPMGR_PORT,$buffer,$this);
+	my $reply = parseWPMGR($SHOW_WPMGR_PARSED_INPUT,1,$WPMGR_PORT,$buffer);
 		# 1=is_reply
 
 	if ($SHOW_WPMGR_PARSED_INPUT)
@@ -630,10 +525,8 @@ sub handlePacket
 		navQueryLog($text,'shark.log');
 	}
 
-
 	# EVENTS are not pushed onto the reply queue
 	# Instead, they can generate additional API_GET_ITEM commands
-
 
 	if ($WITH_MOD_PROCESSING)
 	{
@@ -677,29 +570,8 @@ sub handlePacket
 		}	# $mods
 	}	# $WITH_MOD_PROCESSING
 
-	push @{$this->{replies}},$reply;
+	return $reply;
 
-}
-
-
-sub onIdle
-{
-	my ($this) = @_;
-
-	if (!$this->{busy})
-	{
-		if (@{$this->{command_queue}})
-		{
-			my $command = shift @{$this->{command_queue}};
-			$this->{busy} = 1;
-
-			display($dbg,0,"creating cmd_thread");
-			my $cmd_thread = threads->create(\&commandThread,$this,$command);
-			display($dbg,0,"nav_thread cmd_thread");
-			$cmd_thread->detach();
-			display($dbg,0,"cmd_thread detached");
-		}
-	}	# !busy
 }
 
 

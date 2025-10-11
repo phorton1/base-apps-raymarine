@@ -364,15 +364,15 @@ sub onCheckBox
 		display(0,0,"$rayport->{name} $field($checked) $rayport->{proto} $rayport->{addr}");
 		if ($field eq 'listen')
 		{
+			my $base = findTcpBase($rayport->{name});
 			if ($checked)
 			{
 				display(0,1,"starting tcpBase for func($rayport->{func} $rayport->{addr} $rayport->{proto} $rayport->{name}");
-				return error("already started!") if findTcpBase($rayport->{ip},$rayport->{ip});
+				return error("already started!") if $base;
 				# my $box = $event->GetEventObject();
 				# $box->Enable(0);
 				my $base = tcpBase->new({
-					remote_ip => $rayport->{ip},
-					remote_port => $rayport->{port},
+					rayname => $rayport->{name},
 					EXIT_ON_CLOSE => 1,
 					show_input => 1,
 					show_output => 1,
@@ -385,7 +385,7 @@ sub onCheckBox
 			else
 			{
 				display(0,1,"stopping tcpBase for func($rayport->{func}) $rayport->{addr} $rayport->{proto} $rayport->{name}");
-				my $base = findTcpBase($rayport->{ip},$rayport->{port});
+
 				return error("could not find tcpBase!") if !$base;
 				$base->stop();
 			}

@@ -33,7 +33,7 @@ use Math::Trig qw(deg2rad );
 use Pub::Utils;
 use Pub::HTTP::ServerBase;
 use Pub::HTTP::Response;
-use r_units;
+use r_defs;
 use r_WPMGR;
 use wp_parse;
 use base qw(Pub::HTTP::ServerBase);

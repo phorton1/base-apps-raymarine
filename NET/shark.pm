@@ -273,20 +273,6 @@ sub sniffer_thread
 
 
 
-#--------------------------------------------------------
-# alive_thread
-#--------------------------------------------------------
-
-sub alive_thread
-{
-    display(0,0,"alive_thread() started");
-    while (1)
-    {
-        sendAlive() if $SEND_ALIVE;
-        sleep(1);
-    }
-}
-
 
 
 #---------------------------------------------------------
@@ -298,16 +284,6 @@ display(0,0,"shark.pm initializing");
 initRAYSYS();
 
 startSerialThread() if 1;
-
-if ($LOCAL_UDP_SOCKET)
-{
-    # for some reason this has to come before listen socket
-    display(0,0,"initing alive_thread");
-    my $alive_thread = threads->create(\&alive_thread);
-    display(0,0,"alive_thread created");
-    $alive_thread->detach();
-    display(0,0,"alive_thread detached");
-}
 
 
 if ($WITH_FILESYS)  # filesysThread())
