@@ -150,7 +150,7 @@ sub handle_request
 	my $response;
 
 	display($dbg,0,"request method=$request->{method} uri=$request->{uri}")
-		if $request->{uri} ne '/navqry.kml';
+		if $request->{uri} ne '/raysys.kml';
 
 	# $request->{uri} = "/order_tracking.html" if $request->{uri} eq "index.html";
 	# $request->{uri} = "/favicon.png" if $request->{uri} eq "/favicon.ico";
