@@ -1,10 +1,10 @@
 #-----------------------------------------------------
-# ray_server.pm
+# r_server.pm
 #-----------------------------------------------------
 # Serves the WAYPOINT database to Google Earth via network links
 
 
-package ray_server;
+package r_server;
 use strict;
 use warnings;
 use threads;
@@ -23,14 +23,14 @@ use wp_parse;
 use base qw(Pub::HTTP::ServerBase);
 
 my $dbg = 0;
-my $dbg_kml = 0;
+my $dbg_kml = 1;
 
 
 BEGIN
 {
  	use Exporter qw( import );
 	our @EXPORT = qw(
-		startWPServer
+		startHTTPServer
 		kml_RAYSYS
 		showLocalDatabase
 	);
@@ -56,20 +56,20 @@ my $server_cache_filename = "$temp_dir/server_cache.kml";
 
 Pub::ServerUtils::initServerUtils(0,'');
 	# 0 == DOESNT NEEDS WIFI
-	# '' == LINUX PID FILE	$ray_server = ray_server->new();
+	# '' == LINUX PID FILE	
 
 
 #-----------------------
 # startNQServer
 #-----------------------
 
-sub startWPServer
+sub startHTTPServer
 {
 	display($dbg,0,"starting wp_erver");
 
-	$ray_server = ray_server->new();
+	$ray_server = r_server->new();
 	$ray_server->start();
-	display($dbg,0,"finished starting ray_server");
+	display($dbg,0,"finished starting r_server");
 }
 
 sub new
@@ -388,7 +388,7 @@ sub kml_route_string
 	my @points;
 	foreach my $uuid (@$waypoints)
 	{
-		my $wp = $wpmgr->{waypoints}->{$uuid};
+		my $wp = $wp_mgr->{waypoints}->{$uuid};
 		push @points,$wp;
 	}
 	return kml_line_string($what,$color,$name,\@points);
@@ -401,23 +401,27 @@ sub kml_line_string
 	# route points are 1E7
 {
 	my ($what,$color,$name,$points) = @_;
-	error("no points!") if !$points;
-	return '' if !$points || !@$points;
-	display($dbg_kml,0,"kml_line_string($what,$color,$name) num_pts=".scalar(@$points));
+	my $num_points = $points ? @$points : 0;
+	# error("No points ref in $what $name!") if !$points;
+	# return '' if !$points || !@$points;
+	display($dbg_kml,0,"kml_line_string($what,$color,$name) num_pts=$num_points");
 
 	# Build coordinates string
 
 	my $coord_str = '';
-	foreach my $point (@$points)
+	if ($num_points)
 	{
-		my $lat = $point->{lat};
-		my $lon = $point->{lon};
-		$lat /= $SCALE_LATLON if $what eq 'route';
-		$lon /= $SCALE_LATLON if $what eq 'route';
-		$coord_str .= "$lon,$lat,0 ";
+		foreach my $point (@$points)
+		{
+			my $lat = $point->{lat};
+			my $lon = $point->{lon};
+			$lat /= $SCALE_LATLON if $what eq 'route';
+			$lon /= $SCALE_LATLON if $what eq 'route';
+			$coord_str .= "$lon,$lat,0 ";
+		}
+		$coord_str =~ s/\s+$//;  # trim trailing space
 	}
-	$coord_str =~ s/\s+$//;  # trim trailing space
-
+	
 	# Wrap in Placemark
 
 	my $kml = '';
@@ -475,8 +479,8 @@ sub kml_section
 	my ($class) = @_;				# the class is the style used for self and children
 	my $hash_name = $class.'s';			# $what is the key into the navqry hashes
 	my $section_name = CapFirst($hash_name);		# name of the outer folder
-	my $folders = $wpmgr->{$hash_name};	# items in inner folder (groups or routes with uuids[])
-	my $all_waypoints = $wpmgr->{waypoints};
+	my $folders = $wp_mgr->{$hash_name};	# items in inner folder (groups or routes with uuids[])
+	my $all_waypoints = $wp_mgr->{waypoints};
 	display($dbg_kml,0,"kml_section($class)");
 
 	# build fake My Waypoints group
@@ -605,7 +609,7 @@ sub kml_RAYSYS
 
 	display($dbg_kml,1,"kml_RAYSYS($param_version,$server_version,$local_version) changed($changed) update($update)");
 
-	if (!$wpmgr && !$track_mgr)
+	if (!$wp_mgr && !$track_mgr)
 	{
 		if (-f $server_cache_filename)
 		{
@@ -617,7 +621,7 @@ sub kml_RAYSYS
 	}
 
 
-	# Otherwise, create kml from $wpmgr and $track_mgr hashes
+	# Otherwise, create kml from $wp_mgr and $track_mgr hashes
 	
 	my $kml = kml_header($update,$local_version);
 
@@ -626,7 +630,7 @@ sub kml_RAYSYS
 		$server_version = $local_version;
 
 		my $inner_kml = kml_global_styles();
-		if ($wpmgr && keys %{$wpmgr->{waypoints}})
+		if ($wp_mgr && keys %{$wp_mgr->{waypoints}})
 		{
 			$inner_kml .= kml_section('group');
 			$inner_kml .= kml_section('route');
@@ -660,7 +664,7 @@ sub kml_RAYSYS
 sub showThings
 {
 	my ($is_wpmgr,$what) = @_;
-	my $hash = $is_wpmgr ? $wpmgr->{$what} : $track_mgr->{$what};
+	my $hash = $is_wpmgr ? $wp_mgr->{$what} : $track_mgr->{$what};
 	my @uuids = keys %$hash;
 	@uuids = sort { cmpByName($hash,$a,$b) } @uuids;
 

@@ -94,9 +94,9 @@ sub new
 
 	Wx::StaticText->new($this,-1,"Monitor WPMGR   Raw ",[200,13]);
 	my $box = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_TCP_INPUT,"in",[400,13]);
-	$box->SetValue(1) if $wpmgr->{show_input};
+	$box->SetValue(1) if $wp_mgr->{show_input};
 	$box = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_TCP_OUTPUT,"out",[500,13]);
-	$box->SetValue(1) if $wpmgr->{show_output};
+	$box->SetValue(1) if $wp_mgr->{show_output};
 	Wx::StaticText->new($this,-1,"  Parsed ",[600,13]);
 	$box = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_PARSED_INPUT,"in",[700,13]);
 	$box->SetValue(1) if $SHOW_WPMGR_PARSED_INPUT;
@@ -314,12 +314,12 @@ sub onCheckBox
 
 	if ($id == $ID_SHOW_WPMGR_TCP_INPUT)
 	{
-		$wpmgr->{show_input} = $checked;
+		$wp_mgr->{show_input} = $checked;
 		display(0,0,"wpmgr->{show_input}=$checked");
 	}
 	elsif ($id == $ID_SHOW_WPMGR_TCP_OUTPUT)
 	{
-		$wpmgr->{show_output} = $checked;
+		$wp_mgr->{show_output} = $checked;
 		display(0,0,"wpmgr->{show_output}=$checked");
 	}
 	elsif ($id == $ID_SHOW_WPMGR_PARSED_INPUT)

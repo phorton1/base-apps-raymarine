@@ -1,8 +1,8 @@
 #---------------------------------------------
-# r_sniffer.pm
+# s_sniffer.pm
 #---------------------------------------------
 
-package r_sniffer;
+package s_sniffer;
 use strict;
 use warnings;
 use threads;

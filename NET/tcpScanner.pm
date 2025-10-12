@@ -1,7 +1,9 @@
 #---------------------------------------------
-# tcpPortScanner.pm
+# tcpScanner.pm
 #---------------------------------------------
-# An object for scanning tcpPorts at a given IP address
+# A general purpose tcp port scanner at a
+# given IP address.  With this I discovered
+# only one hidden tcp port 6667, on the E80.
 
 package tcpScanner;
 use strict;

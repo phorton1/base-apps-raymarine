@@ -78,7 +78,11 @@ use r_defs;
 use r_RAYSYS qw(findRayPortByName);
 use r_utils qw(parse_dwords setConsoleColor);
 
-my $dbg_tcp = -1;
+
+my $dbg_tcp 	= 1;
+my $dbg_probe 	= 1;
+my $dbg_wait 	= 1;
+
 
 my $STOP_TIMEOUT = 3;
 my $DEFAULT_CONNECT_TIMEOUT = 2;
@@ -201,14 +205,10 @@ sub commandHandler	{ my ($this,$command) = @_; }
 # 	{func}	= will be replaced by the services word funciton code
 # 	{hex16 some name} will be replaced with the hex16 (non zero terminated) name
 
-
-
-my $dbg_probe = 0;
-
 sub doProbe
 {
 	my ($rayname,$ident) = @_;
-	display(0,0,"doProbe($rayname,$ident)");
+	display($dbg_probe,0,"doProbe($rayname,$ident)");
 	my $this = findTcpBase($rayname);
 	return error("could not find tcpBase($rayname)")
 		if !$this;
@@ -220,7 +220,7 @@ sub doProbe
 	my $rayport = findRayPortByName($rayname);
 	return error("Could not find rayport($rayname)")
 		if !$rayport;
-	warning(0,1,"queuing $rayname PROBE($ident)");
+	warning($dbg_probe,1,"queuing $rayname PROBE($ident)");
 	
 	my $command = shared_clone({
 		name => "PROBE($ident)",
@@ -382,7 +382,7 @@ sub waitReply
 
 	my $start = time();
 
-	display($dbg_tcp+1,0,"$rayname waitReply($seq) $wait_name");
+	display($dbg_wait,0,"$rayname waitReply($seq) $wait_name");
 
 	while ($this->{started})
 	{
@@ -391,7 +391,7 @@ sub waitReply
 		{
 			my $reply = shift @$replies;
 			# is_event($reply->{is_event};
-			display_hash($dbg_tcp+2,1,"$this->{rayname} got reply seq($reply->{seq_num})",$reply);
+			display_hash($dbg_wait,1,"$this->{rayname} got reply seq($reply->{seq_num})",$reply);
 			if ($reply->{seq_num} == $seq)
 			{
 				if ($expect_success)
@@ -405,7 +405,7 @@ sub waitReply
 					}
 				}
 
-				display($dbg_tcp,1,"$rayname waitReply($seq,$wait_name) returning OK reply");
+				display($dbg_wait,1,"$rayname waitReply($seq,$wait_name) returning OK reply");
 				return $reply;
 			}
 			else
@@ -610,6 +610,7 @@ sub tcpBaseThread
 						# else
 						{
 							my $reply = $this->handlePacket($client_buffer);
+							# display(0,0,"tcpBaseThread got handlePacketreply="._def($reply));
 							push @{$this->{replies}},$reply if $reply;
 						}
 					}

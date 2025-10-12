@@ -6,7 +6,7 @@
 #
 # Implements a tcp listener socket that can also
 # 	replay previously captured debugging output.
-# The sleeps are because r_sniffer takes a while to get
+# The sleeps are because s_sniffer takes a while to get
 # 	the packets and it is possible for us to write after
 # 	we have received the reply, but before sniffer got
 # 	a chance to show the full reply.
@@ -360,7 +360,7 @@ sub handleProbe
 
 sub tcpListenerThread
 	# Simply establishes a TCP connection (or fails) and listens.
-	# Relies on r_sniffer to see the packets via tshark.
+	# Relies on s_sniffer to see the packets via tshark.
 {
 	my ($this) = @_;
 	my $ip = $this->{ip};

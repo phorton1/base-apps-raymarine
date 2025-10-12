@@ -66,7 +66,7 @@ BEGIN
     our @EXPORT = qw(
 
 		startWPMGR
-		$wpmgr
+		$wp_mgr
 
 		$API_NONE
 		$API_DO_QUERY
@@ -98,7 +98,7 @@ BEGIN
 }
 
 
-our $wpmgr:shared;
+our $wp_mgr:shared;
 
 
 my $WPMGR_FUNC		= 0x000f;
@@ -153,7 +153,7 @@ sub startWPMGR
 		# hashes of buffers by uuid, where the
 		# buffer starts with the big_len
 
-	$wpmgr = $this;
+	$wp_mgr = $this;
 	$this->start();
 }
 

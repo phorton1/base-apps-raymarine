@@ -193,7 +193,7 @@ sub initRAYSYS
 #------------------------------------
 
 sub findRayPort
-	# This is what r_sniffer uses to filter packets for general display.
+	# This is what s_sniffer uses to filter packets for general display.
 	# There can be multiple Ids that are sharing the same ip:port, implying
 	# that the port is a mcast port, in which it really doesn't make sense
 	# to have multiple lines for them in the UI, though we still want to

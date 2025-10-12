@@ -2,7 +2,7 @@
 # r_Serial.pm
 #---------------------------------------------
 
-package r_serial;
+package s_serial;
 use strict;
 use warnings;
 use threads;

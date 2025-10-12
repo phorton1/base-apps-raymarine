@@ -18,15 +18,15 @@ use IO::Socket::INET;
 use IO::Select;
 use r_utils;
 use rayports;
-use r_serial;
-use r_sniffer;
+use s_serial;
+use s_sniffer;
 use r_RAYSYS;
 use r_DBNAV;
 use r_FILESYS;
 use r_WPMGR;
 use r_TRACK;
 use wp_api;
-use ray_server;
+use r_server;
 use tcpListener;
 use tcpBase;
 use s_resources;
@@ -39,7 +39,7 @@ my $dbg_shark = 0;
 
 my $WITH_FILESYS 	= 1;
 my $WITH_WPMGR		= 1;
-my $WITH_WP_SERVER	= 1;
+my $WITH_HTTP_SERVER	= 1;
 my $WITH_IDENT		= 0;
 my $WITH_TRACK		= 1;
 
@@ -100,7 +100,7 @@ sub handleCommand
 
 	elsif ($lpart eq 't')
 	{
-		getTracks();
+		trackUICommand($rpart);
 	}
 
 	# WPMGR
@@ -304,10 +304,11 @@ if ($WITH_FILESYS)  # filesysThread())
 
 
 r_WPMGR->startWPMGR() if $WITH_WPMGR;
-startWPServer() if $WITH_WP_SERVER;
-
-
 r_TRACK->startTRACK() if $WITH_TRACK;
+
+startHTTPServer() if $WITH_HTTP_SERVER;
+
+
 
 # the sniffer is started last because it has a blocking
 # read in the thread which, for some reason, will cause

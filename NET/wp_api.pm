@@ -124,7 +124,7 @@ sub showCommand
 sub queryWaypoints
 {
 	showCommand("queryWaypoints()");
-	return queueWPMGRCommand($wpmgr,$API_DO_QUERY,0,0,0,0);
+	return queueWPMGRCommand($wp_mgr,$API_DO_QUERY,0,0,0,0);
 }
 
 
@@ -155,7 +155,7 @@ sub createWaypoint
 		date => int($now / $SECS_PER_DAY),
 		time => int($now % $SECS_PER_DAY), });
 	my $data = unpack('H*',$buffer);
-	return queueWPMGRCommand($wpmgr,$API_NEW_ITEM,$WHAT_WAYPOINT,$name,$uuid,$data);
+	return queueWPMGRCommand($wp_mgr,$API_NEW_ITEM,$WHAT_WAYPOINT,$name,$uuid,$data);
 }
 
 sub deleteWaypoint
@@ -164,7 +164,7 @@ sub deleteWaypoint
 	showCommand("deleteWaypoint($wp_num)");
 	my $uuid = std_uuid($STD_WP_UUID,$wp_num);
 	my $name = "testWaypoint$wp_num";
-	return queueWPMGRCommand($wpmgr,$API_DEL_ITEM,$WHAT_WAYPOINT,$name,$uuid,0);
+	return queueWPMGRCommand($wp_mgr,$API_DEL_ITEM,$WHAT_WAYPOINT,$name,$uuid,0);
 }
 
 
@@ -176,7 +176,7 @@ sub createRoute
 	my $uuid = std_uuid($STD_ROUTE_UUID,$route_num);
 	my $name = "testRoute$route_num";
 	my $data = emptyRoute($name,$bits);
-	return queueWPMGRCommand($wpmgr,$API_NEW_ITEM,$WHAT_ROUTE,$name,$uuid,$data);
+	return queueWPMGRCommand($wp_mgr,$API_NEW_ITEM,$WHAT_ROUTE,$name,$uuid,$data);
 }
 
 sub deleteRoute
@@ -185,7 +185,7 @@ sub deleteRoute
 	showCommand("deleteRoute($route_num)");
 	my $uuid = std_uuid($STD_ROUTE_UUID,$route_num);
 	my $name = "testRoute$route_num";
-	return queueWPMGRCommand($wpmgr,$API_DEL_ITEM,$WHAT_ROUTE,$name,$uuid,0);
+	return queueWPMGRCommand($wp_mgr,$API_DEL_ITEM,$WHAT_ROUTE,$name,$uuid,0);
 }
 
 sub routeWaypoint
@@ -197,14 +197,14 @@ sub routeWaypoint
 	my $route_name = "testRoute$route_num";
 
 	return if !wait_queue_command($API_GET_ITEM,$WHAT_ROUTE,$route_name,$wp_uuid,$wp_uuid);
-	my $route = $wpmgr->{routes}->{$route_uuid};
+	my $route = $wp_mgr->{routes}->{$route_uuid};
 	return error("Could not find route($route_name) $route_uuid") if !$route;
 				 
 	display_hash(0,0,"got route",$route);
 	my $uuids = $route->{uuids};
 	push @$uuids,$wp_uuid if $add;
 
-	return queueWPMGRCommand($wpmgr,$API_MOD_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,$route);
+	return queueWPMGRCommand($wp_mgr,$API_MOD_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,$route);
 }
 
 sub createGroup
@@ -214,7 +214,7 @@ sub createGroup
 	my $uuid = std_uuid($STD_GROUP_UUID,$group_num);
 	my $name = "testGroup$group_num";
 	my $data = emptyGroup($name);
-	return queueWPMGRCommand($wpmgr,$API_NEW_ITEM,$WHAT_GROUP,$name,$uuid,$data);
+	return queueWPMGRCommand($wp_mgr,$API_NEW_ITEM,$WHAT_GROUP,$name,$uuid,$data);
 }
 
 sub deleteGroup
@@ -223,13 +223,13 @@ sub deleteGroup
 	showCommand("deleteGroup($group_num)");
 	my $uuid = std_uuid($STD_GROUP_UUID,$group_num);
 	my $name = "testGroup$group_num";
-	return queueWPMGRCommand($wpmgr,$API_DEL_ITEM,$WHAT_GROUP,$name,$uuid,0);
+	return queueWPMGRCommand($wp_mgr,$API_DEL_ITEM,$WHAT_GROUP,$name,$uuid,0);
 }
 
 
 sub commandBusy
 {
-	return $wpmgr->{busy} || @{$wpmgr->{command_queue}} ? 1 : 0;
+	return $wp_mgr->{busy} || @{$wp_mgr->{command_queue}} ? 1 : 0;
 }
 
 
@@ -237,15 +237,15 @@ sub commandBusy
 sub wait_queue_command
 {
 	my (@params) = @_;
-	return 0 if !queueWPMGRCommand($wpmgr,@params);
+	return 0 if !queueWPMGRCommand($wp_mgr,@params);
 	while (commandBusy())
 	{
-		display_hash(0,0,"wait_queue_command",$wpmgr);
+		display_hash(0,0,"wait_queue_command",$wp_mgr);
 		sleep(1);
 	}
-	error("wait_queue_command failed") if !$wpmgr->{command_rslt};
-	display(0,0,"wait_queue_command returning $wpmgr->{command_rslt}");
-	return $wpmgr->{command_rslt};
+	error("wait_queue_command failed") if !$wp_mgr->{command_rslt};
+	display(0,0,"wait_queue_command returning $wp_mgr->{command_rslt}");
+	return $wp_mgr->{command_rslt};
 }
 
 
@@ -272,7 +272,7 @@ sub setWaypointGroup
 	if ($group_num)
 	{
 		$group_uuid = std_uuid($STD_GROUP_UUID,$group_num);
-		$group = $wpmgr->{groups}->{$group_uuid};
+		$group = $wp_mgr->{groups}->{$group_uuid};
 		return error("Could not group($group_uuid)") if !$group;
 
 		display_hash(0,0,"got group",$group);
@@ -280,7 +280,7 @@ sub setWaypointGroup
 	}
 	else
 	{
-		my $wp = $wpmgr->{waypoints}->{$wp_uuid};
+		my $wp = $wp_mgr->{waypoints}->{$wp_uuid};
 		return error("Could not find WP($wp_uuid)") if !$wp;
 		display_hash(0,1,"got waypoint",$wp);
 
@@ -289,7 +289,7 @@ sub setWaypointGroup
 
 		for my $try_uuid (@$wp_uuids)
 		{
-			$group = $wpmgr->{groups}->{$try_uuid};
+			$group = $wp_mgr->{groups}->{$try_uuid};
 			$group_uuid = $try_uuid if $group;
 			last if $group;
 		}
@@ -321,7 +321,7 @@ sub setWaypointGroup
 
 	my $buffer = buildWPGroup($group);
 	my $data = unpack('H*',$buffer);
-	return queueWPMGRCommand($wpmgr,$API_MOD_ITEM,$WHAT_GROUP,$group_name,$group_uuid,$data);
+	return queueWPMGRCommand($wp_mgr,$API_MOD_ITEM,$WHAT_GROUP,$group_name,$group_uuid,$data);
 
 }
 

@@ -212,7 +212,7 @@ sub handle_request
 sub update_session
 {
 	my ($sid,$client_version) = @_;
-	display($dbg_session,0,"update_session($sid) client_version=$client_version wpmgr_version=".$wpmgr->getVersion());
+	display($dbg_session,0,"update_session($sid) client_version=$client_version wpmgr_version=".$wp_mgr->getVersion());
 	my $session = $sessions->{$sid};
 
 	if (!$session)
@@ -250,7 +250,7 @@ sub addSessionHash
 	my $deleted_items 	= $session->{"deleted_$what_name"} 	= shared_clone({});
 
 	my $client_versions = $session->{$what_name} || {};
-	my $local_items = $wpmgr->{$what_name};
+	my $local_items = $wp_mgr->{$what_name};
 
 	# deletions
 
@@ -526,7 +526,7 @@ sub kml_route_string
 	my $coord_str = '';
 	foreach my $uuid (@$waypoints)
 	{
-		my $wp = $wpmgr->{waypoints}->{$uuid};
+		my $wp = $wp_mgr->{waypoints}->{$uuid};
 		my $lat = $wp->{lat}/$SCALE_LATLON;
 		my $lon = $wp->{lon}/$SCALE_LATLON;
 
@@ -567,7 +567,7 @@ sub sortedKeys
 	my ($session,$key_field) = @_;
 	my $hash_name = $key_field;
 	$hash_name =~ s/(new_|changed_|deleted_)//;
-	my $hash = $wpmgr->{$hash_name};
+	my $hash = $wp_mgr->{$hash_name};
 
 	my @keys = sort {cmpByName($hash,$a,$b)} keys %{$session->{$key_field}};
 	return @keys;
@@ -606,14 +606,14 @@ sub kml_delete_items
 
 sub kml_change_items
 {
-	my ($session, $wpmgr) = @_;
+	my ($session, $wp_mgr) = @_;
 	display($dbg_kml,0,"kml_change_items() sid=$session->{sid}");
 
 	my $kml = '';
 
 	for my $uuid (sortedKeys($session,'changed_waypoints'))
 	{
-		my $wp = $wpmgr->{waypoints}{$uuid} or next;
+		my $wp = $wp_mgr->{waypoints}{$uuid} or next;
 		display($dbg_kml,0,"kml_change_items() waypoint uuid=$uuid");
 
 		my $lat = $wp->{lat}/$SCALE_LATLON;
@@ -628,7 +628,7 @@ sub kml_change_items
 
 	for my $uuid (sortedKeys($session,'changed_groups'))
 	{
-		my $group = $wpmgr->{groups}{$uuid} or next;
+		my $group = $wp_mgr->{groups}{$uuid} or next;
 		display($dbg_kml,0,"kml_change_items() group uuid=$uuid");
 
 		$kml .= indent( 1,"<Folder targetId=\"$uuid\">");
@@ -639,7 +639,7 @@ sub kml_change_items
 
 	for my $uuid (sortedKeys($session,'changed_routes'))
 	{
-		my $route = $wpmgr->{routes}{$uuid} or next;
+		my $route = $wp_mgr->{routes}{$uuid} or next;
 		display($dbg_kml,0,"kml_change_items() route uuid=$uuid");
 
 		$kml .= indent( 1,"<Folder targetId=\"$uuid\">");
@@ -655,19 +655,19 @@ sub kml_change_items
 
 sub kml_create_groups
 {
-	my ($session, $wpmgr) = @_;
+	my ($session, $wp_mgr) = @_;
 	display($dbg_kml,0,"kml_create_groups() sid=$session->{sid}");
 
 	my $kml = '';
 	for my $uuid (sortedKeys($session,'new_groups'))
 	{
-		my $group = $wpmgr->{groups}{$uuid} or next;
+		my $group = $wp_mgr->{groups}{$uuid} or next;
 		display($dbg_kml,0,"kml_create_groups() uuid=$uuid");
 
 		$kml .= kml_start_folder("#groupStyle", $uuid, $group->{name});
 		for my $wp_uuid (@{ $group->{uuids} })
 		{
-			my $wp = $wpmgr->{waypoints}->{$wp_uuid} or next;
+			my $wp = $wp_mgr->{waypoints}->{$wp_uuid} or next;
 			$kml .= kml_waypoint("#groupStyle", $wp_uuid, $wp);
 		}
 		$kml .= kml_end_folder();
@@ -680,13 +680,13 @@ sub kml_create_groups
 
 sub kml_create_routes
 {
-	my ($session, $wpmgr) = @_;
+	my ($session, $wp_mgr) = @_;
 	display($dbg_kml,0,"kml_create_routes() sid=$session->{sid}");
 
 	my $kml = '';
 	for my $uuid (sortedKeys($session,'new_routes'))
 	{
-		my $route = $wpmgr->{routes}{$uuid} or next;
+		my $route = $wp_mgr->{routes}{$uuid} or next;
 		display($dbg_kml,0,"kml_create_routes() uuid=$uuid");
 
 		my $routeStyle = "#routeStyle$route->{color}";
@@ -694,7 +694,7 @@ sub kml_create_routes
 		$kml .= kml_start_folder($routeStyle, $uuid, $route->{name});
 		for my $wp_uuid (@{ $route->{uuids} })
 		{
-			my $wp = $wpmgr->{waypoints}{$wp_uuid} or next;
+			my $wp = $wp_mgr->{waypoints}{$wp_uuid} or next;
 			$kml .= kml_waypoint($routeStyle, $wp_uuid, $wp);
 		}
 		$kml .= kml_end_folder();
@@ -707,17 +707,17 @@ sub kml_create_routes
 
 sub kml_create_orphan_waypoints
 {
-	my ($session, $wpmgr) = @_;
+	my ($session, $wp_mgr) = @_;
 	display($dbg_kml,0,"kml_create_orphan_waypoints() sid=$session->{sid}");
 
 	my $kml = '';
 	$kml .= kml_start_folder("#groupStyle","my_waypoints","My Waypoints");
 	for my $uuid (sortedKeys($session,'new_waypoints'))
 	{
-		my $wp = $wpmgr->{waypoints}{$uuid} or next;
+		my $wp = $wp_mgr->{waypoints}{$uuid} or next;
 
-		my $in_group = grep { $uuid ~~ $_->{uuids} } values %{ $wpmgr->{groups} };
-		my $in_route = grep { $uuid ~~ $_->{uuids} } values %{ $wpmgr->{routes} };
+		my $in_group = grep { $uuid ~~ $_->{uuids} } values %{ $wp_mgr->{groups} };
+		my $in_route = grep { $uuid ~~ $_->{uuids} } values %{ $wp_mgr->{routes} };
 		next if $in_group || $in_route;
 
 		display($dbg_kml,0,"kml_create_orphan_waypoints() uuid=$uuid");
@@ -749,7 +749,7 @@ sub kml_update_block
 		$kml .= indent(-1,"</Delete>");
 
 		$kml .= indent( 1,"<Change>");
-		$kml .= kml_change_items($session, $wpmgr);
+		$kml .= kml_change_items($session, $wp_mgr);
 		$kml .= indent(-1,"</Change>");
 
 		$kml .= indent( 1,"<Create>");
@@ -760,12 +760,12 @@ sub kml_update_block
 	}
 
 	$kml .= kml_start_folder('#groupStyle',"groups_id","Groups");
-	$kml .= kml_create_orphan_waypoints($session, $wpmgr);
-	$kml .= kml_create_groups($session, $wpmgr);
+	$kml .= kml_create_orphan_waypoints($session, $wp_mgr);
+	$kml .= kml_create_groups($session, $wp_mgr);
 	$kml .= kml_end_folder();
 
 	$kml .= kml_start_folder('#routeStyle',"routes_id","Routes");
-	$kml .= kml_create_routes($session, $wpmgr);
+	$kml .= kml_create_routes($session, $wp_mgr);
 	$kml .= kml_end_folder();
 
 	$kml .= indent(-1,"</Create>")
@@ -782,7 +782,7 @@ sub buildNavQueryKML
 	my ($params) = @_;
 	my $old_sid = $params->{sid} || 0;
 	my $old_version = $params->{version} || 0;
-	my $new_version = $wpmgr->getVersion();
+	my $new_version = $wp_mgr->getVersion();
 	display($dbg_kml-1,0,"buildNavQueryKML($old_sid,$old_version)");
 	
 	my $update = $old_sid ? 1 : 0;
