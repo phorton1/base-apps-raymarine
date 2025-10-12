@@ -23,7 +23,7 @@ use wp_parse;
 use base qw(Pub::HTTP::ServerBase);
 
 my $dbg = 0;
-my $dbg_kml = 1;
+my $dbg_kml = 0;
 
 
 BEGIN
@@ -401,7 +401,8 @@ sub kml_line_string
 	# route points are 1E7
 {
 	my ($what,$color,$name,$points) = @_;
-	return '' if !@$points;
+	error("no points!") if !$points;
+	return '' if !$points || !@$points;
 	display($dbg_kml,0,"kml_line_string($what,$color,$name) num_pts=".scalar(@$points));
 
 	# Build coordinates string

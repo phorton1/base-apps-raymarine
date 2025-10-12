@@ -1,7 +1,13 @@
 #---------------------------------------
-#	r_TRACK.pm
+# r_TRACK.pm
 #---------------------------------------
-# tracks are stored as their MTA uuids
+# Client for RAYSYS func(19) == 0x13 == '1300'
+#
+# Get or erase saved Tracks from E80, and can start,
+# stop, save, discard, and rename the 'Current Track'.
+#
+# Cannot create or modify Tracks otherwise.
+# Cannot even set the color of the 'Current Track'
 
 package r_TRACK;
 use strict;
@@ -17,6 +23,7 @@ use wp_parse;	# temporary?
 use tcpBase;
 use base qw(tcpBase);
 
+
 my $dbg = 0;
 my $dbg_parse = 0;
 
@@ -24,23 +31,19 @@ my $dbg_parse = 0;
 my $WITH_MOD_PROCESSING = 1;
 
 
+my $TRACK_PORT 		= 12002;
+my $TRACK_FUNC		= 0x0013;
+	# 19 == 0x13 == '1300' in streams
+
+
 our $DEFAULT_TRACK_TCP_INPUT:shared 	= 1;
 our $DEFAULT_TRACK_TCP_OUTPUT:shared 	= 1;
 our $SHOW_TRACK_PARSED_INPUT:shared 	= 1;
 our $SHOW_TRACK_PARSED_OUTPUT:shared 	= 1;
 
-
-my $DBG_WAIT = 1;
-
-
 my $out_color = $UTILS_COLOR_LIGHT_CYAN;
 my $in_color = $UTILS_COLOR_LIGHT_BLUE;
 
-our $track_mgr:shared;
-
-my $TRACK_PORT 		= 12002;
-my $TRACK_FUNC		= 0x0013;	# 19
-	# 13 = 0x13 == '1300' in streams
 
 BEGIN
 {
@@ -58,6 +61,7 @@ BEGIN
 	);
 }
 
+our $track_mgr:shared;
 
 
 #-----------------------------
@@ -76,81 +80,103 @@ my %API_COMMAND_NAME = (
 #----------------------------------
 # TRACK PROTOCOL
 #-----------------------------------
+# Direction Nibble
 
-my $TRACK_DIR_INFO 		= 0x000;
-my $TRACK_DIR_SEND 		= 0x100;
-my $TRACK_DIR_REPLY 	= 0x200;
+our $TRACK_DIR_RECV		= 0x000;
+our $TRACK_DIR_SEND		= 0x100;
+our $TRACK_DIR_INFO		= 0x200;
 
+# Command Niblle
+# E80 closes TCP connection on 0x12 and higher
+									# request
+my $TRACK_CMD_CONTEXT   = 0x00;		# GET {seq} {nth} Current Track Point
+my $TRACK_CMD_BUFFER	= 0x01;		# NAME {seq} {hex16} Current Track
+my $TRACK_CMD_END		= 0x02;		# GET_CUR2 CurrentTrack MTA and points
+my $TRACK_CMD_CURRENT   = 0x03;		# GET_CUR Current Track MTA
+my $TRACK_CMD_TRACK		= 0x04;		# SAVE
+my $TRACK_CMD_GET_TRACK = 0x05;		# GET TRACK {seq} {uuid} by uuid - funky results with Current Track uuid
+my $TRACK_CMD_DICT		= 0x07;		# ERASE TRACK {seq} {uuid} - only for saved tracks
+my $TRACK_CMD_8			= 0x08; 	# 0801 {func} {seq} 000000000 - appears to do a core dump of some part of the program
+my $TRACK_CMD_START		= 0x09;		# START	starts Current Track tracking
+my $TRACK_CMD_EVENT		= 0x0a;		# STOP stops Current Track
+	# received events with bits,
+	# 1,3 = started
+	# 0   = point added
+	# 0,2 = renamed
+my $TRACK_CMD_CHANGED   = 0x0b;		# DISCARD current track, but only after stop and not saved
+	# events uith uuid and change bits
+my $TRACK_CMD_GET_MTAS	= 0x0c;		# GET DICTIONARY {seq_num} - gets index of saved tracks uuids
+my $TRACK_CMD_D			= 0x0d;		# STOPPABLE - returns 1 if the stop button is enabled via CMD_8
+my $TRACK_CMD_E			= 0x0e;		# returns an event with byte=6, no useful function I can see
+my $TRACK_CMD_F			= 0x0f;		# never got a return
+my $TRACK_CMD_BUMP_NAME = 0x10;		# BUMP the next track name, talk about useless
+my $TRACK_CMD_11		= 0x11;		# never got a return
 
-
-# commands
-
-my $TRACK_CMD_CONTEXT   = 0x00;
-my $TRACK_CMD_BUFFER	= 0x01;
-my $TRACK_CMD_END		= 0x02;
-my $TRACK_CMD_TRACK		= 0x04;
-my $TRACK_CMD_GET_TRACK = 0x05;
-my $TRACK_CMD_DICT		= 0x07;
-my $TRACK_CMD_EVENT		= 0x0a;		# events about the current 'active' track (start, stop, etc)
-my $TRACK_CMD_CHANGED   = 0x0b;		# events about tracks being added, modified, or deleted
-my $TRACK_CMD_GET_MTAS	= 0x0c;
-
-
-# from WPMGR
-#	our $CMD_CONTEXT	= 0x0;
-#	our $CMD_BUFFER    	= 0x1;
-#	our $CMD_LIST     	= 0x2;
-#	our $CMD_ITEM		= 0x3;
-#	our $CMD_EXIST		= 0x4;
-#	our $CMD_EVENT     	= 0x5;
-#	our $CMD_DATA		= 0x6;
-#	our $CMD_MODIFY    	= 0x7;
-#	our $CMD_UUID    	= 0x8;
-#	our $CMD_NUMBER     = 0x9;
-#	our $CMD_AVERB     	= 0xa;
-#	our $CMD_BVERB     	= 0xb;
-#	our $CMD_FIND		= 0xc;
-#	our $CMD_COUNT     	= 0xd;
-#	our $CMD_EVERB    	= 0xe;
-#	our $CMD_FVERB     	= 0xf;
-
-# replies
 
 my %TRACK_COMMAND_NAME = (
 	$TRACK_CMD_CONTEXT		=> 'CONTEXT',
-	$TRACK_CMD_BUFFER			=> 'DATA',
+	$TRACK_CMD_BUFFER		=> 'BUFFER',
 	$TRACK_CMD_END			=> 'END',
+	$TRACK_CMD_CURRENT		=> 'CURRENT',
 	$TRACK_CMD_TRACK		=> 'TRACK',
 	$TRACK_CMD_GET_TRACK 	=> 'GET_TRACK',
 	$TRACK_CMD_DICT			=> 'DICT',
+	$TRACK_CMD_8			=> 'CMD_8',
+	$TRACK_CMD_START		=> 'START',
 	$TRACK_CMD_EVENT		=> 'EVENT',
 	$TRACK_CMD_CHANGED		=> 'CHANGED',
 	$TRACK_CMD_GET_MTAS		=> 'GET_MTAS',
+	$TRACK_CMD_D	        => 'CMD_D',
+    $TRACK_CMD_E	        => 'CMD_E',
+    $TRACK_CMD_F	        => 'CMD_F',
+	$TRACK_CMD_BUMP_NAME	=> 'BUMP_NAME',
+	$TRACK_CMD_11			=> 'CMD_11',
 );
 
+
+#----------------------------------------------------------------------
+# Packet Parser
+#----------------------------------------------------------------------
 
 my %PARSE_RULES = (
 
-	# needed to get dictionary
+	# currently only what is needed to parse replies
 
-	$TRACK_DIR_INFO 	| $TRACK_CMD_DICT 		=>	[ 'success' ],					# header for dictionary replies
-	$TRACK_DIR_REPLY	| $TRACK_CMD_CONTEXT   	=>	[ 'uuid','context_bits' ],		# uuid context for the reply; bits 01n determines dictionary
-	$TRACK_DIR_REPLY	| $TRACK_CMD_BUFFER		=> 	[ 'buffer' ],					# either a track, or a dict, based on context_bits
-	$TRACK_DIR_REPLY	| $TRACK_CMD_END		=> 	[ 'track_uuid' ],
+	$TRACK_DIR_RECV 	| $TRACK_CMD_DICT 		=>	[ 'success', 'is_dict'],		# header for dictionary replies
+	$TRACK_DIR_RECV 	| $TRACK_CMD_TRACK 		=>	[ 'success' ],					# header for track replies
+	$TRACK_DIR_RECV 	| $TRACK_CMD_END 		=>	[ 'success' ],					# header for get 'full' current track
+	$TRACK_DIR_RECV 	| $TRACK_CMD_BUFFER 	=>	[ 'success' ],					# header for get 'mta' current track
+	$TRACK_DIR_RECV 	| $TRACK_CMD_CONTEXT 	=>	[ 'success', 'is_point' ],		# header for get nth track point
+	$TRACK_DIR_RECV		| $TRACK_CMD_D			=>  [ 'success' ],					# confirms name change (in an event packet) with sequence number
+	$TRACK_DIR_RECV		| $TRACK_CMD_8			=>  [ 'no_seq','junk','stopable',],	# reply to 0xd Tracking state inquiry
+	$TRACK_DIR_RECV		| $TRACK_CMD_CURRENT	=>  [ 'success' ],					# reply to 0x04=SAVE
 
-	# addititionally needed to get MTA and TRACK
-
-	$TRACK_DIR_INFO 	| $TRACK_CMD_TRACK 		=>	[ 'success' ],					# header for track replies
-	$TRACK_DIR_SEND		| $TRACK_CMD_END		=> 	[ 'uuid' ],						# repeats the mta uuid with no bits
+	
+	$TRACK_DIR_INFO		| $TRACK_CMD_CONTEXT   	=>	[ 'uuid','context_bits' ],		# uuid context for the reply; bits 01n
+	$TRACK_DIR_INFO		| $TRACK_CMD_BUFFER		=> 	[ 'buffer' ],					# dictionary, MTA, or Track depending on state
+	$TRACK_DIR_INFO		| $TRACK_CMD_END		=> 	[ 'track_uuid' ],				# actually carries mta_uuid, but sets is_track=1
 
 	# events
 
-	$TRACK_DIR_INFO		| $TRACK_CMD_CHANGED	=> 	[ 'no_seq', 'uuid','byte' ],
-	$TRACK_DIR_INFO		| $TRACK_CMD_EVENT		=> 	[ 'no_seq', 'byte' ],
+	$TRACK_DIR_RECV		| $TRACK_CMD_CHANGED	=> 	[ 'no_seq', 'uuid','byte' ],
+	$TRACK_DIR_RECV		| $TRACK_CMD_EVENT		=> 	[ 'no_seq', 'byte' ],
 
 );
 
-
+# GET_MTAS results in
+#	recv	DICT		success
+#	info	CONTEXT		uuid(0000)		context bits 0x19
+#	info	BUFFER		<dict>
+#	info	END			uuid(0000)
+#
+# GET_TRACK results in
+#
+#	recv	TRACK 		success
+#	info	CONTEXT		mta_uuid 		context_bits 0x12
+#	info	BUFFER		<mta>
+#	info	END			'track_uuid'							actualy mta_uuid, but we set is_track based on the rule
+#	info 	CONTEXT		other_uuid		context_bits 0x11
+#	info	BUFFER		<trk>
 
 
 sub parseTRACK
@@ -174,7 +200,7 @@ sub parseTRACK
 	}
 
 	$num = 0;
-	my $rec = shared_clone({is_dict=>0, is_event=>0, evt_mask=>0, });
+	my $rec = shared_clone({is_dict=>0, is_point=>0, is_event=>0, evt_mask=>0, });
 	for my $part (@parts)
 	{
 		my $offset = 0;
@@ -185,10 +211,11 @@ sub parseTRACK
 		my $dir_hex = sprintf("%0x",$dir);
 
 		my $cmd_name = $TRACK_COMMAND_NAME{$cmd} || 'WHO CARES';
-		display($dbg_parse,1,"parsePart($num) offset($offset) len($len) dir($dir_hex) cmd($cmd)=$cmd_name part="._lim(unpack('H*',$part),40));
+		display($dbg_parse,1,"parsePart($num) offset($offset) len($len) dir($dir_hex) cmd($cmd)=$cmd_name part="._lim(unpack('H*',$part),200));
 		$offset += 4;
 		$num++;
 
+		# get the rule
 		my $rule = $PARSE_RULES{ $cmd_word };
 		if (!$rule)
 		{
@@ -210,17 +237,18 @@ sub parseTRACK
 				$rec,
 				$piece,
 				$part,
-				\$offset );	# indent buffer records a bit
+				\$offset,
+				$len);			# for checking big_len
 		}
 
 		# post pieces processing
 
-		if ($cmd eq $TRACK_CMD_EVENT)
+		if ($cmd == $TRACK_CMD_EVENT)
 		{
 			$rec->{is_event} = 1;
 			$rec->{evt_mask} |= $rec->{byte};
 		}
-		elsif ($cmd eq $TRACK_CMD_CHANGED)
+		elsif ($cmd == $TRACK_CMD_CHANGED)
 		{
 			$rec->{is_event} = 1;
 			$rec->{mods} ||= shared_clone([]);
@@ -228,6 +256,7 @@ sub parseTRACK
 				uuid=>$rec->{uuid},
 				byte=>$rec->{byte} });
 		}
+
 		
 	}	# for each part
 
@@ -237,10 +266,9 @@ sub parseTRACK
 
 
 
-
 sub parsePiece
 {
-	my ($rec,$piece,$part,$poffset) = @_;
+	my ($rec,$piece,$part,$poffset,$msg_len) = @_;
 	return if $piece eq 'no_seq';
 
 	my $text = '';
@@ -250,9 +278,17 @@ sub parsePiece
 		if (!$rec->{is_dict})
 		{
 			# skip biglen
+			my $big_data = substr($part,$$poffset,4);
+			my $big_hex = unpack('H*',$big_data);
+			my $big_len = unpack('V',$big_data);
+
+			warning(0,0,"msg_len($msg_len) big_len($big_hex)=$big_len");
+			error("NOT PLUS 12") if $big_len + 12 != $msg_len;
+			
 			my $buffer = substr($part,$$poffset+4);
+			mergeHash($rec,parsePoint($buffer)) if $rec->{is_point};
 			mergeHash($rec,parseTrack($buffer)) if $rec->{is_track};
-			mergeHash($rec,parseMTA($buffer)) if !$rec->{is_track};
+			mergeHash($rec,parseMTA($buffer)) if !$rec->{is_track} && !$rec->{is_point};
 		}
 		else	# if ($context->{is_reply})
 		{
@@ -261,13 +297,15 @@ sub parsePiece
 			$$poffset += 4;
 
 			display($dbg_parse,1,"piece(buffer) is_dict found $num uuids");
+			return error("too many uuids!!") if $num>1024;
+			$rec->{uuids} ||= shared_clone([]);
 			my $uuids = $rec->{uuids};
 			for (my $i=0; $i<$num; $i++)
 			{
 				my $uuid = unpack('H*',substr($part,$$poffset,8));
 				$$poffset += 8;
 				push @$uuids,$uuid;
-				display($dbg_parse,2,"uuid($i)=$uuid");
+				display($dbg_parse,2,"uuids($i)=$uuid");
 			}
 		}
 	}
@@ -295,10 +333,10 @@ sub parsePiece
 		$rec->{success} =1 if $ok;
 		$$poffset += 4;
 	}
-	elsif ($piece eq 'byte')	# one byte flag on events
+	elsif ($piece =~ /byte|stopable/)	# one byte flag on events
 	{
 		my $byte = unpack('C',substr($part,$$poffset++,1));
-		display($dbg_parse,1,"byte=$byte");
+		display($dbg_parse,1,"$piece=$byte");
 		$rec->{$piece} = $byte;
 	}
 	elsif ($piece eq 'bits')	# one word flag on changed events
@@ -308,17 +346,24 @@ sub parsePiece
 		$rec->{$piece} = $bits;
 		$$poffset += 2;
 	}
+	elsif ($piece =~ /is_dict|is_point/)
+	{
+		display($dbg_parse,1,"$piece = 1");
+		$rec->{$piece} = 1;
+	}
 	else
 	{
 		my $str = substr($part,$$poffset,4);
 		my $value = unpack('V',$str);
 		$$poffset += 4;
 
+		$value = unpack('H*',$str) if $piece eq 'junk';
+
 		display($dbg_parse,1,"rec($piece) = '$value'");
 				
 		$rec->{$piece} = $value;
 
-		if ($piece eq 'context_bits')
+		if (0 && $piece eq 'context_bits')
 		{
 			if ($value & 0x10)
 			{
@@ -393,7 +438,7 @@ sub getTracks
 
 sub queueTRACKCommand
 {
-	my ($this,$api_command,$uuid) = @_;
+	my ($this,$api_command,$uuid,$extra) = @_;
 	display_hash($dbg+2,0,"queueTRACKCommand($this)",$this);
 
 	return error("No 'this' in queueTRACKCommand") if !$this;
@@ -421,7 +466,8 @@ sub queueTRACKCommand
 	my $command = shared_clone({
 		api_command => $api_command,
 		name => $API_COMMAND_NAME{$api_command},
-		uuid => $uuid,});
+		uuid => $uuid,
+		extra => $extra });
 	push @{$this->{command_queue}},$command;
 	return 1;
 }
@@ -491,18 +537,44 @@ sub get_tracks
 	my ($this) = @_;
 	print "get_tracks()\n";
 
-	my $seq = $this->{next_seqnum}++;
-	my $request = createMsg($seq,$TRACK_CMD_GET_MTAS,0);
+	my $seq;
+	my $request;
+	my $reply;
+
+	if (1)
+	{
+		# get the current track works better with 0201 {func}{seq}
+		# however, this at least fails when the track is not recording
+
+		$seq = $this->{next_seqnum}++;
+		$request = createMsg($seq,$TRACK_CMD_END,0);
+		return 0 if !$this->sendRequest($seq,"CURRENT TRACK",$request);
+		$reply = $this->waitReply(1);
+		
+		if ($reply)
+		{
+			my $uuid = $reply->{uuid};
+			my $tracks = $this->{tracks};
+			$tracks->{$uuid} = $reply;
+			$reply->{version} = $this->incVersion();
+		}
+	}
+
+	# get the dictionary
+
+	$seq = $this->{next_seqnum}++;
+	$request = createMsg($seq,$TRACK_CMD_GET_MTAS,0);
 	return 0 if !$this->sendRequest($seq,"TRACKS DICT",$request);
-	my $reply = $this->waitReply(1);
+	$reply = $this->waitReply(1);
 	return 0 if !$reply;
+	
+	# enqueue from dictionary
 
 	my $uuids = $reply->{uuids};
-
 	my $num = 0;
 	for my $uuid (@$uuids)
 	{
-		$this->queueTRACKCommand($API_GET_TRACK,$uuid);
+		$this->queueTRACKCommand($API_GET_TRACK,$uuid,"from index($num");
 		$num++;
 	}
 
@@ -517,18 +589,28 @@ sub get_track
 {
 	my ($this,$command) = @_;
 	my $uuid = $command->{uuid};
+	my $extra = $command->{extra} || '';
+
+	if (1)
+	{
+		sleep(1);
+		print "--------------------  $extra $uuid -----------------------------\n";
+	}
+	
 	display($dbg,0,"get_track($uuid)");
 
 	my $seq = $this->{next_seqnum}++;
 	my $request = createMsg($seq,$TRACK_CMD_GET_TRACK,$uuid);
 	return 0 if !$this->sendRequest($seq,"get_track($uuid)",$request);
+
+	if (1)
+	{
+		sleep(1);
+		print "-----------------------------------------------------------------\n";
+	}
+
 	my $reply = $this->waitReply(1);
 	return 0 if !$reply;
-
-	#	my $track = $reply->{track};
-	#	return error("No {track} in get)track reply") if !$track;
-	#	my $mta = $reply->{mta};
-	#	return error("No {mta} in get)track reply") if !$mta;
 
 	my $dbg_got = 0;
 	warning($dbg_got,0,"got track($uuid) = '$reply->{name}'");
@@ -537,7 +619,7 @@ sub get_track
 	$tracks->{$uuid} = $reply;
 	$reply->{version} = $this->incVersion();
 	return 1;
-}
+}                                 
 
 
 
@@ -591,10 +673,12 @@ sub handlePacket
 	if ($reply->{is_event})
 	{
 		# evt_mask
-		#	start track 	= 1 , 3
-		#	discard 		= 2 , 1
-		#	save track 		= 2 , 4 , 1
-		#	new track point = 0
+		#	start track 		= 1 , 3
+		#	discard 			= 2 , 1
+		#	save track 			= 2 , 4 , 1
+		#	new track point 	= 0
+		#	cur track mod   	= 6
+		#   cur track discarded = 5
 
 		if ($reply->{mods} && $WITH_MOD_PROCESSING)
 		{

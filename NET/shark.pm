@@ -74,7 +74,7 @@ sub handleCommand
 	if ($lpart eq 'p')
 	{
 		my ($rayname,$ident) = split(/\s+/,$rpart);
-		doProbe($rayname,$ident);
+		doProbe('TRACK',$rpart);	# $rayname,$ident);
 	}
 
 	elsif ($lpart eq 'scan')

@@ -1,0 +1,226 @@
+
+# PROBE identifier	identifies a named probe that can be executed from shark
+#					by typing "P rayname identifier"
+# RAW	hex strings with replacements that will be sent
+# MSG	creates word(length) prepended message
+# BUMP	bump the sequence number
+# WAIT 	wait for any reply
+# >>>	text will be output to console
+#
+# Replacements (in order of operations)
+#	{time}	= will be replaced by HH:MM:SS
+# 	{seq}	- will be replaced by a dword sequence number that advances once per probe
+# 	{func}	= will be replaced by the services word funciton code
+# 	{hex16 some name} will be replaced with the hex16 (non zero terminated) name
+
+
+PROBE start
+
+	# This starts the "Current Track" and brings up
+	# the 'stop' button. It will overwrite any name
+	# applied to the Current Track
+
+	MSG		0901 {func}  # generates EVENT 1,2
+	WAIT
+
+PROBE stop
+
+	# This will stop the track, grey out the
+	# Stop/Start button and leave the track
+	# dangling in an unsaved state.
+	
+	MSG		0a01 {func}  # generates EVEN 0,2
+	WAIT
+
+
+PROBE name
+
+	# This will set the name of the "Current Track"
+	# at any time, including before it has been started.
+
+	BUMP
+	MSG 0101 {func} {seq} {hex16 Track {time}}
+
+
+PROBE discard
+
+	# this deletes the stopped track without saving it
+
+	BUMP
+	MSG		0b01 {func}
+
+
+PROBE save
+
+	# After stop, aavea the Current Track, without
+	# changing its name, making it erasable.
+	# Seems to have no function at any other time.
+	
+	MSG 0401 {func} # {seq}
+	WAIT
+
+
+PROBE cur
+
+	# returns the Current Track MTA
+
+	BUMP
+	MSG 	0301 {func} {seq}
+
+PROBE cur2
+
+	# returns the Current Track MTA and the TRK points
+
+	BUMP
+	MSG 	0201 {func}
+
+
+PROBE nth
+
+	# Get Nth Current Track Point
+
+	BUMP
+	MSG		0001 {func} {seq} 02000000
+
+
+
+PROBE delete
+
+	# Delete (erase) track by uuid
+	# Current Track must be saved before it can be deleeted
+	
+	BUMP
+	MSG		0701 {func} {seq} 81b237a64300bd97
+
+
+PROBE stopable
+
+	BUMP
+	MSG		0d01 {func} 
+	
+	# returns 0900 08001300 01000000 0n
+	# where N is 1 if recording a track and stoppable, 0 otherwise
+	# probably specifically used to enable the Stop button
+	
+
+PROBE e
+
+	BUMP
+	MSG		0e01 {func}
+
+	# returns an event with byte=6
+	# no function I can see
+
+
+PROBE f
+
+	# never got a reply
+
+	BUMP
+	MSG		0f01 {func} {seq} 12345678 12345678 12345678
+
+
+PROBE 11
+
+	# never got a reply
+
+	BUMP
+	MSG		1101 {func} {seq} 12345678 12345678 12345678
+
+
+#--------------------------------------------------
+# from here down, only FIN (E80 closes socket
+#--------------------------------------------------
+
+PROBE 12
+
+	BUMP
+	MSG		1201 {func} {seq} 12345678 12345678 12345678
+		# returns FIN (closes socket)
+
+
+PROBE 13
+
+	BUMP
+	MSG		1301 {func} {seq} 12345678 12345678 12345678
+
+
+PROBE 20
+
+	BUMP
+	MSG		2001 {func} {seq} 12345678 12345678 12345678
+
+
+PROBE 2a
+
+	BUMP
+	MSG		2a01 {func} {seq} 12345678 12345678 12345678
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	# 0000 0000 81b237a64300a595 # {seq} # 03000000 # 81b237a64300a595
+
+	# BUMP
+	# MSG 	0901 {func} {seq} 39000000010200020000000f00000052f69306ad4a84c500002c010000d5ef9306ad4a84c500002c01000005547261636b203435007261636b00cc33cc
+	# 	# CMD_CHANGED
+	# MSG		0200 {func} {seq} 81b237a64300a595
+
+PROBE N
+
+	MSG 0101 {func} {seq} {hex16 New Track}
+	
+
+	>>>-------------------------------
+	>>> try to change something
+	>>>-------------------------------
+
+		# 0c000400 13000a00 00000000 04001400 00021300 0a000000 81b237a6 43003375   ..........................7.C.3u
+		# 0c000000 45000102 13000a00 00003900 00000102 00020000 000f0000 0052f693   ....E.........9..............R..
+		# 06ad4a84 c500002c 010000d5 ef9306ad 4a84c500 002c0100 00055472 61636b20   ..J....,........J....,....Track
+		# 34350072 61636b00 cc33cc10 00020213 000a0000 0081b237 a6430033 75140000   45.rack..3.............7.C.3u...
+		# 0213000a 00000081 b237a643 006c750b 00000030 00010213 000a0000 00240000   .........7.C.lu....0.........$..
+		# 00000000 00020000 0052f693 06ad4a84 c500002c 010000d5 ef9306ad 4a84c500   .........R....J....,........J...
+		# 002c0100 00100002 0213000a 00000081 b237a643 006c75                       .,...............7.C.lu
+
+		# MTA: 0102 1300 0a000000 39000000010200020000000f00000052f69306ad4a84c500002c010000d5ef9306ad4a84c500002c01000005547261636b203435007261636b00cc33cc
+		#                                                                                                                 T r a c k _ 4 5
+		# MTA: 0102 1300 0a000000 39000000010200020000000f00000052f69306ad4a84c500002c010000d5ef9306ad4a84c500002c01000005426c61636b203435007261636b00cc33cc
+		#                                                                                                                 B l a c k _ 4 5
+
+	# >>> CONTEXT GENERAL
+
+	# MSG	0a01 {func} 	# STOPS THE TRACK	#
+
+	# 	81b237a643003e76 02000000
+				    #81b237a643004d76
+	# {seq} # 02000000 # 	# 39000000010200020000000f00000052f69306ad4a84c500002c010000d5ef9306ad4a84c500002c01000005417261636b203435007261636b00cc33cc
+
+	# >>> CONTEXT UUID and bits(01) = change?
+	# MSG	0b01 {func} {seq} {hex15 Track 45} 00 # 81b237a643003375 01000000
+	# >>> BUFFER modified MTA
+	# MSG 0401 {func} {seq} 39000000010200020000000f00000052f69306ad4a84c500002c010000d5ef9306ad4a84c500002c01000005417261636b203435007261636b00cc33cc
+
+
+PROBE blah
+
+	# I think that 0801 creates a track
+
+	MSG 0801 {func} {seq}
+	# >>> BUFFER modified MTA
+	MSG 0400 {func} {seq} 39000000010200020000000f00000052f69306ad4a84c500002c010000d5ef9306ad4a84c500002c01000005417261636b203435007261636b00cc33cc
+
+
+
+

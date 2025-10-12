@@ -185,6 +185,23 @@ sub commandHandler	{ my ($this,$command) = @_; }
 #-----------------------------------------------
 # probes
 #-----------------------------------------------
+# A probes filename is {rayname}_probes.txt, and matches the capitalization scheme.
+#
+# PROBE identifier	identifies a named probe that can be executed from shark
+#					by typing "P rayname identifier"
+# RAW	hex strings with replacements that will be sent
+# MSG	creates word(length) prepended message
+# BUMP	bump the sequence number
+# WAIT 	wait for any reply
+# >>>	text will be output to console
+#
+# Replacements (in order of operations)
+#	{time}	= will be replaced by HH:MM:SS
+# 	{seq}	- will be replaced by a dword sequence number that advances once per probe
+# 	{func}	= will be replaced by the services word funciton code
+# 	{hex16 some name} will be replaced with the hex16 (non zero terminated) name
+
+
 
 my $dbg_probe = 0;
 
@@ -258,15 +275,6 @@ sub parseProbes
 		$line =~ s/^\s+|\s+$//g;
 		next if !$line;
 
-		while ($line =~ s/{hex16\s+(.*?)}/##HERE##/)
-		{
-			my $name = $1;
-			my $data = name16_hex($name,1);	# no terminator
-			my $hex = unpack('H*',$data);
-			display($dbg_probe+1,1,"$line_num: HEX16($name)=$hex");
-			$line =~ s/##HERE##/$hex/;
-		}
-
 		if ($line =~ /^PROBE\s+(.*)$/i)
 		{
 			my $ident = $1;
@@ -280,7 +288,7 @@ sub parseProbes
 			$probe = shared_clone([]);
 			$probes->{$ident} = $probe;
 		}
-		elsif ($line =~ /^(RAW|MSG|DELAY|WAIT)(.*)$/)
+		elsif ($line =~ /^(RAW|MSG|BUMP|WAIT)(.*)$/)
 		{
 			my ($sec,$text) = ($1,$2);
 			$text =~ s/#.*$//;
@@ -566,7 +574,7 @@ sub tcpBaseThread
 				if (!defined($rslt))
 				{
 					# connection closed by remote
-					error($dbg_tcp,0,"tcpBase($this->{remote}) read error: $!");
+					error("tcpBase($this->{remote}) read error: $!");
 					$sock = $this->_close_socket($sock);
 					last if $this->{EXIT_ON_CLOSE};
 				}
@@ -599,7 +607,7 @@ sub tcpBaseThread
 							display($dbg_probe,0,"probe WAIT completed");
 							$this->{probe_wait} = 0;
 						}
-						else
+						# else
 						{
 							my $reply = $this->handlePacket($client_buffer);
 							push @{$this->{replies}},$reply if $reply;
@@ -677,6 +685,8 @@ sub do_probe
 	my $probes = $command->{probes};
 	my $probe = $probes->{$ident};
 	my $num_steps = @$probe;
+	my $seq = $this->{next_seqnum};
+
 	display(0,0,"do_probe($ident) with $num_steps steps");
 
 	for (my $i=0; $i<$num_steps; $i++)
@@ -688,16 +698,31 @@ sub do_probe
 		{
 			print "$line\n";
 		}
+		elsif ($line =~ /&BUMP/)
+		{
+			$seq = ++$this->{next_seqnum};
+		}
 		elsif ($line =~ /^(RAW|MSG) (.*)$/)
 		{
 			my ($cmd,$text) = ($1,$2);
-			my $seq = $this->{next_seqnum}++;
-			my $hex_seq = unpack('H*',pack('v',$seq));
+			my $hex_seq = unpack('H*',pack('V',$seq));
+			my $now = now();
 
-			$text =~ s/{seq}/$hex_seq/;
-			$text =~ s/{func}/$command->{hex_func}/;
-			$text =~ s/\s//g;
+			$text =~ s/{time}/$now/g;
+			$text =~ s/{seq}/$hex_seq/g;
+			$text =~ s/{func}/$command->{hex_func}/g;
 			
+			while ($text =~ s/{hex16\s+(.*?)}/##HERE##/)
+			{
+				my $name = $1;
+				my $hex = name16_hex($name,1);	# no terminator
+				my $data = pack('H*',$hex);
+				display_bytes($dbg_probe+2,1,"HEX16($name)=$hex",$data);
+				$text =~ s/##HERE##/$hex/;
+			}
+
+			$text =~ s/\s//g;
+
 			my $data = pack('H*',$text);
 			my $len = length($data);
 			
@@ -711,12 +736,7 @@ sub do_probe
 			display($dbg_probe+1,2,"PROBE: send $text");
 			$this->sendPacket($data);
 		}
-		elsif ($line =~ /^DELAY\s*(.*)$/)
-		{
-			my $period = $1 || 1;
-			display($dbg_probe,1,"DELAY($period)");
-			sleep($period);
-		}
+
 
 		# this is where it gets weird
 		# by default, this will actually call

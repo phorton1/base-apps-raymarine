@@ -45,6 +45,7 @@ BEGIN
 
 		parseTrack
 		parseMTA
+		parsePoint
 
     );
 }
@@ -660,6 +661,39 @@ my $TRACK_HEADER_SPECS = [
 ];
 
 
+
+# Current track with one point doesn't line up these
+# 0102130011000000160000000000000001000000 060000eae5f805eaf2f805ea01f9
+#
+#	0102 1300 11000000 16000000 	cmd, func, seq, big_len
+#	00000000 0100 0000				a, cnt, b
+#
+#	060000ea						not a good north (-369098746 = -29.701 south)
+#	e5f805ea						not a good east  (-368707355 = -30.904693 west)
+#	f2f8							not a good tempr
+#	05ea							not a good depth
+#	01f9							not even a good unknown 'c'
+
+# 060000eae5f805eaf2f805ea01f9
+#
+# It looks to me, and particularly in larger unsaved tracks, that this
+# is broken up differently
+#
+#	0600 00eae5f8 05eaf2f8 05ea01f9
+
+# a bigger example
+
+# 0102 1300 14000000 32000000 00000000 03000000
+# 0600 00eae5f8 05eaf2f8 05ea01f9 05ea9fff 05ea1bf9 05ea3ff9 05eaded8 05ea0000 a0e3150f 07ee0d10
+#
+#	I wonder if they could be two uin16 deltas
+
+
+
+
+
+
+
 my $TRACK_PT_SIZE = 14;
 my $TRACK_PT_SPECS = [
 	north		=> [ 0,		4,		'l',	],	#  0	int32_t north 		// prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
@@ -678,8 +712,37 @@ sub parseMTA
 	display($dbg_track,0,"parseMTA len($buf_len)");
 	my $offset = 0;
 	my $rec = unpackRecord('mta',$MTA_REC_SPECS, $buffer, $offset, $MTA_REC_SIZE);
+
+	my $coords = northEastToLatLon($rec->{north_start},$rec->{east_start});
+	$rec->{lat_start} = $coords->{lat};
+	$rec->{lon_start} = $coords->{lon};
+	$coords = northEastToLatLon($rec->{north_end},$rec->{east_end});
+	$rec->{lat_end} = $coords->{lat};
+	$rec->{lon_end} = $coords->{lon};
+
+	my $deg_lat_start = degreeMinutes($rec->{lat_start});
+	my $deg_lon_start = degreeMinutes($rec->{lon_start});
+
+	my $deg_lat_end = degreeMinutes($rec->{lat_end});
+	my $deg_lon_end = degreeMinutes($rec->{lon_end});
+
+	display(0,-1,"start($deg_lat_start,$deg_lon_start)",0,$UTILS_COLOR_WHITE);
+	display(0,-1,"  end($deg_lat_end,$deg_lon_end)",0,$UTILS_COLOR_WHITE);
+
+
+	# I think the unknown k1_1 variable may be one for a saved, regular track
+	# and 0 for an unsaved, in-process track, and that their point layouts are
+	# different.  I note that it is possible to get the "current track" from the
+	# E80, and then not be able to get it by uuid (fails), so there is also the
+	# idea that the current track may not have even started recording yet, but
+	# i don't see anyting obvious in the MTA that indicates this, except for
+	# perhaps cnt1=cnt2==0.
+	#
+	# u1 is also a bit suspicious,
+	#	239 = not recording yet
+
 	display($dbg_track,1,"found MTA($rec->{name}) with $rec->{cnt1} points");
-	display_hash($dbg_track,1,"parsetMTA($rec->{name}) returning",$rec);
+	display_hash(0,1,"parsetMTA($rec->{name}) returning",$rec);
 	return $rec;
 }
 
@@ -688,7 +751,9 @@ sub parseTrack
 {
 	my ($buffer) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_wp,0,"parseTrack len($buf_len)");
+	display($dbg_track,0,"parseTrack len($buf_len)");
+
+	# there's some garbage in the front
 
 	my $offset = 0;
 	my $rec = unpackRecord('track_hdr',$TRACK_HEADER_SPECS, $buffer, $offset, $TRACK_HDR_SIZE);
@@ -696,8 +761,10 @@ sub parseTrack
 
 	display($dbg_track,1,"found $rec->{cnt} track points");
 
+	# to identify weird record from GET_TRACK of Current Track's uuid
+	# if (0 && $old_rec->{k1_1} == 0)
+
 	my $points = $rec->{points} = shared_clone([]);
-	#while ($offset <= $buf_len-$TRACK_PT_SIZE)
 	for (my $i=0; $i<$rec->{cnt}; $i++)
 	{
 		my $pt = unpackRecord('track_point',$TRACK_PT_SPECS, $buffer, $offset, $TRACK_PT_SIZE);
@@ -705,18 +772,43 @@ sub parseTrack
 		$pt->{lat} = $coords->{lat};
 		$pt->{lon} = $coords->{lon};
 
-		display($dbg_track+1,2,sprintf("north(%0.3f) east(%0.3f) lat(%0.3f) lon(%0.3f)",
-			$pt->{north},
-			$pt->{east},
-			$pt->{lat},
-			$pt->{lon}));
+		display(0,-1,sprintf("point($i) lat(%s) lon(%s)",
+			degreeMinutes($pt->{lat}),
+			degreeMinutes($pt->{lon}) ),0,$UTILS_COLOR_WHITE);
 
 		push @$points,$pt;
 		$offset += $TRACK_PT_SIZE;
 	}
 
+
 	return $rec;
 }
+
+
+
+sub parsePoint
+{
+	my ($buffer) = @_;
+	my $buf_len = length($buffer);
+	display($dbg_track-1,0,"parsePoint len($buf_len)=".unpack('H*',$buffer));
+
+	my $offset = 2;
+		# skip garbage word efef
+
+	my $pt = unpackRecord('track_point',$TRACK_PT_SPECS, $buffer, $offset, $TRACK_PT_SIZE);
+	my $coords = northEastToLatLon($pt->{north},$pt->{east});
+	$pt->{lat} = $coords->{lat};
+	$pt->{lon} = $coords->{lon};
+
+	display(0,-1,sprintf("lat(%s) lon(%s)",
+		degreeMinutes($pt->{lat}),
+		degreeMinutes($pt->{lon}) ),0,$UTILS_COLOR_WHITE);
+
+	return $pt;
+}
+
+
+
 
 
 1;

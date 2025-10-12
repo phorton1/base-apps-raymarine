@@ -203,6 +203,8 @@ my $MY_WPS 		= 0;			# the important Waypoint, Route, and Group management tcp pr
 my $RAYSYS		= 0;
 my $FILE		= 0;
 my $FILE_RNS 	= 0;
+my $MY_TRACK	= 0;
+
 
 my $EXPLORING 	= 0;
 
@@ -241,7 +243,7 @@ our $RAYPORT_DEFAULTS  = {
 	2050 => { sid => 16,	name => 'Database',	proto=>'tcp',	mon_from=>$MY_DB,		mon_to=>$MY_DB,		multi=>1,	color=>$UTILS_COLOR_WHITE,    },
 	2051 => { sid => 16,	name => 'database',	proto=>'udp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>0,    },
 	2052 => { sid => 15,	name => 'WPMGR',	proto=>'tcp',	mon_from=>$MY_WPS,		mon_to=>$MY_WPS,	multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },	#
-	2053 => { sid => 19,	name => 'TRACK',	proto=>'tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },
+	2053 => { sid => 19,	name => 'TRACK',	proto=>'tcp',	mon_from=>$MY_TRACK,	mon_to=>$MY_TRACK,	multi=>1,	color=>$UTILS_COLOR_LIGHT_GREEN,    },
 	2054 => { sid => 7,		name => 'Navig',	proto=>'tcp',	mon_from=>$UNDER_WAY,	mon_to=>$RNS_INIT,	multi=>1,	color=>$UTILS_COLOR_LIGHT_CYAN,    },
 	2055 => { sid => 22,	name => 'Unknown1',	proto=>'tcp',	mon_from=>1,			mon_to=>1,			multi=>1,	color=>$UTILS_COLOR_LIGHT_MAGENTA,    },
 		# I am able to connect with TCP with 2055 , but no new connections show in E80 Services list
