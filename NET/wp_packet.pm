@@ -40,7 +40,7 @@ use Pub::Utils;
 use r_defs qw($SUCCESS_SIG);
 use wp_parse;
 
-my $dbg_wpp = 1;
+my $dbg_wpp = -1;
 
 
 BEGIN
@@ -236,70 +236,6 @@ my %PARSE_RULES = (
 #--------------------------------------------------
 # parseWPMGR
 #--------------------------------------------------
-# The nav_context is used to maintain state for the
-# messages within a Request or Reply.  It is a hash
-# by client_port, consisting of
-#
-#	what => the kind of thing being talked about
-#	uuid => the uuid of the thing being talked about
-#   dict => 0/1 whehter the BUFFER is an Item (WRG) or dictionary
-#
-# 'dict' is based on the context_bits founc in a CONTEXT message
-# before the BUFFER message, where
-#
-#	0x1n 	where the 1 indicates a dictionary
-#   0x0n	where the 0 indicates an item
-#
-# and 'n' is some kind of a state enumeration that is not clearly
-# understood at this time
-
-
-my %nav_context:shared;
-
-sub init_context
-	# We assume serialized replies never come in multiple packets,
-	# so the context is re-initialized on EVERY reply, but only
-	# on is_reply changes for sends.
-{
-	my ($client_port,$is_reply,$D,$force) = @_;
-	$is_reply ||= 0;
-	display($dbg_wpp+1,0,"init_context called client_port($client_port) is_reply($is_reply) D($D)=".$NAV_DIRECTION{$D}." force($force)");
-
-
-	my $key = "$is_reply.$client_port";
-	my $context = $nav_context{$key};
-	$context = $nav_context{$key} = shared_clone({})
-		if !$context;
-	display_hash($dbg_wpp+2,1,"initial($key)",$context);
-
-	# re-initialize context if $is_reply changes
-	
-	$is_reply ||= 0;
-	$context->{is_reply} ||= 0;
-		# avoid warnings - one of these is undefined often
-
-	return $context if !$force &&
-		defined($context->{is_reply}) &&
-		$context->{is_reply} == $is_reply;
-
-	display($dbg_wpp,0,"INITIALIZE CONTEXT client_port($client_port) is_reply($is_reply) D($D)=".$NAV_DIRECTION{$D}." force($force)");
-	# display(0,1,"context_mods="._def($context->{mods}));
-
-	# return if $D == $DIR_INFO || (
-	# 	defined($context->{dir}) &&
-	# 	$context->{dir} != $D);
-
-	$context->{dir} = $D;
-	$context->{what} = 0;
-	$context->{is_dict} = 0;
-	$context->{client_port} = $client_port;
-	$context->{is_reply} = $is_reply;
-	$context->{seq_num} = 0;
-	$context->{is_event} = 0;
-
-	display_hash($dbg_wpp+2,1,"returning fucking($key)",$context);
-	return $context;
-}
 
 
 sub parseWPMGR
@@ -381,12 +317,23 @@ sub parseWPMGR
 		$header_len = length($first_header);
 	}
 	
+	my $rec = shared_clone({
+		dir 		=> 0,
+		what 		=> 0,
+		is_dict 	=> 0,
+		client_port => $client_port,
+		is_reply 	=> $is_reply,
+		seq_num 	=> 0,
+		is_event 	=> 0,
+		uuid		=> '' });
+
+
 	# messages loop
 
 	my $num = 0;
 	my $text = '';
 	my $offset = 0;
-	my $rec;
+	# my $rec;
 	my $packet_len = length($raw_data);
 
 	while ($offset < $packet_len)
@@ -411,43 +358,12 @@ sub parseWPMGR
 		my $command = $NAV_COMMAND{$C};
 		my $what = $NAV_WHAT{$W};
 
-		my $context = init_context($client_port,$is_reply,$D,$num==0);
-			# Force context initialization for ALL replies,
-			# - we assume all replies come in single (possibly rebuilt) packets
-			# - a regular WPMGR repl
-			
-		$context->{what} = $W if $W || $D != $DIR_INFO;
-		my $show_what = $NAV_WHAT{$context->{what}};
+		$rec->{what} = $W if $W || $D != $DIR_INFO;
+		my $show_what = $NAV_WHAT{$rec->{what}};
 
-		display($dbg_wpp,1,"PART($num) offset($offset) dir($dir) command($command) what($what) context($show_what) dict($context->}) uuid($context->uuid})");
+		display($dbg_wpp,1,"PART($num) offset($offset) dir($dir) command($command) what($what) context($show_what) dict($rec->{is_dict}) uuid($rec->{uuid})");
 		display($dbg_wpp+1,2,"data=".unpack('H*',$data));
 
-		if (!$rec)
-		{
-			# Weirdest bug ever.
-			# Somehow, {mods}, gets into the $context, even though
-			# I only assign it to $rec after
-			#
-			#	$rec = shared_clone($context);
-			#
-			# I really don't understand, but, by explicitly
-			# stripping out that key and making a new hash
-			# and share_cloning a ref to that, I can get on
-			# with my work.
-
-			display_hash($dbg_wpp+2,1,"before clone(context)",$context);
-
-			my %clean;
-			for my $k (keys %$context)
-			{
-				next if $k eq 'mods';  # skip ghost key
-				$clean{$k} = $context->{$k};
-			}
-			$rec = shared_clone(\%clean);
-
-			display_hash($dbg_wpp+2,1,"after clone",$rec);
-		}
-		
 		# advance outer loop to next message
 
 		$offset += 2 + $data_len;
@@ -464,7 +380,7 @@ sub parseWPMGR
 			my $seq_num = unpack('V',substr($data,$data_offset,4));
 			display($dbg_wpp,0,"seq_num=$seq_num");
 
-			$rec->{seq_num} = $context->{seq_num} ||= $seq_num;
+			$rec->{seq_num}  ||= $seq_num;
 			$data_offset += 4;
 		}
 
@@ -483,7 +399,6 @@ sub parseWPMGR
 					$piece,
 					$data,
 					\$data_offset,
-					$context,
 					$header_len + 2);	# indent buffer records a bit
 			}
 			$text .= "     # $dir: ".pad($command,8).pad($show_what,9)."$comment\n"
@@ -514,22 +429,22 @@ sub parseWPMGR
 
 sub parsePiece
 {
-	my ($with_text,$rec,$piece,$data,$pdata,$context,$indent) = @_;
+	my ($with_text,$rec,$piece,$data,$pdata,$indent) = @_;
 
 	my $text = '';
 
 	if ($piece eq 'buffer')
 	{
-		if (!$context->{is_dict})
+		if (!$rec->{is_dict})
 		{
 			my $detail_level = 2;
-			my $show_what = $NAV_WHAT{$context->{what}};
+			my $show_what = $NAV_WHAT{$rec->{what}};
 			my $item = parseWPMGRRecord($show_what,substr($data,$$pdata));
 			$text = WPRecordToText($item,$show_what,$indent,$detail_level)
 				if $with_text;
 			$rec->{item} = $item;
 		}
-		elsif ($context->{is_reply})
+		elsif ($rec->{is_reply})
 		{
 			$$pdata += 4;	# skiip biglen
 			my $num = unpack('V',substr($data,$$pdata,4));
@@ -597,7 +512,7 @@ sub parsePiece
 		{
 			if ($value & 0x10)
 			{
-				$rec->{is_dict} = $context->{is_dict} = 1;
+				$rec->{is_dict} = 1;
 				$rec->{dict_uuids} = shared_clone([]);
 				display($dbg_wpp+1,0,"setting is_dict bit");
 			}
@@ -610,14 +525,14 @@ sub parsePiece
 				# is only used to set the initial record to zero. is_event is
 				# never normalized back into the context.
 
-			my $mask = $context->{what};
+			my $mask = $rec->{what};
 			$mask |= 1;					# add in specific 1=waypoints
 			$mask <<= $value * 4;		# shift closing flags to high nibble
 			$rec->{evt_mask} |= $mask;
 		}
 		elsif ($piece eq 'mod_bits')
 		{
-			my $what = $context->{what};
+			my $what = $rec->{what};
 			my $uuid = $rec->{uuid};
 			my $mods = $rec->{mods} = shared_clone([]) if !exists($rec->{mods});
 			my $mod = shared_clone({
