@@ -54,7 +54,6 @@ BEGIN
  	use Exporter qw( import );
     our @EXPORT = qw(
 
-		startTRACK
 		trackUICommand
 
 		$track_mgr
@@ -66,6 +65,27 @@ BEGIN
 }
 
 our $track_mgr:shared;
+
+
+sub new
+{
+	my ($class) = @_;
+	display($dbg,0,"TRACK new()");
+	my $this = $class->SUPER::new({
+		func		=> $TRACK_FUNC,
+		rayname 	=> 'TRACK',
+		local_port  => $TRACK_PORT,
+		show_input  => $DEFAULT_TRACK_TCP_INPUT,
+		show_output => $DEFAULT_TRACK_TCP_OUTPUT,
+		in_color	=> $UTILS_COLOR_BROWN,
+		out_color   => $UTILS_COLOR_LIGHT_CYAN, });
+
+	$this->{tracks} = shared_clone({});
+	$this->{current_track_uuid} = '';
+	$track_mgr = $this;
+}
+
+
 
 
 #--------------------------------------
@@ -83,24 +103,6 @@ my %API_COMMAND_NAME = (
 	$API_GENERAL_CMD  => 'GENERAL_COMMAND' );
 
 
-
-sub startTRACK
-{
-	my ($class) = @_;
-	display($dbg,0,"startTRACK($class)");
-	my $this = $class->SUPER::new({
-		rayname => 'TRACK',
-		local_port  => $TRACK_PORT,
-		show_input  => $DEFAULT_TRACK_TCP_INPUT,
-		show_output => $DEFAULT_TRACK_TCP_OUTPUT,
-		in_color	=> $UTILS_COLOR_BROWN,
-		out_color   => $UTILS_COLOR_LIGHT_CYAN, });
-
-	$this->{tracks} = shared_clone({});
-	$this->{current_track_uuid} = '';
-	$track_mgr = $this;
-	$this->start();
-}
 
 
 
@@ -194,7 +196,7 @@ my $TRACK_CMD_SAVE			= 0x04;		# recv			SAVE						Current Track
 my $TRACK_CMD_GET_TRACK 	= 0x05;		# 				GET_TRACK {seq} {uuid} 		Get Saved Track - funky results with Current Track uuid
 my $TRACK_CMD_GET_MTA		= 0x06;		# recv			GET_MTA   {seq} {uuid}		GEt Track MTA
 my $TRACK_CMD_ERASE			= 0x07;		# recv			ERASE_TRACK {seq} {uuid} 	Saved Track only
-my $TRACK_CMD_CRASHER8		= 0x08; 	# recv			0801 {func} {seq} 000000000 as a command, crashes with core dump
+my $TRACK_CMD_RENAME		= 0x08; 	# recv			RENAME {seq} {uuid} {hex16} Renames a saved track
 my $TRACK_CMD_START			= 0x09;		#  				START						starts Current Track tracking
 my $TRACK_CMD_STOP			= 0x0a;		# recv			STOP 						stops Current Track
 my $TRACK_CMD_DISCARD   	= 0x0b;		# info			DISCARD 					current track, but only after stop and not saved
@@ -221,8 +223,8 @@ my $TRACK_REPLY_STATE		= 0x08;
 my $TRACK_REPLY_EVENT		= 0x0a;
 my $TRACK_REPLY_CHANGED  	= 0x0b;
 # my $TRACK_REPLY_GET_DICT	= 0x0c;
-my $TRACK_REPLY_RENAMED		= 0x0d;
-# my $TRACK_REPLY_E			= 0x0e;
+my $TRACK_REPLY_NAMED		= 0x0d;
+my $TRACK_REPLY_RENAMED		= 0x0e;
 # my $TRACK_REPLY_F			= 0x0f;
 # my $TRACK_REPLY_BUMP_NAME = 0x10;
 # my $TRACK_REPLY_11		= 0x11;
@@ -242,8 +244,8 @@ my %TRACK_REPLY_NAME = (							# recv
 	$TRACK_REPLY_EVENT			=> 'EVENT',			# event byte
 	$TRACK_REPLY_CHANGED		=> 'CHANGED',       # track changed byte
 	# $TRACK_REPLY_GET_DICT		=> 'GET_DICT',
-	$TRACK_REPLY_RENAMED		=> 'RENAMED',		# success for CMD_RENAME
-    # $TRACK_CMD_USELESS_E		=> 'CMD_E',
+	$TRACK_REPLY_NAMED			=> 'NAMED',			# success for CMD_SET_NAME
+    $TRACK_REPLY_RENAMED		=> 'RENAMED',		# success for CMD_RENAME
     # $TRACK_CMD_NOREPLY_F		=> 'CMD_F',
 	# $TRACK_CMD_BUMP_NAME		=> 'BUMP_NAME',
 	# $TRACK_CMD_NO_REPLY_11	=> 'CMD_11',
@@ -259,7 +261,7 @@ my %TRACK_REQUEST_NAME = (
 	$TRACK_CMD_GET_TRACK 	=> 'GET TRACK',
 	$TRACK_CMD_GET_MTA		=> 'GET_MTA',
 	$TRACK_CMD_ERASE		=> 'ERASE_TRACK',
-	$TRACK_CMD_CRASHER8		=> 'crasher8',
+	$TRACK_CMD_RENAME		=> 'RENAME',
 	$TRACK_CMD_START		=> 'START',
 	$TRACK_CMD_STOP			=> 'STOP',
 	$TRACK_CMD_DISCARD		=> 'DISCARD',
@@ -319,7 +321,8 @@ my %PARSE_RULES = (
 	$TRACK_DIR_RECV	| $TRACK_REPLY_ERASED		=>  [ 'success' ],					# reply to 0x07=ERASE
 	$TRACK_DIR_RECV | $TRACK_REPLY_DICT 		=>	[ 'success', 'is_dict'],		# header for dictionary replies
 	$TRACK_DIR_RECV	| $TRACK_REPLY_STATE		=>  [ 'stopable',],					# reply to 0x0d Tracking state inquiry
-	$TRACK_DIR_RECV	| $TRACK_REPLY_RENAMED		=>  [ 'success' ],					# confirms name change (in an event packet) with sequence number
+	$TRACK_DIR_RECV	| $TRACK_REPLY_NAMED		=>  [ 'success' ],					# confirms name set (in an event packet) with sequence number
+
 	# events
 	$TRACK_DIR_RECV	| $TRACK_REPLY_CHANGED		=> 	[ 'no_seq', 'uuid','byte' ],
 	$TRACK_DIR_RECV	| $TRACK_REPLY_EVENT		=> 	[ 'no_seq', 'byte' ],
@@ -327,6 +330,7 @@ my %PARSE_RULES = (
 	$TRACK_DIR_INFO	| $TRACK_REPLY_CONTEXT  	=>	[ 'uuid','context_bits' ],		# uuid context for the reply; bits 01n
 	$TRACK_DIR_INFO	| $TRACK_REPLY_BUFFER		=> 	[ 'buffer' ],					# dictionary, MTA, or Track depending on state
 	$TRACK_DIR_INFO	| $TRACK_REPLY_END			=> 	[ 'track_uuid' ],				# actually carries mta_uuid, but sets is_track=1
+	$TRACK_DIR_INFO	| $TRACK_REPLY_RENAMED		=>  [ 'success' ],					# confirms name change (in an event packet) with sequence number
 
 	# Requests
 
@@ -338,7 +342,7 @@ my %PARSE_RULES = (
 	$TRACK_DIR_SEND | $TRACK_CMD_GET_TRACK 		=> 	[ 'uuid', ],
 	$TRACK_DIR_SEND | $TRACK_CMD_GET_MTA		=> 	[ 'uuid', ],
 	$TRACK_DIR_SEND | $TRACK_CMD_ERASE			=> 	[ 'uuid', ],
-	# $TRACK_DIR_SEND | $TRACK_CMD_CRASHER8		=> 	[],
+	$TRACK_DIR_SEND | $TRACK_CMD_RENAME			=> 	[ 'uuid', 'name16' ],
 	$TRACK_DIR_SEND | $TRACK_CMD_START			=> 	[ 'no_seq', ],
 	$TRACK_DIR_SEND | $TRACK_CMD_STOP			=> 	[ 'no_seq', ],
 	$TRACK_DIR_SEND | $TRACK_CMD_DISCARD		=> 	[ 'no_seq', ],
@@ -776,7 +780,7 @@ sub do_general
 		$expect_reply = 1;
 	}
 
-	# Current or Saved Track commands with {seq} and parameter
+	# Current or Saved Track commands with {seq} and single parameter
 
 	elsif ($rpart =~ /^(mta|name|nth|erase)\s(.*$)/)
 	{
@@ -800,7 +804,7 @@ sub do_general
 		if ($what eq 'mta' || $what eq 'erase')
 		{
 			my $tracks = $this->{tracks};
-			for my $track_uuid (keys %$tracks)
+			for my $track_uuid (sort keys %$tracks)
 			{
 				my $track = $tracks->{$track_uuid};
 				if (lc($track->{name}) eq lc($rvalue))
@@ -815,6 +819,39 @@ sub do_general
 				return error("Could not find $rpart name(".lc($rvalue).")");
 		}
 	}
+
+	# Only command with with two parameters: Rename Saved Track
+	# Not that assuming names are unique is not true on E80,
+	# but only by convention for me here and in erase above.
+	# both will take the first one found by sorted uuid, which
+	# is not even sorted correctly as I use hex strings rather
+	# than qwords.
+
+	elsif ($rpart =~ /^rename\s+(\S+)\s(\S+)$/)
+	{
+		my ($old_name, $new_name) = ($1,$2);
+
+		$cmd = $TRACK_CMD_RENAME;
+
+		my $tracks = $this->{tracks};
+		for my $track_uuid (sort keys %$tracks)
+		{
+			my $track = $tracks->{$track_uuid};
+			if (lc($track->{name}) eq lc($old_name))
+			{
+				$uuid = $track_uuid;
+				last;
+			}
+		}
+
+		return error("Could not find track(".lc($old_name).") for rename")
+			if !$uuid;
+
+		display($dbg,1,"renaming (".lc($old_name).")=$uuid to '$new_name'");
+		$param = pack('H*',name16_hex($new_name));
+	}
+
+	# Send the request
 
 	my $request = createMsg($seq,$cmd,$uuid,$param);
 	return 0 if !$this->sendRequest($seq,"$rpart",$request);

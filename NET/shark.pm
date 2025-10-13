@@ -303,8 +303,17 @@ if ($WITH_FILESYS)  # filesysThread())
 }
 
 
-r_WPMGR->startWPMGR() if $WITH_WPMGR;
-r_TRACK->startTRACK() if $WITH_TRACK;
+if ($WITH_WPMGR)
+{
+	my $blah = r_WPMGR->new();
+	$blah->start();
+}
+
+if ($WITH_TRACK)
+{
+	my $blah = r_TRACK->new();
+	$blah->start();
+}
 
 startHTTPServer() if $WITH_HTTP_SERVER;
 

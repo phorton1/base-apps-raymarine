@@ -65,7 +65,6 @@ BEGIN
  	use Exporter qw( import );
     our @EXPORT = qw(
 
-		startWPMGR
 		$wp_mgr
 
 		$API_NONE
@@ -119,6 +118,30 @@ my $in_color = $UTILS_COLOR_LIGHT_BLUE;
 
 
 
+sub new
+{
+	my ($class) = @_;
+	display($dbg,0,"WPMGR new()");
+	my $this = $class->SUPER::new({
+		func		=> $WPMGR_FUNC,
+		rayname 	=> 'WPMGR',
+		local_port 	=> $WPMGR_PORT,
+		show_input  => $DEFAULT_WPMGR_TCP_INPUT,
+		show_output => $DEFAULT_WPMGR_TCP_OUTPUT,
+		in_color	=> $UTILS_COLOR_BROWN,
+		out_color   => $UTILS_COLOR_LIGHT_CYAN,  });
+
+	$this->{waypoints} = shared_clone({});
+	$this->{routes} = shared_clone({});
+	$this->{groups} = shared_clone({});
+		# hashes of buffers by uuid, where the
+		# buffer starts with the big_len
+
+	$wp_mgr = $this;
+}
+
+
+
 #--------------------------------------
 # API
 #--------------------------------------
@@ -135,27 +158,6 @@ sub apiCommandName
 }
 
 
-sub startWPMGR
-{
-	my ($class) = @_;
-	display($dbg,0,"startWPMGR($class)");
-	my $this = $class->SUPER::new({
-		rayname => 'WPMGR',
-		local_port => $WPMGR_PORT,
-		show_input  => $DEFAULT_WPMGR_TCP_INPUT,
-		show_output => $DEFAULT_WPMGR_TCP_OUTPUT,
-		in_color	=> $UTILS_COLOR_BROWN,
-		out_color   => $UTILS_COLOR_LIGHT_CYAN,  });
-
-	$this->{waypoints} = shared_clone({});
-	$this->{routes} = shared_clone({});
-	$this->{groups} = shared_clone({});
-		# hashes of buffers by uuid, where the
-		# buffer starts with the big_len
-
-	$wp_mgr = $this;
-	$this->start();
-}
 
 
 
