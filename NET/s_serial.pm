@@ -110,7 +110,14 @@ sub serialThread
 
                 if (ord($char) == 4)            # CTRL-D
                 {
-                    $CONSOLE->Cls();    # manually clear the screen
+					# OLD
+                    # $CONSOLE->Cls();    # manually clear the screen
+
+					# NEW - needs to be added anywhere I called $CONSOLE->Cls().
+					# I implemented Pub::Utils::clearConsole() to call
+					# system("cls") in addition to calling $CONSOLE->Cls()
+
+					clearConsole();
                     next;
                 }
 
