@@ -16,11 +16,9 @@ use Pub::ServerUtils;
 use Pub::HTTP::ServerBase;
 use Pub::HTTP::Response;
 use r_defs;
-use tcpBase;
-use r_WPMGR;
-use r_TRACK;
-use wp_parse;
+use r_RAYSYS;
 use base qw(Pub::HTTP::ServerBase);
+
 
 my $dbg = 0;
 my $dbg_kml = 1;
@@ -384,7 +382,7 @@ sub kml_linestyle
 sub kml_route_string
 	# builds a placemark with a linestring for a route
 {
-	my ($what,$color,$name,$waypoints) = @_;
+	my ($wp_mgr,$what,$color,$name,$waypoints) = @_;
 	my @points;
 	foreach my $uuid (@$waypoints)
 	{
@@ -476,7 +474,7 @@ sub cmpByName
 sub kml_section
 	# builds the two outer section folders Groups and Routes
 {
-	my ($class) = @_;				# the class is the style used for self and children
+	my ($wp_mgr,$class) = @_;				# the class is the style used for self and children
 	my $hash_name = $class.'s';			# $what is the key into the navqry hashes
 	my $section_name = CapFirst($hash_name);		# name of the outer folder
 	my $folders = $wp_mgr->{$hash_name};	# items in inner folder (groups or routes with uuids[])
@@ -539,7 +537,7 @@ sub kml_section
 
 		my $wp_uuids = $folder->{uuids};
 
-		$kml .= kml_route_string('route',$folder->{color},"$folder_name Route",$wp_uuids)
+		$kml .= kml_route_string($wp_mgr,'route',$folder->{color},"$folder_name Route",$wp_uuids)
 			if $class eq 'route';
 
 		display($dbg_kml,1,"generating ".scalar(@$wp_uuids)." waypoints in $folder_name");
@@ -570,6 +568,7 @@ sub kml_section
 
 sub kml_tracks
 {
+	my ($track_mgr) = @_;
 	my $tracks = $track_mgr->{tracks};
 	my $num_tracks = keys %$tracks;
 	display($dbg_kml,0,"kml_tracks() num_tracks=$num_tracks");
@@ -601,9 +600,12 @@ sub kml_RAYSYS
 	my $param_version = $params->{version};
 	$param_version ||= 0;
 
+	my $wp_mgr = r_RAYSYS::findService('WPMGR',1);
+	my $track_mgr = r_RAYSYS::findService('TRACK',1);
+
 	# the global local version is a tcpBase static variable
 
-	my $local_version = tcpBase::getVersion();
+	my $local_version = r_sock::getVersion();
 	my $changed = $server_version == $local_version ? 0 : 1;
 	my $update = !$changed && $param_version == $server_version ? 1 : 0;
 
@@ -632,12 +634,12 @@ sub kml_RAYSYS
 		my $inner_kml = kml_global_styles();
 		if ($wp_mgr && keys %{$wp_mgr->{waypoints}})
 		{
-			$inner_kml .= kml_section('group');
-			$inner_kml .= kml_section('route');
+			$inner_kml .= kml_section($wp_mgr,'group');
+			$inner_kml .= kml_section($wp_mgr,'route');
 		}
 		if ($track_mgr && keys %{$track_mgr->{tracks}})
 		{
-			$inner_kml .= kml_tracks();
+			$inner_kml .= kml_tracks($track_mgr);
 		}
 		
 		$server_kml = $inner_kml;
@@ -663,8 +665,8 @@ sub kml_RAYSYS
 
 sub showThings
 {
-	my ($is_wpmgr,$what) = @_;
-	my $hash = $is_wpmgr ? $wp_mgr->{$what} : $track_mgr->{$what};
+	my ($service,$what) = @_;
+	my $hash = $service ? $service->{$what} : {};
 	my @uuids = keys %$hash;
 	@uuids = sort { cmpByName($hash,$a,$b) } @uuids;
 
@@ -683,10 +685,12 @@ sub showThings
 
 sub showLocalDatabase
 {
-	showThings(1,'waypoints');
-	showThings(1,'routes');
-	showThings(1,'groups');
-	showThings(0,'tracks');
+	my $wp_mgr = findServicePortByName('WPMGR',1);
+	my $track_mgr = findServicePortByName('TRACK',1);
+	showThings($wp_mgr,'waypoints');
+	showThings($wp_mgr,'routes');
+	showThings($wp_mgr,'groups');
+	showThings($track_mgr,'tracks');
 }
 
 

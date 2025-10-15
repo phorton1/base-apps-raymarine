@@ -7,87 +7,58 @@ use strict;
 use warnings;
 use threads;
 use threads::shared;
-use Socket;
-use IO::Socket::INET;
-use IO::Socket::Multicast;
+use POSIX qw(floor pow atan tan);
 use Time::HiRes qw(sleep);
+use IO::Socket::INET;
 use Wx qw(:everything);
 use Pub::Utils;
-use s_resources;
+use r_defs;
 
-# use wp_parse;
+# use r_parse;
 # use wp_packet;
-
-
-
-
-my $dbg_nq = 0;
-
-
-our $RAYDP_IP            = '224.0.0.1';
-our $RAYDP_PORT          = 5800;
-our $RAYDP_ADDR			 = pack_sockaddr_in($RAYDP_PORT, inet_aton($RAYDP_IP));
-our $RAYDP_WAKEUP_PACKET = 'ABCDEFGHIJKLMNOP',
-
-our $LOCAL_IP	= '10.0.241.200';
-our $LOCAL_UDP_PORT = 8765;                 # arbitrary but recognizable
-
-# static and known udp listening ports
-
-our $FILESYS_LISTEN_PORT		= 12001;	# 0x4801;   # 18433
-our $RNS_FILESYS_LISTEN_PORT	= 0x4800;	# 18432
-our $WPMGR_PORT 				= 9877;
 
 
 BEGIN
 {
  	use Exporter qw( import );
 	our @EXPORT = qw(
-        $RAYDP_IP
-        $RAYDP_PORT
-		$RAYDP_ADDR
 
-        $RAYDP_WAKEUP_PACKET
-
-        $LOCAL_IP
-        $LOCAL_UDP_PORT
 		$LOCAL_UDP_SOCKET
 
-		$FILESYS_LISTEN_PORT
-		$RNS_FILESYS_LISTEN_PORT
-		$WPMGR_PORT
-
-		sendUDPPacket
-        wakeup_e80
+		wakeup_e80
 
 		setConsoleColor
-		packetWireHeader
-		showPacket
+		clearLog
+		writeLog
+
+		sendUDPPacket
+		name16_hex
+
+		degreeMinutes
+		northEastToLatLon
+		latLonToNorthEast
 
 		parse_dwords
 
-		navQueryLog
-		clearLog
+		@console_color_names
+		$console_color_values
 
-		@color_names
-		$color_values
-
-	    $color_red
-	    $color_green
-	    $color_blue
-	    $color_cyan
-	    $color_magenta
-	    $color_yellow
-	    $color_dark_yellow
-	    $color_grey
-	    $color_purple
-	    $color_orange
-	    $color_white
-	    $color_medium_cyan
-	    $color_dark_cyan
-	    $color_lime
-	    $color_light_grey
-	    $color_medium_grey
+		$wx_color_red
+		$wx_color_green
+		$wx_color_blue
+		$wx_color_cyan
+		$wx_color_magenta
+		$wx_color_yellow
+		$wx_color_dark_yellow
+		$wx_color_grey
+		$wx_color_purple
+		$wx_color_orange
+		$wx_color_white
+		$wx_color_medium_cyan
+		$wx_color_dark_cyan
+		$wx_color_lime
+		$wx_color_light_grey
+		$wx_color_medium_grey
 
     );
 }
@@ -97,10 +68,15 @@ BEGIN
 # main
 #--------------------------------
 
+our $appGroup = 'raymarine';
+	# same data and temp directories for
+	# shark and raynet (to become 'raynet')
+
+
 Pub::Utils::initUtils();
-# createSTDOUTSemaphore("buddySTDOUT");
-setStandardTempDir($appName);
-setStandardDataDir($appName);
+# createSTDOUTSemaphore("sem$appGroup");
+setStandardTempDir($appGroup);
+setStandardDataDir($appGroup);
 
 
 # The global $UDP_SEND_SOCKET is opened
@@ -109,7 +85,7 @@ setStandardDataDir($appName);
 
 our $LOCAL_UDP_SOCKET = IO::Socket::INET->new(
         LocalAddr => $LOCAL_IP,
-        LocalPort => $LOCAL_UDP_PORT,
+        LocalPort => $LOCAL_UDP_SEND_PORT,
         Proto     => 'udp',
         ReuseAddr => 1);
 $LOCAL_UDP_SOCKET ?
@@ -117,15 +93,34 @@ $LOCAL_UDP_SOCKET ?
 	error("Could not open UDP_SEND_SOCKET");
 
 
+sub wakeup_e80
+	# needed to open multicast RAYSYS sockeet on Windows.
+{
+	if (!$LOCAL_UDP_SOCKET)
+	{
+		error("wakeup_e80() fail because UDP_SEND_SOCKET is not open");
+		return;
+	}
+
+    for (my $i = 0; $i < 10; $i++)
+    {
+		display(0,1,"sending RAYDP_INIT_PACKET");
+        $LOCAL_UDP_SOCKET->send($RAYSYS_WAKEUP_PACKET, 0, $RAYSYS_ADDR);
+        sleep(0.001);
+    }
+
+	return 1;
+}
 
 
-#-------------------------------------------
-# colors
-#-------------------------------------------
+
+
+#---------------------------------------
 # console colors
-# given names for monitor dropdown
+#---------------------------------------
+# Map to $UTIL_COLORS of the same names
 
-our @color_names = (
+our @console_color_names = (
     'Default',
     'Blue',
     'Green',
@@ -142,62 +137,39 @@ our @color_names = (
     'Light Magenta',
     'Yellow',
     'White', );
-our $color_values = { map { $color_names[$_] => $_ } 0..$#color_names };
+our $console_color_values = { map { $console_color_names[$_] => $_ } 0..$#console_color_names };
 	# $#array gives the last index of the array as opposed to @array which is the length in a scalar context
 	# map takes a list and applies a block of code to each element, returning a new list.
 	# The block of code is within the {} and $_ is each element of the elist is presented to the right
 	# map {block} list
 
 
-# wx colors
+#-------------------------------------------
+# WX colors
+#-------------------------------------------
 
-our $color_red     	     = Wx::Colour->new(0xE0, 0x00, 0x00);		# commit: deletes; link: errors or needs pull; dialog: repoError
-our $color_green   	     = Wx::Colour->new(0x00, 0x60, 0x00);		# commit: staged M's; link: public
-our $color_blue    	     = Wx::Colour->new(0x00, 0x00, 0xC0);		# commit: icons and repo line; link: private
-our $color_cyan          = Wx::Colour->new(0x00, 0xE0, 0xE0);		# winInfoRight header
-our $color_magenta       = Wx::Colour->new(0xC0, 0x00, 0xC0);		# link: staged or unstaged changes
-our $color_yellow        = Wx::Colour->new(0xFF, 0xD7, 0x00);		# winCommitRight title background; dialog: repoWarning
-our $color_dark_yellow   = Wx::Colour->new(0xA0, 0xA0, 0x00);		# default branch warning
-our $color_grey          = Wx::Colour->new(0x99, 0x99, 0x99);		# unused
-our $color_purple        = Wx::Colour->new(0x60, 0x00, 0xC0);		# unused
-our $color_orange        = Wx::Colour->new(0xC0, 0x60, 0x00);		# link: needs Push; history: tags
-our $color_white         = Wx::Colour->new(0xFF, 0xFF, 0xFF);		# dialog: repoNote
-our $color_medium_cyan   = Wx::Colour->new(0x00, 0x60, 0xC0);		# repo: forked
-our $color_dark_cyan     = Wx::Colour->new(0x00, 0x60, 0x60);		# unused
-our $color_lime  	     = Wx::Colour->new(0x50, 0xA0, 0x00);		# hitory: tags
-our $color_light_grey    = Wx::Colour->new(0xF0, 0xF0, 0xF0);		# winCommitRight panel; dialog: repoDisplay
-our $color_medium_grey   = Wx::Colour->new(0xC0, 0xC0, 0xC0);		# winInfoLeft selected item
+our $wx_color_red     	    = Wx::Colour->new(0xE0, 0x00, 0x00);
+our $wx_color_green   	    = Wx::Colour->new(0x00, 0x60, 0x00);
+our $wx_color_blue    	    = Wx::Colour->new(0x00, 0x00, 0xC0);
+our $wx_color_cyan          = Wx::Colour->new(0x00, 0xE0, 0xE0);
+our $wx_color_magenta       = Wx::Colour->new(0xC0, 0x00, 0xC0);
+our $wx_color_yellow        = Wx::Colour->new(0xFF, 0xD7, 0x00);
+our $wx_color_dark_yellow   = Wx::Colour->new(0xA0, 0xA0, 0x00);
+our $wx_color_grey          = Wx::Colour->new(0x99, 0x99, 0x99);
+our $wx_color_purple        = Wx::Colour->new(0x60, 0x00, 0xC0);
+our $wx_color_orange        = Wx::Colour->new(0xC0, 0x60, 0x00);
+our $wx_color_white         = Wx::Colour->new(0xFF, 0xFF, 0xFF);
+our $wx_color_medium_cyan   = Wx::Colour->new(0x00, 0x60, 0xC0);
+our $wx_color_dark_cyan     = Wx::Colour->new(0x00, 0x60, 0x60);
+our $wx_color_lime  	    = Wx::Colour->new(0x50, 0xA0, 0x00);
+our $wx_color_light_grey    = Wx::Colour->new(0xF0, 0xF0, 0xF0);
+our $wx_color_medium_grey   = Wx::Colour->new(0xC0, 0xC0, 0xC0);
 
 
 
 #---------------------------------
 # methods
 #---------------------------------
-
-
-
-
-sub clearLog
-{
-	my ($filename) = @_;
-	my $record_filename = "docs/junk/$filename";
-	if (open(AFILE,">$record_filename"))
-	{
-		close AFILE;
-	}
-}
-
-sub navQueryLog
-{
-	my ($text,$filename) = @_;
-	my $record_filename = "docs/junk/$filename";
-	if (open(AFILE,">>$record_filename"))
-	{
-		print AFILE $text;
-		close AFILE;
-	}
-}
-
 
 sub sendUDPPacket
 {
@@ -213,29 +185,14 @@ sub sendUDPPacket
 }
 
 
-
-
-
-
-sub wakeup_e80
-	# Can be called from a thread.
+sub name16_hex
+	# return hex representation of max16 name + null
 {
-	if (!$LOCAL_UDP_SOCKET)
-	{
-		error("wakeup_e80() fail because UDP_SEND_SOCKET is not open");
-		return;
-	}
-
-    for (my $i = 0; $i < 10; $i++)
-    {
-		display(0,1,"sending RAYDP_INIT_PACKET");
-        $LOCAL_UDP_SOCKET->send($RAYDP_WAKEUP_PACKET, 0, $RAYDP_ADDR);
-        sleep(0.001);
-    }
-
-	return 1;
+	my ($name,$no_delim) = @_;
+	while (length($name) < 16) { $name .= "\x00" }
+	$name .= "\x00" if !$no_delim;
+	return unpack('H*',$name);
 }
-
 
 
 
@@ -252,100 +209,129 @@ sub setConsoleColor
 
 
 
-sub packetWireHeader
-	# General printable packet header for console-type messages
+sub clearLog
 {
-	my ($packet,$backwards) = @_;
-
-	my $len = length($packet->{raw_data});
-	my $left_ip = $backwards ? $packet->{dest_ip} : $packet->{src_ip};
-	my $left_port = $backwards ? $packet->{dest_port} : $packet->{src_port};
-	my $right_ip = $backwards ? $packet->{src_ip} : $packet->{dest_ip};
-	my $right_port = $backwards ? $packet->{src_port} : $packet->{dest_port};
-	my $arrow = $backwards ? '<--' : '-->';
-
-	return
-		$packet->{proto}.
-		pad("($len)",7).
-		pad("$left_ip:$left_port",21).
-		$arrow.' '.
-		pad("$right_ip:$right_port",21).
-		' ';
+	my ($filename) = @_;
+	my $path = "$temp_dir/$filename";
+	if (open(AFILE,">$path"))
+	{
+		close AFILE;
+	}
 }
 
-
-# I think the old way of doing this got confused
-# I was using a shared variable, saving the value of length(2) packets
-# and then prepending them before continuing.
-
-# I am now changing it to use a thread local global variable
-# and just adding the bytes to the buffer until it is longer
-# than two.
-
-
-my %built_buffers;	# by port
-
-
-
-my $MON_SELF_WPMGR = 1;
-
-
-sub showPacket
+sub writeLog
 {
-	my ($rayport,$packet,$backwards) = @_;
-	return if length($packet->{raw_data}) == 1;		# skip keep-aives
-
-	if ($rayport->{name} eq 'WPMGR')
+	my ($text,$filename) = @_;
+	my $path = "$temp_dir/$filename";
+	if (open(AFILE,">>$path"))
 	{
-		my $src_port = $packet->{src_port};
-		my $dest_port = $packet->{dest_port};
-		my $raw_data = $packet->{raw_data};
-		my $is_reply = $src_port == $rayport->{port};
-		my $client_port = $is_reply ? $dest_port : $src_port;
-
-		# temporary for lack of a better UI
-		
-		return if $client_port == $WPMGR_PORT && !$MON_SELF_WPMGR;
-		
-		# remember the length of the packet if it's length is 2
-		# or prepend it onto the current packet if available
-
-		$built_buffers{$dest_port} ||= '';
-		$built_buffers{$dest_port} .= $raw_data;
-		my $buffer = $built_buffers{$dest_port};
-		return if length($buffer) <= 2;
-
-		$built_buffers{$dest_port} = '';
-
-		# parse and display and/or log the packet
-
-		my $rec = wp_packet::parseWPMGR(1,$is_reply,$client_port,$buffer);
-			# 1=with_text
-
-		my $text = $rec->{text};
-		navQueryLog($text,"rns.log");
-
-		my $color = $rayport->{color};
-		setConsoleColor($color) if $color;
-		print $text;
-		setConsoleColor() if $color;
-
-	}
-	else
-	{
-		my $header = packetWireHeader($packet,$backwards);
-		my $multi = $rayport->{multi};
-		my $color = $rayport->{color} || 0;
-		my $raw_data = $packet->{raw_data};
-		my $full_packet = parse_dwords($header,$raw_data,$multi);
-		setConsoleColor($color) if $color;
-		print $full_packet;
-		setConsoleColor() if $color;
+		print AFILE $text;
+		close AFILE;
 	}
 }
 
 
 
+sub degreeMinutes
+{
+	my $DEG_CHAR = chr(0xB0);
+	my ($ll) = @_;
+	my $deg = int($ll);
+	my $min = round(abs($ll - $deg) * 60,3);
+	return "$deg$DEG_CHAR$min";
+}
+
+
+
+#---------------------------------------------------
+# northEast stuff
+#---------------------------------------------------
+
+my $FSH_LON_SCALE = 0x7fffffff;  # 2147483647
+my $FSH_LAT_SCALE = 107.1709342;
+	# Northing in FSH is prescaled by this (empirically determined)
+	# Original comment said "probably 107.1710725 is more accurate, not sure"
+	# but that makes mine worse, not better.
+
+
+sub northEastToLatLon	# from FSH
+    # Convert mercator north,east coords to lat/lon.
+    # From blackbox.ai, based on https://wiki.openstreetmap.org/wiki/ARCHIVE.FSH
+    # In my first 'fishfarm' test case, I expected 5.263N minutes but got 5.261N
+    #   0.001 minutes == approx 1.8553 meters, so this is physically off by about 4 meters.
+    #   More testing will be required to see if it's close on other coordinates.
+    #   The original fshfunc.c implies an accuracy of 10cm, but that's only for the
+    #   the iteration, not the actual value.
+{
+    my ($north, $east) = @_;
+    my $longitude = ($east / $FSH_LON_SCALE) * 180.0;
+    my $N = $north / $FSH_LAT_SCALE;
+
+    # WGS84 ellipsoid parameters
+    my $a = 6378137;  # semi-major axis
+    my $e = 0.08181919;  # eccentricity
+
+    # Iterative calculation for latitude
+    my $phi = $PI_OVER_2;  # Initial guess
+    my $phi0;
+    my $IT_ACCURACY = 1.5E-8;
+    my $MAX_IT = 32;
+    my $i = 0;
+
+    do {
+        $phi0 = $phi;
+        my $esin = $e * sin($phi0);
+        $phi = $PI_OVER_2 - 2.0 * atan(exp(-$N / $a) * pow((1 - $esin) / (1 + $esin), $e / 2));
+        $i++;
+    } while (abs($phi - $phi0) > $IT_ACCURACY && $i < $MAX_IT);
+
+    # Convert radians to degrees
+    my $latitude = $phi * 180 / $PI;
+
+	my $lat = sprintf("%.6f",$latitude);
+	my $lon = sprintf("%.6f",$longitude);
+
+	#display($dbg,0,"northEastToLatLon($north,$east) ==> $lat,$lon");
+	#latLonToNorthEast($lat,$lon);
+
+    return {
+        lat => $lat,
+        lon => $lon };
+}
+
+
+sub latLonToNorthEast
+	# from copilot
+{
+    my ($lat_deg, $lon_deg) = @_;
+
+    # WGS84 ellipsoid parameters
+    my $a = 6378137;       # semi-major axis
+    my $e = 0.08181919;    # eccentricity
+
+    # Convert degrees to radians
+    my $lat_rad = $lat_deg * $PI / 180.0;
+
+    # Mercator projection formula for northing
+    my $esin = $e * sin($lat_rad);
+    my $N = $a * log(tan($PI / 4 + $lat_rad / 2) * ((1 - $esin) / (1 + $esin)) ** ($e / 2));
+
+    # Apply FSH scaling
+    my $north = int($N * $FSH_LAT_SCALE + 0.5);
+
+    # Easting is linear
+    my $east = int(($lon_deg / 180.0) * $FSH_LON_SCALE + 0.5);
+
+    return {
+        north => $north,
+        east  => $east
+    };
+}
+
+
+#----------------------------------------------------
+# parse_dwords
+#----------------------------------------------------
 
 my $BYTES_PER_GROUP = 4;
 my $GROUPS_PER_LINE = 8;
@@ -394,6 +380,97 @@ sub parse_dwords
 		$full_packet .= pad($left_side,$LEFT_SIZE).'  '.$right_side."\n";
 	}
 	return $full_packet;
+}
+
+
+
+
+
+sub packetWireHeader
+	# General printable packet header for console-type messages
+{
+	my ($packet,$backwards) = @_;
+
+	my $len = length($packet->{raw_data});
+	my $left_ip = $backwards ? $packet->{dest_ip} : $packet->{src_ip};
+	my $left_port = $backwards ? $packet->{dest_port} : $packet->{src_port};
+	my $right_ip = $backwards ? $packet->{src_ip} : $packet->{dest_ip};
+	my $right_port = $backwards ? $packet->{src_port} : $packet->{dest_port};
+	my $arrow = $backwards ? '<--' : '-->';
+
+	return
+		$packet->{proto}.
+		pad("($len)",7).
+		pad("$left_ip:$left_port",21).
+		$arrow.' '.
+		pad("$right_ip:$right_port",21).
+		' ';
+}
+
+
+
+#---------------------------------------------------------
+# sniffer monitoring broken
+#---------------------------------------------------------
+# Service monitoring is now generally on the real Services
+
+my %built_buffers;	# by port
+
+my $MON_SELF_WPMGR = 1;
+
+
+sub showPacket
+{
+	my ($service_port,$packet,$backwards) = @_;
+	return if length($packet->{raw_data}) == 1;		# skip keep-aives
+
+	if ($service_port->{name} eq 'WPMGR')
+	{
+		my $src_port = $packet->{src_port};
+		my $dest_port = $packet->{dest_port};
+		my $raw_data = $packet->{raw_data};
+		my $is_reply = $src_port == $service_port->{port};
+		my $client_port = $is_reply ? $dest_port : $src_port;
+
+		# temporary for lack of a better UI
+		
+		# return if $client_port == $WPMGR_PORT && !$MON_SELF_WPMGR;
+		
+		# remember the length of the packet if it's length is 2
+		# or prepend it onto the current packet if available
+
+		$built_buffers{$dest_port} ||= '';
+		$built_buffers{$dest_port} .= $raw_data;
+		my $buffer = $built_buffers{$dest_port};
+		return if length($buffer) <= 2;
+
+		$built_buffers{$dest_port} = '';
+
+		# parse and display and/or log the packet
+
+		my $rec = wp_packet::parseWPMGR(1,$is_reply,$client_port,$buffer);
+			# 1=with_text
+
+		my $text = $rec->{text};
+		navQueryLog($text,"rns.log");
+
+		my $color = $service_port->{color};
+		setConsoleColor($color) if $color;
+		print $text;
+		setConsoleColor() if $color;
+
+	}
+	else
+	{
+		my $header = packetWireHeader($packet,$backwards);
+		my $multi = $service_port->{multi};
+		my $color = $service_port->{color} || 0;
+		my $raw_data = $packet->{raw_data};
+		my $full_packet = parse_dwords($header,$raw_data,$multi);
+		setConsoleColor($color) if $color;
+		print $full_packet;
+		setConsoleColor() if $color;
+	}
 }
 
 

@@ -18,17 +18,16 @@ use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use r_utils;
 use r_defs;
-use r_RAYSYS;
-use wp_parse;	# temporary name
-use tcpBase;
-use base qw(tcpBase);
+use r_parse;	# temporary name
+# use r_RAYSYS  loaded by shark.pm
+use base qw(r_sock);
 
 
-my $dbg 		= 1;
-my $dbg_parse 	= 1;
-my $dbg_got 	= 0;		# for returned tracks (including Current Track)
-my $dbg_events 	= 0;
-my $dbg_mods 	= 1;
+my $dbg 		= -1;
+my $dbg_parse 	= -1;
+my $dbg_got 	= -1;		# for returned tracks (including Current Track)
+my $dbg_events 	= -1;
+my $dbg_mods 	= -1;
 
 
 my $WITH_EVENT_PROCESSING	= 1;
@@ -40,50 +39,48 @@ my $TRACK_FUNC		= 0x0013;
 	# 19 == 0x13 == '1300' in streams
 
 
-our $DEFAULT_TRACK_TCP_INPUT:shared 	= 1;
-our $DEFAULT_TRACK_TCP_OUTPUT:shared 	= 1;
-our $SHOW_TRACK_PARSED_INPUT:shared 	= 1;
-our $SHOW_TRACK_PARSED_OUTPUT:shared 	= 1;
+our $SHOW_SHOW_RAW_INPUT 	= 1;
+our $SHOW_SHOW_RAW_OUTPUT	= 1;
+our $SHOW_TRACK_PARSED_INPUT 	= 1;
+our $SHOW_TRACK_PARSED_OUTPUT 	= 0;
 
 my $out_color = $UTILS_COLOR_LIGHT_CYAN;
 my $in_color = $UTILS_COLOR_LIGHT_BLUE;
 
 
-BEGIN
+sub init
 {
- 	use Exporter qw( import );
-    our @EXPORT = qw(
+	my ($this) = @_;
+	display($dbg,0,"r_TRACK init($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
 
-		trackUICommand
-
-		$track_mgr
-
-		$SHOW_TRACK_PARSED_INPUT
-		$SHOW_TRACK_PARSED_OUTPUT
-
-	);
-}
-
-our $track_mgr:shared;
-
-
-sub new
-{
-	my ($class) = @_;
-	display($dbg,0,"TRACK new()");
-	my $this = $class->SUPER::new({
-		func		=> $TRACK_FUNC,
-		rayname 	=> 'TRACK',
-		local_port  => $TRACK_PORT,
-		show_input  => $DEFAULT_TRACK_TCP_INPUT,
-		show_output => $DEFAULT_TRACK_TCP_OUTPUT,
-		in_color	=> $UTILS_COLOR_BROWN,
-		out_color   => $UTILS_COLOR_LIGHT_CYAN, });
-
+	$this->SUPER::init();
+	$this->{show_raw_input} 	= $SHOW_SHOW_RAW_INPUT;
+	$this->{show_raw_output} 	= $SHOW_SHOW_RAW_OUTPUT;
+	$this->{raw_in_color} 		= $in_color;
+	$this->{raw_out_color} 		= $out_color;
+	
 	$this->{tracks} = shared_clone({});
 	$this->{current_track_uuid} = '';
-	$track_mgr = $this;
+
+	return $this;
 }
+
+
+
+sub destroy
+{
+	my ($this) = @_;
+	display($dbg,0,"r_TRACK destroy($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
+
+	$this->SUPER::destroy();
+
+    delete @$this{qw(
+        tracks
+		current_track_uuid )};
+
+	return $this;
+}
+
 
 
 
@@ -122,11 +119,11 @@ sub showCommand
 
 sub trackUICommand
 {
-	my ($rpart) = @_;
+	my ($this,$rpart) = @_;
 	showCommand("trackUICommand($rpart)");
 	return $rpart ?
-		queueTRACKCommand($track_mgr,$API_GENERAL_CMD,0,$rpart) :
-		queueTRACKCommand($track_mgr,$API_GET_TRACKS,0);
+		queueTRACKCommand($this,$API_GENERAL_CMD,0,$rpart) :
+		queueTRACKCommand($this,$API_GET_TRACKS,0);
 }
 
 
@@ -322,6 +319,7 @@ my %PARSE_RULES = (
 	$TRACK_DIR_RECV | $TRACK_REPLY_DICT 		=>	[ 'success', 'is_dict'],		# header for dictionary replies
 	$TRACK_DIR_RECV	| $TRACK_REPLY_STATE		=>  [ 'stopable',],					# reply to 0x0d Tracking state inquiry
 	$TRACK_DIR_RECV	| $TRACK_REPLY_NAMED		=>  [ 'success' ],					# confirms name set (in an event packet) with sequence number
+	$TRACK_DIR_RECV	| $TRACK_REPLY_RENAMED		=>  [ 'success' ],					# confirms name change (as RECV with RECV CHANGED)
 
 	# events
 	$TRACK_DIR_RECV	| $TRACK_REPLY_CHANGED		=> 	[ 'no_seq', 'uuid','byte' ],
@@ -619,6 +617,7 @@ sub sendRequest
 		# navQueryLog($text,'shark.log');
 	}
 
+	display($dbg,0,"sendRequest() calling r_sock::sendPacket()");
 	$this->sendPacket($request);
 	$this->{wait_seq} = $seq;
 	$this->{wait_name} = $name;
@@ -652,7 +651,7 @@ sub get_tracks
 
 		$seq = $this->{next_seqnum}++;
 		$request = createMsg($seq,$TRACK_CMD_GET_STATE,0,0);
-		return 0 if !$this->sendRequest($seq,"CURRENT TRACK",$request);
+		return 0 if !$this->sendRequest($seq,"get_state",$request);
 		$reply = $this->waitReply(0);
 			# GET_STATE does not return a success code
 			# so it is sufficient to wait for matching {seq} only
@@ -665,7 +664,7 @@ sub get_tracks
 		{
 			$seq = $this->{next_seqnum}++;
 			$request = createMsg($seq,$TRACK_CMD_GET_CUR2,0,0);
-			return 0 if !$this->sendRequest($seq,"CURRENT TRACK",$request);
+			return 0 if !$this->sendRequest($seq,"get_cur2",$request);
 			$reply = $this->waitReply(1);
 
 			if ($reply)
@@ -683,7 +682,7 @@ sub get_tracks
 
 	$seq = $this->{next_seqnum}++;
 	$request = createMsg($seq,$TRACK_CMD_GET_DICT,0,0);
-	return 0 if !$this->sendRequest($seq,"TRACKS DICT",$request);
+	return 0 if !$this->sendRequest($seq,"get_dict",$request);
 	$reply = $this->waitReply(1);
 	return 0 if !$reply;
 	
@@ -693,7 +692,7 @@ sub get_tracks
 	my $num = 0;
 	for my $uuid (@$uuids)
 	{
-		$this->queueTRACKCommand($API_GET_TRACK,$uuid,"from index($num");
+		$this->queueTRACKCommand($API_GET_TRACK,$uuid,"get_track($uuid) from dict($num)");
 		$num++;
 	}
 
@@ -713,7 +712,7 @@ sub get_track
 
 	if (1 && $dbg <= 0)
 	{
-		print "--------------------  $extra $uuid -----------------------------\n";
+		print "--------------------  get_track($uuid) '$extra' ------------------------\n";
 	}
 	
 	display($dbg,0,"get_track($uuid)");
@@ -883,7 +882,7 @@ sub handleCommand
 	my ($this,$command) = @_;
 	my $api_command = $command->{api_command};
 	my $cmd_name = $API_COMMAND_NAME{$api_command} || 'HUH237?';
-	display($dbg,0,"$this->{rayname} handleCommand($api_command=$cmd_name) started");
+	display($dbg,0,"$this->{name} handleCommand($api_command=$cmd_name) started");
 
 	my $rslt;
 	$rslt = $this->get_tracks($command) if $api_command == $API_GET_TRACKS;
@@ -891,7 +890,8 @@ sub handleCommand
 	$rslt = $this->do_general($command) if $api_command == $API_GENERAL_CMD;
 
 	error("API $cmd_name failed") if !$rslt;
-	display($dbg,0,"$this->{rayname} handleCommand($api_command=$cmd_name) finished");
+	display($dbg,0,"$this->{name} handleCommand($api_command=$cmd_name) finished");
+	return 0;
 }
 
 
@@ -904,7 +904,7 @@ sub handlePacket
 {
 	my ($this,$buffer) = @_;
 
-	warning($dbg+1,0,"handlePacket(".length($buffer).") called");
+	warning($dbg+1,0,"handlePacket(".length($buffer).") buffer=".unpack('H*',$buffer));
 
 	my $reply = parseTRACK(1,$buffer);
 		# 1=is_reply
@@ -987,7 +987,7 @@ sub handlePacket
 	}	# {mods} && $WITH_MOD_PROCESSING
 
 	$reply = undef if $skip_reply;	# event handled
-	# warning(0,0,"handlePacket() returning reply="._def($reply));
+	warning(0,0,"handlePacket() returning reply="._def($reply));
 	return $reply;
 
 }	# handlePacket()

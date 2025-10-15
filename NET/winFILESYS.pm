@@ -19,8 +19,8 @@ use Wx::Event qw(
 use Pub::Utils;
 use Pub::WX::Window;
 use Pub::WX::Dialogs;;
+use r_defs;
 use r_utils;
-use rayports;
 use r_RAYSYS;
 use r_FILESYS;
 use s_resources;
@@ -89,14 +89,14 @@ sub checkFileSysPorts
 	my $my_ids = $this->{filesys_ids};
 	my $my_rayports = $this->{filesys_rayports};
 	my $global_rayports = getRayPorts();
-	for my $rayport (@$global_rayports)
+	for my $service_port (@$global_rayports)
 	{
-		next if $rayport->{name} ne 'FILESYS';
-		my $id = raydpIdIfKnown($rayport->{id});	# ID or known name
-		$this->{cur_filesys_id} = $id if isCurrentFILESYSRayport($rayport);
+		next if $service_port->{name} ne 'FILESYS';
+		my $id = raydpIdIfKnown($service_port->{id});	# ID or known name
+		$this->{cur_filesys_id} = $id if isCurrentFILESYSRayport($service_port);
 		next if $my_rayports->{$id};	# already know about it
 		push @$my_ids,$id;
-		$my_rayports->{$id} = $rayport;
+		$my_rayports->{$id} = $service_port;
 		$any_added++;
 	}
 	return $any_added;
@@ -229,11 +229,11 @@ sub onFileDeviceCombo
 	# my $id = $event->GetId();
 	my $combo = $event->GetEventObject();
 	my $selected = $combo->GetValue();
-	my $rayport = $this->{filesys_rayports}->{$selected};
-	return error("huh? could not find rayport($selected)")
-		if !$rayport;
+	my $service_port = $this->{filesys_rayports}->{$selected};
+	return error("huh? could not find service_port($selected)")
+		if !$service_port;
 	display(0,0,"Changing cur_filesys_id to $selected");
-	setFILESYSRayPort($rayport);
+	setFILESYSRayPort($service_port);
 	$this->{cur_filesys_id} = $selected;
 	$this->{started} = 0;	# trigger a get of /
 }

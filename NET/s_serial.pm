@@ -1,6 +1,7 @@
 #---------------------------------------------
-# r_Serial.pm
+# s_Serial.pm
 #---------------------------------------------
+# application serial port handler
 
 package s_serial;
 use strict;
@@ -10,8 +11,6 @@ use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use Win32::Console;
-use r_utils;
-use base 'Wx::App';
 
 
 my $dbg_serial = 0;
@@ -21,28 +20,38 @@ BEGIN
 {
  	use Exporter qw( import );
     our @EXPORT = qw(
-
-        startSerialThread
-
     );
 }
 
+my $command_handler;
 my $console_in;
 my $buffer:shared = '';
 
 
 
-sub startSerialThread
+sub new
 {
-    display(0,0,"startSerialThread()");
+	my ($class, $handler) = @_;
+	$command_handler = $handler;
+    display(0,0,"s_serial new()");
+
+	my $this = shared_clone({});
+	bless $this,$class;
+
     $console_in = Win32::Console->new(STD_INPUT_HANDLE);
     $console_in->Mode(ENABLE_MOUSE_INPUT | ENABLE_WINDOW_INPUT ) if $console_in;
-    return error("could not open Win32::Console") if !$console_in;
+    error("could not open Win32::Console") if !$console_in;
     display(0,1,"Win32::Console opened");
-    my $serial_thread = threads->create(\&serialThread);
-    $serial_thread->detach();
-    display(0,0,"startSerialThread() finished");
 
+	return $this;
+}
+
+
+sub start
+{
+    display(0,0,"s_serial() start");
+	my $serial_thread = threads->create(\&serialThread);
+    $serial_thread->detach();
 }
 
 
@@ -85,7 +94,7 @@ sub handleCommandLine
     $lpart = lc($lpart);
     $lpart =~ s/^\s+|\s+$//g;
     $rpart =~ s/^\s+|\s+$//g;
-    shark::handleCommand($lpart,$rpart);
+    &{$command_handler}($lpart,$rpart);
     $buffer = '';
 }
 

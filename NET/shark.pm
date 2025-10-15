@@ -7,113 +7,78 @@ use strict;
 use warnings;
 use threads;
 use threads::shared;
-use Socket;
 use Time::HiRes qw(sleep time);
+
+# use Socket;
+# use Win32::Console;
+# use IO::Handle;
+# use IO::Socket::INET;
+# use IO::Select;
+# use r_utils;
+
+# use r_DBNAV;
+# use r_FILESYS;
+# use r_WPMGR;
+# use r_TRACK;
+# use wp_api;
+
+# use tcpListener;
+# use tcpBase;
+
+# use tcpScanner;
+
 use Pub::Utils;
 use Pub::WX::Resources;
 use Pub::WX::Main;
-use Win32::Console;
-use IO::Handle;
-use IO::Socket::INET;
-use IO::Select;
+use r_defs;
 use r_utils;
-use rayports;
 use s_serial;
 use s_sniffer;
 use r_RAYSYS;
-use r_DBNAV;
-use r_FILESYS;
-use r_WPMGR;
-use r_TRACK;
-use wp_api;
+use r_TRACK;		# passive include; started by r_RAYSYS
 use r_server;
-use tcpListener;
-use tcpBase;
 use s_resources;
 use s_frame;
-use tcpScanner;
 use base 'Wx::App';
-
 
 my $dbg_shark = 0;
 
-my $WITH_FILESYS 	= 1;
-my $WITH_WPMGR		= 1;
+
+my $WITH_SERIAL			= 1;
+my $WITH_RAYSYS			= 1;
 my $WITH_HTTP_SERVER	= 1;
-my $WITH_IDENT		= 0;
-my $WITH_TRACK		= 1;
-
-
-our $SEND_ALIVE:shared = 0;
-
-
-BEGIN
-{
- 	use Exporter qw( import );
-    our @EXPORT = qw(
-
-        $SEND_ALIVE
-
-    );
-}
-
-
-
+my $WITH_SNIFFER 		= 0;
+my $WITH_WX				= 1;
 
 
 
 #-----------------------------------------
-# handleCommand()
+# handleSerialCommand()
 #-----------------------------------------
 
-sub handleCommand
+sub handleSerialCommand
 {
     my ($lpart,$rpart) = @_;
-    display(0,0,"handleCommand left($lpart) right($rpart)");
+    display(0,0,"handleSerialCommand left($lpart) right($rpart)");
 
-	if ($lpart eq 'p')
+	# TRACK and WPMGR
+	
+	if ($lpart eq 't')
 	{
-		my ($rayname,$ident) = split(/\s+/,$rpart);
-		doProbe('TRACK',$rpart);	# $rayname,$ident);
-	}
-
-	elsif ($lpart eq 'scan')
-	{
-		my ($low,$high) = split(/\s+/,$rpart);
-		scanRange($low,$high);
-		# tcpNumberedProbe($rpart);
-	}
-	elsif ($lpart eq 'alive')
-	{
-		showAliveScans();
-	}
-
-	elsif ($lpart eq 'w')
-	{
-		wakeup_e80
-	}
-
-	#-----------------------------------------------------
-	# new 2nd E80 above
-	#-----------------------------------------------------
-	# TRCACK
-
-	elsif ($lpart eq 't')
-	{
-		trackUICommand($rpart);
-	}
-
-	# WPMGR
-
-	elsif ($lpart eq 'db')
-	{
-		showLocalDatabase();
+		my $track = findServicePortByName('TRACK');
+		$track->trackUICommand($rpart) if $track;
 	}
 	elsif ($lpart eq 'q')
     {
         queryWaypoints();
     }
 
+	# http r_server
+
+	elsif ($lpart eq 'db')
+	{
+		showLocalDatabase();
+	}
 	elsif ($lpart eq 'kml')
 	{
 		my $kml = kml_RAYSYS();
@@ -122,6 +87,25 @@ sub handleCommand
 		print "\n------------------------------------------------------\n";
 		print "$kml\n";
 	}
+
+	# Not retested yet
+	
+	elsif ($lpart eq 'p')
+	{
+		my ($name,$ident) = split(/\s+/,$rpart);
+		doProbe('TRACK',$rpart);	# $name,$ident);
+	}
+	elsif ($lpart eq 'scan')
+	{
+		my ($low,$high) = split(/\s+/,$rpart);
+		scanRange($low,$high);
+		# tcpNumberedProbe($rpart);
+	}
+	elsif ($lpart eq 'w')
+	{
+		wakeup_e80();
+	}
+
 	elsif ($lpart eq 'c')
 	{
 		display(0,0,"Clear Shark Log File");
@@ -177,105 +161,88 @@ sub handleCommand
 
      # FILESYS TESTING
 
-    if ($lpart eq 'cardid')            # CTRL-A
-    {
-        return if !requestCardID();
-        while (getFileRequestState() > 0) { sleep(1); }
-        return if getFileRequestState() != $FILE_STATE_COMPLETE;
-        print "\nCARD_ID=".getFileRequestContent()."\n\n";
-    }
-    elsif ($lpart eq 'dir')
-    {
-        return if !requestDirectory($rpart);
-        while (getFileRequestState() > 0) { sleep(1); }
-        return if getFileRequestState() != $FILE_STATE_COMPLETE;
-        print "\nDIRECTORY\n".getFileRequestContent()."\n\n";
-    }
-    elsif ($lpart eq 'size')
-    {
-        return if !requestSize($rpart);
-        while (getFileRequestState() > 0) { sleep(1); }
-        return if getFileRequestState() != $FILE_STATE_COMPLETE;
-        print "\nSIZE=".getFileRequestContent()."\n\n";
-    }
-    elsif ($lpart eq 'file')
-    {
-        return if !requestSize($rpart);
-        while (getFileRequestState() > 0) { sleep(1); }
-        return if getFileRequestState() != $FILE_STATE_COMPLETE;
-        print "\nFILE=".length(getFileRequestContent())."bytes\n\n";
-    }
-    elsif ($lpart eq 'filesys')
-    {
-        my @params = split(/,/,$rpart);
-        sendFilesysRequest(@params);
-    }
-                    
+    #	if ($lpart eq 'cardid')            # CTRL-A
+    #	{
+    #	    return if !requestCardID();
+    #	    while (getFileRequestState() > 0) { sleep(1); }
+    #	    return if getFileRequestState() != $FILE_STATE_COMPLETE;
+    #	    print "\nCARD_ID=".getFileRequestContent()."\n\n";
+    #	}
+    #	elsif ($lpart eq 'dir')
+    #	{
+    #	    return if !requestDirectory($rpart);
+    #	    while (getFileRequestState() > 0) { sleep(1); }
+    #	    return if getFileRequestState() != $FILE_STATE_COMPLETE;
+    #	    print "\nDIRECTORY\n".getFileRequestContent()."\n\n";
+    #	}
+    #	elsif ($lpart eq 'size')
+    #	{
+    #	    return if !requestSize($rpart);
+    #	    while (getFileRequestState() > 0) { sleep(1); }
+    #	    return if getFileRequestState() != $FILE_STATE_COMPLETE;
+    #	    print "\nSIZE=".getFileRequestContent()."\n\n";
+    #	}
+    #	elsif ($lpart eq 'file')
+    #	{
+    #	    return if !requestSize($rpart);
+    #	    while (getFileRequestState() > 0) { sleep(1); }
+    #	    return if getFileRequestState() != $FILE_STATE_COMPLETE;
+    #	    print "\nFILE=".length(getFileRequestContent())."bytes\n\n";
+    #	}
+    #	elsif ($lpart eq 'filesys')
+    #	{
+    #	    my @params = split(/,/,$rpart);
+    #	    sendFilesysRequest(@params);
+    #	}
+
 }   #   handleCommand()
 
 
 
 #-----------------------------------------
-# sniffer thread
+# handleSniffPacket
 #-----------------------------------------
 
-sub sniffer_thread
+sub handleSniffPacket
 {
-    display($dbg_shark,0,"sniffer thread started");
-    # sleep(2);
-        # if the sniffer thread is not started last then this is needed.
-        # give all threads time to start before any blocking reads
-        # without this line, the call to nextSniffPacket will block
-        # if there is no traffic on the ethernet port, i.e. the E80 is off,
-        # and that causes threads->create() to subsequently block.
+	my ($packet) = @_;
 
-    my $rayport_raysys = findRayPortByName('RAYSYS');
-    my $rayport_my_file = findRayPortByName('MY_FILE');
-    my $rayport_file_rns = findRayPortByName('FILE_RNS');
+   # my $rayport_raysys = findServicePortByName('RAYSYS');
+   # my $rayport_my_file = findServicePortByName('MY_FILE');
+   # my $rayport_file_rns = findServicePortByName('FILE_RNS');
 
-    while (1)
-    {
-        my $packet = nextSniffPacket();
-        if ($packet)
-        {
-            my $len = length($packet->{raw_data});
-            # display($dbg_shark+1,1,"got $packet->{proto} packet len($len)");
-            if ($packet->{udp} &&
-                $packet->{dest_port} == $RAYDP_PORT)
-            {
-                decodeRAYSYS($packet);
-				if ($rayport_raysys &&
-                    $rayport_raysys->{mon_to})
-                {
-                    # one time monitoring of new RAYSYS ports
-                    showPacket($rayport_raysys,$packet,0);
-                }
-                next;
-            }
+	my $len = length($packet->{raw_data});
+	# display($dbg_shark+1,1,"got $packet->{proto} packet len($len)");
+	if ($packet->{udp} &&
+		$packet->{dest_port} == $RAYSYS_PORT)
+	{
+		 my $header = 'RAYSYS <-- ';
+		 print parse_dwords($header,$packet->{raw_data},1);
 
+		# decodeRAYSYS($packet);
+		  #if ($rayport_raysys &&
+		#     $rayport_raysys->{mon_to})
+		# {
+		#     # one time monitoring of new RAYSYS ports
+		#     showPacket($rayport_raysys,$packet,0);
+		# }
+	}
 
-            my $ray_src = findRayPort($packet->{src_ip},$packet->{src_port});
-            my $ray_dest = findRayPort($packet->{dest_ip},$packet->{dest_port});
-
-            if ($ray_src && $ray_src->{mon_from})
-            {
-                showPacket($ray_src,$packet,0);
-            }
-            elsif ($ray_dest && $ray_dest->{mon_to})
-            {
-                showPacket($ray_dest,$packet,1);
-                if (1 && $ray_dest->{name} eq "DBNAV")
-                {
-                    decodeDBNAV($packet);
-                }
-            }
-        }
-        else
-        {
-            sleep(0.1);
-            # sleep(0.001);
-        }
-    }
+	#	my $ray_src = findRayPort($packet->{src_ip},$packet->{src_port});
+	#	my $ray_dest = findRayPort($packet->{dest_ip},$packet->{dest_port});
+	#
+	#	if ($ray_src && $ray_src->{mon_from})
+	#	{
+	#	    showPacket($ray_src,$packet,0);
+	#	}
+	#	elsif ($ray_dest && $ray_dest->{mon_to})
+	#	{
+	#	    showPacket($ray_dest,$packet,1);
+	#	    if (1 && $ray_dest->{name} eq "DBNAV")
+	#	    {
+	#	        decodeDBNAV($packet);
+	#	    }
+	#	}
 }
 
 
@@ -288,98 +255,48 @@ sub sniffer_thread
 
 display(0,0,"shark.pm initializing");
 
-initRAYSYS();
 
-startSerialThread() if 1;
-
-
-if ($WITH_FILESYS)  # filesysThread())
+if ($WITH_SERIAL)
 {
-    display(0,0,"initing filesysThread");
-    my $filesys_thread = threads->create(\&filesysThread);
-    display(0,0,"filesysThread created");
-    $filesys_thread->detach();
-    display(0,0,"filesysThread detached");
+	my $serial = s_serial->new(\&handleSerialCommand);
+	$serial->start();
+}
+
+if ($WITH_RAYSYS)
+{
+	wakeup_e80();
+		# Must be called, perhaps because MSWindows,
+		# before attempting to open the RAYSYS multicast socket
+		
+	my $raysys = r_RAYSYS->new();
+	$raysys->start();
 }
 
 
-if ($WITH_WPMGR)
-{
-	my $blah = r_WPMGR->new();
-	$blah->start();
-}
+# if ($WITH_FILESYS)  # filesysThread())
+# {
+#     display(0,0,"initing filesysThread");
+#     my $filesys_thread = threads->create(\&filesysThread);
+#     display(0,0,"filesysThread created");
+#     $filesys_thread->detach();
+#     display(0,0,"filesysThread detached");
+# }
 
-if ($WITH_TRACK)
-{
-	my $blah = r_TRACK->new();
-	$blah->start();
-}
 
 startHTTPServer() if $WITH_HTTP_SERVER;
-
-
 
 # the sniffer is started last because it has a blocking
 # read in the thread which, for some reason, will cause
 # threads->create() to block unless the E80 is turned on
 # or there is ethernet traffice.
 
-exit(0) if !startSniffer();
-
-if (1)
+if ($WITH_SNIFFER)
 {
-    display(0,0,"initing sniffer_thread");
-    my $sniffer_thread = threads->create(\&sniffer_thread);
-    $sniffer_thread->detach();
+	my $sniffer = s_sniffer->new(\&handleSniffPacket);
+	$sniffer->start();
 }
 
 
-
-#---------------------------
-# FAKE IDENT inline
-#---------------------------
-
-my $SEND_IDENTS = 0;
-
-
-use IO::Socket::Multicast;
-
-my $FAKE_RNS_2  = '01000000 03000000'.$SHARK_DEVICE_ID.'76020000 018e7680 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 0000';
-my $FAKE_E80_3  = '01000000 00000000'.$SHARK_DEVICE_ID.'39020000 53f0000a 0033cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 02000000';
-
-
-my $ident_sock;
-
-if ($WITH_IDENT)
-{
-	$ident_sock = IO::Socket::Multicast->new(
-		LocalPort => $RAYDP_PORT,
-		ReuseAddr => 1,
-		Proto     => 'udp',
-	) or die "Couldn't create multicast socket: $!";
-
-	$ident_sock->mcast_add($RAYDP_IP) or die "Couldn't join multicast group: $!";
-
-	my $thr = threads->create(\&identThread,$ident_sock);
-	$thr->detach();
-}
-
-
-sub identThread
-{
-	my ($sock) = @_;
-	while (1)
-	{
-		# print "[IDENT] Send IDENT packet\n";
-
-		my $packet = $FAKE_E80_3;
-		$packet =~ s/\s+//g;
-		$packet = pack('H*',$packet);
-
-		$sock->send($packet, 0, pack_sockaddr_in($RAYDP_PORT, inet_aton($RAYDP_IP)));
-		sleep 1;
-    }
-}
 
 
 
@@ -387,32 +304,43 @@ sub identThread
 # WX
 #----------------
 
-display(0,0,"starting app");
-
-my $frame;
-
-sub OnInit
+if ($WITH_WX)
 {
-	$frame = s_frame->new();
-	if (!$frame)
+	display(0,0,"starting app");
+
+	my $frame;
+
+	sub OnInit
 	{
-		error("unable to create frame");
-		return undef;
+		$frame = s_frame->new();
+		if (!$frame)
+		{
+			error("unable to create frame");
+			return undef;
+		}
+		$frame->Show( 1 );
+		display(0,0,"$$resources{app_title} started");
+		return 1;
 	}
-	$frame->Show( 1 );
-	display(0,0,"$$resources{app_title} started");
-	return 1;
+
+	my $app = shark->new();
+	Pub::WX::Main::run($app);
+
+
+	display(0,0,"ending $appName.pm frame=$frame");
+	$frame->DESTROY() if $frame;
+	$frame = undef;
+}
+else
+{
+	display(0,0,"starting null console loop");
+	while (1)
+	{
+		sleep(10);
+	}
 }
 
-my $app = shark->new();
-Pub::WX::Main::run($app);
 
-
-display(0,0,"ending $appName.pm frame=$frame");
-$frame->DESTROY() if $frame;
-$frame = undef;
-display(0,0,"finished $appName.pm");
-
-
+display(0,0,"shark.pm exiting");
 
 1;

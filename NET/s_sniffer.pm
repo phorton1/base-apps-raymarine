@@ -10,22 +10,19 @@ use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
 
-my $dbg_sniff = 1;
+my $dbg_sniff = 0;
 
 
 BEGIN
 {
  	use Exporter qw( import );
 	our @EXPORT = qw(
-        $SNIFF_FIELDS
-
-        startSniffer
-        nextSniffPacket
     );
 }
 
 
 my $sniff_fh;
+my $sniff_packet_handler;
 my $sniff_fields = [
     { name => 'time',        field => 'frame.time' },
     { name => 'src_ip',      field => 'ip.src' },
@@ -40,72 +37,95 @@ my $sniff_fields = [
     { name => 'tcp_payload', field => 'tcp.payload' },
 ];
 
-sub startSniffer
+
+sub new
 {
+	my ($class,$handler) = @_;
+	$sniff_packet_handler = $handler;
+	my $this = shared_clone({});
+	bless $this,$class;
+
     my $filter = '(tcp.len>0) || (udp.length>0)';
-    display($dbg_sniff,0,"startSniffer($filter)");
+    display($dbg_sniff,0,"r_sniffer new($filter)");
     my $cmd = '"C:\\Program Files\\Wireshark\\tshark.exe" -i Ethernet -l -Y "' . $filter . '" -T fields ';
     $cmd .= join ' ', map { "-e $_->{field}" } @{$sniff_fields};
     $cmd .= ' 2>NUL';
-
     display($dbg_sniff+1,1,"cmd='$cmd'");
 
-    if (!open($sniff_fh, '-|', $cmd))
-    {
-        error("Could not open tshark pipe");
-        return 0;
-    }
+	error("Could not open tshark pipe")
+		if !open($sniff_fh, '-|', $cmd);
 
     display($dbg_sniff,0,"sniffer started");
-    return 1;
+    return $this;
 }
 
 
-sub nextSniffPacket
+sub start
 {
-    my $line = <$sniff_fh>;
-    return undef if !defined($line) || !length($line);
-
-    chomp $line;
-    return undef if !$line;
-    
-    my %fields;
-    my @parts = split(/\t/, $line);
-    @fields{ map $_->{name}, @$sniff_fields } = @parts;
-
-    my $rec = shared_clone({
-        time      => $fields{time},
-        src_ip    => $fields{src_ip},
-        dest_ip   => $fields{dest_ip},
-        proto     => ($fields{tcp_len} ? 'tcp' : 'udp'),
-    });
-
-    if ($rec->{proto} eq 'udp') {
-        $rec->{udp} = 1;
-        $rec->{src_port} = $fields{udp_srcport};
-        $rec->{dest_port} = $fields{udp_dstport};
-        $rec->{hex_data} = $fields{udp_payload};
-    } else {
-        $rec->{tcp} = 1;
-        $rec->{src_port} = $fields{tcp_srcport};
-        $rec->{dest_port} = $fields{tcp_dstport};
-        $rec->{hex_data} = $fields{tcp_payload};
-    }
-
-    return undef if !$rec->{hex_data} || length($rec->{hex_data}) == 1;
-        # length(1) is an annoying ack message.
-
-    # if (!$rec->{hex_data})
-    # {
-    #     error("no packet: $line");
-    #     $rec->{hex_data} = '';
-    # }
-
-    $rec->{raw_data} = pack("H*", $rec->{hex_data});
-    display($dbg_sniff,0,"$rec->{proto} $rec->{src_ip}:$rec->{src_port} -> $rec->{dest_ip}:$rec->{dest_port}: $rec->{hex_data}");
-
-    return $rec;
+    display($dbg_sniff,0,"s_sniffer() start");
+	my $thread = threads->create(\&sniffer_thread);
+    $thread->detach();
 }
+
+
+
+sub sniffer_thread
+{
+   display($dbg_sniff,0,"sniffer thread started");
+
+   while (1)
+   {
+		my $line = <$sniff_fh>;
+		if (defined($line) && length($line))
+		{
+			chomp $line;
+			return undef if !$line;
+
+			my %fields;
+			my @parts = split(/\t/, $line);
+			@fields{ map $_->{name}, @$sniff_fields } = @parts;
+
+			my $packet = shared_clone({
+				time      => $fields{time},
+				src_ip    => $fields{src_ip},
+				dest_ip   => $fields{dest_ip},
+				proto     => ($fields{tcp_len} ? 'tcp' : 'udp'),
+			});
+
+			if ($packet->{proto} eq 'udp')
+			{
+				$packet->{udp} = 1;
+				$packet->{src_port} = $fields{udp_srcport};
+				$packet->{dest_port} = $fields{udp_dstport};
+				$packet->{hex_data} = $fields{udp_payload};
+			}
+			else
+			{
+				$packet->{tcp} = 1;
+				$packet->{src_port} = $fields{tcp_srcport};
+				$packet->{dest_port} = $fields{tcp_dstport};
+				$packet->{hex_data} = $fields{tcp_payload};
+			}
+
+			# length(1) is an annoying ack message.
+
+			if ($packet->{hex_data} && length($packet->{hex_data}) > 1)
+			{
+				$packet->{raw_data} = pack("H*", $packet->{hex_data});
+				# display($dbg_sniff+1,0,"$packet->{proto} $packet->{src_ip}:$packet->{src_port} -> $packet->{dest_ip}:$packet->{dest_port}: $packet->{hex_data}");
+				&{$sniff_packet_handler}($packet);
+			}
+			else
+			{
+				sleep(0.1);
+			}
+		}
+		else
+		{
+			sleep(0.1);
+		}
+    }	# while 1
+}	# sniffer_thread
 
 
 

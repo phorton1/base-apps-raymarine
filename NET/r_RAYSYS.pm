@@ -6,81 +6,62 @@
 # E80 ethernet diagnostics Services dialog.
 #
 # RAYSYS is, essentially, a service discovery protocol, like SSDP,
-# that broadcasts the Services (functions) available via RAYNET,
+# that broadcasts the Services (service_ids) available via RAYNET,
 # over a known udp multicast address.
 #
 #		224.0.0.1:5800
 #
-# This package parses those multicast messages into a list of
-# available Services with given ip:port addresses for each Service,
-# as well as doing quite a bit of other stuff.
-#
-# Each Service runs on a Device, some of which are actual physical E80's,
-# and others which are virtual devices, like a running RNS program.
-# Each Device has an 'id', some of which are known physical E80's,
-# and others that are made up by me, or by RNS.
-#
 # Services may advertise a UDP address, a TCP address, or both.
+# This package parses those multicast messages into a list of
+# available SERVICE_PORTS with a given (possibly unknown)
+# service_id, a known internet protocol, and a specific
+# ip:port address.
 #
-# In all cases, the IP:PORT of the particular addresss
-# can also be used to uniquely identify the Service, and the
-# specific the internet protocol (udp/tcp), as well as defining
-# the Protocol used to decode and create the packets sent and
-# received to/from the Service on that specific ip:port and
-# internet protocol.
+# Each Service runs on a Device.
+# Each Device has an 'id'.
+# Device id's on my system are known.
+# Some service_ids are known.
+# Some service_ports are fully implemented.
+
+# This is where it gets complicated, and the crux of the biscuit.
 #
-# Therefore the list of Services is actually kept as a list of records.
-# and a hash of pointers to those records by {ip:port}. Each record
-# includes the Service func number, and there is no record for a Service
-# itself, per-se.
+# - we want the ability to use r_sniffer to monitor traffic between
+#   RNS and the E80 on a service_port basis
+# - locally, some service_port are fully implemented, and we want
+#   to either start/stop, but not necessarily destroy them automatically
+#	when RAYSYS finds them or loses them, or optionally in shark.pm with
+#   a waitloop for RAYSYS
+# - we generally want the ability to start/stop/destroy not-fully implemented
+#	local service_ports, either via constants for intense probing of a given
+#	service port, or via the UI.
+# - we'd like the ability to define, via constants, or UI, the colors,
+#   and level of detail that we wish to see for either RNS or local
+#   service ports when monitoring:
 #
-# I call these RayPorts,  Each rayport has a 'name'.
+#		raw_messages
+#			always includes a length and {cmd_word}{service_id}
+#			where, for udp, the length is the packet length, but
+#			for tcp the length is explicit, and there can be
+#			a number of messages in the packet
+#		message_parsing
+#			upto, but not including 'records' within the buffers
+#		raw_records
+#			the unpacking of records into fields, which, by convention
+#			includes a level of detail 0=known data; 1=control_data; 2=unknowns
+#		finished records
+#			containing the same level of detail
 #
-# I have generally tried to use names that correlate to those E80 ethernet
-# diagnostics Services dialog, but a few I invented to be more catchy and
-# easier to type, like FILESYS instead of CFCard.
+# Thats a lot of stuff to cram into a single structure/UI
+# I think there are now two shark windows.
 #
-#------------------------------------------------------------------------
+#	- sniffer, which can monitor RNS and/or local service_ports
+#	  without opening actual sockets
+#	- raysys, which can only monitor local service ports that
+#	  are actually opened
 #
-# This code is not perfect. RAYNET presents a large number of Services,
-# only some of which I have 'solved' and been able to use with the E80,
-# some that I have identified, but have never seen packets for because
-# they are related to specific hardware that I don't have, and some of
-# which, to date, remain unidentified and uncorrelated with the Services
-# shown in the E80 ethernet diagnostics.
-#
-# Nonetheless, this package contains my best overview of the entire
-# RAYNET set of Services and Protocols.
-#
-# Each Service has a func() number associated with it, and as mentioned
-# above, may have one or more udp or tcp addresses associated with it.
-# Some (Most) Services are only advertised by the Master E80 in the system.
-# A few, like FILESYS (read-only accesses the CF Card) are also advertised by
-# the Slave, and others are advertised by RNS when it runs, apparently as
-# a second pseudo-master.
-#
-# Finally, this package is overloaded with program and UI support,
-# for monitoring and probing the services, and I have added 'fake'
-# rayports to take advantage of the UI to control and probe specific
-# ip:ports that are not, per-se, advertised by RAYSYS.
-#
-#---------------------------------------------------------------------
-# TODO:
-#
-# 	I have not yet added the known 52 byte packet for RADAR
-#		The structure of the RAYSYS packet, as well as detailed
-#		knowledge of the RADAR protocol can be found in
-#		RMRadar_pi/RMControl.cpp
-#
-#	There is one 56 byte long RAYSYS packet that does not match
-#		the structure of all the others (does not start with
-#		type,id,func), that has a leading 01 byte, that I have
-#		not figured out yet.
-#
-#		01000000 00000000 37a681b2 39020000 [36f1000a] 0023ad01 5cd87304 01000000
-#		00000000 37a681b2 39220000 [36f1000a] 0033cc33 02000100
-#
-#		[36f1000a] == 10.0.241.54, the ip address of my master E80
+# One way or the other, the r_sock is just an extension to a service_port
+# that adds a bunch of fields.  In all cases, henceforth, RAYSYS itself
+# is only run as a real, local service, and not sniffed.
 
 
 package r_RAYSYS;
@@ -92,12 +73,13 @@ use Time::HiRes qw(sleep time);
 use Socket;
 use IO::Select;
 use Pub::Utils;
+use r_defs;
 use r_utils;
-use rayports;
+use base qw(r_sock);
 
+my $dbg_raysys = 0;
 
-
-my $dbg_raydp = 1;
+my $self:shared;
 
 
 
@@ -106,93 +88,60 @@ BEGIN
  	use Exporter qw( import );
     our @EXPORT = qw(
 
-		initRAYSYS
-        decodeRAYSYS
+		findServicePort
+		getServicePorts
+		findServicePortByName
 
-        findRayPort
-        getRayPorts
-		findRayPortByName
-    );
+	);
 }
 
 
 
-# IDENT PACKETS START with 01
-#
-#                       _D_TYPE_ ---ID--- VERS     ---IP---                                                                       MASTER v
-#	E80 #1 M - 01000000 00000000 37a681b2 39020000 36f1000a 0033cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 02000100
-#	E80 #1 S - 01000000 00000000 37ad80b2 39020000 53f0000a 0033cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 02000000
-#
-#	E80 #1 S - 01000000 00000000 37a681b2 39020000 36f1000a 0033cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 02000000
-#	E80 #2 M - 01000000 00000000 37ad80b2 39020000 53f0000a 0033cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 02000100
-#   RNS      - 01000000 03000000 ffffffff 76020000 018e7680 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 0000
-
-my %RAY_DEVICE_TYPE =(
-	0 	=> 'E80',
-	1 	=> 'E120',
-	2 	=> 'DSM300',
-	3 	=> 'RAYTECH',
-	4 	=> 'SR100',
-	5 	=> 'GPM400',
-	6 	=> 'GVM400',
-	7 	=> 'DSM400',
-	8 	=> 'DSM30',
-	9 	=> 'DIGITAL OPEN ARRAY',
-	10	=> 'DIGITAL RADOME',
-	11  => 'SEATALK HS RADOME', );
-	#  12 = []
-	#  13+ = Unknown
+#--------------------------------------------------
+# ctor
+#--------------------------------------------------
 
 
-#	0x3300 = 13056, an unlikely port number
-
-my $devices:shared = shared_clone({});
-    # a hash of all unique RAYSYS udp descriptor packets by func:id
-my $ports = shared_clone([]);
-my $ports_by_addr:shared = shared_clone({});
-    # a list of all ports in order they're found,
-    # and a hash of them by addr (ip:port)
-my %unknown:shared;
-	# a hash by raw bytes of all unknown messages shown once
-my %duplicates:shared;
-	# if id:func matches, we will still add the device
-
-	
-my $HIDDEN_PORT1 = 6668;
-my $E80_1_IP = '10.0.241.54';
-
-
-
-
-sub initRAYSYS
+sub new
+	# We don't keep track of Services, per-se, but rather of
+	# 	the individual service_ports that are advertised, and
+	# 	we just call them 'ports' in our implementation.
+	# The list of devices is by $device_id (friendly name if known)
+	# Unknown is a hash by raw bytes of all unknown messages shown once
 {
-	display(0,0,"creating default RAYSYS ports");
-	# The ip addresses have to be turned into inet ip's,
-	# and then unpacked into the numbers that RAYSYS would
-	# have given for them.
-	_addPort({func => 0, id=>'sys'},
-		$RAYDP_IP,
-		$RAYDP_PORT);
-	_addPort({func => 500,id=>$SHARK_DEVICE_ID},
-		$LOCAL_IP,
-		$RNS_FILESYS_LISTEN_PORT);
-	_addPort({func => 501,id=>$SHARK_DEVICE_ID},
-		$LOCAL_IP,
-		$FILESYS_LISTEN_PORT);
-	_addPort({func => -1, id=>'E80 #1', },
-		$E80_1_IP,
-		$HIDDEN_PORT1 );
+	my ($class) = @_;
+	display($dbg_raysys,0,"r_RAYSYS new()");
+	my $this = shared_clone({	# $class->SUPER::new({
+		name 			=> $RAYSYS_NAME,
+		proto			=> 'mcast',
+		service_id		=> $RAYSYS_SID,
+		ip   			=> $RAYSYS_IP,
+		port 			=> $RAYSYS_PORT,
+
+		show_raw_input 	=> 0,
+		show_raw_output => 0,
+
+		devices 		=> shared_clone({}),
+		ports 			=> shared_clone([]),
+		ports_by_addr 	=> shared_clone({}),
+		ports_by_name 	=> shared_clone({}),
+		unknown			=> shared_clone({}),
+	});
+
+	bless $this,$class;
+	$this->init();
+	$self = $this;
+	return $this;
 }
 
 
 
-
-
 #------------------------------------
-# accesors
+# client API
 #------------------------------------
 
-sub findRayPort
+
+sub findServicePort
 	# This is what s_sniffer uses to filter packets for general display.
 	# There can be multiple Ids that are sharing the same ip:port, implying
 	# that the port is a mcast port, in which it really doesn't make sense
@@ -200,23 +149,24 @@ sub findRayPort
 	# know the ip's of all the ones that have the same mcast ip:port.
 {
     my ($ip,$port) = @_;
+	return undef if !$self;
     my $addr = "$ip:$port";
-    return $ports_by_addr->{$addr};
+    return $self->{ports_by_addr}->{$addr};
 }
 
-sub getRayPorts
+
+sub getServicePorts
 {
-    return $ports;
+	return [] if !$self;
+    return $self->{ports};
 }
 
-sub findRayPortByName
+sub findServicePortByName
 {
-	my ($name) = @_;
-	for my $rayport (@$ports)
-	{
-		return $rayport if $rayport->{name} eq $name;
-	}
-	return 0;
+	my ($name,$quiet) = @_;
+	my $service_port = $self ? $self->{ports_by_name}->{$name} : undef;
+	error("Could not findServicePortByName($name)") if !$service_port && !$quiet;
+	return $service_port;
 }
 
 
@@ -236,52 +186,63 @@ sub is_multicast
 
 
 
-sub _addPort
+sub addServicePort
 {
-    my ($rec,$ip,$port) = @_;
+    my ($this,$rec,$ip,$port) = @_;
     my $addr = "$ip:$port";
-    my $found = $ports_by_addr->{$addr};
-	my $proto = '';
+    my $found = $this->{ports_by_addr}->{$addr};
+	display_hash($dbg_raysys+1,0,"addServicePort($addr)",$rec);
+	
     if (!$found)
     {
-		my $def = $RAYPORT_DEFAULTS->{$port};
+		my $def = $SERVICE_PORT_DEFS{$port};
 
 		if (!$def)
 		{
 			error("NO DEFINITION FOR RAYSYS PORT($port)");
 			$def = {
-				name=>'unknown',
-				proto=>'',
-				mon_from=>1,
-				mon_to=>1,
-				multi=>1,
-				color=>0 };
+				sid		=> -2,
+				name	=> 'unknown',
+				proto	=> '',
+				# mon_from=>1,
+				# mon_to=>1,
+				# multi=>1,
+				# color=>0,
+			};
 		}
 
+		display_hash($dbg_raysys+2,1,"def",$def);
+		my $port_counter = @{$this->{ports}};
+        my $service_port = shared_clone($def);
+		mergeHash($service_port,$rec);
+		display_hash($dbg_raysys,1,"after merge",$service_port);
 
-		$proto = $def->{proto};
+		$service_port->{num}	= $port_counter;
+		$service_port->{ip}		= $ip;
+		$service_port->{port}	= $port;
+		$service_port->{addr}	= $addr;
 
-		# warning(0,0,"adding port $proto $addr in($def->{mon_from}) out($def->{mon_to}) color($def->{color}) multi($def->{multi})");
+		# mon_from => $def->{mon_from} || 0,
+		# mon_to 	=> $def->{mon_to} || 0,
+		# color 	=> $def->{color} || 0,
+		# multi 	=> $def->{multi} || 0,
 
-		my $port_counter = @$ports;
-		$proto = 'mcast' if is_multicast($ip);
-        my $ray_port = shared_clone({
-			num		=> $port_counter,
-            proto   => $def->{proto},
-            ip      => $ip,
-            port    => $port,
-            addr    => $addr,
-            func    => $rec->{func},    # the function is??
-			id      => raydpIdIfKnown($rec->{id}),
+		push @{$this->{ports}},$service_port;
+        $this->{ports_by_addr}->{$addr} = $service_port;
+		$this->{ports_by_name}->{$service_port->{name}} = $service_port;
 
- 			name    => $def->{name},
-            mon_from => $def->{mon_from} || 0,
-            mon_to => $def->{mon_to} || 0,
-            color => $def->{color} || 0,
-			multi => $def->{multi} || 0,
-        });
-        $ports_by_addr->{$addr} = $ray_port;
-        push @$ports,$ray_port;
+		#=======================================================
+		# spawn a real service
+		#=======================================================
+		# This is where it gets intereting (and messes up the display).
+		# If the $def has implemented=>1, we will attempt to create, and
+		# start, the "real" service for the given function
+
+		if ($def->{implemented} && $AUTO_START_IMPLEMENTED_SERVICES)
+		{
+			promote_to_real_service($service_port);
+		}
+
     }
 
 	# give an error if I havent previously
@@ -294,6 +255,22 @@ sub _addPort
 	}
 }
 
+
+sub promote_to_real_service
+{
+    my ($service_port) = @_;
+    my $class = "r_$service_port->{name}";
+	warning(0,0,"SPAWNING REAL $class !!!");
+    bless $service_port, $class;
+    $service_port->init();
+    $service_port->start();
+}
+
+
+
+#-------------------------------------------------------
+# packet handling
+#-------------------------------------------------------
 
 
 sub _decode_header
@@ -321,7 +298,7 @@ sub _decode_header
 
 		if ($field =~ /^port/)	# for non-multicast ports, show my guess as to the internet protocol
 		{
-			my $def = $RAYPORT_DEFAULTS->{$value};
+			my $def = $SERVICE_PORT_DEFS{$value};
 			my $guess = $def ? $def->{proto} : '';
 
 			$text .= "$field($value)='$guess' ";
@@ -336,133 +313,120 @@ sub _decode_header
 
 
 
-sub decodeRAYSYS
-    # MAIN ENTRY POINT from shark.pm that gets called
-    # with all packets that are sent to the $RAYDP_GROUP
-    # and $RAYDP_PORT.
-	#
+sub handlePacket
 	# Returns 1 on the first time an interesting message is found,
-	# in which case the app can choose to monitor the raw bytes for comparison,
-	# or 0 for known repetitive or previously decoded mesages.
+	# 	or 0 for known repetitive or previously decoded mesages,
+	#	noting that I have not yet established a use for handlePacket's
+	#	return value in r_sock.
+	#
+	# Note that with a "typical" command processor, these wouuld
+	# 	all come in as    cmd_word(0) service_id(0), except IDENT
+	#	which comes in as cmd_word(1) service_id(0)
+	#
+	# I still haven't figured out
+	#	x1(01001e00) always for me so far
+	# 	x2(04080800) except
+	#          ^ word length of what follows this dword (alternative to using packet len for decoding)
+	#        ^ some bit flag but does NOT correlate to contents
+	#      ^ byte looks like a creation order or some other index, except for a which appears special
+	#
+	# So, as of the new r_sock implementation, the length is still the best indicator of how
+	# to decode these packets, and I am not using a command processor for RAYSYS
 {
-    my ($packet) = @_;
-    my $raw = $packet->{raw_data};
+    my ($this,$raw) = @_;
+    #my $raw = $packet->{raw_data};
     my $len = length($raw);
-    display($dbg_raydp,0,"decodeRAYSYS($len)");
+    display($dbg_raysys+1,0,"decodeRAYSYS($len) raw=".unpack('H*',$raw));
 
     # packets we can skip merely based on the raw contents
 
-	if ($raw eq $RAYDP_WAKEUP_PACKET)
+	if ($raw eq $RAYSYS_WAKEUP_PACKET)
     {
-        print packetWireHeader($packet,0)."RAYDP_WAKEUP_PACKET: ".unpack("H*",$raw)."\n";
+        # print packetWireHeader($packet,0)."RAYDP_WAKEUP_PACKET: ".unpack("H*",$raw)."\n";
+		print "RAYDP_WAKEUP_PACKET: ".unpack("H*",$raw)."\n";
         return 0;
     }
 
     # parse the RAYSYS packet for header fields
 
-	my $src ="$packet->{src_ip}:$packet->{src_port}";
-    my ($type, $id, $func, $x1, $x2) = unpack('VH8VH8H8', $raw);
-	$id = raydpIdIfKnown($id);
+    my ($type, $device_id, $service_id, $x1, $x2) = unpack('VH8VH8H8', $raw);
+	$device_id = $KNOWN_DEVICES{$device_id} || $device_id;
     my $rec = shared_clone({
-		src   => $src,
-        raw   => $raw,
-        len   => $len,
-        type  => $type,
-        id    => $id,
-        func  => $func,
-        x1    => $x1,
-        x2    => $x2,
+        # raw   		=> $raw,
+        # len   		=> $len,
+        # type  		=> $type,
+        device_id   => $device_id,
+        service_id  => $service_id,
+        x1    		=> $x1,
+        x2    		=> $x2,
     });
 
-	# we will only continue to parse if the the func:id has
-	# not been previously found, but we want to see
-	# duplicate or changed advertisements of the same function
-	# one time
-
-    my $key = "$func.$id";
-    my $found = $devices->{$key};
-    if ($found && (
-		$rec->{src} ne $src ||
-		$rec->{raw} ne $found->{raw}))
-    {
-		my $what_diff = '';
-		$what_diff .= 'SRC ' if $rec->{src} ne $src;
-		$what_diff .= 'RAW ' if $rec->{raw} ne $found->{raw};
-		my $src_msg = '';
-		$src_msg = "old_src($rec->{src}) new_src($src) " if $rec->{src} ne $src;
-
-		my $dup_key = "$func.$id.$src";
-		my $found_dup = $duplicates{$dup_key};
-
-		setConsoleColor($DISPLAY_COLOR_ERROR);
-		my $header = packetWireHeader($packet,0);
-		my $pad = pad('',length($header));
-		print $header."RAYDP $what_diff CHANGED PACKET len($len) func($func) id($id) $src_msg!!\n";
-		if ($rec->{raw} ne $found->{raw})
-		{
-			print parse_dwords($pad."old=",$rec->{raw},1);
-			print parse_dwords($pad."new=",$found->{raw},1);
-			$found->{raw} = $rec->{raw};
-		}
-		setConsoleColor();
-    }
+    display_hash($dbg_raysys+1,0,"decodeRAYSYS($len)",$rec);
 
     # set the count and return if the RAYSYS packet has already been parsed
 
+    my $key = "$service_id.$device_id";
+    my $found = $this->{devices}->{$key};
     my $count = $found ? $found->{count} : 0;
     $count++;
     $rec->{count} = $count;
     return 0 if $found;
 
+
+
     # PARSE AND ADD A NEW RAYSYS RECORD
 
     my $text2 = '';
 
-	my $func_name = $KNOWN_FUNCS{$func} || 'func';
-	my $func_str = pad("$func_name($func)",12);
+	my $service_id_name = $KNOWN_SERVICES{$service_id} || "service_id";
+	my $service_id_string = pad("$service_id_name($service_id)",12);
 
-	my $id_str = pad($id,8);
-    my $text1 = "$len:$type $id_str $func_str x($x1,$x2)";
+	my $id_str = pad($device_id,8);
+    my $text1 = "$len:$type $id_str $service_id_string x($x1,$x2)";
     my $payload = $len > 20 ? substr($raw, 5 * 4) : '';
 
     if ($len == 28)
     {
         $text2 = _decode_header(0,$rec, $payload, qw(ip port));
-        _addPort($rec,$rec->{ip},$rec->{port});
+        $this->addServicePort($rec,$rec->{ip},$rec->{port});
     }
     elsif ($len == 36)
     {
         $text2 = _decode_header(0,$rec, $payload, qw(mcast_ip mcast_port ip port));
-        _addPort($rec,$rec->{mcast_ip},$rec->{mcast_port});
-        _addPort($rec,$rec->{ip},$rec->{port});
+        $this->addServicePort($rec,$rec->{mcast_ip},$rec->{mcast_port});
+        $this->addServicePort($rec,$rec->{ip},$rec->{port});
     }
     elsif ($len == 37)
     {
         $text2 = _decode_header(1, $rec, $payload, qw(mcast_ip mcast_port ip port));
-        _addPort($rec,$rec->{mcast_ip},$rec->{mcast_port});
-       _addPort($rec,$rec->{ip},$rec->{port});
+        $this->addServicePort($rec,$rec->{mcast_ip},$rec->{mcast_port});
+        $this->addServicePort($rec,$rec->{ip},$rec->{port});
     }
     elsif ($len == 40)
     {
         $text2 = _decode_header(0,$rec, $payload, qw(ip port1 port2 mcast_ip mcast_port));
-        _addPort($rec,$rec->{mcast_ip},$rec->{mcast_port});
-        _addPort($rec,$rec->{ip},$rec->{port1});
-        _addPort($rec,$rec->{ip},$rec->{port2});
+        $this->addServicePort($rec,$rec->{mcast_ip},$rec->{mcast_port});
+        $this->addServicePort($rec,$rec->{ip},$rec->{port1});
+        $this->addServicePort($rec,$rec->{ip},$rec->{port2});
     }
 
-    # unknown packets that show the first time we see them
+    # IDENTS and UNKNOWN packets that show the first time we see them
 
     else
 	{
-		return 0 if $unknown{$raw};
-		$unknown{$raw} = 1;
+		return 0 if $this->{unknown}->{$raw};
+		$this->{unknown}->{$raw} = 1;
 
 		my $name = 'UNKNOWN';
 		if (unpack('C',$raw) == 1)	# length($raw) == 56 || length($raw) == 54)
 		{
 			$name = 'IDENT';
 			my $type = unpack('V',substr($raw,4,4));
-			my $ident_id = raydpIdIfKnown(unpack('H*',substr($raw,8,4)));
+			$type = $DEVICE_TYPE{$type} || "$type=unknown";
+
+			my $device_id = unpack('H*',substr($raw,8,4));
+			$device_id = $KNOWN_DEVICES{$device_id} || $device_id;
+
 			my $version = unpack('v',substr($raw,12,2))/100;
 			my $ip = inet_ntoa(pack('N', unpack('V',substr($raw,16,4))));
 			my $is_master = $len == 56 ? unpack('v',substr($raw,54,2)) : -1;
@@ -470,11 +434,10 @@ sub decodeRAYSYS
 				$is_master == -1 ? "UNDEFINED" :
 				$is_master ? "MASTER" : "SLAVE";
 
-			my $typename = $RAY_DEVICE_TYPE{$type} || "$type=unknown";
-			$text2 = "type($typename) id($ident_id) vers($version) ip($ip) role($role)";
+			$text2 = "type($type) device_id($device_id) vers($version) ip($ip) role($role)";
 		}
 
-		my $header = packetWireHeader($packet,0);
+		my $header = 'RAYSYS '; # packetWireHeader($packet,0);
 		setConsoleColor($DISPLAY_COLOR_WARNING);
 		print $header."$name($len) $text2\n";
 		print parse_dwords(pad('',length($header)),$raw,1);
@@ -483,9 +446,10 @@ sub decodeRAYSYS
     }
 
     setConsoleColor($DISPLAY_COLOR_LOG);
-    print packetWireHeader($packet,0)."$text1 $text2\n";
+    # print packetWireHeader($packet,0)."$text1 $text2\n";
+    print "RAYSYS $text1 $text2\n";
     setConsoleColor();
-    $devices->{$key} = $rec;
+    $this->{devices}->{$key} = $rec;
 	return 1;
 }
 
