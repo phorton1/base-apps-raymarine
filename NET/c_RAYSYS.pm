@@ -1,5 +1,5 @@
 #---------------------------------------------
-# r_RAYSYS.pm
+# c_RAYSYS.pm
 #---------------------------------------------
 # RAYSYS is the heart of RAYNET (Seatalk HS ethernet)
 # It is named RAYSYS because it is listed as "System" in the
@@ -59,12 +59,12 @@
 #	- raysys, which can only monitor local service ports that
 #	  are actually opened
 #
-# One way or the other, the r_sock is just an extension to a service_port
+# One way or the other, the b_sock is just an extension to a service_port
 # that adds a bunch of fields.  In all cases, henceforth, RAYSYS itself
 # is only run as a real, local service, and not sniffed.
 
 
-package r_RAYSYS;
+package c_RAYSYS;
 use strict;
 use warnings;
 use threads;
@@ -73,14 +73,15 @@ use Time::HiRes qw(sleep time);
 use Socket;
 use IO::Select;
 use Pub::Utils;
-use r_defs;
-use r_utils;
-use base qw(r_sock);
+use a_defs;
+use a_utils;
+use base qw(b_sock);
 
 my $dbg_raysys = 0;
 
 my $self:shared;
 
+my $DELAY_START = 3;
 
 
 BEGIN
@@ -95,7 +96,13 @@ BEGIN
 	);
 }
 
+my $CMD_AD		= 0;
+my $CMD_IDENT	= 1;
 
+my %CMD_NAME = (
+	$CMD_AD 	=> 'ad',
+	$CMD_IDENT => 'IDENT',
+);
 
 #--------------------------------------------------
 # ctor
@@ -110,7 +117,7 @@ sub new
 	# Unknown is a hash by raw bytes of all unknown messages shown once
 {
 	my ($class) = @_;
-	display($dbg_raysys,0,"r_RAYSYS new()");
+	display($dbg_raysys,0,"c_RAYSYS new()");
 	my $this = shared_clone({	# $class->SUPER::new({
 		name 			=> $RAYSYS_NAME,
 		proto			=> 'mcast',
@@ -118,10 +125,13 @@ sub new
 		ip   			=> $RAYSYS_IP,
 		port 			=> $RAYSYS_PORT,
 
+		DELAY_START		=> $DELAY_START,
+
 		show_raw_input 	=> 0,
 		show_raw_output => 0,
 
 		devices 		=> shared_clone({}),
+		device_services => shared_clone({}),
 		ports 			=> shared_clone([]),
 		ports_by_addr 	=> shared_clone({}),
 		ports_by_name 	=> shared_clone({}),
@@ -172,7 +182,7 @@ sub findServicePortByName
 
 
 #-----------------------------------
-# sniffer API (called by shark.pm
+# private API
 #-----------------------------------
 
 sub is_multicast
@@ -215,7 +225,7 @@ sub addServicePort
 		my $port_counter = @{$this->{ports}};
         my $service_port = shared_clone($def);
 		mergeHash($service_port,$rec);
-		display_hash($dbg_raysys,1,"after merge",$service_port);
+		display_hash($dbg_raysys+2,1,"after merge",$service_port);
 
 		$service_port->{num}	= $port_counter;
 		$service_port->{ip}		= $ip;
@@ -229,7 +239,8 @@ sub addServicePort
 
 		push @{$this->{ports}},$service_port;
         $this->{ports_by_addr}->{$addr} = $service_port;
-		$this->{ports_by_name}->{$service_port->{name}} = $service_port;
+
+			# only take the first named service (by name)
 
 		#=======================================================
 		# spawn a real service
@@ -238,10 +249,22 @@ sub addServicePort
 		# If the $def has implemented=>1, we will attempt to create, and
 		# start, the "real" service for the given function
 
-		if ($def->{implemented} && $AUTO_START_IMPLEMENTED_SERVICES)
+		if ($AUTO_START_IMPLEMENTED_SERVICES &&
+			$def->{implemented} &&
+			!$this->{ports_by_name}->{$service_port->{name}})
 		{
+			# We only allow one instance, by name, of an implemented service_port.
+			# This *may* be short signted.
+			# The only multiple instance service_port at this time is udp FILESYS,
+			# and, at this time, udp service_ports work by opening a (single)
+			# listener socket, at a known port number, and sending their commands,
+			# which include that port number, via a_utils::sendUDPPacket()
+
 			promote_to_real_service($service_port);
 		}
+
+		# add the name AFTER spawning the service
+		$this->{ports_by_name}->{$service_port->{name}} ||= $service_port;
 
     }
 
@@ -259,7 +282,7 @@ sub addServicePort
 sub promote_to_real_service
 {
     my ($service_port) = @_;
-    my $class = "r_$service_port->{name}";
+    my $class = "d_$service_port->{name}";
 	warning(0,0,"SPAWNING REAL $class !!!");
     bless $service_port, $class;
     $service_port->init();
@@ -317,7 +340,7 @@ sub handlePacket
 	# Returns 1 on the first time an interesting message is found,
 	# 	or 0 for known repetitive or previously decoded mesages,
 	#	noting that I have not yet established a use for handlePacket's
-	#	return value in r_sock.
+	#	return value in b_sock.
 	#
 	# Note that with a "typical" command processor, these wouuld
 	# 	all come in as    cmd_word(0) service_id(0), except IDENT
@@ -330,7 +353,7 @@ sub handlePacket
 	#        ^ some bit flag but does NOT correlate to contents
 	#      ^ byte looks like a creation order or some other index, except for a which appears special
 	#
-	# So, as of the new r_sock implementation, the length is still the best indicator of how
+	# So, as of the new b_sock implementation, the length is still the best indicator of how
 	# to decode these packets, and I am not using a command processor for RAYSYS
 {
     my ($this,$raw) = @_;
@@ -349,7 +372,7 @@ sub handlePacket
 
     # parse the RAYSYS packet for header fields
 
-    my ($type, $device_id, $service_id, $x1, $x2) = unpack('VH8VH8H8', $raw);
+    my ($cmd_word, $raysys_service_id, $device_id, $service_id, $x1, $x2) = unpack('vvH8VH8H8', $raw);
 	$device_id = $KNOWN_DEVICES{$device_id} || $device_id;
     my $rec = shared_clone({
         # raw   		=> $raw,
@@ -363,26 +386,59 @@ sub handlePacket
 
     display_hash($dbg_raysys+1,0,"decodeRAYSYS($len)",$rec);
 
-    # set the count and return if the RAYSYS packet has already been parsed
+	# handle IDENT messages first
 
-    my $key = "$service_id.$device_id";
-    my $found = $this->{devices}->{$key};
+	if ($cmd_word == $CMD_IDENT)
+	{
+		my $type = unpack('V',substr($raw,4,4));
+		$type = $DEVICE_TYPE{$type} || "$type=unknown";
+
+		$device_id = unpack('H*',substr($raw,8,4));
+		$device_id = $KNOWN_DEVICES{$device_id} || $device_id;
+		return if $this->{devices}->{$device_id};
+
+ 		my $version = unpack('v',substr($raw,12,2))/100;
+		my $ip = inet_ntoa(pack('N', unpack('V',substr($raw,16,4))));
+		my $is_master = $len == 56 ? unpack('v',substr($raw,54,2)) : -1;
+		my $role =
+			$is_master == -1 ? "UNDEFINED" :
+			$is_master ? "MASTER" : "SLAVE";
+
+		$this->{devices}->{$device_id} = shared_clone({
+			device_id => $device_id,
+			version		=> $version,
+			ip 			=> $ip,
+			is_master	=> $is_master,
+			role		=> $role, });
+
+		if ($dbg_raysys <= 0)
+		{
+			setConsoleColor($DISPLAY_COLOR_WARNING);
+			print "RAYSYS IDENT type($type) device_id($device_id) vers($version) ip($ip) role($role)\n";
+			setConsoleColor();
+		}
+		return;
+	}
+
+    # set the count and return if the device_service packet has already been parsed
+
+    my $device_service = "$device_id.$service_id";
+    my $found = $this->{device_services}->{$device_service};
     my $count = $found ? $found->{count} : 0;
     $count++;
     $rec->{count} = $count;
     return 0 if $found;
 
-
-
-    # PARSE AND ADD A NEW RAYSYS RECORD
+    # PARSE AND ADD A NEW device_service and set of service_port records
 
     my $text2 = '';
 
 	my $service_id_name = $KNOWN_SERVICES{$service_id} || "service_id";
-	my $service_id_string = pad("$service_id_name($service_id)",12);
+	my $service_id_string = pad("$service_id_name($service_id)",14);
 
 	my $id_str = pad($device_id,8);
-    my $text1 = "$len:$type $id_str $service_id_string x($x1,$x2)";
+	my $cmd_name = $CMD_NAME{$cmd_word} || 'unknown command';
+    my $text1 = "len($len) $id_str $service_id_string x($x1,$x2)";
     my $payload = $len > 20 ? substr($raw, 5 * 4) : '';
 
     if ($len == 28)
@@ -410,7 +466,7 @@ sub handlePacket
         $this->addServicePort($rec,$rec->{ip},$rec->{port2});
     }
 
-    # IDENTS and UNKNOWN packets that show the first time we see them
+    # UNKNOWN packets that show the first time we see them
 
     else
 	{
@@ -418,25 +474,6 @@ sub handlePacket
 		$this->{unknown}->{$raw} = 1;
 
 		my $name = 'UNKNOWN';
-		if (unpack('C',$raw) == 1)	# length($raw) == 56 || length($raw) == 54)
-		{
-			$name = 'IDENT';
-			my $type = unpack('V',substr($raw,4,4));
-			$type = $DEVICE_TYPE{$type} || "$type=unknown";
-
-			my $device_id = unpack('H*',substr($raw,8,4));
-			$device_id = $KNOWN_DEVICES{$device_id} || $device_id;
-
-			my $version = unpack('v',substr($raw,12,2))/100;
-			my $ip = inet_ntoa(pack('N', unpack('V',substr($raw,16,4))));
-			my $is_master = $len == 56 ? unpack('v',substr($raw,54,2)) : -1;
-			my $role =
-				$is_master == -1 ? "UNDEFINED" :
-				$is_master ? "MASTER" : "SLAVE";
-
-			$text2 = "type($type) device_id($device_id) vers($version) ip($ip) role($role)";
-		}
-
 		my $header = 'RAYSYS '; # packetWireHeader($packet,0);
 		setConsoleColor($DISPLAY_COLOR_WARNING);
 		print $header."$name($len) $text2\n";
@@ -445,15 +482,27 @@ sub handlePacket
 		return 1;
     }
 
-    setConsoleColor($DISPLAY_COLOR_LOG);
-    # print packetWireHeader($packet,0)."$text1 $text2\n";
-    print "RAYSYS $text1 $text2\n";
-    setConsoleColor();
-    $this->{devices}->{$key} = $rec;
+	# finished. Register the new device_service and show its facts
+
+	if ($dbg_raysys <= 0)
+	{
+		setConsoleColor($DISPLAY_COLOR_LOG);
+		print "RAYSYS $text1 $text2\n";
+		setConsoleColor();
+	}
+	$this->{device_services}->{$device_service} = $rec;
 	return 1;
 }
 
 
+sub onStartSocketThread
+{
+	my ($this) = @_;
+	display($dbg_raysys,0,"RAYSYS onStartSocketThread()");
+	wakeup_e80();
+		# Must be called, perhaps because MSWindows,
+		# before attempting to open the RAYSYS multicast socket
+}
 
 
 1;

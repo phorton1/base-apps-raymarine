@@ -14,15 +14,15 @@ use Time::HiRes qw(sleep time);
 # use IO::Handle;
 # use IO::Socket::INET;
 # use IO::Select;
-# use r_utils;
+# use a_utils;
 
 # use r_DBNAV;
-# use r_FILESYS;
-# use r_WPMGR;
-# use r_TRACK;
-# use wp_api;
+# use d_FILESYS;
+# use d_WPMGR;
+# use d_TRACK;
+# use e_wp_api;
 
-# use tcpListener;
+#
 # use tcpBase;
 
 # use tcpScanner;
@@ -30,15 +30,20 @@ use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use Pub::WX::Resources;
 use Pub::WX::Main;
-use r_defs;
-use r_utils;
+use a_defs;
+use a_utils;
+use b_probe;
+use c_RAYSYS;
+use d_TRACK;
+use d_WPMGR;
+use d_FILESYS;
+use e_wp_api;
+use h_server;
 use s_serial;
 use s_sniffer;
-use r_RAYSYS;
-use r_TRACK;		# passive include; started by r_RAYSYS
-use r_server;
-use s_resources;
-use s_frame;
+use w_resources;
+use w_frame;
+use tcpScanner;
 use base 'Wx::App';
 
 my $dbg_shark = 0;
@@ -61,19 +66,16 @@ sub handleSerialCommand
     my ($lpart,$rpart) = @_;
     display(0,0,"handleSerialCommand left($lpart) right($rpart)");
 
-	# TRACK and WPMGR
-	
-	if ($lpart eq 't')
-	{
-		my $track = findServicePortByName('TRACK');
-		$track->trackUICommand($rpart) if $track;
-	}
-	elsif ($lpart eq 'q')
-    {
-        queryWaypoints();
-    }
+	# WAKEUP
 
-	# http r_server
+	if ($lpart eq 'wakeup')
+	{
+		wakeup_e80();
+	}
+
+
+
+	# HTTP server
 
 	elsif ($lpart eq 'db')
 	{
@@ -88,23 +90,68 @@ sub handleSerialCommand
 		print "$kml\n";
 	}
 
-	# Not retested yet
+
+    # FILESYS
+
+	elsif ($lpart eq 'f')
+	{
+		my ($cmd,$path) = split(/\s+/,$rpart);
+		my $filesys = findServicePortByName('FILESYS');
+		$filesys->fileCommand($cmd,$path) if $filesys;
+	}
 	
-	elsif ($lpart eq 'p')
+	# TRACK
+
+	if ($lpart eq 't')
 	{
-		my ($name,$ident) = split(/\s+/,$rpart);
-		doProbe('TRACK',$rpart);	# $name,$ident);
+		my $track = findServicePortByName('TRACK');
+		return if !$track;
+		$track->trackUICommand($rpart) if $track;
 	}
-	elsif ($lpart eq 'scan')
+
+	# WPMGR
+
+	elsif ($lpart =~ /^(q|create|delete|wp|route)$/)
 	{
-		my ($low,$high) = split(/\s+/,$rpart);
-		scanRange($low,$high);
-		# tcpNumberedProbe($rpart);
-	}
-	elsif ($lpart eq 'w')
-	{
-		wakeup_e80();
-	}
+		my $wpmgr = findServicePortByName('WPMGR');
+		return if !$wpmgr;
+
+		if ($lpart eq 'q')
+		{
+			$wpmgr->queryWaypoints();
+		}
+		elsif ($lpart eq 'create' || $lpart eq 'delete')
+		{
+			my ($what,$num,@rest) = split(/\s+/,$rpart);
+			$what = lc($what);
+			$wpmgr->createWaypoint($num) 	if $lpart eq 'create' && $what eq 'wp';
+			$wpmgr->createRoute($num,@rest) if $lpart eq 'create' && $what eq 'route';
+			$wpmgr->createGroup($num) 	 	if $lpart eq 'create' && $what eq 'group';
+			$wpmgr->deleteWaypoint($num) 	if $lpart eq 'delete' && $what eq 'wp';
+			$wpmgr->deleteRoute($num) 	 	if $lpart eq 'delete' && $what eq 'route';
+			$wpmgr->deleteGroup($num) 	 	if $lpart eq 'delete' && $what eq 'group';
+		}
+		elsif ($lpart eq "route")
+		{
+			my ($route_num,$op,$wp_num) = split(/\s+/,$rpart);
+			if ($op eq '+' || $op eq '-')
+			{
+				$wpmgr->routeWaypoint($route_num,$wp_num,$op eq '+');
+			}
+			else
+			{
+				error("bad route command syntax");
+			}
+		}
+		elsif ($lpart eq 'wp')
+		{
+			my ($wp_num,$group_num) = split(/\s+/,$rpart);
+			$wpmgr->setWaypointGroup($wp_num,$group_num);
+		}
+	}	# WPMGR
+
+
+	# LOGFILES
 
 	elsif ($lpart eq 'c')
 	{
@@ -116,84 +163,30 @@ sub handleSerialCommand
 		display(0,0,"Clear RNS Log File");
 		clearLog("rns.log");
 	}
-    elsif ($lpart eq 'create' || $lpart eq 'delete')
-    {
-        my ($what,$num,@rest) = split(/\s+/,$rpart);
-    	$what = lc($what);
-        createWaypoint($num) 	if $lpart eq 'create' && $what eq 'wp';
-        createRoute($num,@rest) if $lpart eq 'create' && $what eq 'route';
-        createGroup($num) 	 	if $lpart eq 'create' && $what eq 'group';
-        deleteWaypoint($num) 	if $lpart eq 'delete' && $what eq 'wp';
-        deleteRoute($num) 	 	if $lpart eq 'delete' && $what eq 'route';
-        deleteGroup($num) 	 	if $lpart eq 'delete' && $what eq 'group';
-	}
-	elsif ($lpart eq "route")
-	{
-        my ($route_num,$op,$wp_num) = split(/\s+/,$rpart);
-		if ($op eq '+' || $op eq '-')
-		{
-			routeWaypoint($route_num,$wp_num,$op eq '+');
-		}
-		else
-		{
-			error("bad route command syntax");
-		}
-	}
-	elsif ($lpart eq 'wp')
-	{
-        my ($wp_num,$group_num) = split(/\s+/,$rpart);
-		setWaypointGroup($wp_num,$group_num);
-	}
 	elsif ($lpart eq 'log')
 	{
 		my $msg =
 			"\n=======================================================================\n".
 			"# $rpart\n".
 			"========================================================================\n\n";
-		navQueryLog($msg,'rns.log');
-		navQueryLog($msg,'shark.log');
+		writeLog($msg,'rns.log');
+		writeLog($msg,'shark.log');
 	}
 
-    # showCharacterizedCommands(0);
-    # showCharacterizedCommands(1);
-    # clearCharacterizedCommands();
+	# PORT SCANS and (track) PROBING
 
-
-     # FILESYS TESTING
-
-    #	if ($lpart eq 'cardid')            # CTRL-A
-    #	{
-    #	    return if !requestCardID();
-    #	    while (getFileRequestState() > 0) { sleep(1); }
-    #	    return if getFileRequestState() != $FILE_STATE_COMPLETE;
-    #	    print "\nCARD_ID=".getFileRequestContent()."\n\n";
-    #	}
-    #	elsif ($lpart eq 'dir')
-    #	{
-    #	    return if !requestDirectory($rpart);
-    #	    while (getFileRequestState() > 0) { sleep(1); }
-    #	    return if getFileRequestState() != $FILE_STATE_COMPLETE;
-    #	    print "\nDIRECTORY\n".getFileRequestContent()."\n\n";
-    #	}
-    #	elsif ($lpart eq 'size')
-    #	{
-    #	    return if !requestSize($rpart);
-    #	    while (getFileRequestState() > 0) { sleep(1); }
-    #	    return if getFileRequestState() != $FILE_STATE_COMPLETE;
-    #	    print "\nSIZE=".getFileRequestContent()."\n\n";
-    #	}
-    #	elsif ($lpart eq 'file')
-    #	{
-    #	    return if !requestSize($rpart);
-    #	    while (getFileRequestState() > 0) { sleep(1); }
-    #	    return if getFileRequestState() != $FILE_STATE_COMPLETE;
-    #	    print "\nFILE=".length(getFileRequestContent())."bytes\n\n";
-    #	}
-    #	elsif ($lpart eq 'filesys')
-    #	{
-    #	    my @params = split(/,/,$rpart);
-    #	    sendFilesysRequest(@params);
-    #	}
+	elsif ($lpart eq 'scan')
+	{
+		my ($low,$high) = split(/\s+/,$rpart);
+		scanRange($low,$high);
+	}
+	elsif ($lpart eq 'p')
+	{
+		my ($name,$ident) = split(/\s+/,$rpart);
+		my $track = findServicePortByName('TRACK');
+		return if !$track;
+		$track->doProbe($rpart);
+	}
 
 }   #   handleCommand()
 
@@ -264,11 +257,7 @@ if ($WITH_SERIAL)
 
 if ($WITH_RAYSYS)
 {
-	wakeup_e80();
-		# Must be called, perhaps because MSWindows,
-		# before attempting to open the RAYSYS multicast socket
-		
-	my $raysys = r_RAYSYS->new();
+	my $raysys = c_RAYSYS->new();
 	$raysys->start();
 }
 
@@ -312,7 +301,7 @@ if ($WITH_WX)
 
 	sub OnInit
 	{
-		$frame = s_frame->new();
+		$frame = w_frame->new();
 		if (!$frame)
 		{
 			error("unable to create frame");

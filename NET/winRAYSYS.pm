@@ -19,9 +19,9 @@ use Wx::Event qw(
 	EVT_COMBOBOX );
 use Pub::Utils;
 use Pub::WX::Window;
-use r_defs;
-use r_utils;
-use r_RAYSYS;
+use a_defs;
+use a_utils;
+use c_RAYSYS;
 use base qw(Wx::ScrolledWindow MyWX::Window);
 
 my $dbg_win = 0;

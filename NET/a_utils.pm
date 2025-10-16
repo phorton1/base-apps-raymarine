@@ -1,8 +1,8 @@
 #---------------------------------------------
-# r_utils.pm
+# a_utils.pm
 #---------------------------------------------
 
-package r_utils;
+package a_utils;
 use strict;
 use warnings;
 use threads;
@@ -12,10 +12,10 @@ use Time::HiRes qw(sleep);
 use IO::Socket::INET;
 use Wx qw(:everything);
 use Pub::Utils;
-use r_defs;
+use a_defs;
 
-# use r_parse;
-# use wp_packet;
+# use b_records;
+# use e_wp_packet;
 
 
 BEGIN
@@ -33,7 +33,9 @@ BEGIN
 
 		sendUDPPacket
 		name16_hex
-
+		packRecord
+		unpackRecord
+		
 		degreeMinutes
 		northEastToLatLon
 		latLonToNorthEast
@@ -409,6 +411,93 @@ sub packetWireHeader
 
 
 
+#-------------------------------------
+# pack and unpack native records
+#-------------------------------------
+# fields within a field spec record; known by convention in field specs
+
+my $PACK_DETAIL = 0;	# 0=actual data; 1=control stuff (name_len, etc); 2=unknown
+my $PACK_SIZE	= 1;	# the size (for moving to the next piece of buffer
+my $PACK_TYPE	= 2;	# the perl pack/unpack type
+
+
+sub unpackRecord
+	# All fields are packed/unpacked into the reccord so that
+	# 	the operations are symetrical and no information is lost
+	# $level is merely used to adjust what things show in debugging
+{
+	my ($dbg,				# debug level passed in by client
+		$level,				# detail level (for debugging only) passed in by client
+		$name,				# a name given to the record for debugging only,
+		$field_specs,		# REQUIRED the field specs that define the record
+		$buffer,			# REQUIRED raw data being unpacked
+		$rec_offset,		# REQUIRED offset into the buffer to parse at
+		$rec_size) = @_;	# the record size, if defined, will show the raw data bytes at $dbg+1
+	
+	display($dbg,0,"unpackRecord($name) offset($rec_offset) rec_size("._def($rec_size).")");
+
+	my $data = substr($buffer,$rec_offset,$rec_size) if defined($rec_size);
+	display($dbg+1,1,"data=".unpack('H*',$data));
+
+	my $offset = 0;
+	my $rec = shared_clone({});
+	my $num_specs = scalar(@$field_specs) / 2;
+	for (my $i=0; $i<$num_specs; $i++)
+	{
+		my $field = $field_specs->[$i * 2];
+		my $spec = $field_specs->[$i * 2 + 1];
+		my ($detail,$size,$type) = @$spec;
+
+		my $raw  = substr($data,$offset,$size);
+		my $hex  = unpack('H*',$raw);
+		my $val  = unpack($type,$raw);
+
+		$rec->{$field} = defined($val) ? $val : 0;
+		display($dbg,1,"offset($offset) ".pad($field,20)."($hex)= '$rec->{$field}'")
+			if $level >= $detail;
+		$offset += $size;
+	}
+	return $rec;
+}
+
+
+sub packRecord
+	# builds the record WITHOUT the big_len field
+{
+	my ($dbg,$level,$name,$rec,$field_specs) = @_;
+	$rec ||= {};
+
+	display_hash($dbg+1,0,"packRecord($name)",$rec) if $dbg==0;
+	display($dbg+1,0,"packRecord($name)");
+
+	my $data = '';
+	my $offset = 0;
+	my $num_specs = scalar(@$field_specs) / 2;
+	for (my $i=0; $i<$num_specs; $i++)
+	{
+		my $field = $field_specs->[$i * 2];
+		next if $field eq 'big_len';
+		my $spec = $field_specs->[$i * 2 + 1];
+		my ($size,$type,$detail) = @$spec;
+
+		my $val  = $rec->{$field};
+		$val = 0 if !defined($val);
+		my $packed .= pack($type,$val);
+		$data .= $packed;
+
+		display($dbg+1,1,"offset($offset) ".pad($field,20)."(".unpack('H*',$packed).")= '$rec->{$field}'")
+			if $level >= $detail;
+
+		$offset += $size;
+	}
+
+	display($dbg,1,"data=".unpack('H*',$data));
+	return $data;
+}
+
+
+
+
 #---------------------------------------------------------
 # sniffer monitoring broken
 #---------------------------------------------------------
@@ -448,11 +537,11 @@ sub showPacket
 
 		# parse and display and/or log the packet
 
-		my $rec = wp_packet::parseWPMGR(1,$is_reply,$client_port,$buffer);
+		my $rec = e_wp_packet::parseWPMGR(1,$is_reply,$client_port,$buffer);
 			# 1=with_text
 
 		my $text = $rec->{text};
-		navQueryLog($text,"rns.log");
+		writeLog($text,"rns.log");
 
 		my $color = $service_port->{color};
 		setConsoleColor($color) if $color;

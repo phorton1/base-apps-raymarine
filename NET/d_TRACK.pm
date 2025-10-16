@@ -1,5 +1,5 @@
 #---------------------------------------
-# r_TRACK.pm
+# d_TRACK.pm
 #---------------------------------------
 # Client for RAYSYS func(19) == 0x13 == '1300'
 #
@@ -9,55 +9,59 @@
 # Cannot create or modify Tracks otherwise.
 # Cannot even set the color of the 'Current Track'
 
-package r_TRACK;
+package d_TRACK;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
-use r_utils;
-use r_defs;
-use r_parse;	# temporary name
-# use r_RAYSYS  loaded by shark.pm
-use base qw(r_sock);
+use a_utils;
+use a_defs;
+use b_records;	# temporary name
+# use c_RAYSYS  loaded by shark.pm
+use base qw(b_sock);
 
 
-my $dbg 		= -1;
-my $dbg_parse 	= -1;
-my $dbg_got 	= -1;		# for returned tracks (including Current Track)
-my $dbg_events 	= -1;
-my $dbg_mods 	= -1;
+my $dbg 		= 0;
+my $dbg_parse 	= 0;
+my $dbg_got 	= 0;		# for returned tracks (including Current Track)
+my $dbg_events 	= 0;
+my $dbg_mods 	= 0;
 
 
 my $WITH_EVENT_PROCESSING	= 1;
 my $WITH_MOD_PROCESSING 	= 1;
 
 
-my $TRACK_PORT 		= 12002;
-my $TRACK_FUNC		= 0x0013;
+my $TRACK_SERVICE_ID = 19;
 	# 19 == 0x13 == '1300' in streams
+my $TRACK_PORT = $LOCAL_TCP_PORT_BASE + $TRACK_SERVICE_ID;
 
 
-our $SHOW_SHOW_RAW_INPUT 	= 1;
-our $SHOW_SHOW_RAW_OUTPUT	= 1;
-our $SHOW_TRACK_PARSED_INPUT 	= 1;
-our $SHOW_TRACK_PARSED_OUTPUT 	= 0;
+our $SHOW_TRACK_RAW_INPUT 		= 0;
+our $SHOW_TRACK_RAW_OUTPUT		= 0;
+our $SHOW_TRACK_PARSED_INPUT  	= 0;
+our $SHOW_TRACK_PARSED_OUTPUT	= 0;
 
-my $out_color = $UTILS_COLOR_LIGHT_CYAN;
-my $in_color = $UTILS_COLOR_LIGHT_BLUE;
+my $IN_COLOR = $UTILS_COLOR_LIGHT_BLUE;
+my $OUT_COLOR = $UTILS_COLOR_LIGHT_CYAN;
 
 
 sub init
 {
 	my ($this) = @_;
-	display($dbg,0,"r_TRACK init($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
+	display($dbg,0,"d_TRACK init($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto} local_port=$TRACK_PORT)");
 
 	$this->SUPER::init();
-	$this->{show_raw_input} 	= $SHOW_SHOW_RAW_INPUT;
-	$this->{show_raw_output} 	= $SHOW_SHOW_RAW_OUTPUT;
-	$this->{raw_in_color} 		= $in_color;
-	$this->{raw_out_color} 		= $out_color;
+	$this->{local_port}			= $TRACK_PORT;
+	
+	$this->{show_raw_input} 	= $SHOW_TRACK_RAW_INPUT;
+	$this->{show_raw_output} 	= $SHOW_TRACK_RAW_OUTPUT;
+	$this->{show_parsed_input}  = $SHOW_TRACK_PARSED_INPUT;
+	$this->{show_parsed_output} = $SHOW_TRACK_PARSED_OUTPUT;
+	$this->{in_color} 			= $IN_COLOR;
+	$this->{out_color} 			= $OUT_COLOR;
 	
 	$this->{tracks} = shared_clone({});
 	$this->{current_track_uuid} = '';
@@ -70,14 +74,11 @@ sub init
 sub destroy
 {
 	my ($this) = @_;
-	display($dbg,0,"r_TRACK destroy($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
+	display($dbg,0,"d_TRACK destroy($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto} local_port=$TRACK_PORT)");
 
 	$this->SUPER::destroy();
 
-    delete @$this{qw(
-        tracks
-		current_track_uuid )};
-
+    delete @$this{qw(tracks current_track_uuid)};
 	return $this;
 }
 
@@ -105,14 +106,14 @@ my %API_COMMAND_NAME = (
 
 sub showCommand
 {
-	my ($msg) = @_;
-	return if !$SHOW_TRACK_PARSED_OUTPUT;	# in r_WPMGR.pm
+	my ($this,$msg) = @_;
+	return if !$this->{show_parsed_output};
 	$msg = "\n\n".
 		"#------------------------------------------------------------------\n".
 		"# $msg\n".
 		"#------------------------------------------------------------------\n\n";
 	print $msg;
-	# navQueryLog($msg,'shark.log');
+	# writeLog($msg,'shark.log');
 }
 
 
@@ -120,7 +121,7 @@ sub showCommand
 sub trackUICommand
 {
 	my ($this,$rpart) = @_;
-	showCommand("trackUICommand($rpart)");
+	$this->showCommand("trackUICommand($rpart)");
 	return $rpart ?
 		queueTRACKCommand($this,$API_GENERAL_CMD,0,$rpart) :
 		queueTRACKCommand($this,$API_GET_TRACKS,0);
@@ -144,7 +145,7 @@ sub queueTRACKCommand
 	{
 		my $msg = "# queueTRACKCommand($api_command=$cmd_name) uuid($uuid) extra($extra)\n";
 		print $msg;
-		# navQueryLog($msg,"shark.log");
+		# writeLog($msg,"shark.log");
 	}
 
 	for my $exist (@{$this->{command_queue}})
@@ -590,7 +591,7 @@ sub createMsg
 	display($dbg,0,"createMsg($seq,$cmd,$uuid,$param) $cmd_name");
 	my $data =
 		pack('v',$cmd | $TRACK_DIR_SEND).
-		pack('v',$TRACK_FUNC);
+		pack('v',$TRACK_SERVICE_ID);
 	$data .= pack('V',$seq) if $seq;
 	$data .= pack('H*',$uuid) if $uuid;
 	$data .= $param if $param;
@@ -611,13 +612,13 @@ sub sendRequest
 		# my $text = "# sendRequest($seq) $name\n";
 		# $text .= $rec->{text};
 		# # 1=with_text, 0=is_reply		$text .= $rec->{text};
-		# setConsoleColor($out_color) if $out_color;
+		# setConsoleColor($OUT_COLOR) if $OUT_COLOR;
 		# print $text;
-		# setConsoleColor() if $out_color;
-		# navQueryLog($text,'shark.log');
+		# setConsoleColor() if $OUT_COLOR;
+		# writeLog($text,'shark.log');
 	}
 
-	display($dbg,0,"sendRequest() calling r_sock::sendPacket()");
+	display($dbg,0,"sendRequest() calling b_sock::sendPacket()");
 	$this->sendPacket($request);
 	$this->{wait_seq} = $seq;
 	$this->{wait_name} = $name;
@@ -909,13 +910,13 @@ sub handlePacket
 	my $reply = parseTRACK(1,$buffer);
 		# 1=is_reply
 
-	if (0 && $SHOW_TRACK_PARSED_INPUT)
+	if (0 && $this->{show_parsed_input})
 	{
 		my $text = $reply->{text};
-		setConsoleColor($in_color);
+		setConsoleColor($IN_COLOR);
 		print $text;
-		setConsoleColor() if $in_color;
-		navQueryLog($text,'shark.log');
+		setConsoleColor() if $IN_COLOR;
+		writeLog($text,'shark.log');
 	}
 
 	# EVENTS do nothing

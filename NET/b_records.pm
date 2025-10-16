@@ -1,25 +1,41 @@
 #---------------------------------------------
-# r_parse.pm
+# b_records.pm
 #---------------------------------------------
-# Routines to parse WPMGR messages, and the
-# BUFFERS within them into Waypoints, Routes, and Groups.
+# Routines to parse and build well known records:
+#
+#	Waypoint
+#	Route
+#	Group
+#
+# Parse only:
+#
+#	MTA
+#	Track
 
-
-package r_parse;
+package b_records;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils;
-use r_defs;
-use r_utils;
+use a_defs;
+use a_utils;
 
 
-my $dbg_wp = 1;
-my $dbg_route = 1;
-my $dbg_group = 1;
-my $dbg_track = 1;
-my $dbg_unpack = 1;
+my $dbg_wp		= 1;
+my $dbg_route	= 1;
+my $dbg_group	= 1;
+my $dbg_mta		= 1;
+my $dbg_track	= 1;
+my $dbg_point	= 1;
+
+
+my $WP_DETAIL_LEVEL		= 2;
+my $ROUTE_DETAIL_LEVEL	= 2;
+my $GROUP_DETAIL_LEVEL	= 2;
+my $MTA_DETAIL_LEVEL	= 2;
+my $TRACK_DETAIL_LEVEL	= 2;
+my $POINT_DETAIL_LEVEL	= 2;
 
 
 BEGIN
@@ -38,12 +54,6 @@ BEGIN
 		buildWPRoute
 		buildWPGroup
 
-		unpackRecord
-		packRecord
-
-		latLonToNorthEast
-		northEastToLatLon
-
 		parseTrack
 		parseMTA
 		parsePoint
@@ -52,10 +62,6 @@ BEGIN
 }
 
 
-my $SPEC_DETAIL = 0;
-my $SPEC_SIZE	= 1;
-my $SPEC_UNPACK	= 2;
-	# fields within a field spec record
 
 
 my $WP_REC_SIZE = 52;
@@ -246,7 +252,7 @@ sub WPRecordToText
 		for (my $i = 0; $i < @$specs; $i += 2)
 		{
 			my ($key, $spec) = @$specs[$i, $i+1];
-			my $detail = $$spec[$SPEC_DETAIL];
+			my ($detail, $size, $type) = @$spec;
 			if ($detail_level >= $detail)
 			{
 				my $val = $rec->{$key};
@@ -282,64 +288,6 @@ sub WPRecordToText
 	return $text;
 }
 
-
-#-------------------------------------
-# pack and unpack native records
-#-------------------------------------
-
-sub unpackRecord
-{
-	my ($rec_name,$field_specs,$buffer,$rec_offset,$rec_size) = @_;
-	display($dbg_unpack,0,"unpackRecord($rec_name) offset($rec_offset) rec_size($rec_size)");
-
-	my $data = substr($buffer,$rec_offset,$rec_size);
-	display($dbg_unpack+1,1,"data=".unpack('H*',$data));
-
-	my $offset = 0;
-	my $rec = shared_clone({});
-	my $num_specs = scalar(@$field_specs) / 2;
-	for (my $i=0; $i<$num_specs; $i++)
-	{
-		my $field = $field_specs->[$i * 2];
-		my $spec = $field_specs->[$i * 2 + 1];
-		my $size = $$spec[$SPEC_SIZE];
-		my $up   = $$spec[$SPEC_UNPACK];
-
-		my $raw  = substr($data,$offset,$size);
-		my $hex  = unpack('H*',$raw);
-		my $val  = unpack($up,$raw);
-
-		$rec->{$field} = defined($val) ? $val : 0;
-		display($dbg_unpack,1,"offset($offset) ".pad($field,20)."($hex)= '$rec->{$field}'");
-		$offset += $size;
-	}
-	return $rec;
-}
-
-
-sub packRecord
-	# builds the record WITHOUT the big_len field
-{
-	my ($name,$rec,$field_specs) = @_;
-	$rec ||= {};
-	display_hash($dbg_unpack,0,"packRecord($name)",$rec);
-
-	my $data = '';
-	my $num_specs = scalar(@$field_specs) / 2;
-	for (my $i=0; $i<$num_specs; $i++)
-	{
-		my $field = $field_specs->[$i * 2];
-		next if $field eq 'big_len';
-		my $spec = $field_specs->[$i * 2 + 1];
-		my $up   = $$spec[$SPEC_UNPACK];
-		my $val  = $rec->{$field};
-		$val = 0 if !defined($val);
-		$data .= pack($up,$val);
-	}
-
-	display($dbg_unpack,1,"data=".unpack('H*',$data));
-	return $data;
-}
 
 
 
@@ -378,13 +326,23 @@ sub parseWPGroup
 	display($dbg_group,0,"parseWPGroup len($buf_len)");
 
 	my $offset = 0;
-	my $rec = unpackRecord('group_hdr',$GROUP_REC_SPECS, $buffer, $offset, $GROUP_REC_SIZE);
+	my $rec = unpackRecord(
+		$dbg_group+1,
+		$GROUP_DETAIL_LEVEL,
+		'group_hdr',
+		$GROUP_REC_SPECS,
+		$buffer,
+		$offset,
+		$GROUP_REC_SIZE);
 	$offset += $GROUP_REC_SIZE;
 	
 	my $name = substr($buffer,$offset,$rec->{name_len});
 	$offset += $rec->{name_len};
 	my $comment = $rec->{cmt_len} ? substr($buffer,$offset,$rec->{cmt_len}) : '';
 	$offset += $rec->{cmt_len};
+
+	display($dbg_group,1,"name    = $name");
+	display($dbg_group,1,"comment = $comment") if $comment;
 
 	$rec->{name} = $name;
 	$rec->{comment} = $comment;
@@ -393,6 +351,7 @@ sub parseWPGroup
 	for (my $i=0; $i<$rec->{num_uuids}; $i++)
 	{
 		my $uuid = unpack('H*',substr($buffer,$offset,8));
+		display($dbg_group,1,"uuid($i) = $uuid");
 		push @$uuids,$uuid;
 		$offset += 8;
 	}
@@ -415,18 +374,25 @@ sub buildWPGroup
 	$rec->{uuids} = $uuids;
 	$rec->{num_uuids} = @$uuids;
 
-	display($dbg_wp,0,"buildWPGroup($rec->{name}");
-	my $buffer = packRecord('GROUP',$rec,$GROUP_REC_SPECS);
+	display($dbg_group,0,"buildWPGroup($rec->{name} num_uuids($rec->{num_uuids})");
+	my $buffer = packRecord(
+		$dbg_group+1,
+		$GROUP_DETAIL_LEVEL,
+		'group',
+		$rec,
+		$GROUP_REC_SPECS);
 	$buffer .= $name;
 	$buffer .= $comment;
 
+	my $num = 0;
 	for my $uuid (@$uuids)
 	{
 		$buffer .= pack('H*',$uuid);
+		display($dbg_group,1,"uuid = $uuid");
 	}
 
 	$buffer = pack('V',length($buffer)).$buffer;
-	parseWPGroup($buffer);	# debug check
+	parseWPGroup($buffer) if $dbg_group < 0;	# debug check
 	return $buffer;
 }
 
@@ -460,7 +426,14 @@ sub parseWPRoute
 	display($dbg_route,0,"parseWPRoute len($buf_len)");
 
 	my $offset = 0;
-	my $rec = unpackRecord('hdr1',$ROUTE_HDR1_SPECS, $buffer, $offset, $ROUTE_HDR1_SIZE);
+	my $rec = unpackRecord(
+		$dbg_route+1,
+		$ROUTE_DETAIL_LEVEL,
+		'route_hdr1',
+		$ROUTE_HDR1_SPECS,
+		$buffer,
+		$offset,
+		$ROUTE_HDR1_SIZE);
 	$offset += $ROUTE_HDR1_SIZE;
 
 	if ($rec->{num_wpts} == 0 && $rec->{name_len} == 0)
@@ -473,6 +446,9 @@ sub parseWPRoute
 	$offset += $rec->{name_len};
 	my $comment = $rec->{cmt_len} ? substr($buffer,$offset,$rec->{cmt_len}) : '';
 	$offset += $rec->{cmt_len};
+
+	display($dbg_route,1,"name    = $name");
+	display($dbg_route,1,"comment = $comment") if $comment;
 
 	$rec->{name} = $name;
 	$rec->{comment} = $comment;
@@ -487,18 +463,31 @@ sub parseWPRoute
 		$offset += 8;
 	}
 
-	my $hdr2 = unpackRecord('hdr2',$ROUTE_HDR2_SPECS, $buffer, $offset, $ROUTE_HDR2_SIZE);
+	my $hdr2 = unpackRecord(
+		$dbg_route+1,
+		$ROUTE_DETAIL_LEVEL,
+		'hdr2',
+		$ROUTE_HDR2_SPECS,
+		$buffer,
+		$offset,
+		$ROUTE_HDR2_SIZE);
 	$offset += $ROUTE_HDR2_SIZE;
 	
 	for (my $i=0; $i<$rec->{num_wpts}; $i++)
 	{
 		my $raw_point = unpack('H*',substr($buffer,$offset,$ROUTE_PT_SIZE));
 		push @$raw_points,$raw_point;
-		my $pt = unpackRecord('point',$ROUTE_PT_SPECS, $buffer, $offset, $ROUTE_PT_SIZE);
+		my $pt = unpackRecord(
+			$dbg_route+1,
+			$ROUTE_DETAIL_LEVEL,
+			'point',
+			$ROUTE_PT_SPECS,
+			$buffer,
+			$offset,
+			$ROUTE_PT_SIZE);
 		push @$points,$pt;
 		$offset += $ROUTE_PT_SIZE;
 	}
-
 
 	$rec->{text_uuids} = join(" ",@$uuids);
 	display_hash($dbg_route+1,1,"route($name)",$rec);
@@ -520,27 +509,43 @@ sub buildWPRoute
 	$rec->{points} = $uuids;
 	my $num_wpts = $rec->{num_wpts} = @$uuids;
 
-	display($dbg_wp,0,"buildWPRoute($rec->{name}");
-	my $buffer = packRecord('ROUTE_HDR1',$rec,$ROUTE_HDR1_SPECS);
+	display($dbg_route,0,"buildWPRoute($rec->{name}");
+	my $buffer = packRecord(
+		$dbg_route+1,
+		$ROUTE_DETAIL_LEVEL,
+		'route_hdr1',
+		$rec,
+		$ROUTE_HDR1_SPECS);
 	$buffer .= $name;
 	$buffer .= $comment;
 
 	for (my $i=0; $i<$num_wpts; $i++)
 	{
 		my $uuid = $$uuids[$i] || '0000000000000000';
+		display($dbg_route+1,1,"uuid($i) = $uuid");
 		$buffer .= pack('H*',$uuid);
 	}
 
-	$buffer .= packRecord('ROUTE_HDR2',$rec,$ROUTE_HDR2_SPECS);
+	$buffer .= packRecord(
+		$dbg_route+1,
+		$ROUTE_DETAIL_LEVEL,
+		'route_hdr2',
+		$rec,
+		$ROUTE_HDR2_SPECS);
 
 	for (my $i=0; $i<$num_wpts; $i++)
 	{
 		my $point = $$points[$i];
-		$buffer .= packRecord("ROUTE_PT($i)",$point,$ROUTE_PT_SPECS);
+		$buffer .= packRecord(
+			$dbg_route+1,
+			$ROUTE_DETAIL_LEVEL,
+			"route_pt($i)",
+			$point,
+			$ROUTE_PT_SPECS);
 	}
 
 	$buffer = pack('V',length($buffer)).$buffer;
-	parseWPRoute($buffer);	# debug check
+	parseWPRoute($buffer) if $dbg_route < 0;	# debug check
 	return $buffer;
 }
 
@@ -578,7 +583,14 @@ sub parseWPWaypoint
 	}
 
 	my $offset = 0;
-	my $rec = unpackRecord('waypoint',$WP_REC_SPECS, $buffer, $offset, $WP_REC_SIZE);
+	my $rec = unpackRecord(
+		$dbg_wp+1,
+		$WP_DETAIL_LEVEL,
+		'waypoint',
+		$WP_REC_SPECS,
+		$buffer,
+		$offset,
+		$WP_REC_SIZE);
 
 	$offset += $WP_REC_SIZE;
 	my $name = substr($buffer,$offset,$rec->{name_len});
@@ -586,15 +598,21 @@ sub parseWPWaypoint
 	my $comment = $rec->{cmt_len} ? substr($buffer,$offset,$rec->{cmt_len}) : '';
 	$offset += $rec->{cmt_len};
 
+	display($dbg_wp,1,"name    = $name");
+	display($dbg_wp,1,"comment = $comment") if $comment;
+
 	$rec->{name} = $name;
 	$rec->{comment} = $comment;
 	my $uuids = $rec->{uuids} = shared_clone([]);
 
+	my $num = 0;
 	while ($offset <= $buf_len-8)
 	{
 		my $uuid = unpack('H*',substr($buffer,$offset,8));
+		display($dbg_wp+1,1,"uuid($num) = $uuid");
 		push @$uuids,$uuid;
 		$offset += 8;
+		$num++;
 	}
 
 	$rec->{text_uuids} = join(" ",@$uuids);
@@ -612,18 +630,26 @@ sub buildWPWaypoint
 	$rec->{cmt_len} = length($comment);
 	
 	display($dbg_wp,0,"buildWPWaypoint($rec->{name}");
-	my $buffer = packRecord('WAYPOINT',$rec,$WP_REC_SPECS);
+	my $buffer = packRecord(
+		$dbg_wp+1,
+		$WP_DETAIL_LEVEL,
+		'waypoint',
+		$rec,
+		$WP_REC_SPECS);
 	$buffer .= $name;
 	$buffer .= $comment;
 	
+	my $num = 0;
 	my $uuids = $rec->{uuids};
 	for my $uuid (@$uuids)
 	{
+		display($dbg_wp+1,1,"uuid($num) = $uuid");
 		$buffer .= pack('H*',$uuid);
+		$num++;
 	}
 
 	$buffer = pack('V',length($buffer)).$buffer;
-	parseWPWaypoint($buffer);	# debug check
+	parseWPWaypoint($buffer) if $dbg_wp<0;	# debug check
 	return $buffer;
 }
 
@@ -710,9 +736,16 @@ sub parseMTA
 {
 	my ($buffer) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_track,0,"parseMTA len($buf_len)");
+	display($dbg_mta,0,"parseMTA len($buf_len)");
 	my $offset = 0;
-	my $rec = unpackRecord('mta',$MTA_REC_SPECS, $buffer, $offset, $MTA_REC_SIZE);
+	my $rec = unpackRecord(
+		$dbg_mta+1,
+		$MTA_DETAIL_LEVEL,
+		'mta',
+		$MTA_REC_SPECS,
+		$buffer,
+		$offset,
+		$MTA_REC_SIZE);
 
 	my $coords = northEastToLatLon($rec->{north_start},$rec->{east_start});
 	$rec->{lat_start} = $coords->{lat};
@@ -723,13 +756,11 @@ sub parseMTA
 
 	my $deg_lat_start = degreeMinutes($rec->{lat_start});
 	my $deg_lon_start = degreeMinutes($rec->{lon_start});
-
 	my $deg_lat_end = degreeMinutes($rec->{lat_end});
 	my $deg_lon_end = degreeMinutes($rec->{lon_end});
 
-	display(0,-1,"start($deg_lat_start,$deg_lon_start)",0,$UTILS_COLOR_WHITE);
-	display(0,-1,"  end($deg_lat_end,$deg_lon_end)",0,$UTILS_COLOR_WHITE);
-
+	display($dbg_mta,-1,"start($deg_lat_start,$deg_lon_start)",0,$UTILS_COLOR_WHITE);
+	display($dbg_mta,-1,"  end($deg_lat_end,$deg_lon_end)",0,$UTILS_COLOR_WHITE);
 
 	# I think the unknown k1_1 variable may be one for a saved, regular track
 	# and 0 for an unsaved, in-process track, and that their point layouts are
@@ -742,8 +773,8 @@ sub parseMTA
 	# u1 is also a bit suspicious,
 	#	239 = not recording yet
 
-	display($dbg_track,1,"found MTA($rec->{name}) with $rec->{cnt1} points");
-	display_hash(0,1,"parsetMTA($rec->{name}) returning",$rec);
+	display($dbg_mta,1,"found MTA($rec->{name}) with $rec->{cnt1} points");
+	display_hash($dbg_mta,1,"parsetMTA($rec->{name}) returning",$rec);
 	return $rec;
 }
 
@@ -757,7 +788,14 @@ sub parseTrack
 	# there's some garbage in the front
 
 	my $offset = 0;
-	my $rec = unpackRecord('track_hdr',$TRACK_HEADER_SPECS, $buffer, $offset, $TRACK_HDR_SIZE);
+	my $rec = unpackRecord(
+		$dbg_track+1,
+		$TRACK_DETAIL_LEVEL,
+		'track_hdr',
+		$TRACK_HEADER_SPECS,
+		$buffer,
+		$offset,
+		$TRACK_HDR_SIZE);
 	$offset += $TRACK_HDR_SIZE;
 
 	display($dbg_track,1,"found $rec->{cnt} track points");
@@ -768,19 +806,25 @@ sub parseTrack
 	my $points = $rec->{points} = shared_clone([]);
 	for (my $i=0; $i<$rec->{cnt}; $i++)
 	{
-		my $pt = unpackRecord('track_point',$TRACK_PT_SPECS, $buffer, $offset, $TRACK_PT_SIZE);
+		my $pt = unpackRecord(
+			$dbg_track+1,
+			$TRACK_DETAIL_LEVEL,
+			'track_point',
+			$TRACK_PT_SPECS,
+			$buffer,
+			$offset,
+			$TRACK_PT_SIZE);
 		my $coords = northEastToLatLon($pt->{north},$pt->{east});
 		$pt->{lat} = $coords->{lat};
 		$pt->{lon} = $coords->{lon};
 
-		display(0,-1,sprintf("point($i) lat(%s) lon(%s)",
+		display($dbg_track,-1,sprintf("point($i) lat(%s) lon(%s)",
 			degreeMinutes($pt->{lat}),
 			degreeMinutes($pt->{lon}) ),0,$UTILS_COLOR_WHITE);
 
 		push @$points,$pt;
 		$offset += $TRACK_PT_SIZE;
 	}
-
 
 	return $rec;
 }
@@ -791,17 +835,24 @@ sub parsePoint
 {
 	my ($buffer) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_track-1,0,"parsePoint len($buf_len)=".unpack('H*',$buffer));
+	display($dbg_point,0,"parsePoint len($buf_len)=".unpack('H*',$buffer));
 
 	my $offset = 2;
 		# skip garbage word efef
 
-	my $pt = unpackRecord('track_point',$TRACK_PT_SPECS, $buffer, $offset, $TRACK_PT_SIZE);
+	my $pt = unpackRecord(
+		$dbg_point+1,
+		$POINT_DETAIL_LEVEL,
+		'track_point',
+		$TRACK_PT_SPECS,
+		$buffer,
+		$offset,
+		$TRACK_PT_SIZE);
 	my $coords = northEastToLatLon($pt->{north},$pt->{east});
 	$pt->{lat} = $coords->{lat};
 	$pt->{lon} = $coords->{lon};
 
-	display(0,-1,sprintf("lat(%s) lon(%s)",
+	display($dbg_point,-1,sprintf("lat(%s) lon(%s)",
 		degreeMinutes($pt->{lat}),
 		degreeMinutes($pt->{lon}) ),0,$UTILS_COLOR_WHITE);
 

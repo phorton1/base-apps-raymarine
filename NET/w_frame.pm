@@ -1,9 +1,9 @@
 #!/usr/bin/perl
 #-------------------------------------------------------------------------
-# s_frame.pm
+# w_frame.pm
 #-------------------------------------------------------------------------
 
-package s_frame;
+package w_frame;
 use strict;
 use warnings;
 use threads;
@@ -17,9 +17,9 @@ use Pub::Utils;
 use Pub::WX::Frame;
 use Win32::SerialPort;
 use Win32::Console;
-use s_resources;
+use w_resources;
 use winRAYSYS;
-# use winFILESYS;
+use winFILESYS;
 use base qw(Pub::WX::Frame);
 
 

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #--------------------------------------------------
-# dlgProgress
+# x_Progress
 #--------------------------------------------------
 # An exapanding progress dialog to allow for additional
 # information gained during recursive directory operations.
@@ -15,7 +15,7 @@
 # range is the total number of things that we know about
 # at any time.
 
-package dlgProgress;
+package x_Progress;
 use strict;
 use warnings;
 use Wx qw(:everything);
@@ -37,7 +37,7 @@ sub new
 		$num_files,
 		$num_dirs ) = @_;
 
-	display($dbg_fpd,0,"dlgProgress::new($what,$num_files,$num_dirs)");
+	display($dbg_fpd,0,"x_Progress::new($what,$num_files,$num_dirs)");
 
 	$parent = getAppFrame() if !$parent;
 	$parent->Enable(0) if $parent;
@@ -73,7 +73,7 @@ sub new
     $this->Show();
 	$this->update();
 
-	display($dbg_fpd,0,"dlgProgress::new() finished");
+	display($dbg_fpd,0,"x_Progress::new() finished");
     return $this;
 }
 
@@ -82,7 +82,7 @@ sub new
 sub onClose
 {
     my ($this,$event) = @_;
-	display($dbg_fpd,0,"dlgProgress::onClose()");
+	display($dbg_fpd,0,"x_Progress::onClose()");
     $event->Veto() if !$this->{cancelled};
 }
 
@@ -90,7 +90,7 @@ sub onClose
 sub Destroy
 {
 	my ($this) = @_;
-	display($dbg_fpd,0,"dlgProgress::Destroy()");
+	display($dbg_fpd,0,"x_Progress::Destroy()");
 	if ($this->{parent})
 	{
 		$this->{parent}->Enable(1);
@@ -103,7 +103,7 @@ sub Destroy
 sub onButton
 {
     my ($this,$event) = @_;
-	display($dbg_fpd,0,"dlgProgress::onButton()");
+	display($dbg_fpd,0,"x_Progress::onButton()");
     $this->{cancelled} = 1;
     $event->Skip();
 }
@@ -118,7 +118,7 @@ sub onButton
 sub update
 {
 	my ($this) = @_;
-	display($dbg_fpd,0,"dlgProgress::update()");
+	display($dbg_fpd,0,"x_Progress::update()");
 
 	my $num_files 	= $this->{num_files};
 	my $num_dirs 	= $this->{num_dirs};
@@ -152,7 +152,7 @@ sub update
 	}
 
 	Wx::App::GetInstance()->Yield();
-	display($dbg_fpd,0,"dlgProgress::update() finished");
+	display($dbg_fpd,0,"x_Progress::update() finished");
 
 	return !$this->{cancelled};
 }

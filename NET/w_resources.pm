@@ -1,9 +1,9 @@
 #!/usr/bin/perl
 #-------------------------------------------------------------------------
-# s_resources.pm
+# w_resources.pm
 #-------------------------------------------------------------------------
 
-package s_resources;
+package w_resources;
 use strict;
 use warnings;
 use threads;

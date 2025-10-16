@@ -1,10 +1,10 @@
 #-----------------------------------------------------
-# r_server.pm
+# h_server.pm
 #-----------------------------------------------------
 # Serves the WAYPOINT database to Google Earth via network links
 
 
-package r_server;
+package h_server;
 use strict;
 use warnings;
 use threads;
@@ -15,8 +15,8 @@ use Pub::Utils;
 use Pub::ServerUtils;
 use Pub::HTTP::ServerBase;
 use Pub::HTTP::Response;
-use r_defs;
-use r_RAYSYS;
+use a_defs;
+use c_RAYSYS;
 use base qw(Pub::HTTP::ServerBase);
 
 
@@ -63,11 +63,11 @@ Pub::ServerUtils::initServerUtils(0,'');
 
 sub startHTTPServer
 {
-	display($dbg,0,"starting wp_erver");
+	display($dbg,0,"starting h_server");
 
-	$ray_server = r_server->new();
+	$ray_server = h_server->new();
 	$ray_server->start();
-	display($dbg,0,"finished starting r_server");
+	display($dbg,0,"finished starting h_server");
 }
 
 sub new
@@ -600,12 +600,12 @@ sub kml_RAYSYS
 	my $param_version = $params->{version};
 	$param_version ||= 0;
 
-	my $wp_mgr = r_RAYSYS::findService('WPMGR',1);
-	my $track_mgr = r_RAYSYS::findService('TRACK',1);
+	my $wp_mgr = c_RAYSYS::findService('WPMGR',1);
+	my $track_mgr = c_RAYSYS::findService('TRACK',1);
 
 	# the global local version is a tcpBase static variable
 
-	my $local_version = r_sock::getVersion();
+	my $local_version = b_sock::getVersion();
 	my $changed = $server_version == $local_version ? 0 : 1;
 	my $update = !$changed && $param_version == $server_version ? 1 : 0;
 

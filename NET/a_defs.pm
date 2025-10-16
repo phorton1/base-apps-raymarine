@@ -1,8 +1,8 @@
 #---------------------------------------------
-# r_defs.pm
+# a_defs.pm
 #---------------------------------------------
 
-package r_defs;
+package a_defs;
 use strict;
 use warnings;
 use Socket qw(pack_sockaddr_in inet_aton);
@@ -105,7 +105,7 @@ our $LOCAL_TCP_PORT_BASE		= 12000;
 our $LOCAL_UDP_SEND_PORT 		= $LOCAL_UDP_PORT_BASE;
 	# the recognizable port of the single
 	# global udp send-only socket
-	# created (in r_utils.pm)
+	# created (in a_utils.pm)
 
 
 #-------------------------------------------
@@ -158,7 +158,7 @@ our $KNOTS_TO_METERS_PER_SEC = 0.5144;
 # my $FAKE_RNS_2  = '01000000 03000000'.$SHARK_DEVICE_ID.'76020000 018e7680 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 0000';
 # my $FAKE_E80_3  = '01000000 00000000'.$SHARK_DEVICE_ID.'39020000 53f0000a 0033cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 cc33cc33 02000000';
 
-my %DEVICE_TYPE =(
+our %DEVICE_TYPE =(
 	0 	=> 'E80',
 	1 	=> 'E120',
 	2 	=> 'DSM300',
@@ -281,15 +281,15 @@ our %KNOWN_SERVICES = (
 our %SERVICE_PORT_DEFS  = (
 
 	2048 => { sid => 35,	name => 'func35_u',	proto=>'udp',	},					# shows on bareE80
-	2049 => { sid => 5,		name => 'FILESYS',	proto=>'udp',	},					# shows on bareE80;	addl added by E80#2
+	2049 => { sid => 5,		name => 'FILESYS',	proto=>'udp',	implemented => 1},	# shows on bareE80;	addl added by E80#2
 	2050 => { sid => 16,	name => 'Database',	proto=>'tcp',	},					# shows on bareE80
 	2051 => { sid => 16,	name => 'database',	proto=>'udp',	},					# shows on bareE80
-	2052 => { sid => 15,	name => 'WPMGR',	proto=>'tcp',	},					# shows on bareE80
-	2053 => { sid => 19,	name => 'TRACK',	proto=>'tcp',	implemented => 1},	# shows on bareE80
+	2052 => { sid => 15,	name => 'WPMGR',	proto=>'tcp',	}, #implemented => 1},	# shows on bareE80
+	2053 => { sid => 19,	name => 'TRACK',	proto=>'tcp',	}, #implemented => 1},	# shows on bareE80
 	2054 => { sid => 7,		name => 'Navig',	proto=>'tcp',	},					# shows on bareE80
 	2055 => { sid => 22,	name => 'func22_t',	proto=>'tcp',	},					# shows on bareE80; tcp connect immediately starts getting events
 	2056 => { sid => 8,		name => 'func8_u',	proto=>'udp',	},					# shows with E80 Fix/Heading
-	2058 => { sid => -2,	name => '',			proto=>'',		},					# seen in distant past
+	2058 => { sid => -2,	name => 'exists?',	proto=>'',		},					# seen in distant past
 
 	2560 => { sid => 35,	name => 'func35_m',	proto=>'mcast',	},					# shows on bareE80
 	2561 => { sid => 5,		name => 'filesys',	proto=>'mcast',	},					# shows on bareE80

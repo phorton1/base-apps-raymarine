@@ -19,18 +19,18 @@ use Wx::Event qw(
 use Pub::Utils;
 use Pub::WX::Window;
 use Pub::WX::Dialogs;;
-use r_defs;
-use r_utils;
-use r_RAYSYS;
-use r_FILESYS;
-use s_resources;
-use dlgProgress;
+use a_defs;
+use a_utils;
+use c_RAYSYS;
+use d_FILESYS;
+use w_resources;
+use x_Progress;
 use base qw(Wx::Window MyWX::Window);
 
-my $dbg_win = 1;		# window basics
+my $dbg_win = -1;		# window basics
 my $dbg_sort = 1;		# sorting
-my $dbg_dl = 1;			# downloads
-my $dbg_rr = 0;			# request and replies
+my $dbg_dl = -1;			# downloads
+my $dbg_rr = -1;			# request and replies
 
 
 my $ID_SELECT_COMBO = 1002;
@@ -81,22 +81,28 @@ sub checkFileSysPorts
 {
 	my ($this) = @_;
 
+	my $filesys = $this->{filesys} = findServicePortByName('FILESYS',0);
+		# find the real, named service if it exists]
+
 	$this->{cur_filesys_id} ||= '';
 	$this->{filesys_ids} ||= [];
-	$this->{filesys_rayports} ||= {};
+	$this->{filesys_ports} ||= {};
 
+	return if !$filesys;
+		# NOT CONSTRUCTED
+		
 	my $any_added = 0;
 	my $my_ids = $this->{filesys_ids};
-	my $my_rayports = $this->{filesys_rayports};
-	my $global_rayports = getRayPorts();
-	for my $service_port (@$global_rayports)
+	my $my_ports = $this->{filesys_ports};
+	my $raysys_ports = getServicePorts();
+	for my $service_port (@$raysys_ports)
 	{
 		next if $service_port->{name} ne 'FILESYS';
-		my $id = raydpIdIfKnown($service_port->{id});	# ID or known name
-		$this->{cur_filesys_id} = $id if isCurrentFILESYSRayport($service_port);
-		next if $my_rayports->{$id};	# already know about it
-		push @$my_ids,$id;
-		$my_rayports->{$id} = $service_port;
+		my $device_id = $service_port->{device_id};
+		$this->{cur_filesys_id} = $device_id if $filesys->isCurrentServicePort($service_port);
+		next if $my_ports->{$device_id};	# already know about it
+		push @$my_ids,$device_id;
+		$my_ports->{$device_id} = $service_port;
 		$any_added++;
 	}
 	return $any_added;
@@ -186,6 +192,8 @@ sub onDoubleClick
 {
     my ($ctrl,$event) = @_;
     my $this = $ctrl->{parent};
+	my $filesys = $this->{filesys};
+	return error("no filesys") if !$filesys;
 
     my $item = $event->GetItem();
     my $row = $item->GetData();
@@ -226,14 +234,17 @@ sub onFileDeviceCombo
 	# on any checkbox clicks
 {
 	my ($this,$event) = @_;
+	my $filesys = $this->{filesys};
+	return error("no filesys") if !$filesys;
+
 	# my $id = $event->GetId();
 	my $combo = $event->GetEventObject();
 	my $selected = $combo->GetValue();
-	my $service_port = $this->{filesys_rayports}->{$selected};
+	my $service_port = $this->{filesys_ports}->{$selected};
 	return error("huh? could not find service_port($selected)")
 		if !$service_port;
 	display(0,0,"Changing cur_filesys_id to $selected");
-	setFILESYSRayPort($service_port);
+	$filesys->setServicePort($service_port);
 	$this->{cur_filesys_id} = $selected;
 	$this->{started} = 0;	# trigger a get of /
 }
@@ -251,21 +262,30 @@ sub setPendingRequest
 	$this->{pending_request} = $request;
 	$this->{command_ctrl}->SetLabel($request);
 	$this->{command_ctrl}->SetForegroundColour(wxBLACK);
+	$this->{last_state} = $FILE_STATE_IDLE;
+		# make sure we notice a change to $FILE_STATE_COMPLETE or ERROR
+		# as we might have left it at FILE_STATE_COMPLETE
 }
 
 
 sub changeDirectory
 {
 	my ($this,$to) = @_;
+	my $filesys = $this->{filesys};
+	return error("no filesys") if !$filesys;
+
 	display($dbg_rr,0,"change directory($to)");
 	$this->setPendingRequest("dir\t$to");
-	requestDirectory($to);
+	$filesys->fileCommand('DIR',$to);
 }
 
 
 sub downloadOneFile
 {
 	my ($this,$name) = @_;
+	my $filesys = $this->{filesys};
+	return error("no filesys") if !$filesys;
+
 	my $full_name = "$DEFAULT_SAVE_DIR/$name";
 	my $d = Wx::FileDialog->new($this,
 		"Save As...",
@@ -281,19 +301,21 @@ sub downloadOneFile
 	my $src = appendPath($this->{cur_path},$name);
 	display($dbg_rr,0,"download file($src) to\ndest($dest)");
 	$this->setPendingRequest("file\t$src\t$dest");
-	requestFile($src);
+	$filesys->fileCommand('FILE',$src);
 }
 
 
 sub getFileSizes()
 {
 	my ($this) = @_;
+	my $filesys = $this->{filesys};
+	return error("no filesys") if !$filesys;
 
 	return if $this->{recurse};
 		# JIC
 	return if $this->{pending_request};
 		# return if in a window request
-	my $state = getFileRequestState();
+	my $state = $filesys->{file_state};
 	return if $state > 0;
 		# return if FILESYS busy
 	if ($state == $FILE_STATE_ERROR)
@@ -317,7 +339,7 @@ sub getFileSizes()
 		my $path = appendPath($cur_path,$entry->{name});
 		display($dbg_rr,1,"getFileSize($this_row,$path)");
 		$this->setPendingRequest("size\t$this_row\t$path");
-		requestSize($path);
+		$filesys->fileCommand('SIZE',$path);
 		return;
 	}
 	$this->{sizes_needed} = 0;
@@ -327,10 +349,15 @@ sub getFileSizes()
 sub completeRequest
 {
 	my ($this) = @_;
-	return if !$this->{pending_request};
-	display($dbg_rr,0,"completeRequest($this->{pending_request})");
+	my $filesys = $this->{filesys};
+	return error("no filesys") if !$filesys;
 
-	if ($this->{pending_request} =~ /recurse\t(.*)\t(.*)$/)
+	my $pending_request = $this->{pending_request} || '';
+	display($dbg_rr,0,"completeRequest() pending_request($pending_request)");
+	return if !$pending_request;
+
+
+	if ($pending_request =~ /recurse\t(.*)\t(.*)$/)
 	{
 		my ($src,$dest) = ($1,$2,$3);
 
@@ -361,7 +388,7 @@ sub completeRequest
 				return;
 			}
 
-			my $content = getFileRequestContent();
+			my $content = $filesys->{file_content};
 			my $len = length($content);
 			$recurse->{bytes} += $len;
 			
@@ -402,7 +429,7 @@ sub completeRequest
 			}
 			my $dirs = $recurse->{dirs};
 			my $files = $recurse->{files};
-			my $content = getFileRequestContent();
+			my $content = $filesys->{file_content};
 			my $num_added_files = 0;
 			my $num_added_dirs = 0;
 			for my $line (split(/\n/,$content))
@@ -439,10 +466,10 @@ sub completeRequest
 		$this->{pending_request} = '';
 		$recurse->{busy} = 0;
 	}
-	elsif ($this->{pending_request} =~ /size\t(\d+)\t/)
+	elsif ($pending_request =~ /size\t(\d+)\t/)
 	{
 		my $row = $1;
-		my $size = getFileRequestContent();
+		my $size = $filesys->{file_content};
 		my $entries = $this->{entries};
 		my $entry = $entries->[$row];
 
@@ -468,7 +495,7 @@ sub completeRequest
 		$this->{command_ctrl}->SetLabel('');
 		$this->{pending_request} = '';
 	}
-	elsif ($this->{pending_request} =~ /dir\t(.*)$/)
+	elsif ($pending_request =~ /dir\t(.*)$/)
 	{
 		my $path = $1;
 		my $ctrl = $this->{list_ctrl};
@@ -476,7 +503,7 @@ sub completeRequest
 
 		my $row = 0;
 		my $entries = [];
-		my $content = getFileRequestContent();
+		my $content = $filesys->{file_content};
 		for my $line (split(/\n/,$content))
 		{
 			my ($attr,$name) = split(/\t/,$line);
@@ -514,7 +541,7 @@ sub completeRequest
 			if ($is_dir)
 			{
 				my $item = $ctrl->GetItem($row);
-				$item->SetTextColour($color_blue);
+				$item->SetTextColour($wx_color_blue);
 				$ctrl->SetItem($item);
 			}
 			$row++;
@@ -528,10 +555,10 @@ sub completeRequest
 		$this->{pending_request} = '';
 		$this->{sizes_needed} = 1;
 	}
-	elsif ($this->{pending_request} =~ /file\t(.*)\t(.*)$/)
+	elsif ($pending_request =~ /file\t(.*)\t(.*)$/)
 	{
 		my ($src,$dest) = ($1,$2);
-		my $content = getFileRequestContent();
+		my $content = $filesys->{file_content};
 		my $len = length($content);
 
 		display($dbg_rr,1,"SAVING FILE($len) to $dest");
@@ -812,7 +839,7 @@ sub downloadSelected
 
 	# start the recursive file download
 	
-	my $progress = dlgProgress->new(
+	my $progress = x_Progress->new(
 		$this,
 		'download',
 		$num_files,
@@ -833,6 +860,9 @@ sub downloadSelected
 sub doOneRecurse
 {
 	my ($this) = @_;
+	my $filesys = $this->{filesys};
+	return error("no filesys") if !$filesys;
+	
 	my $recurse = $this->{recurse};
 	$recurse->{busy} = 1;
 
@@ -856,9 +886,10 @@ sub doOneRecurse
 	$progress->setSubRange(1000,$src) if $stage;
 
 	$this->setPendingRequest("recurse\t$src\t$dest");
+
 	$stage ?
-		requestFile($src) :
-		requestDirectory($src);
+		$filesys->fileCommand('FILE',$src) :
+		$filesys->fileCommand('DIR',$src);
 }
 
 
@@ -871,8 +902,15 @@ sub doOneRecurse
 sub onIdle
 {
 	my ($this,$event) = @_;
+	$event->RequestMore(1);
+	
+	my $filesys = $this->{filesys} = findServicePortByName('FILESYS');
+	error("No filesys?!?") if !$filesys;
+	return if !$filesys;
 
-	my $state = getFileRequestState();
+	my $state = $filesys->{file_state};
+	my $state_name = $FILE_STATE_NAME{$state};
+
 	if (!$this->{started} && (
 		$state == $FILE_STATE_IDLE ||
 		$state == $FILE_STATE_COMPLETE))
@@ -885,14 +923,14 @@ sub onIdle
 	elsif ($state != $this->{last_state})
 	{
 		display($dbg_win,0,"onIdle() state($this->{last_state}) changed to $state");
-		my $name = fileStateName($state);
+		my $name = $FILE_STATE_NAME{$state};
 		$this->{status_ctrl}->SetLabel($name);
 		$this->{status_ctrl}->SetForegroundColour(
-			$state == $FILE_STATE_INIT ? $color_light_grey :
-			$state == $FILE_STATE_ERROR ? $color_red :
-			$state == $FILE_STATE_COMPLETE ? $color_green :
-			$state == $FILE_STATE_STARTED ? $color_blue :
-			$state == $FILE_STATE_PACKETS ? $color_cyan :
+			$state == $FILE_STATE_INIT ?	 $wx_color_light_grey :
+			$state == $FILE_STATE_ERROR ? 	 $wx_color_red :
+			$state == $FILE_STATE_COMPLETE ? $wx_color_green :
+			$state == $FILE_STATE_STARTED ?  $wx_color_blue :
+			$state == $FILE_STATE_PACKETS ?  $wx_color_cyan :
 			wxBLACK );
 
 		if ($state == $FILE_STATE_COMPLETE)
@@ -903,9 +941,9 @@ sub onIdle
 		{
 			$this->{recurse} = undef;
 			$this->{command_ctrl}->SetLabel(getFileRequestError());
-			$this->{command_ctrl}->SetForegroundColour($color_red);
-			clearFileRequestError();
-			$state = getFileRequestState();
+			$this->{command_ctrl}->SetForegroundColour($wx_color_red);
+			$filesys->clearFileRequestError();
+			$state = $filesys->{file_state};
 		}
 
 		$this->{last_state} = $state;
@@ -935,20 +973,21 @@ sub onIdle
 		}
 		if ($recurse->{stage})
 		{
-			my $prog = getFileRequestProgress();
-			if ($prog->{num} == 1)
+			my $num = $filesys->{file_num_buffers};
+			my $cur = $filesys->{file_cur_buf_num};
+			if ($cur == 1)
 			{
 				$progress->updateSubRange(1000);
 			}
 			else
 			{
-				my $thousandths = int(($prog->{cur} / ($prog->{num}-1)) * 1000);
+				my $thousandths = int(($cur / ($num-1)) * 1000);
 				$progress->updateSubRange($thousandths);
 			}
 		}
 	}
 
-	$event->RequestMore(1);
+
 }
 
 
