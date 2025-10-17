@@ -7,19 +7,24 @@
 #
 # A probes filename is {name}_probes.txt, and matches the capitalization scheme.
 #
-# PROBE identifier	identifies a named probe that can be executed from shark
-#					by typing "P name identifier"
-# RAW	hex strings with replacements that will be sent
-# MSG	creates word(length) prepended message
-# BUMP	bump the sequence number
-# WAIT 	wait for any reply
-# >>>	text will be output to console
+# PROBE 	identifier	identifies a named probe that can be executed from shark
+#				by typing "P name identifier"
+# RAW		hex strings with replacements that will be sent
+# MSG		creates word(length) prepended message
+# INC_SEQ	bump the sequence number
+# WAIT 		wait for any reply
+# >>>		text will be output to console
 #
 # Replacements (in order of operations)
-#	{time}	= will be replaced by HH:MM:SS
-# 	{seq}	- will be replaced by a dword sequence number that advances once per probe
-# 	{func}	= will be replaced by the services word funciton code
-# 	{hex16 some name} will be replaced with the hex16 (non zero terminated) name
+#	{time}	will be replaced by HH:MM:SS
+# 	{seq}	will be replaced by a dword sequence number that advances once per probe
+# 	{sid}	will be replaced by the service_id
+#   {port}  will be replaced with the local_port (for udp probes)
+#   {string some_name} will be replaced by a word(length) delimited string
+# 	{name16 some name} will be replaced with the hex16 (non zero terminated) name
+#	{params} whatever was passed to doProbe(), after the $ident, in $full_params
+#
+# Note that udp probes are sent with global sendUDPPacket() in a_utils.
 
 package b_sock;	# continued ...
 use strict;
@@ -28,26 +33,11 @@ use threads;
 use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
-# use rayports;
-# use r_defs;
-# use c_RAYSYS qw(findServicePortByName);
+use a_utils;
 
 
+my $dbg_probe 	= 0;
 
-my $dbg_probe 	= 1;
-
-# Exported by tcpBase.pm
-
-# BEGIN
-# {
-#  	use Exporter qw( import );
-#     our @EXPORT = qw(
-#
-# 		doProbe
-#
-#     );
-# }
-#
 
 #-----------------------------------------------
 # clieant API doProbe and probe file parsing
@@ -55,8 +45,11 @@ my $dbg_probe 	= 1;
 
 sub doProbe
 {
-	my ($this,$ident) = @_;
-	display($dbg_probe,0,"doProbe($this->{name},$ident)");
+	my ($this,$full_params) = @_;
+	my ($ident,@params) = split(/\s+/,$full_params);
+	my $params = join(' ',@params) || '';
+
+	display($dbg_probe,0,"doProbe($this->{name},$ident,$params) full_params=$full_params");
 	my $probes = $this->parseProbes();
 	return if !$probes;
 	return error("Could not find probe($ident)")
@@ -69,7 +62,7 @@ sub doProbe
 		name => "PROBE($ident)",
 		probes => $probes,
 		ident => $ident,
-		hex_func => unpack('H*',pack('v',$this->{service_id})), });
+		params => $params });
 	push @{$this->{command_queue}},$command;
 }
 
@@ -131,7 +124,7 @@ sub parseProbes
 			$probe = shared_clone([]);
 			$probes->{$ident} = $probe;
 		}
-		elsif ($line =~ /^(RAW|MSG|BUMP|WAIT)(.*)$/)
+		elsif ($line =~ /^(RAW|MSG|INC_SEQ|WAIT)(.*)$/)
 		{
 			my ($sec,$text) = ($1,$2);
 			$text =~ s/#.*$//;
@@ -201,7 +194,7 @@ sub do_probe
 	$this->{show_raw_input} = 1;
 	$this->{show_raw_output} = 1;
 
-	display(0,0,"PROBE($this->{name},$ident) with $num_steps steps");
+	display(0,0,"PROBE($this->{name},$this->{proto},$ident,$command->{params}) with $num_steps steps");
 
 	for (my $i=0; $i<$num_steps; $i++)
 	{
@@ -212,7 +205,7 @@ sub do_probe
 		{
 			print "$line\n";
 		}
-		elsif ($line =~ /&BUMP/)
+		elsif ($line =~ /&INC_SEQ/)
 		{
 			$seq = ++$this->{next_seqnum};
 		}
@@ -220,13 +213,28 @@ sub do_probe
 		{
 			my ($cmd,$text) = ($1,$2);
 			my $hex_seq = unpack('H*',pack('V',$seq));
+			my $hex_sid = unpack('H*',pack('v',$this->{service_id})),
+			my $hex_port = unpack('H*',pack('v',$this->{local_port})),
+
 			my $now = now();
 
+			$text =~ s/{params}/$command->{params}/g;
 			$text =~ s/{time}/$now/g;
 			$text =~ s/{seq}/$hex_seq/g;
-			$text =~ s/{func}/$command->{hex_func}/g;
+			$text =~ s/{sid}/$hex_sid/g;
+			$text =~ s/{port}/$hex_port/g;
 
-			while ($text =~ s/{hex16\s+(.*?)}/##HERE##/)
+			while ($text =~ s/{string\s+(.*?)}/##HERE##/)
+			{
+				my $name = $1;
+				my $len = length($name);
+				my $hex_len = unpack('H*',pack('v',$len));
+				my $hex_name = unpack('H*',$name);
+				display($dbg_probe+2,1,"STRING($name)=$hex_len $hex_name");
+				$text =~ s/##HERE##/$hex_len$hex_name/;
+			}
+
+			while ($text =~ s/{name16\s+(.*?)}/##HERE##/)
 			{
 				my $name = $1;
 				my $hex = name16_hex($name,1);	# no terminator
@@ -236,19 +244,19 @@ sub do_probe
 			}
 
 			$text =~ s/\s//g;
-
 			my $data = pack('H*',$text);
 			my $len = length($data);
-
 			display($dbg_probe,1,"$cmd($len) = $text");
 
-			if ($cmd eq 'MSG')
+			if ($this->{proto} eq 'tcp' && $cmd eq 'MSG')
 			{
 				display($dbg_probe+1,2,"PROBE: send len($len)");
 				$this->sendPacket(pack('v',$len))
 			}
 			display($dbg_probe+1,2,"PROBE: send $text");
-			$this->sendPacket($data);
+			$this->{proto} eq 'udp' ?
+				sendUDPPacket("PROBE($ident)",$this->{ip},$this->{port},$data) :
+				$this->sendPacket($data);
 		}
 
 
@@ -280,7 +288,7 @@ sub do_probe
 
 	$this->{show_raw_input}  = $save_raw_input;
 	$this->{show_raw_output} = $save_raw_output;
-	display(0,0,"PROBE($this->{name},$ident) FINISHED");
+	display(0,0,"PROBE($this->{name},$this->{proto},$ident,$command->{params}) FINISHED");
 }
 
 

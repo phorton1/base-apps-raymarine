@@ -182,10 +182,14 @@ sub handleSerialCommand
 	}
 	elsif ($lpart eq 'p')
 	{
-		my ($name,$ident) = split(/\s+/,$rpart);
-		my $track = findServicePortByName('TRACK');
-		return if !$track;
-		$track->doProbe($rpart);
+		my ($name,@params) = split(/\s+/,$rpart);
+		my $params = join(' ',@params) || '';
+		$name = 'TRACK' 	if $name eq 't';
+		$name = 'WPMGR' 	if $name eq 'w';
+		$name = 'FILESYS'	if $name eq 'f';
+		my $service_port = findServicePortByName($name);
+		return if !$service_port;
+		$service_port->doProbe($params);
 	}
 
 }   #   handleCommand()
