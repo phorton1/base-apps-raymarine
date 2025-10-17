@@ -97,10 +97,12 @@ BEGIN
 # main
 #--------------------------------
 
+my $appGroup = 'raymarine';
+
 Pub::Utils::initUtils();
 # createSTDOUTSemaphore("buddySTDOUT");
-setStandardTempDir($appName);
-setStandardDataDir($appName);
+setStandardTempDir($appGroup);
+setStandardDataDir($appGroup);
 
 
 # The global $UDP_SEND_SOCKET is opened
