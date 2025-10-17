@@ -42,8 +42,8 @@ BEGIN
 		$FILE_STATE_ERROR
 		$FILE_STATE_COMPLETE
 		$FILE_STATE_IDLE
-		$FILE_STATE_STARTED
-		$FILE_STATE_PACKETS
+		$FILE_STATE_START
+		$FILE_STATE_BUSY
 		%FILE_STATE_NAME
 		
 		$FAT_READ_ONLY
@@ -73,24 +73,33 @@ my $MAXIMUM_FILE_SIZE = 'ffffff01'; #;
 
 my $FILE_REQUEST_TIMEOUT    = 60;        # seconds
 
-our $FILE_STATE_ILLEGAL   = -9; 	# used only to init change detection in winFILESYS
-our $FILE_STATE_INIT 	  = -3;
+# implemented as a state machine that handles a single
+# ui fileCommand, which sets START. The commandHandler
+# sets BUSY and ends with COMPLETE or ERROR.
+# Most commands are a single packet, excelt GET_FILE.
+# If COMPLETE, {file_content} will contain the results, or
+# on ERROR {file_error } will contain the 'error code'.
+
+our $FILE_STATE_ILLEGAL   = -3; 	# used only by client winFILESYS to detect existence
 our $FILE_STATE_ERROR     = -2;
 our $FILE_STATE_COMPLETE  = -1;
 our $FILE_STATE_IDLE      = 0;
-our $FILE_STATE_STARTED   = 1;
-our $FILE_STATE_PACKETS   = 2;
+our $FILE_STATE_START     = 1;
+our $FILE_STATE_BUSY      = 2;
 
 our %FILE_STATE_NAME = (
 	$FILE_STATE_ILLEGAL		=>	'ILLEGAL',
-	$FILE_STATE_INIT		=>  'INIT',
 	$FILE_STATE_ERROR		=>  'ERROR',
 	$FILE_STATE_COMPLETE	=>  'COMPLETE',
 	$FILE_STATE_IDLE		=>  'IDLE',
-	$FILE_STATE_STARTED		=>  'STARTED',
-	$FILE_STATE_PACKETS		=>  'PACKETS',
+	$FILE_STATE_START		=>  'STARTED',
+	$FILE_STATE_BUSY		=>  'BUSY',
 );
 
+
+# I could optimize fileCommand('DIR') to perform
+# the 'get sizes' loop in handlePacket but that
+# also would slow down recursive downloads.
 
 #-----------------------
 # FAT attribute bits
@@ -137,6 +146,7 @@ my %COMMAND_NUMBER = (
 
 
 #------ unused command constants
+# I probed these, and did not find them useful to the implementation
 # I never got anything from probes of 3 or higher than 9
 
 my $COMMAND_UNKNOWN 	= 3;		# I never got anything back from this in probing
@@ -146,9 +156,10 @@ my $COMMAND_GET_ATTR	= 4;		# returns dword size (files only) AND byte of attribu
 my $COMMAND_FILE_EXISTS = 5;		# appears to return $FILE_SUCCESS on existing files only, an error otherwise
 my $COMMAND_GET_SIZE2	= 6;		# appears to return exactly the same thing as GET_SIZE
 	# but apparently does not require extra insered word(0)
-my $COMMAND_LOCK		= 7;		# increments an internal lock counter, probably per listener
-my $COMMAND_UNLOCK		= 8;		# decrements an internal lock counter, probably per listener
-	# LOCKING: it appears as if the intent is that you call $COMMAND_UNLOCK and then
+my $COMMAND_LOCK		= 7;		# increments an internal lock counter
+my $COMMAND_UNLOCK		= 8;		# decrements an internal lock counter
+	# LOCKING: it appears as if this implements an advisory database locking scheme.
+	# The intent appaears to be that you call $COMMAND_UNLOCK and then
 	# if it returns an error, you are free to increment the counter with $COMMAND_LOCK
 	# which always returns $SUCCESS.  UNLOCK will return $SUCCEESS for as many times
 	# as you called LOCK, and then start returning errors again.
@@ -163,13 +174,12 @@ my $COMMAND_UNLOCK		= 8;		# decrements an internal lock counter, probably per li
 # calls it returns an extra dword that appears to contain
 # buffer junk from whatever followed the 00000400 in the
 # most recent success reply.
-# my $KNOWN_ERROR_CODE    = pack('H*','01050480');
 
 
-
-#-----------------------------------------------------
+#---------------------------------------------------------
 # instantiation
-#-----------------------------------------------------
+#---------------------------------------------------------
+# 'become' and 'unbecome' a 'real' service with a socket
 
 our $SHOW_FILESYS_RAW_INPUT 	= 1;
 our $SHOW_FILESYS_RAW_OUTPUT	= 1;
@@ -265,6 +275,10 @@ sub isCurrentServicePort
 #---------------------------------------------
 # UI COMMAND
 #---------------------------------------------
+# ID
+# DIR path
+# SIZE path
+# FILE path
 
 sub fileCommand
 {
@@ -302,7 +316,7 @@ sub fileCommand
 
 	$this->{file_content} 	= '';
 	$this->{file_error} 	= '';
-	$this->{file_state} 	= $FILE_STATE_STARTED;
+	$this->{file_state} 	= $FILE_STATE_START;
 
 	# push a place keeper command
 
@@ -325,12 +339,8 @@ sub clearFileRequestError
 
 
 #----------------------------------------------------
-# implementation
+# handleCommand()
 #----------------------------------------------------
-# It is all done through handleCommand and waitReply
-# there is no "handlePacket()" method for this object
-# except to return the raw reply
-
 
 sub dbgFatStr
 {
@@ -373,7 +383,10 @@ sub handleCommand
 		# show the place keeper command, but the
 		# command actually runs off $this member variables
 
-	# The header of the command never changes
+	#-------------------------------
+	# Build the request packet
+	#-------------------------------
+	# The header of the request never changes
 
 	my $seq = $this->{next_seqnum}++;
 	my $len = length($path) + 1;
@@ -399,16 +412,18 @@ sub handleCommand
 			# but it does not hurt anything
 	}
 
+	#-------------------------------
+	# Send the request packet
+	#-------------------------------
 	# The packet is sent directly to the registered service
-	# PRH TODO - modernize and handle sendUDP packet failures
-
+	# PRH TODO - modernize and handle sendUDPPacket failures
 	
     sendUDPPacket(
         "fileCommand($command_name)",
 		$this->{ip},
         $this->{port},
         $packet);
-	$this->{file_state} = $FILE_STATE_PACKETS;
+	$this->{file_state} = $FILE_STATE_BUSY;
 	if ($this->{show_raw_output})
 	{
 		setConsoleColor($this->{out_color}) if $this->{out_color};
@@ -416,6 +431,9 @@ sub handleCommand
 		setConsoleColor() if $this->{out_color};
 	}
 
+	#---------------------------------------------------
+	# Wait for a reply (from our packetHandler)
+	#---------------------------------------------------
 	# OK, this is where it is weird.
 	# We don't have a thread, so we use waitReply
 	# to deliver a timeout error ...
@@ -429,8 +447,6 @@ sub handleCommand
 
 	# ... however, WE have to return the reply in handlePacket() below
 	# 	  for waitReply to see it ...
-	# ... handlePacket() has special handling to get all the file packets
-	# 	  before returning a reply ...
 }
 
 
@@ -452,6 +468,10 @@ sub fileRequestError
 }
 
 
+#-----------------------------------
+# handlePacket()
+#-----------------------------------
+
 sub handlePacket
 	# .... so, we have to parse the packet for success, contents, etc,
 	# and return a record 'reply' with seq_num and success==1  when the
@@ -467,12 +487,13 @@ sub handlePacket
 	#----------------------------
 	
 	my $state = $this->{file_state};
-	return $this->fileError("unexpected file_state($state)") if $state != $FILE_STATE_PACKETS;
+	return $this->fileError("unexpected file_state($state)") if $state != $FILE_STATE_BUSY;
 
 	my $cmd = $this->{file_command};	# THE ONE WE SENT
 
 	my ($cmd_word,$service_id,$seq) = unpack('vvV',$packet);
 	display($dbg_fs,1,"GOT cmd_word($cmd_word) service_id($service_id) seq($seq) in response to cmd($cmd)");
+	my $offset = 8;
 
 	return $this->fileError(-1,"unexpected service_id($service_id)")
 		if $service_id != $FILESYS_SERVICE_ID;
@@ -482,11 +503,11 @@ sub handlePacket
 	#------------------------------------
 	# parse card_id or success
 	#------------------------------------
-
 	# Example for the string 0014910F06D62062 returned with my RAY_DATA CF card in the E80
 	#
-	#	09000500 nnnnnnnn
-	#   	signature w/seq_num
+	#	0900 0500 nnnnnnnn
+	#   	cmd, service_id, seq_num
+	#
 	#	88130000 0100
 	#      	unknown leading bytes
 	#	1400 20202020 30303134 39313046 30364436 32303632
@@ -494,6 +515,9 @@ sub handlePacket
 	#		 _ _ _ _  0 0 1 4  9 1 0 F  0 6 D 6  2 0 6 2
 	#	0f270c
 	#		unknown trailing bytes
+	#
+	# otherwise, for all other commands, the next four bytes should
+	# be '00000400', the success pattern
 
 	my $success = 0;
 	if ($cmd == $COMMAND_CARD_ID)
@@ -504,14 +528,11 @@ sub handlePacket
 		$this->{file_content} = $id;
 		$success = 1;
 	}
-
-	# otherwise, for all other commands, the next four bytes should
-	# be '00000400', the success pattern
-
 	else
 	{
-		my $code = unpack('H*',substr($packet,8,4));
+		my $code = unpack('H*',substr($packet,$offset,4));
 		display($dbg_fs,2,"GOT success($code)");
+		$offset += 4;
 		return $this->fileRequestError($seq,"operation failed: $code")
 			if $code ne $SUCCESS_SIG;
 	}
@@ -523,7 +544,7 @@ sub handlePacket
 
 	if ($cmd == $COMMAND_GET_SIZE)
 	{
-		my $size = unpack('V',substr($packet,12));
+		my $size = unpack('V',substr($packet,$offset));
 		print "SIZE($this->{file_path}) = $size\n";
 		$this->{file_content} = $size;
 		$success = 1;
@@ -533,6 +554,7 @@ sub handlePacket
 		# Each entry is word(length) followed by length bytes of name,
 		# followed by a FAT 1 byte bitwise attribute
 		#
+		#									  v num_entries
 		#                                         v first length byte
 		# 00000500 03000000 00000400 01000100 06000200 2e001002 002e2e10 0e005445   ..............................TE
 		# 53545f44 41544131 2e545854 200e0054 4553545f 44415441 322e5458 54201400   ST_DATA1.TXT ..TEST_DATA2.TXT ..
@@ -540,14 +562,12 @@ sub handlePacket
 		# 5f494d41 4745322e 4a504720                                                _IMAGE2.JPG
 		#
 		# There is a dir entry for . followed by a dir entry for ..
-		# The entry for . seems to have and included null, where as the one for .. doesnt
+		# The entry for . seems to have an included null, where as the one for .. doesn't
 		#
-		# I don't understand these 6 bytes from 12-17. I presume they are num_packets
-		# and packet_num to manage large directory listings
-		# 			0100 0100 0600
+		# I don't understand the 4th dword 01000100
 
 		print "DIR($this->{file_path})\n";
-		my $offset = 16;
+		$offset += 4;	# skip unknown dword
 		my $num_entries = unpack('v',substr($packet,$offset,2));
 		display($dbg_fs,2,"num_entries($num_entries)");
 		$offset += 2;
@@ -573,11 +593,24 @@ sub handlePacket
 	}
 
 	# GET_FILE only sets $success=1 on the last packet
+	# We don't assert the $bytes == $packet_len-$offset, but it does.
+	# The length of the packet, except for the last, is always
+	# 1042 bytes == the header and 1024 bytes of content
+	#
+	#	0200 0500 0c000000 00000400
+	#	  	cmd,service_id,seq_num,success_code
+	#
+	#	8c00 0600 0004
+	#		num_packets, packet_num, bytes=0x400 = 1024
+	#
+	#   50542c33 2e302c30 2e302a35 340d0a0d 0a527820 30303030 38342024 57494d57   PT,3.0,0.0*54....Rx 000084 $WIMWV,
+	#	  	content ....
 	
 	elsif ($cmd == $COMMAND_GET_FILE)
 	{
-		my ($num_packets,$packet_num,$bytes) = unpack('v3',substr($packet,12,6));
+		my ($num_packets,$packet_num,$bytes) = unpack('v3',substr($packet,$offset,6));
 		display($dbg_fs,2,"command($cmd) packet($packet_num/$num_packets) bytes=$bytes");
+		$offset += 6;
 
 		$this->{file_cur_buf_num} = $packet_num;
 		$this->{file_num_buffers} = $num_packets;
@@ -590,14 +623,14 @@ sub handlePacket
 		}
 		else
 		{
-			my $content = substr($packet,18);
+			my $content = substr($packet,$offset);
 			$this->{file_content} .= $content;
 			if ($packet_num == $num_packets - 1)
 			{
 				display($dbg_fs,2,"FILE($this->{file_path}) COMPLETED!!");
 				$success = 1;
 			}
-		}	# no length error
+		}	# got the next expected buffer
 	}	#   $COMMAND_GET_FILE
 
 

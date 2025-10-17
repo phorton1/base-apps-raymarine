@@ -926,11 +926,11 @@ sub onIdle
 		my $name = $FILE_STATE_NAME{$state};
 		$this->{status_ctrl}->SetLabel($name);
 		$this->{status_ctrl}->SetForegroundColour(
-			$state == $FILE_STATE_INIT ?	 $wx_color_light_grey :
+			$state == $FILE_STATE_ILLEGAL ?	 $wx_color_light_grey :
 			$state == $FILE_STATE_ERROR ? 	 $wx_color_red :
 			$state == $FILE_STATE_COMPLETE ? $wx_color_green :
-			$state == $FILE_STATE_STARTED ?  $wx_color_blue :
-			$state == $FILE_STATE_PACKETS ?  $wx_color_cyan :
+			$state == $FILE_STATE_START ?  	 $wx_color_blue :
+			$state == $FILE_STATE_BUSY ?  	 $wx_color_cyan :
 			wxBLACK );
 
 		if ($state == $FILE_STATE_COMPLETE)
