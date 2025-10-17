@@ -1,0 +1,10 @@
+#---------------------------------------
+# Just enough FILESYS probes
+#---------------------------------------
+# to prove that b_probe works with udp services
+
+PROBE dir
+
+	INC_SEQ
+	MSG		0001 {sid} {seq} {port} {string {params}}
+	WAIT
