@@ -20,6 +20,7 @@ use Win32::Console;
 use w_resources;
 use winRAYSYS;
 use winFILESYS;
+use winDBNAV;
 use base qw(Pub::WX::Frame);
 
 
@@ -32,11 +33,12 @@ sub new
 
 	EVT_MENU($this, $WIN_RAYSYS, \&onCommand);
 	EVT_MENU($this, $WIN_FILESYS, \&onCommand);
+	EVT_MENU($this, $WIN_DBNAV,	\&onCommand);
     EVT_IDLE($this, \&onIdle);
 
 	my $data = undef;
-	$this->createPane($WIN_RAYSYS,$this->{book},$data,"test237");
-	# $this->createPane($WIN_FILESYS,$this->{book},$data,"test237");
+	$this->createPane($WIN_RAYSYS,$this->{book},$data,"test234");
+	$this->createPane($WIN_DBNAV,$this->{book},$data,"test235");
 	return $this;
 }
 
@@ -60,7 +62,8 @@ sub createPane
     $book ||= $this->{book};
 	display(0,0,"minimumFrame::createPane($id) book="._def($book)."  data="._def($data));
 	return winRAYSYS->new($this,$book,$id,"test236 $id") if $id == $WIN_RAYSYS;
-	return winFILESYS->new($this,$book,$id,"test236 $id") if $id == $WIN_FILESYS;
+	return winFILESYS->new($this,$book,$id,"test237 $id") if $id == $WIN_FILESYS;
+	return winDBNAV->new($this,$book,$id,"test238 $id") if $id == $WIN_DBNAV;
     return $this->SUPER::createPane($id,$book,$data,"test237");
 }
 

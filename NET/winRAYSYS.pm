@@ -36,12 +36,15 @@ my $COL_NAME 		= 14;
 my $COL_PROTO		= 24;
 my $COL_IP			= 30;
 my $COL_PORT		= 47;
-my $COL_FROM_BOX	= 55;
-my $COL_TO_BOX		= 63;
-my $COL_MULTI		= 71;
-my $COL_LISTEN		= 81;
-my $COL_COLOR		= 93;	# width 14
-my $COL_TOTAL		= 107;
+my $COL_SPAWN		= 55;
+my $COL_TOTAL		= 67;
+
+#	my $COL_FROM_BOX	= 55;
+#	my $COL_TO_BOX		= 63;
+#	my $COL_MULTI		= 71;
+#	my $COL_LISTEN		= 81;
+#	my $COL_COLOR		= 93;	# width 14
+#	my $COL_TOTAL		= 107;
 
 
 my $ID_SORT_BY			  = 902;
@@ -55,12 +58,12 @@ my $ID_SHOW_WPMGR_PARSED_OUTPUT = 906;
 my $SORT_BYS = ['port','service','device','num'];
 
 
-
-my $MON_FROM_ID_BASE 	= 1000;
-my $MON_TO_ID_BASE 		= 1100;
-my $MULTI_ID_BASE		= 1200;
-my $LISTEN_ID_BASE  	= 1300;
-my $COLOR_ID_BASE 		= 1400;
+my $SPAWN_ID_BASE		= 1000;
+my $MON_FROM_ID_BASE 	= 1100;
+my $MON_TO_ID_BASE 		= 1200;
+my $MULTI_ID_BASE		= 1300;
+my $LISTEN_ID_BASE  	= 1400;
+my $COLOR_ID_BASE 		= 1500;
 
 	# Apps should only use control IDs >= 200 !!!
 	# As Pub::WX::Frame disables the standard "View" menu commands
@@ -89,18 +92,6 @@ sub new
 	Wx::StaticText->new($this,-1,'Sort by',[10,13]);
 	Wx::ComboBox->new($this, $ID_SORT_BY, $$SORT_BYS[0],
 		[84,10],wxDefaultSize,$SORT_BYS,wxCB_READONLY);
-
-	#	Wx::StaticText->new($this,-1,"Monitor WPMGR   Raw ",[200,13]);
-	#	my $box = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_TCP_INPUT,"in",[400,13]);
-	#	$box->SetValue(1) if $wp_mgr->{show_input};
-	#	$box = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_TCP_OUTPUT,"out",[500,13]);
-	#	$box->SetValue(1) if $wp_mgr->{show_output};
-	#	Wx::StaticText->new($this,-1,"  Parsed ",[600,13]);
-	#	$box = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_PARSED_INPUT,"in",[700,13]);
-	#	$box->SetValue(1) if $SHOW_WPMGR_PARSED_INPUT;
-	#	$box = Wx::CheckBox->new($this,$ID_SHOW_WPMGR_PARSED_OUTPUT,"out",[800,13]);
-	#	$box->SetValue(1) if $SHOW_WPMGR_PARSED_OUTPUT;
-
 
 	$this->{sort_by} = $$SORT_BYS[0];
 	$this->{slots} = [];
@@ -189,6 +180,8 @@ sub sortRecords
 		my $slot = $$slots[$i];
 		my $slot_key = $slot_keys[$i];
 		my $service_port = $service_ports->{$slot_key};
+		my $name = $service_port->{name};
+		my $proto = $service_port->{proto};
 
 		if ($slot->{key} ne $slot_key)
 		{
@@ -196,21 +189,26 @@ sub sortRecords
 
 			$slot->{ctrl_device_id}		->SetLabel($service_port->{device_id});
 			$slot->{ctrl_service_id}	->SetLabel($service_port->{service_id});
-			$slot->{ctrl_name}			->SetLabel($service_port->{name});
-			$slot->{ctrl_proto}			->SetLabel($service_port->{proto});
+			$slot->{ctrl_name}			->SetLabel($name);
+			$slot->{ctrl_proto}			->SetLabel($proto);
 			$slot->{ctrl_ip}			->SetLabel($service_port->{ip});
 			$slot->{ctrl_port}			->SetLabel($service_port->{port});
 
-			$slot->{from_box}->SetValue($service_port->{mon_from});
-			$slot->{out_box}->SetValue($service_port->{mon_to});
-			$slot->{multi}->SetValue($service_port->{multi});
-			$slot->{listen}->SetValue($service_port->{listen});
+			my $spawn_box = $slot->{spawn_box};
+			my $spawn_enable = !$service_port->{implemented} ? 1 : 0; # && ($proto eq 'udp' || $proto eq 'tcp') ? 1 : 0;
+			$spawn_box->Enable($spawn_enable);
+			$spawn_box->SetValue($service_port->{created});
 
-			my $disable_listen = $service_port->{proto} =~ /mcast|udp/ || $service_port->{listen};
-			$slot->{listen}->Enable(!$disable_listen);
+			# $slot->{from_box}->SetValue($service_port->{mon_from});
+			# $slot->{out_box}->SetValue($service_port->{mon_to});
+			# $slot->{multi}->SetValue($service_port->{multi});
+			# $slot->{listen}->SetValue($service_port->{listen});
+            #
+			# my $disable_listen = $service_port->{proto} =~ /mcast|udp/ || $service_port->{listen};
+			# $slot->{listen}->Enable(!$disable_listen);
 
-			my $color = $console_color_names[$service_port->{color}];
-			$slot->{ctrl_color}->SetValue($color);
+			# my $color = $console_color_names[$service_port->{color}];
+			# $slot->{ctrl_color}->SetValue($color);
 		}
 	}
 }
@@ -250,13 +248,13 @@ sub onIdle
 			my $ip 			 = $service_port->{ip};
 			my $port 		 = $service_port->{port};
 			my $addr 		 = $service_port->{addr};
-
+			
 			# temporary stuff color to avoid undef warnings
 			
 			$service_port->{color} ||= 0;
 			my $color_num	 = $service_port->{color};
 
-			display($dbg_win+1,0,"adding service_port device_id($device_id} service_id($service_id) $name $proto} $addr ");
+			display($dbg_win,0,"adding service_port device_id($device_id} service_id($service_id) $name $proto $addr ");
 				# "in($service_port->{mon_from}) out($service_port->{mon_to}) ".
 				# "color($service_port->{color}) multi($service_port->{multi})");
 
@@ -264,27 +262,33 @@ sub onIdle
 
 			my $ypos = $TOP_MARGIN + $i * $LINE_HEIGHT;
 
-			my $from_id 	= $i + $MON_FROM_ID_BASE;
-			my $to_id 		= $i + $MON_TO_ID_BASE;
-			my $multi_id 	= $i + $MULTI_ID_BASE;
-			my $listen_id 	= $i + $LISTEN_ID_BASE;
+			#	my $from_id 	= $i + $MON_FROM_ID_BASE;
+			#	my $to_id 		= $i + $MON_TO_ID_BASE;
+			#	my $multi_id 	= $i + $MULTI_ID_BASE;
+			#	my $listen_id 	= $i + $LISTEN_ID_BASE;
+			#	my $from_box = Wx::CheckBox->new($this,$from_id,	"from",	 [$this->X($COL_FROM_BOX),	$ypos]);
+			#	my $to_box 	 = Wx::CheckBox->new($this,$to_id,		"to",	 [$this->X($COL_TO_BOX),	$ypos]);
+			#	my $multi 	 = Wx::CheckBox->new($this,$multi_id,	"multi", [$this->X($COL_MULTI),		$ypos]);
+			#	my $listen 	 = Wx::CheckBox->new($this,$listen_id,	"listen",[$this->X($COL_LISTEN),	$ypos]);
+            #
+			#	$from_box->	SetValue(1)	if $service_port->{mon_from};
+			#	$to_box->	SetValue(1) if $service_port->{mon_to};
+			#	$multi->	SetValue(1)	if $service_port->{multi};
+			#	$listen->	SetValue(1)	if $service_port->{listen};		# local to winRAYSYS layer
+            #
+			#	$listen->Enable(0) if $proto =~ /mcast|udp/;# || $service_port->{listen};
+            #
+			#	my $color = $console_color_names[$color_num];
+			#	my $combo_id = $COLOR_ID_BASE + $i;
+			#	my $combo = Wx::ComboBox->new($this, $combo_id, $color,
+			#		[$this->X($COL_COLOR),$ypos-2],wxDefaultSize,\@console_color_names,wxCB_READONLY);
 
-			my $from_box = Wx::CheckBox->new($this,$from_id,	"from",	 [$this->X($COL_FROM_BOX),	$ypos]);
-			my $to_box 	 = Wx::CheckBox->new($this,$to_id,		"to",	 [$this->X($COL_TO_BOX),	$ypos]);
-			my $multi 	 = Wx::CheckBox->new($this,$multi_id,	"multi", [$this->X($COL_MULTI),		$ypos]);
-			my $listen 	 = Wx::CheckBox->new($this,$listen_id,	"listen",[$this->X($COL_LISTEN),	$ypos]);
-
-			$from_box->	SetValue(1)	if $service_port->{mon_from};
-			$to_box->	SetValue(1) if $service_port->{mon_to};
-			$multi->	SetValue(1)	if $service_port->{multi};
-			$listen->	SetValue(1)	if $service_port->{listen};		# local to winRAYSYS layer
-
-			$listen->Enable(0) if $proto =~ /mcast|udp/;# || $service_port->{listen};
-
-			my $color = $console_color_names[$color_num];
-			my $combo_id = $COLOR_ID_BASE + $i;
-			my $combo = Wx::ComboBox->new($this, $combo_id, $color,
-				[$this->X($COL_COLOR),$ypos-2],wxDefaultSize,\@console_color_names,wxCB_READONLY);
+			my $spawn_id = $i + $SPAWN_ID_BASE;
+			my $spawn_box = Wx::CheckBox->new($this,$spawn_id,	"spawn",	[$this->X($COL_SPAWN),	$ypos]);
+			my $spawn_enable = !$service_port->{implemented} ? 1 : 0; # && ($proto eq 'udp' || $proto eq 'tcp') ? 1 : 0;
+			display(0,2,"enable=$spawn_enable");
+			$spawn_box->Enable($spawn_enable);
+			$spawn_box->SetValue($service_port->{created});
 
 			push @$slots,{
 				key 			=> $addr,
@@ -294,16 +298,18 @@ sub onIdle
 				ctrl_proto		=> Wx::StaticText->new($this,-1,$proto,		[$this->X($COL_PROTO),		$ypos]),
 				ctrl_ip 		=> Wx::StaticText->new($this,-1,$ip,		[$this->X($COL_IP),			$ypos]),
 				ctrl_port 		=> Wx::StaticText->new($this,-1,$port,		[$this->X($COL_PORT),		$ypos]),
-				from_box		=> $from_box,
-				out_box     	=> $to_box,
-				multi			=> $multi,
-				listen			=> $listen,
-				ctrl_color  	=> $combo,
+				spawn_box		=> $spawn_box,
+				
+				#	from_box		=> $from_box,
+				#	out_box     	=> $to_box,
+				#	multi			=> $multi,
+				#	listen			=> $listen,
+				#	ctrl_color  	=> $combo,
 			};
 		}
 
 		$this->SetVirtualSize([$COL_TOTAL * $this->{CHAR_WIDTH} + 10,$TOP_MARGIN + scalar(@$slots)*$LINE_HEIGHT ]);
-		$this->sortRecords();
+		# $this->sortRecords();
 	}
 	
 	$event->RequestMore(1);
@@ -317,87 +323,70 @@ sub onCheckBox
 	my $id = $event->GetId();
 	my $checked = $event->IsChecked() || 0;
 
-	#	if ($id == $ID_SHOW_WPMGR_TCP_INPUT)
-	#	{
-	#		$wp_mgr->{show_input} = $checked;
-	#		display(0,0,"wpmgr->{show_input}=$checked");
-	#	}
-	#	elsif ($id == $ID_SHOW_WPMGR_TCP_OUTPUT)
-	#	{
-	#		$wp_mgr->{show_output} = $checked;
-	#		display(0,0,"wpmgr->{show_output}=$checked");
-	#	}
-	#	elsif ($id == $ID_SHOW_WPMGR_PARSED_INPUT)
-	#	{
-	#		$SHOW_WPMGR_PARSED_INPUT = $checked;
-	#		display(0,0,"SHOW_WPMGR_PARSED_INPUT=$SHOW_WPMGR_PARSED_INPUT");
-	#	}
-	#	elsif ($id == $ID_SHOW_WPMGR_PARSED_OUTPUT)
-	#	{
-	#		$SHOW_WPMGR_PARSED_OUTPUT = $checked;
-	#		display(0,0,"SHOW_WPMGR_PARSED_OUTPUT=$SHOW_WPMGR_PARSED_OUTPUT");
-	#	}
-	#	else
-	{
-		my $field = "mon_from";
-		my $slot_num = $id - $MON_FROM_ID_BASE;
-		if ($id >= $LISTEN_ID_BASE)
-		{
-			$field = "listen";
-			$slot_num = $id - $LISTEN_ID_BASE;
-		}
-		elsif ($id >= $MULTI_ID_BASE)
-		{
-			$field = "multi";
-			$slot_num = $id - $MULTI_ID_BASE;
-		}
-		elsif ($id >= $MON_TO_ID_BASE)
-		{
-			$field = "mon_to";
-			$slot_num = $id - $MON_TO_ID_BASE;
-		}
-		elsif ($id >= $MON_FROM_ID_BASE)
-		{
-			$field = "mon_from";
-			$slot_num = $id - $MON_FROM_ID_BASE;
-		}
-
-		my $slot = $this->{slots}->[$slot_num];
-		my $key = $slot->{key};
-		my $service_port = $this->{service_ports}->{$key};
-		$service_port->{$field} = $checked;
-		display(0,0,"$service_port->{name} $field($checked) $service_port->{proto} $service_port->{addr}");
-		#	if ($field eq 'listen')
-		#	{
-		#		my $base = findTcpBase($service_port->{name});
-		#		if ($checked)
-		#		{
-		#			display(0,1,"starting tcpBase for func($service_port->{func} $service_port->{addr} $service_port->{proto} $service_port->{name}");
-		#			return error("already started!") if $base;
-		#			# my $box = $event->GetEventObject();
-		#			# $box->Enable(0);
-		#			my $base = tcpBase->new({
-		#				name => $service_port->{name},
-		#				EXIT_ON_CLOSE => 1,
-		#				show_input => 1,
-		#				show_output => 1,
-		#				in_color => $service_port->{color},
-		#				out_color => $service_port->{color} });
-		#			$base->start();
-        #
-		#			# tcpListener->startTcpListener($service_port->{ip},$service_port->{port});
-		#		}
-		#		else
-		#		{
-		#			display(0,1,"stopping tcpBase for func($service_port->{func}) $service_port->{addr} $service_port->{proto} $service_port->{name}");
-        #
-		#			return error("could not find tcpBase!") if !$base;
-		#			$base->stop();
-		#		}
-		#	}
+	my $field = "spawn";
+	my $slot_num = $id - $SPAWN_ID_BASE;
 
 
-	}
+	#	if ($id >= $LISTEN_ID_BASE)
+	#	{
+	#		$field = "listen";
+	#		$slot_num = $id - $LISTEN_ID_BASE;
+	#	}
+	#	elsif ($id >= $MULTI_ID_BASE)
+	#	{
+	#		$field = "multi";
+	#		$slot_num = $id - $MULTI_ID_BASE;
+	#	}
+	#	elsif ($id >= $MON_TO_ID_BASE)
+	#	{
+	#		$field = "mon_to";
+	#		$slot_num = $id - $MON_TO_ID_BASE;
+	#	}
+	#	elsif ($id >= $MON_FROM_ID_BASE)
+	#	{
+	#		$field = "mon_from";
+	#		$slot_num = $id - $MON_FROM_ID_BASE;
+	#	}
+	# $service_port->{$field} = $checked;
+
+	my $slot = $this->{slots}->[$slot_num];
+	my $key = $slot->{key};
+	my $service_port = $this->{service_ports}->{$key};
+	my $name = $service_port->{name};
+
+	display(0,0,"$name $field($checked) $service_port->{proto} $service_port->{addr}");
+	spawnServicePortByName($name,$checked) if $field eq 'spawn';
+
+
+	#	if ($field eq 'listen')
+	#	{
+	#		my $base = findTcpBase($service_port->{name});
+	#		if ($checked)
+	#		{
+	#			display(0,1,"starting tcpBase for func($service_port->{func} $service_port->{addr} $service_port->{proto} $service_port->{name}");
+	#			return error("already started!") if $base;
+	#			# my $box = $event->GetEventObject();
+	#			# $box->Enable(0);
+	#			my $base = tcpBase->new({
+	#				name => $service_port->{name},
+	#				EXIT_ON_CLOSE => 1,
+	#				show_input => 1,
+	#				show_output => 1,
+	#				in_color => $service_port->{color},
+	#				out_color => $service_port->{color} });
+	#			$base->start();
+	#
+	#			# tcpListener->startTcpListener($service_port->{ip},$service_port->{port});
+	#		}
+	#		else
+	#		{
+	#			display(0,1,"stopping tcpBase for func($service_port->{func}) $service_port->{addr} $service_port->{proto} $service_port->{name}");
+	#
+	#			return error("could not find tcpBase!") if !$base;
+	#			$base->stop();
+	#		}
+	#	}
+
 }
 
 
@@ -418,16 +407,16 @@ sub onComboBox
 		$this->{sort_by} = $selected;
 		$this->sortRecords();
 	}
-	else
-	{
-		my $value = $console_color_values->{$selected};
-		my $slot_num = $id - $COLOR_ID_BASE;
-		my $slot = $this->{slots}->[$slot_num];
-		my $key = $slot->{key};
-		my $service_port = $this->{service_ports}->{$key};
-		$service_port->{color} = $value;
-		warning(0,0,"color($selected)=$value $service_port->{proto} $service_port->{addr}");
-	}
+	#	else
+	#	{
+	#		my $value = $console_color_values->{$selected};
+	#		my $slot_num = $id - $COLOR_ID_BASE;
+	#		my $slot = $this->{slots}->[$slot_num];
+	#		my $key = $slot->{key};
+	#		my $service_port = $this->{service_ports}->{$key};
+	#		$service_port->{color} = $value;
+	#		warning(0,0,"color($selected)=$value $service_port->{proto} $service_port->{addr}");
+	#	}
 }
 
 	

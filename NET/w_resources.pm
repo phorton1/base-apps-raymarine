@@ -21,6 +21,7 @@ BEGIN
 
         $WIN_RAYSYS
 		$WIN_FILESYS
+		$WIN_DBNAV
 		$CMD_DOWNLOAD
     );
 }
@@ -33,6 +34,7 @@ our $appName = "shark";
 
 our ($WIN_RAYSYS,
 	 $WIN_FILESYS,
+	 $WIN_DBNAV,
 
 	 $CMD_DOWNLOAD ) = (10000..11000);
 
@@ -43,6 +45,7 @@ our ($WIN_RAYSYS,
 my $pane_data = {
 	$WIN_RAYSYS		=> ['Unused String1',		'content'	],
 	$WIN_FILESYS	=> ['Unused String1',		'content'	],
+	$WIN_DBNAV		=> ['Unused String1',		'content'	],
 };
 
 
@@ -52,8 +55,9 @@ my $pane_data = {
 
 my $command_data = {
 	%{$resources->{command_data}},
-	$WIN_RAYSYS     => ['RayDP', 	'Raynet Discover Protocol'],
+	$WIN_RAYSYS    => ['RayDP', 	'Raynet Discover Protocol'],
 	$WIN_FILESYS   => ['FileSys', 	'Removable Media Fiile System'],
+	$WIN_DBNAV	   => ['DBNav', 	'Navigation Data'],
 	$CMD_DOWNLOAD  => ['Download',	'Download Selected Items'],
 };
 
@@ -89,6 +93,7 @@ my $file_menu = [];
 my $view_menu = [
 	$WIN_RAYSYS,
 	$WIN_FILESYS,
+	$WIN_DBNAV,
 	$ID_SEPARATOR,
 	@{$resources->{view_menu}}
 ];

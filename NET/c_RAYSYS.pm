@@ -92,6 +92,7 @@ BEGIN
 		findServicePort
 		getServicePorts
 		findServicePortByName
+		spawnServicePortByName
 
 	);
 }
@@ -177,6 +178,38 @@ sub findServicePortByName
 	my $service_port = $self ? $self->{ports_by_name}->{$name} : undef;
 	error("Could not findServicePortByName($name)") if !$service_port && !$quiet;
 	return $service_port;
+}
+
+
+sub spawnServicePortByName
+{
+	my ($name,$create) = @_;
+	warning($dbg_raysys,0,"spawnServicePortByName($name,$create)");
+	my $service_port = findServicePortByName($name);
+	return if !$service_port;
+
+	my $proto = $service_port->{proto};
+	return error("$name is already created") if $create && $service_port->{created};
+	return error("$name is not created") if !$create && !$service_port->{created};
+	return error("Don't know how to spawn $proto->{proto} for $name")
+		if $proto ne 'udp' && $proto ne 'tcp' && $proto ne 'mcast';
+		
+	if ($create)
+	{
+		$service_port->{EXIT_ON_CLOSE} = 1;
+		$service_port->{local_port}	= $service_port->{service_id};
+		$service_port->{local_port} += $LOCAL_UDP_PORT_BASE if $proto eq 'udp';
+		$service_port->{local_port} += $LOCAL_TCP_PORT_BASE if $proto eq 'tcp';
+		bless $service_port, 'b_sock';
+		$service_port->init();
+		$service_port->start();
+	}
+	else
+	{
+		# $service_port->stop();
+		$service_port->destroy();
+		bless $service_port,'HASH';
+	}
 }
 
 
@@ -291,6 +324,7 @@ sub promote_to_real_service
 
 
 
+
 #-------------------------------------------------------
 # packet handling
 #-------------------------------------------------------
@@ -367,7 +401,7 @@ sub handlePacket
     {
         # print packetWireHeader($packet,0)."RAYDP_WAKEUP_PACKET: ".unpack("H*",$raw)."\n";
 		print "RAYDP_WAKEUP_PACKET: ".unpack("H*",$raw)."\n";
-        return 0;
+        return undef;
     }
 
     # parse the RAYSYS packet for header fields
@@ -395,7 +429,7 @@ sub handlePacket
 
 		$device_id = unpack('H*',substr($raw,8,4));
 		$device_id = $KNOWN_DEVICES{$device_id} || $device_id;
-		return if $this->{devices}->{$device_id};
+		return undef if $this->{devices}->{$device_id};
 
  		my $version = unpack('v',substr($raw,12,2))/100;
 		my $ip = inet_ntoa(pack('N', unpack('V',substr($raw,16,4))));
@@ -417,7 +451,7 @@ sub handlePacket
 			print "RAYSYS IDENT type($type) device_id($device_id) vers($version) ip($ip) role($role)\n";
 			setConsoleColor();
 		}
-		return;
+		return undef;
 	}
 
     # set the count and return if the device_service packet has already been parsed
@@ -427,7 +461,7 @@ sub handlePacket
     my $count = $found ? $found->{count} : 0;
     $count++;
     $rec->{count} = $count;
-    return 0 if $found;
+    return undef if $found;
 
     # PARSE AND ADD A NEW device_service and set of service_port records
 
@@ -470,7 +504,7 @@ sub handlePacket
 
     else
 	{
-		return 0 if $this->{unknown}->{$raw};
+		return undef if $this->{unknown}->{$raw};
 		$this->{unknown}->{$raw} = 1;
 
 		my $name = 'UNKNOWN';
@@ -479,7 +513,7 @@ sub handlePacket
 		print $header."$name($len) $text2\n";
 		print parse_dwords(pad('',length($header)),$raw,1);
 		setConsoleColor();
-		return 1;
+		return undef;
     }
 
 	# finished. Register the new device_service and show its facts
@@ -491,7 +525,7 @@ sub handlePacket
 		setConsoleColor();
 	}
 	$this->{device_services}->{$device_service} = $rec;
-	return 1;
+	return undef;
 }
 
 

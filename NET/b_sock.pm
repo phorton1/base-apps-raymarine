@@ -127,6 +127,7 @@ sub init
 	# {ip}
 	# {port}
 
+	$this->{created}			= 1;
     $this->{started}   			= 0;
     $this->{connected} 			= 0;
     $this->{stopping}  			= 0;
@@ -177,6 +178,7 @@ sub destroy
 	}
 
     delete @$this{qw(
+		created
         started
 		connected
 		stopping
@@ -365,6 +367,7 @@ sub _close_socket
 	$this->{buffer} = '';
 	$this->{out_queue} = shared_clone([]);
 	$this->{connected} = 0;
+	setsockopt($sock, SOL_SOCKET, SO_LINGER, pack("ss", 1, 0));
 	$sock->close();
 	return undef;
 
@@ -594,7 +597,7 @@ sub sockThread
 						else
 						{
 							my $reply = $this->handlePacket($client_buffer);
-							display(0,0,"sockThread got handlePacket reply="._def($reply)) if $this->{in_color};
+							display($dbg_thread+1,0,"sockThread got handlePacket reply="._def($reply)) if $this->{in_color};
 							push @{$this->{replies}},$reply if $reply;
 						}
 					}
@@ -608,10 +611,12 @@ sub sockThread
 
 	display($dbg_thread,0,"exiting sockThread($name)");
 
+	$this->close_socket($sock) if $sock;
+	$sock = undef;
 	delete $r_socks{$this->{remote}};
 	$this->{running} = 0;
 	$this->{destroyed} = 1;
-	$sock = $this->close_socket($sock) if $sock;
+
 
 }
 

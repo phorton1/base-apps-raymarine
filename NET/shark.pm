@@ -37,6 +37,7 @@ use c_RAYSYS;
 use d_TRACK;
 use d_WPMGR;
 use d_FILESYS;
+use d_DBNAV;
 use e_wp_api;
 use h_server;
 use s_serial;
@@ -88,6 +89,14 @@ sub handleSerialCommand
 		print "RAYSYS kml\n";
 		print "\n------------------------------------------------------\n";
 		print "$kml\n";
+	}
+
+	# DBNAV
+
+	elsif ($lpart eq 'v')
+	{
+		my $dbnav = findServicePortByName('DBNAV');
+		$dbnav->showValues() if $dbnav;
 	}
 
 

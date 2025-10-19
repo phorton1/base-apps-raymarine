@@ -600,8 +600,8 @@ sub kml_RAYSYS
 	my $param_version = $params->{version};
 	$param_version ||= 0;
 
-	my $wp_mgr = c_RAYSYS::findService('WPMGR',1);
-	my $track_mgr = c_RAYSYS::findService('TRACK',1);
+	my $wp_mgr = findServicePortByName('WPMGR',1);
+	my $track_mgr = findServicePortByName('TRACK',1);
 
 	# the global local version is a tcpBase static variable
 
