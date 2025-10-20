@@ -2,9 +2,7 @@
 # b_sock.pm
 #---------------------------------------------
 # The base class of a RAYNET socket.
-# Sockets are constructed with a (possibly undefined)
-#	reference to a packetHandler method, and the following
-#   parameters:
+# Sockets are constructed with the following parameters:
 #
 #	{name} 			REQUIRED
 #		a name that is passed in for identification and
@@ -17,36 +15,43 @@
 #		The 'service id' of a RAYNET service, for identification
 #		and debugging, which may be -1 indicating that the RAYNET
 #		service_id has not yet have been identified.
-#   {ip} 	optional (based on $AUTO_START_IMPLEMENTED_SERVICES)
+#   {ip} 			REQUIRED
 #		human readable ip address
-#   {port} 	optional (based on $AUTO_START_IMPLEMENTED_SERVICES)
+#   {port} 			REQUIRED
 #		a remote port
 #
 # Optional:
 #
 #	{DELAY_START}
 #		puts a sleep at the top of sockThread and commandThread
-#		used to delay starting RAYSYS until shark.pm has settled down
+#		used to delay starting RAYSYS and implemented services
+#       until the E80 has settled down
 #	{EXIT_ON_CLOSE}
 #		if this is passed in, a failure to open the tcp
 #		socket, or a failure reading from or writing to
-#		the socket, will cause the socket thread to exit
+#		the socket, will cause the threada to exit
+#
 #	{show_raw_input}
 #	{show_raw_output}
 #	{show_parsed_input}
 #	{show_parsed_output}
 #	{in_color}
 #	{out_color}
-#		Show the raw stream input or output as it arrives or is sent
+#		Monitoring variables; partially implemented
+#		The 'parsed' versins are intended for client classes
+#		but enumerated here
 #
-# Optional but not used on mcast ports
+# Optional NOT USED ON MCAST PORTS
 #
 #	{local_port} - useful for identifying traffic
 #   {local_ip} - not recommended
 #
 #
 # All sockets implement a listener thread that waits for incoming
-# packets. THIS CLASS COMBINES received tcp packets until their
+# packets and a commandThread that acts on the {command_queue} if
+# there are any elements in it.
+#
+# THIS CLASS COMBINES received tcp packets until their
 # length is greater than 2 (i.e. until a full Reply is received),
 # before further processing.
 #
@@ -55,19 +60,9 @@
 # to see raw bytes of the packets to help identify problems in
 # higher level (parser) code.
 #
-# Note that this class *may* constructed without ip:port
-# members, in which case, it will call c_RAYSYS findRayportByRayname()
-# until the given name is present, from which it can determine
-# the ip and port.
-#
-# However, typically it will work the opposite way.  That when
-# c_RAYSYS discovers a port with a known (capitalized or otherwise?)
-# name, that c_RAYSYS itself will instantiate the (real) r_service,
-# which will, in turn, inherit from this base class.
-#
-# This class handles loss of tcp connections as identified by
-# results to $sock->send() and $sock->receive() and manages (attempts)
-# reconnections after a specific interval of time.
+# if !WITH_EXIT_ON_CLOSE this class handles loss of tcp connections
+# as identified by results to $sock->send() and $sock->receive() and
+# attempts reconnections after a specific interval of time.
 
 
 package b_sock;
@@ -83,10 +78,6 @@ use IO::Socket::Multicast;
 use Pub::Utils;
 use a_utils qw(parse_dwords setConsoleColor);
 
-# use a_defs;
-# use c_RAYSYS qw(findServicePortByName);
-# use a_utils qw(parse_dwords setConsoleColor);
-# require "tcpProbe.pm";
 
 
 my $dbg_api 	= 0;
@@ -94,8 +85,7 @@ my $dbg_thread  = 0;
 my $dbg_cmd  	= 0;
 my $dbg_wait 	= 0;
 
-my $DESTROY_TIMEOUT				= 3;	# must be larger than $STOP_TIMEOUT
-my $STOP_TIMEOUT 				= 1;
+my $DESTROY_TIMEOUT				= 3;
 my $DEFAULT_CONNECT_TIMEOUT 	= 2;
 my $DEFAULT_RECONNECT_INTERVAL	= 10;
 my $DEFAULT_READ_TIME 			= 0.1;
@@ -160,11 +150,11 @@ sub init
 sub destroy
 {
     my ($this) = @_;
-	display($dbg_api,0,"b_sock destroy($this->{name})");
+	display($dbg_api,0,"b_sock destroy($this->{name}) called",0,$UTILS_COLOR_BROWN);
 
 	if ($this->{started} && !$this->{destroyed})
 	{
-		display($dbg_api,0,"b_sock destroy($this->{name}) stopping threads");
+		display($dbg_api,1,"b_sock destroy($this->{name}) stopping threads",0,$UTILS_COLOR_BROWN);
 		$this->{stopping} = 1;
 		my $start_destroy = time();
 		while (!$this->{destroyed} &&
@@ -173,7 +163,7 @@ sub destroy
 			sleep 0.1;
 		}
 		$this->{destroyed} ?
-			display($dbg_api,0,"b_sock destroy($this->{name}) threads detroyed") :
+			display($dbg_api,1,"b_sock destroy($this->{name}) threads destroyed",0,$UTILS_COLOR_BROWN) :
 			error("timeout in b_sock destroy($this->{name})");
 	}
 
@@ -195,6 +185,8 @@ sub destroy
 		next_seqnum
         command_queue
 		replies
+		shutdown
+		
 		local_ip
 		local_port
 		local
@@ -211,6 +203,7 @@ sub destroy
 		wait_name
 		
     )};
+	display($dbg_api,0,"b_sock destroy($this->{name}) returning",0,$UTILS_COLOR_BROWN);
 }
 
 
@@ -235,16 +228,6 @@ sub start
 }
 
 
-sub stop
-{
-	my ($this) = @_;
-	display($dbg_api,1,"b_sock stop($this->{name}) called");
-	return error("stop($this->{name}) not started") if !$this->{started};
-	return error("stop($this->{name}) already stopping") if $this->{stopping};
-	return error("stop($this->{name}) has been destroyed") if $this->{detroyed};
-	$this->{stopping} = 1;
-}
-
 
 #------------------------------------------------
 # virtual (stub) API
@@ -262,8 +245,16 @@ sub handleCommand
 	return 0;	# return value not used yet
 }
 
-
 sub onStartSocketThread
+	# to allow c_RAYSYS to send wakeup packets
+{
+	my ($this) = @_;
+}
+
+
+sub onIdle
+	# called from commandThread when no commands in queue
+	# to allow service_ports to do cleanup activities
 {
 	my ($this) = @_;
 }
@@ -274,6 +265,8 @@ sub onStartSocketThread
 #------------------------------------------------
 
 sub getVersion
+	# for treating the entirety of shark
+	# as a single versioned 'database'
 {
 	return $global_version;
 }
@@ -335,19 +328,13 @@ sub waitReply
 				display($dbg_wait,1,"$name waitReply($seq,$wait_name) returning OK reply");
 				return $reply;
 			}
-			else
-			{
-				# display_hash($dbg+1,1,"skipping reply",$reply);
-			}
 		}
-
 		if (time() > $start + $this->{COMMAND_TIMEOUT})
 		{
 			error("$name Command($seq,$wait_name) timed out");
 			return '';
 		}
-
-		sleep(0.5);
+		sleep(0.01);
 	}
 
 	return error("waitReply($seq) died");
@@ -389,23 +376,6 @@ sub sockThread
 		sleep($this->{DELAY_START});
 	}
 
-	# ip and port are optional base for implemented services
-	# based on $AUTO_START_IMPLEMENTED_SERVICES
-
-	if (!$this->{ip} || !$this->{port})
-	{
-		my $service_port = findServicePortByName($name);
-		while (!$service_port)
-		{
-			display($dbg_thread-1,1,"waiting for service_port($name)");
-			sleep(1);
-			$service_port = findServicePortByName($name);
-		}
-		display($dbg_thread,1,"found service_port($name) at $service_port->{ip}:$service_port->{port}");
-		$this->{ip} = $service_port->{ip};
-		$this->{port} = $service_port->{port};
-	}
-
 	$this->{remote} = "$this->{ip}:$this->{port}";
 	$this->{local} = _def($this->{local_ip}).":"._def($this->{local_port});
 	$r_socks{$this->{remote}} = $this;
@@ -419,32 +389,13 @@ sub sockThread
 		# mysteriously gets plugged with the previous (c_RAYSYS mcast) socket!!!
 		
 	display($dbg_thread,0,"sockThread($name,$this->{remote}) running sock="._def($sock));
-	while (1)
+	while (!$this->{stopping})
 	{
-		# handle client stopping
+		# (a) OPEN THE SOCKET if appropriate
 
-		if ($sock)
-		{
-			if ($this->{stopping} == 1)
-			{
-				display($dbg_thread,1,"shutting down $name socket($this->{remote})");
-				$sock->shutdown(1);	# prevent further writes (allow FIN to be read)
-				$this->{stopping} = 2;
-				$this->{stop_time} = time();
-			}
-			elsif ($this->{stopping} == 2 &&
-				   time() > $this->{stop_time} + $STOP_TIMEOUT)
-			{
-				display($dbg_thread+1,1,"$name socket($this->{remote}) shutdown timeout");
-				$sock = $this->_close_socket($sock);
-				last;
-			}
-		}
-
-		# open the socket if appropriate
-
-		elsif (!$this->{stopping} &&
-				time() > $this->{connect_time} + $this->{RECONNECT_INTERVAL})
+		if (!$sock &&
+			!$this->{stopping} &&
+			time() > $this->{connect_time} + $this->{RECONNECT_INTERVAL})
 		{
 			display($dbg_thread,1,"connecting $this->{proto} $name($this->{local}) to socket($this->{remote})");
 
@@ -519,8 +470,7 @@ sub sockThread
 		}	# !$sock && !stopping and connect_time>RECONNECT_INTERVAL
 
 
-		# PROCESSING OF OPEN SOCKET
-		# (a) send the next out bound message if any
+		# (b) SEND THE NEXT OUT BOUND PACKET if any
 
 		if ($sock && !$this->{stopping})
 		{
@@ -542,16 +492,13 @@ sub sockThread
 					$sock = $this->_close_socket($sock);
 					last if $this->{EXIT_ON_CLOSE};
 				}
-				else
-				{
-					$this->{connect_time} = time();
-				}
+				$this->{connect_time} = time();
 			}
 		}
 
-		# (b) read the buffer
+		# (c) READ THE SOCKET
 
-		if ($sock)
+		if ($sock && !$this->{stopping})
 		{
 			if ($sel->can_read($this->{READ_TIME}))
 			{
@@ -601,25 +548,31 @@ sub sockThread
 							push @{$this->{replies}},$reply if $reply;
 						}
 					}
-					$this->{connect_time} = time();
-
 				}	# got a buffer
+
+				$this->{connect_time} = time();
+
 			}	# can_read()
 		}	# $sock
 	}	# while 1
 
 
-	display($dbg_thread,0,"exiting sockThread($name)");
+	display($dbg_thread,1,"finishing sockThread($name)");
 
-	$this->close_socket($sock) if $sock;
+	$this->_close_socket($sock) if $sock;
 	$sock = undef;
 	delete $r_socks{$this->{remote}};
 	$this->{running} = 0;
 	$this->{destroyed} = 1;
 
-
+	warning($dbg_thread,0,"exiting sockThread($name)");
 }
 
+
+
+#===============================================
+# commandThread
+#===============================================
 
 sub commandThread
 {
@@ -658,6 +611,11 @@ sub commandThread
 			}
 
 			display($dbg_cmd,0,"b_sock commandThread($this->{name}) finished command($command->{name})");
+		}
+		else
+		{
+			$this->onIdle();
+			sleep(0.01);
 		}
 	}
 	warning($dbg_cmd,0,"b_sock commandThread($this->{name}) exiting");

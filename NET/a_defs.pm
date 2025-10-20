@@ -12,9 +12,9 @@ our $AUTO_START_IMPLEMENTED_SERVICES = 1;
 	# RAYSYS will automatically start service_ports marked as 'implemented'.
 	# Otherwise shark will start them, and they will wait for RAYSYS to find them.
 	
-my $WITH_TRACK 		= 0;
-my $WITH_WPMGR 		= 0;
-my $WITH_FILESYS 	= 0;
+my $WITH_TRACK 		= 1;
+my $WITH_WPMGR 		= 1;
+my $WITH_FILESYS 	= 1;
 my $WITH_DBNAV 		= 1;
 	# Allow RAYSYS to start implemented 'real' services
 	

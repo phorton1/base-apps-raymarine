@@ -77,37 +77,6 @@ sub appendPath
 }
 
 
-sub checkFileSysPorts
-{
-	my ($this) = @_;
-
-	my $filesys = $this->{filesys} = findServicePortByName('FILESYS',0);
-		# find the real, named service if it exists]
-
-	$this->{cur_filesys_id} ||= '';
-	$this->{filesys_ids} ||= [];
-	$this->{filesys_ports} ||= {};
-
-	return if !$filesys;
-		# NOT CONSTRUCTED
-		
-	my $any_added = 0;
-	my $my_ids = $this->{filesys_ids};
-	my $my_ports = $this->{filesys_ports};
-	my $raysys_ports = getServicePorts();
-	for my $service_port (@$raysys_ports)
-	{
-		next if $service_port->{name} ne 'FILESYS';
-		my $device_id = $service_port->{device_id};
-		$this->{cur_filesys_id} = $device_id if $filesys->isCurrentServicePort($service_port);
-		next if $my_ports->{$device_id};	# already know about it
-		push @$my_ids,$device_id;
-		$my_ports->{$device_id} = $service_port;
-		$any_added++;
-	}
-	return $any_added;
-}
-
 
 sub new
 {
@@ -115,28 +84,6 @@ sub new
 	my $this = $class->SUPER::new($book,$id);
 	display(0,0,"winFILESYS::new() called");
 	$this->MyWindow($frame,$book,$id,"FILESYS");
-
-	$this->SetFont($font_fixed);
-	$this->{status_ctrl} = Wx::StaticText->new($this,-1,'',[10,10]);
-	$this->{command_ctrl} = Wx::StaticText->new($this,-1,'',[100,10]);
-
-	$this->checkFileSysPorts();
-	$this->{device_combo} = Wx::ComboBox->new($this, $ID_SELECT_COMBO,
-		$this->{cur_filesys_id}, [400,10],[90,25],
-		$this->{filesys_ids},wxCB_READONLY);
-
-	$this->{path_ctrl} = Wx::StaticText->new($this,-1,'',[10,30]);
-    my $ctrl = Wx::ListCtrl->new($this,-1,[0,$TOP_MARGIN],[-1,-1],
-		wxLC_REPORT); # | wxLC_EDIT_LABELS);
-
-	$ctrl->InsertColumn($COL_MODE, 'Mode');
-	$ctrl->InsertColumn($COL_SIZE, 'Size');
-	$ctrl->InsertColumn($COL_NAME, 'Name');
-	$ctrl->SetColumnWidth($COL_MODE,$MODE_WIDTH);
-	$ctrl->SetColumnWidth($COL_SIZE,$SIZE_WIDTH);
-
-    $ctrl->{parent} = $this;
-	$this->{list_ctrl} = $ctrl;
 
 	$this->{vol_id} = '';
 	$this->{cur_path} = '';
@@ -148,8 +95,29 @@ sub new
 	$this->{sort_field} = 'name';
 	$this->{sort_desc} = 0;
 	$this->{last_sort_col} = -1;
-	
+
+	$this->{cur_filesys_id} = '';
+	$this->{filesys_ports} = {};
+	$this->{disconnect_reported} = '';
+
+	$this->{recurse} = undef;
+
 	$this->SetFont($font_fixed);
+	$this->{status_ctrl} = Wx::StaticText->new($this,-1,'',[10,10]);
+	$this->{command_ctrl} = Wx::StaticText->new($this,-1,'',[100,10]);
+	$this->{path_ctrl} = Wx::StaticText->new($this,-1,'',[10,30]);
+
+	$this->{device_combo} = Wx::ComboBox->new($this, $ID_SELECT_COMBO,'',[400,10],[90,25],[],wxCB_READONLY);
+
+    my $ctrl = $this->{list_ctrl} = Wx::ListCtrl->new($this,-1,[0,$TOP_MARGIN],[-1,-1], wxLC_REPORT); # | wxLC_EDIT_LABELS);
+    $ctrl->{parent} = $this;
+	$ctrl->InsertColumn($COL_MODE, 'Mode');
+	$ctrl->InsertColumn($COL_SIZE, 'Size');
+	$ctrl->InsertColumn($COL_NAME, 'Name');
+	$ctrl->SetColumnWidth($COL_MODE,$MODE_WIDTH);
+	$ctrl->SetColumnWidth($COL_SIZE,$SIZE_WIDTH);
+
+	$this->checkFilesysPorts();
 
 	EVT_SIZE($this,\&onSize);
 	EVT_IDLE($this,\&onIdle);
@@ -160,9 +128,9 @@ sub new
 	EVT_COMBOBOX($this,$ID_SELECT_COMBO,\&onFileDeviceCombo);
 
 	$this->onSize();
-	
 	return $this;
 }
+
 
 sub onSize
 {
@@ -898,16 +866,13 @@ sub doOneRecurse
 # onIdle
 #-----------------------------------
 
-
 sub onIdle
 {
 	my ($this,$event) = @_;
 	$event->RequestMore(1);
-	
-	my $filesys = $this->{filesys} = findServicePortByName('FILESYS');
-	error("No filesys?!?") if !$filesys;
-	return if !$filesys;
+	return if !$this->checkFilesysPorts();
 
+	my $filesys = $this->{filesys};
 	my $state = $filesys->{file_state};
 	my $state_name = $FILE_STATE_NAME{$state};
 
@@ -916,7 +881,7 @@ sub onIdle
 		$state == $FILE_STATE_COMPLETE))
 	{
 		$this->{started} = 1;
-		display($dbg_win,0,"getting root directory");
+		display($dbg_win,0,"getting root directory",0,$UTILS_COLOR_LIGHT_MAGENTA);
 		$this->changeDirectory($ROOT_PATH);
 	}
 
@@ -940,7 +905,7 @@ sub onIdle
 		if ($state == $FILE_STATE_ERROR)
 		{
 			$this->{recurse} = undef;
-			$this->{command_ctrl}->SetLabel(getFileRequestError());
+			$this->{command_ctrl}->SetLabel($filesys->{file_error});
 			$this->{command_ctrl}->SetForegroundColour($wx_color_red);
 			$filesys->clearFileRequestError();
 			$state = $filesys->{file_state};
@@ -987,9 +952,146 @@ sub onIdle
 		}
 	}
 
-
 }
 
+
+sub clearEverything
+{
+	my ($this,$filesys) = @_;
+
+	display($dbg_win,0,"clearEverything()",0,$UTILS_COLOR_LIGHT_MAGENTA);
+
+	$filesys->killAllJobs() if $filesys;
+	
+	$this->{list_ctrl}->DeleteAllItems();
+	$this->{device_combo}->Clear();
+	$this->{command_ctrl}->SetLabel('');
+	$this->{path_ctrl}->SetLabel('');
+	$this->{status_ctrl}->SetLabel('');
+
+	$this->{started} = 0;
+	$this->{cur_filesys_id} = '';
+	$this->{vol_id} = '';
+	$this->{cur_path} = '';
+	$this->{last_state} = $FILE_STATE_ILLEGAL;
+	$this->{pending_request} = '';
+	$this->{recurse}->{progress}->Destroy() if $this->{recurse} && $this->{recurse}->{progress};
+	$this->{recurse} = undef;
+}
+
+
+
+sub checkFilesysPorts
+{
+	my ($this) = @_;
+	lock($raysys);
+	
+	# see if FILESYS is running, return if not
+
+	my $filesys = $this->{filesys} = $raysys->findImplementedService('FILESYS',1);
+	if (!$filesys || !$filesys->{running})
+	{
+		my $msg = $filesys?
+			'FILESYS not running' :
+			'NO FILESYS service_port!!';
+		if ($this->{disconnect_reported} ne $msg)
+		{
+			display($dbg_win,0,"No Filesys or not running",0,$UTILS_COLOR_LIGHT_MAGENTA);
+			$this->{disconnect_reported} = $msg;
+			$filesys->{file_state} = $FILE_STATE_IDLE if $filesys;
+
+			$this->clearEverything($filesys);
+			$this->{filesys_ports} = {};
+			$this->{status_ctrl}->SetLabel($msg);
+			$this->{status_ctrl}->SetForegroundColour($wx_color_red);
+		}
+		return;
+	}
+	$this->{disconnect_reported} = '';
+
+
+	# add and delete local copies of FILESYS service_ports
+
+	my $my_ports = $this->{filesys_ports};
+	my $raysys_ports = $raysys->getServicePortsByAddr();
+
+	for my $device_id (sort keys %$my_ports)
+	{
+		$my_ports->{$device_id}->{found} = 0;
+	}
+
+	my $num_added = 0;
+	for my $addr (sort keys %$raysys_ports)
+	{
+		my $service_port = $raysys_ports->{$addr};
+		next if $service_port->{name} ne 'FILESYS';
+
+		my $device_id = $service_port->{device_id};
+
+		if ($my_ports->{$device_id})
+		{
+			$my_ports->{$device_id}->{found} = 1;
+		}
+		else
+		{
+			display($dbg_win,0,"adding $service_port->{addr} $device_id",0,$UTILS_COLOR_LIGHT_MAGENTA);
+			my $port = $my_ports->{$device_id} = {};
+			mergeHash($port,$service_port);
+			$port->{found} = 1;
+			$num_added++;
+		}
+	}
+
+	my $num_deleted = 0;
+	for my $device_id (sort keys %$my_ports)
+	{
+		my $port = $my_ports->{$device_id};
+		if (!$port->{found})
+		{
+			display($dbg_win,0,"deleting $port->{addr} $device_id",0,$UTILS_COLOR_LIGHT_MAGENTA);
+			delete $my_ports->{$device_id};
+			$num_deleted++;
+		}
+	}
+
+	# handle the combo box and cur_filesys_id
+
+	if ($num_added || $num_deleted)
+	{
+		my $cur_id = $this->{cur_filesys_id};
+		if (!$my_ports->{$cur_id})
+		{
+			$this->clearEverything($filesys);
+			$cur_id = '';
+		}
+		
+		my $combo = $this->{device_combo};
+		$combo->Clear();
+		
+		my @ids = sort keys %$my_ports;
+		display($dbg_win,0,"rebuilding combo(".join(' ',@ids).")",0,$UTILS_COLOR_LIGHT_MAGENTA);
+
+		for my $device_id (@ids)
+		{
+			$combo->Append($device_id);
+		}
+
+		if (@ids && !$this->{cur_filesys_id})
+		{
+			my $device_id = $this->{cur_filesys_id} = $ids[0];
+			my $port = $my_ports->{$device_id};
+			display($dbg_win,0,"setting cur_filesys_id($port->{addr} $device_id",0,$UTILS_COLOR_LIGHT_MAGENTA);
+			$filesys->setServicePort($port);
+			$combo->SetValue($device_id);
+		}
+		elsif ($cur_id)
+		{
+			$combo->SetValue($cur_id);
+		}
+	}
+	
+	return 1;
+}
 
 
 1;

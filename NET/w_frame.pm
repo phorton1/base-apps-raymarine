@@ -38,7 +38,7 @@ sub new
 
 	my $data = undef;
 	$this->createPane($WIN_RAYSYS,$this->{book},$data,"test234");
-	$this->createPane($WIN_DBNAV,$this->{book},$data,"test235");
+	# $this->createPane($WIN_DBNAV,$this->{book},$data,"test235");
 	return $this;
 }
 
@@ -73,7 +73,8 @@ sub onCommand
     my ($this,$event) = @_;
     my $id = $event->GetId();
 	if ($id == $WIN_RAYSYS ||
-		$id == $WIN_FILESYS)
+		$id == $WIN_FILESYS ||
+		$id == $WIN_DBNAV)
 	{
     	my $pane = $this->findPane($id);
 		display(0,0,"$appName onCommand($id) pane="._def($pane));

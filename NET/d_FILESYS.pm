@@ -71,7 +71,8 @@ my $MAXIMUM_FILE_SIZE = 'ffffff01'; #;
 	# It took me a long time to figure out that the '9a9d0100' I'd
 	# seen from RNS was not some kind of a "magic" key.
 
-my $FILE_REQUEST_TIMEOUT    = 60;        # seconds
+my $LONG_TIMEOUT    = 60;        # file replies can take a  long time
+my $SHORT_TIMEOUT   = 2;		 #
 
 # implemented as a state machine that handles a single
 # ui fileCommand, which sets START. The commandHandler
@@ -197,7 +198,7 @@ sub init
 
 	$this->SUPER::init();
 	$this->{local_port}			= $FILESYS_PORT;
-	$this->{COMMAND_TIMEOUT}	= $FILE_REQUEST_TIMEOUT;
+	$this->{COMMAND_TIMEOUT}	= $SHORT_TIMEOUT;
 
 	$this->{show_raw_input} 	= $SHOW_FILESYS_RAW_INPUT;
 	$this->{show_raw_output} 	= $SHOW_FILESYS_RAW_OUTPUT;
@@ -223,7 +224,7 @@ sub init
 sub destroy
 {
 	my ($this) = @_;
-	display($dbg_fs,0,"d_TRACK destroy($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto} local_port=$FILESYS_PORT");
+	display($dbg_fs,0,"d_FILESYS destroy($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto} local_port=$FILESYS_PORT");
 
 	$this->SUPER::destroy();
 
@@ -245,6 +246,38 @@ sub destroy
 # winFILESYS specific API
 #----------------------------------------------------
 
+sub killAllJobs
+{
+	my ($this) = @_;
+
+	my $TIMEOUT = 2;
+	$this->{command_queue} 	  = shared_clone([]);
+	$this->{COMMAND_TIMEOUT} = 0;
+
+	my $start = time();
+	while (time() <= $start + $TIMEOUT && $this->{file_state} > 0)
+	{
+		sleep(0.1);
+	}
+
+	$this->{file_state}       = $FILE_STATE_IDLE;
+	$this->{file_error}       = '';
+	$this->{file_command}     = 0;
+	$this->{file_path}        = '';
+	$this->{file_content}     = '';
+}
+
+
+sub clearFileRequestError
+{
+	my ($this) = @_;
+	return error("clearFileRequestError() called in $this->{file_state}")
+		if $this->{file_state} != $FILE_STATE_ERROR;
+	$this->{file_error} = '';
+	$this->{file_state} = $FILE_STATE_IDLE;
+}
+
+
 sub setServicePort
 {
 	my ($this,$other) = @_;
@@ -262,14 +295,6 @@ sub setServicePort
 }
 
 
-sub isCurrentServicePort
-{
-	my ($this,$other) = @_;
-	return 1 if
-		$this->{ip} eq $other->{ip} &&
-		$this->{port} == $other->{port};
-	return 0;
-}
 
 
 #---------------------------------------------
@@ -324,16 +349,6 @@ sub fileCommand
 		name => $command_str, });
 	push @{$this->{command_queue}},$command;
 	return 1;
-}
-
-
-sub clearFileRequestError
-{
-	my ($this) = @_;
-	return error("clearFileRequestError() called in $this->{file_state}")
-		if $this->{file_state} != $FILE_STATE_ERROR;
-	$this->{file_error} = '';
-	$this->{file_state} = $FILE_STATE_IDLE;
 }
 
 
@@ -418,6 +433,9 @@ sub handleCommand
 	# The packet is sent directly to the registered service
 	# PRH TODO - modernize and handle sendUDPPacket failures
 	
+	return if $this->{file_state} != $FILE_STATE_START;
+
+		# in case command was interrupted by killAllJobs();
     sendUDPPacket(
         "fileCommand($command_name)",
 		$this->{ip},
@@ -440,9 +458,11 @@ sub handleCommand
 
 	$this->{wait_seq} = $seq;
 	$this->{wait_name} = $command_name;
+	$this->{COMMAND_TIMEOUT} = $cmd == $COMMAND_GET_FILE ?
+		$LONG_TIMEOUT : $SHORT_TIMEOUT;
 
 	my $reply = $this->waitReply(1);
-	error("$command_name failed") if !$reply;
+	$this->fileRequestError($seq,"$command_name failed") if !$reply;
 	return 1;
 
 	# ... however, WE have to return the reply in handlePacket() below

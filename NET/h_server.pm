@@ -600,8 +600,8 @@ sub kml_RAYSYS
 	my $param_version = $params->{version};
 	$param_version ||= 0;
 
-	my $wp_mgr = findServicePortByName('WPMGR',1);
-	my $track_mgr = findServicePortByName('TRACK',1);
+	my $wp_mgr = $raysys->findImplementedService('WPMGR',1);
+	my $track_mgr = $raysys->findImplementedService('TRACK',1);
 
 	# the global local version is a tcpBase static variable
 
@@ -611,17 +611,17 @@ sub kml_RAYSYS
 
 	display($dbg_kml,1,"kml_RAYSYS($param_version,$server_version,$local_version) changed($changed) update($update)");
 
-	if (!$wp_mgr && !$track_mgr)
-	{
-		if (-f $server_cache_filename)
-		{
-			warning($dbg_kml-1,0,"wpmgr not running; returning $server_cache_filename");
-			return getTextFile($server_cache_filename);
-		}
-		error("No wpmgr or track_mgr objects in kml_RAYSYS");
-		return '';
-	}
-
+	# if (!$wp_mgr && !$track_mgr)
+	# {
+	# 	if (-f $server_cache_filename)
+	# 	{
+	# 		warning($dbg_kml-1,0,"wpmgr not running; returning $server_cache_filename");
+	# 		return getTextFile($server_cache_filename);
+	# 	}
+	# 	error("No wpmgr or track_mgr objects in kml_RAYSYS");
+	# 	return '';
+	# }
+    
 
 	# Otherwise, create kml from $wp_mgr and $track_mgr hashes
 	
@@ -685,8 +685,8 @@ sub showThings
 
 sub showLocalDatabase
 {
-	my $wp_mgr = findServicePortByName('WPMGR',1);
-	my $track_mgr = findServicePortByName('TRACK',1);
+	my $wp_mgr = $raysys->findImplementedService('WPMGR',1);
+	my $track_mgr = $raysys->findImplementedService('TRACK',1);
 	showThings($wp_mgr,'waypoints');
 	showThings($wp_mgr,'routes');
 	showThings($wp_mgr,'groups');

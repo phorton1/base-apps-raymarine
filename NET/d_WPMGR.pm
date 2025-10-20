@@ -58,7 +58,7 @@ my $OUT_COLOR = $UTILS_COLOR_LIGHT_MAGENTA;
 sub init
 {
 	my ($this) = @_;
-	display($dbg,0,"d_TRACK init($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto} local_port=$WPMGR_PORT)");
+	display($dbg,0,"d_WPMGR init($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto} local_port=$WPMGR_PORT)");
 
 	$this->SUPER::init();
 	$this->{local_port}			= $WPMGR_PORT;
@@ -84,7 +84,7 @@ sub init
 sub destroy
 {
 	my ($this) = @_;
-	display($dbg,0,"d_TRACK destroy($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto} local_port=$WPMGR_PORT)");
+	display($dbg,0,"d_WPMGR destroy($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto} local_port=$WPMGR_PORT)");
 
 	$this->SUPER::destroy();
 

@@ -95,7 +95,7 @@ sub handleSerialCommand
 
 	elsif ($lpart eq 'v')
 	{
-		my $dbnav = findServicePortByName('DBNAV');
+		my $dbnav = $raysys->findImplementedService('DBNAV');
 		$dbnav->showValues() if $dbnav;
 	}
 
@@ -105,7 +105,7 @@ sub handleSerialCommand
 	elsif ($lpart eq 'f')
 	{
 		my ($cmd,$path) = split(/\s+/,$rpart);
-		my $filesys = findServicePortByName('FILESYS');
+		my $filesys = $raysys->findImplementedService('FILESYS');
 		$filesys->fileCommand($cmd,$path) if $filesys;
 	}
 	
@@ -113,7 +113,7 @@ sub handleSerialCommand
 
 	if ($lpart eq 't')
 	{
-		my $track = findServicePortByName('TRACK');
+		my $track = $raysys->findImplementedService('TRACK');
 		return if !$track;
 		$track->trackUICommand($rpart) if $track;
 	}
@@ -122,7 +122,7 @@ sub handleSerialCommand
 
 	elsif ($lpart =~ /^(q|create|delete|wp|route)$/)
 	{
-		my $wpmgr = findServicePortByName('WPMGR');
+		my $wpmgr = $raysys->findImplementedService('WPMGR');
 		return if !$wpmgr;
 
 		if ($lpart eq 'q')
@@ -196,7 +196,7 @@ sub handleSerialCommand
 		$name = 'TRACK' 	if $name eq 't';
 		$name = 'WPMGR' 	if $name eq 'w';
 		$name = 'FILESYS'	if $name eq 'f';
-		my $service_port = findServicePortByName($name);
+		my $service_port = $raysys->findImplementedService($name);
 		return if !$service_port;
 		$service_port->doProbe($params);
 	}
@@ -213,9 +213,9 @@ sub handleSniffPacket
 {
 	my ($packet) = @_;
 
-   # my $rayport_raysys = findServicePortByName('RAYSYS');
-   # my $rayport_my_file = findServicePortByName('MY_FILE');
-   # my $rayport_file_rns = findServicePortByName('FILE_RNS');
+   # my $rayport_raysys = findImplementedService('RAYSYS');
+   # my $rayport_my_file = findImplementedService('MY_FILE');
+   # my $rayport_file_rns = findImplementedService('FILE_RNS');
 
 	my $len = length($packet->{raw_data});
 	# display($dbg_shark+1,1,"got $packet->{proto} packet len($len)");

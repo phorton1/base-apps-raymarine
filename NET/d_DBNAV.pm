@@ -97,6 +97,57 @@ sub destroy
 
 
 
+#-------------------------------------------
+# static (shark) API
+#-------------------------------------------
+
+
+sub cmpValues
+{
+	my ($field_values,$key_a,$key_b) = @_;
+	my $field_a = $field_values->{$key_a};
+	my $field_b = $field_values->{$key_b};
+	my $cmp = $field_a->{record_type} <=> $field_b->{record_type};
+	return $cmp if $cmp;
+	return $field_a->{name} cmp $field_b->{name};
+}
+
+sub showValues
+{
+	my ($this) = @_;
+	my $field_values = $this->{field_values};
+	my $text = "-------------------------------- DBNAV field_values ------------------------------------\n";
+
+	for my $key (sort {cmpValues($field_values,$a,$b)} keys %$field_values)
+	{
+		my $field_value = $field_values->{$key};
+
+		my $ttl = $field_value->{ttl};
+		my $type_hex = sprintf("%02x",$field_value->{type});
+		my $subtype_hex = sprintf("%02x",$field_value->{subtype});
+		my $rectype_hex = sprintf("%02x",$field_value->{record_type});
+		my $instance = $field_value->{instance};
+		my $name = $field_value->{name};
+		my $value = $field_value->{value};
+
+		next if $name eq 'subrecord';
+			# not ready to deal with this
+
+		$text .=
+			pad("ttl($ttl)",8).
+			pad("type($type_hex)",9).
+			pad("subtype($subtype_hex)",12).
+			pad("rec($rectype_hex)",10).
+			pad("inst($instance)",8).
+			pad($name,14).
+			"= ".
+			$value.
+			"\n";
+	}
+
+	print $text;
+}
+
 #----------------------------------------
 # handlePacket primitives
 #----------------------------------------
@@ -494,14 +545,15 @@ sub handlePacket
 	# ... 17000000 2a000200 89780e01 0000
 {
 	my ($this,$packet) = @_;
+	lock($this);
+		# $this->{in_record} = 1;
+		# entrancy protection for winDBNAV
+
 	my ($cmd,$dir,$sid,$num_fields) = unpack('CCvV',$packet);
 	my $packet_len = length($packet);
 	my $offset = 8;
 
 	$this->{instance_counters} = shared_clone({});
-
-	$this->{in_record} = 1;
-		# entrancy protection for winDBNAV
 
 	my $text = '';
 	for (my $i=0; $i<$num_fields; $i++)
@@ -518,17 +570,21 @@ sub handlePacket
 		setConsoleColor() if $this->{in_color};
 	}
 
-	$this->cullTTL();
-	$this->{in_record} = 0;
+	# $this->{in_record} = 0;
 		# entrancy protection for winDBNAV
 
 }	# decodeDBNAV()
 
 
 
-sub cullTTL
+sub onIdle
+	# culls any variables who have outlived their TTL
 {
 	my ($this) = @_;
+	lock($this);
+		# return if $this->{in_record};
+		# not while we are processing a record
+		
 	my $field_values = $this->{field_values};
 	my $now = time();
 	for my $key (keys %$field_values)
@@ -553,51 +609,6 @@ sub cullTTL
 
 
 
-sub cmpValues
-{
-	my ($field_values,$key_a,$key_b) = @_;
-	my $field_a = $field_values->{$key_a};
-	my $field_b = $field_values->{$key_b};
-	my $cmp = $field_a->{record_type} <=> $field_b->{record_type};
-	return $cmp if $cmp;
-	return $field_a->{name} cmp $field_b->{name};
-}
-
-sub showValues
-{
-	my ($this) = @_;
-	my $field_values = $this->{field_values};
-	my $text = "-------------------------------- DBNAV field_values ------------------------------------\n";
-	
-	for my $key (sort {cmpValues($field_values,$a,$b)} keys %$field_values)
-	{
-		my $field_value = $field_values->{$key};
-
-		my $ttl = $field_value->{ttl};
-		my $type_hex = sprintf("%02x",$field_value->{type});
-		my $subtype_hex = sprintf("%02x",$field_value->{subtype});
-		my $rectype_hex = sprintf("%02x",$field_value->{record_type});
-		my $instance = $field_value->{instance};
-		my $name = $field_value->{name};
-		my $value = $field_value->{value};
-
-		next if $name eq 'subrecord';
-			# not ready to deal with this
-
-		$text .=
-			pad("ttl($ttl)",8).
-			pad("type($type_hex)",9).
-			pad("subtype($subtype_hex)",12).
-			pad("rec($rectype_hex)",10).
-			pad("inst($instance)",8).
-			pad($name,14).
-			"= ".
-			$value.
-			"\n";
-	}
-
-	print $text;
-}
 
 
 1;

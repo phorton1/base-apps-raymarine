@@ -173,9 +173,10 @@ sub onIdle
 	# sleep(0.1);
 		# dunno why but this keeps it from freaking out
 
-	my $dbnav = findServicePortByName('DBNAV',1);
+	my $dbnav = $raysys->findImplementedService('DBNAV',1);
 	return if !$dbnav;
-	return if $dbnav->{in_record};
+	lock($dbnav);
+		# return if $dbnav->{in_record};
 
 	# Add any new, or delete any missing field_values
 

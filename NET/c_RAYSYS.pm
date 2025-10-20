@@ -18,25 +18,65 @@
 # ip:port address.
 #
 # Each Service runs on a Device.
-# Each Device has an 'id'.
-# Device id's on my system are known.
+# 		Each Device has an 'id'.
+# 		Device id's on my system are known.
+#		We keep, but never prune, a list of online Devices
 # Some service_ids are known.
 # Some service_ports are fully implemented.
 
-# This is where it gets complicated, and the crux of the biscuit.
+# $AUTO_START_IMPLEMENTED_SERVICES
 #
-# - we want the ability to use r_sniffer to monitor traffic between
-#   RNS and the E80 on a service_port basis
-# - locally, some service_port are fully implemented, and we want
-#   to either start/stop, but not necessarily destroy them automatically
-#	when RAYSYS finds them or loses them, or optionally in shark.pm with
-#   a waitloop for RAYSYS
-# - we generally want the ability to start/stop/destroy not-fully implemented
-#	local service_ports, either via constants for intense probing of a given
-#	service port, or via the UI.
-# - we'd like the ability to define, via constants, or UI, the colors,
-#   and level of detail that we wish to see for either RNS or local
-#   service ports when monitoring:
+#	- Locally, some service_port are fully implemented, and, based on
+#	  $AUTO_START_IMPLEMENTED_SERVICES we 'promote' and start() them
+#     upon discovery.
+#   - Implemented service ports are promoted with EXIT_ON_CLOSE=0,
+#     and the ability to attempt to reconnect, with the idea that they are
+#     resilient to read/write errors with the socket (i.e. bad commands, etc,
+#     that might cause the E80 to close the socket on its side.
+#   - a separate hash of {implemented_services} is maintained, and the
+#     findImplementedService() is used by UI code to determine if the
+#     implemented service_port is up (exists)
+#
+# SPAWNING UN-IMPLEMENTED SERVICE_PORTS
+#
+# 	- we support the ability to start/promote and stop/destroy un-implemented
+#	  local service_ports, via the winRAYSYS UI.
+#	- These 'spawned' sockets are promoted with EXIT_ON_CLOSE=1,
+#	  and go away automagically if there is a problem reading/writing
+#     to the socket.
+#
+# AUTOMATIC DESTRUCTION OF STALE SERVICE_PORTS
+#
+#   - We maintain a service port in the absence of an advertisement for
+#     $SERVICE_PORT_TIMEOUT seconds, after which we remove it from the
+#	  hash of ports_by_addr, and it effectively disappears from the system
+#   - Promoted service_ports (that have 'become' b_socks), are generally
+#     destroyed, their sockets closed, and their threads exited, upon
+#     destruction.
+#   - implemented_services are only destroyed when the last INSTANCE
+#     of a service_port matching that name goes away. This allows,
+#     for exmple, c_FILESYS and winFILESYS to have one implemented
+#     service_port that can deal with multiple destination udp
+#     E80's that advertise a FILESERVICE.
+#
+# LOCKING($this)
+#
+#   It has been demonstrated that, for thread safety between the
+#   wxPerl UI and these implementation classes, starting with c_RAYSYS
+#   itself, that (a) everyone should "use" threads and threads::shared,
+#   and (b) access to the service_port shared variables must be protected
+#   by calling lock($this) (or lock($raysys) or whatever) by the various
+#   parties that handle the data.  That will typically include handlePacket(),
+#   handleCommand(), and/or onIdle() in these base classes, and/or the
+#   onIdle() or other methods that access the members in the wxPerl UI.
+#
+# TODO
+#
+# 	- we want the ability to use r_sniffer to monitor traffic between
+#     RNS and the E80 on a service_port basis; this is not implemented yet
+# 	- we'd like the ability to define, via constants, or UI, the colors,
+#     and level of detail that we wish to see for either RNS or local
+#     service ports when monitoring:
 #
 #		raw_messages
 #			always includes a length and {cmd_word}{service_id}
@@ -50,19 +90,6 @@
 #			includes a level of detail 0=known data; 1=control_data; 2=unknowns
 #		finished records
 #			containing the same level of detail
-#
-# Thats a lot of stuff to cram into a single structure/UI
-# I think there are now two shark windows.
-#
-#	- sniffer, which can monitor RNS and/or local service_ports
-#	  without opening actual sockets
-#	- raysys, which can only monitor local service ports that
-#	  are actually opened
-#
-# One way or the other, the b_sock is just an extension to a service_port
-# that adds a bunch of fields.  In all cases, henceforth, RAYSYS itself
-# is only run as a real, local service, and not sniffed.
-
 
 package c_RAYSYS;
 use strict;
@@ -79,23 +106,24 @@ use base qw(b_sock);
 
 my $dbg_raysys = 0;
 
-my $self:shared;
+our $raysys:shared;
+
 
 my $DELAY_START = 3;
-
+my $SERVICE_PORT_TIMEOUT = 3;
+	# after this many seconds, RAYSYS will destroy and
+	# delete the service port.
+	
 
 BEGIN
 {
  	use Exporter qw( import );
     our @EXPORT = qw(
 
-		findServicePort
-		getServicePorts
-		findServicePortByName
-		spawnServicePortByName
-
+		$raysys
 	);
 }
+
 
 my $CMD_AD		= 0;
 my $CMD_IDENT	= 1;
@@ -105,20 +133,25 @@ my %CMD_NAME = (
 	$CMD_IDENT => 'IDENT',
 );
 
+
+
+
 #--------------------------------------------------
 # ctor
 #--------------------------------------------------
 
 
 sub new
-	# We don't keep track of Services, per-se, but rather of
+	# We don't keep track of Raymarine Services, per-se, but rather of
 	# 	the individual service_ports that are advertised, and
 	# 	we just call them 'ports' in our implementation.
 	# The list of devices is by $device_id (friendly name if known)
+	#   and is never culled.
 	# Unknown is a hash by raw bytes of all unknown messages shown once
 {
 	my ($class) = @_;
 	display($dbg_raysys,0,"c_RAYSYS new()");
+
 	my $this = shared_clone({	# $class->SUPER::new({
 		name 			=> $RAYSYS_NAME,
 		proto			=> 'mcast',
@@ -131,17 +164,18 @@ sub new
 		show_raw_input 	=> 0,
 		show_raw_output => 0,
 
-		devices 		=> shared_clone({}),
-		device_services => shared_clone({}),
-		ports 			=> shared_clone([]),
-		ports_by_addr 	=> shared_clone({}),
-		ports_by_name 	=> shared_clone({}),
-		unknown			=> shared_clone({}),
+		devices 		=> shared_clone({}),	# by friendly name; never culled
+		ports_by_addr 	=> shared_clone({}),	# by ip:port addr; culled after $SERVICE_PORT_TIMEOUT if not re-advertised
+		unknown			=> shared_clone({}),	# unknown messages, for debugging, none at this time, only shown once
+
+		implemented_services => shared_clone({}),
+			# a separate hash by NAME of implemented services that
+			# have been discovered, and created, but not yet destroyed
 	});
 
 	bless $this,$class;
 	$this->init();
-	$self = $this;
+	$raysys = $this;
 	return $this;
 }
 
@@ -151,44 +185,58 @@ sub new
 # client API
 #------------------------------------
 
-
-sub findServicePort
-	# This is what s_sniffer uses to filter packets for general display.
-	# There can be multiple Ids that are sharing the same ip:port, implying
-	# that the port is a mcast port, in which it really doesn't make sense
-	# to have multiple lines for them in the UI, though we still want to
-	# know the ip's of all the ones that have the same mcast ip:port.
+sub getRaysys
 {
-    my ($ip,$port) = @_;
-	return undef if !$self;
-    my $addr = "$ip:$port";
-    return $self->{ports_by_addr}->{$addr};
+	return $raysys;
 }
 
 
-sub getServicePorts
+#	sub findServicePort
+#		# This is what s_sniffer uses to filter packets for general display.
+#		# There can be multiple Ids that are sharing the same ip:port, implying
+#		# that the port is a mcast port, in which it really doesn't make sense
+#		# to have multiple lines for them in the UI, though we still want to
+#		# know the ip's of all the ones that have the same mcast ip:port.
+#	{
+#	    my ($this,$ip,$port) = @_;
+#	    my $addr = "$ip:$port";
+#	    return $this->{ports_by_addr}->{$addr};
+#	}
+
+
+
+sub getServicePortsByAddr
+	# returns the whole hash
+	# used by winFILESYS to setup its dropdown box
+	# of devices it can work with
 {
-	return [] if !$self;
-    return $self->{ports};
+	my ($this) = @_;
+	return $this->{ports_by_addr};
 }
 
-sub findServicePortByName
+
+sub findImplementedService
+	# used by much of shark to find the important
+	# implemented, and running, service_ports ...
 {
-	my ($name,$quiet) = @_;
-	my $service_port = $self ? $self->{ports_by_name}->{$name} : undef;
-	error("Could not findServicePortByName($name)") if !$service_port && !$quiet;
+	my ($this,$name,$quiet) = @_;
+	my $service_port = $this->{implemented_services}->{$name};
+	error("Could not findImplementedService($name)") if !$service_port && !$quiet;
 	return $service_port;
 }
 
 
 sub spawnServicePortByName
+	# Called by winRAYSYS directly when the spawn checkbox is
+	# checked or unchecked.
 {
-	my ($name,$create) = @_;
+	my ($this,$name,$create) = @_;
 	warning($dbg_raysys,0,"spawnServicePortByName($name,$create)");
-	my $service_port = findServicePortByName($name);
+	my $service_port = $this->findServicePortByName($name);
 	return if !$service_port;
 
 	my $proto = $service_port->{proto};
+	return error("cannot spawn IMPLMENTED service($name)") if $service_port->{implemented};
 	return error("$name is already created") if $create && $service_port->{created};
 	return error("$name is not created") if !$create && !$service_port->{created};
 	return error("Don't know how to spawn $proto->{proto} for $name")
@@ -218,15 +266,31 @@ sub spawnServicePortByName
 # private API
 #-----------------------------------
 
-sub is_multicast
-{
-    my ($ip) = @_;
-    return 0 if $ip !~ /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/;
-    my ($oct1, $oct2, $oct3, $oct4) = ($1, $2, $3, $4);
-    # Multicast range: 224.0.0.0 to 239.255.255.255
-    return ($oct1 >= 224 && $oct1 <= 239) ? 1 : 0;
-}
+#	sub is_multicast
+#	{
+#	    my ($ip) = @_;
+#	    return 0 if $ip !~ /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/;
+#	    my ($oct1, $oct2, $oct3, $oct4) = ($1, $2, $3, $4);
+#	    # Multicast range: 224.0.0.0 to 239.255.255.255
+#	    return ($oct1 >= 224 && $oct1 <= 239) ? 1 : 0;
+#	}
 
+
+sub findServicePortByName
+	# used internally, by c_RAYSYS only.
+	# searches the ports_by_addr for a given name and returns
+	# it, or undef, with an error on undef if !$quiet
+{
+	my ($this,$name,$quiet) = @_;
+	my $ports_by_addr = $this->{ports_by_addr};
+	for my $addr (sort keys %$ports_by_addr)
+	{
+		my $service_port = $ports_by_addr->{$addr};
+		return $service_port if $service_port->{name} eq $name;
+	}
+	error("Could not findServicePortByName($name)") if !$quiet;
+	return undef;
+}
 
 
 sub addServicePort
@@ -235,100 +299,90 @@ sub addServicePort
     my $addr = "$ip:$port";
     my $found = $this->{ports_by_addr}->{$addr};
 	display_hash($dbg_raysys+1,0,"addServicePort($addr)",$rec);
-	
-    if (!$found)
-    {
-		my $def = $SERVICE_PORT_DEFS{$port};
 
-		if (!$def)
-		{
-			error("NO DEFINITION FOR RAYSYS PORT($port)");
-			$def = {
-				sid		=> -2,
-				name	=> 'unknown',
-				proto	=> '',
-				# mon_from=>1,
-				# mon_to=>1,
-				# multi=>1,
-				# color=>0,
-			};
-		}
-
-		display_hash($dbg_raysys+2,1,"def",$def);
-		my $port_counter = @{$this->{ports}};
-        my $service_port = shared_clone($def);
-		mergeHash($service_port,$rec);
-		display_hash($dbg_raysys+2,1,"after merge",$service_port);
-
-		$service_port->{num}	= $port_counter;
-		$service_port->{ip}		= $ip;
-		$service_port->{port}	= $port;
-		$service_port->{addr}	= $addr;
-
-		# mon_from => $def->{mon_from} || 0,
-		# mon_to 	=> $def->{mon_to} || 0,
-		# color 	=> $def->{color} || 0,
-		# multi 	=> $def->{multi} || 0,
-
-		push @{$this->{ports}},$service_port;
-        $this->{ports_by_addr}->{$addr} = $service_port;
-
-			# only take the first named service (by name)
-
-		#=======================================================
-		# spawn a real service
-		#=======================================================
-		# This is where it gets intereting (and messes up the display).
-		# If the $def has implemented=>1, we will attempt to create, and
-		# start, the "real" service for the given function
-
-		if ($AUTO_START_IMPLEMENTED_SERVICES &&
-			$def->{implemented} &&
-			!$this->{ports_by_name}->{$service_port->{name}})
-		{
-			# We only allow one instance, by name, of an implemented service_port.
-			# This *may* be short signted.
-			# The only multiple instance service_port at this time is udp FILESYS,
-			# and, at this time, udp service_ports work by opening a (single)
-			# listener socket, at a known port number, and sending their commands,
-			# which include that port number, via a_utils::sendUDPPacket()
-
-			promote_to_real_service($service_port);
-		}
-
-		# add the name AFTER spawning the service
-		$this->{ports_by_name}->{$service_port->{name}} ||= $service_port;
-
-    }
-
-	# give an error if I havent previously
-	# recognized the ip:port as multicast
-
-	elsif ($found->{proto} ne 'mcast')
+    if ($found)
 	{
-		display_hash(0,0,"Duplicate port_addr($addr)",$rec);
-		display_hash(0,1,"prev",$found);
+
+		$found->{alive_time} = time();
+		return 0;	# not new
 	}
+
+	my $def = $SERVICE_PORT_DEFS{$port};
+	if (!$def)
+	{
+		error("NO DEFINITION FOR RAYSYS PORT($port)");
+		$def = {
+			sid		=> -2,
+			name	=> 'unknown',
+			proto	=> '',
+			# mon_from=>1,
+			# mon_to=>1,
+			# multi=>1,
+			# color=>0,
+		};
+	}
+
+	display_hash($dbg_raysys+2,1,"def",$def);
+	my $service_port = shared_clone($def);
+	mergeHash($service_port,$rec);
+	display_hash($dbg_raysys+2,1,"after merge",$service_port);
+
+	$service_port->{ip}			= $ip;
+	$service_port->{port}		= $port;
+	$service_port->{addr}		= $addr;
+	$service_port->{alive_time} = time();
+	
+	# mon_from => $def->{mon_from} || 0,
+	# mon_to 	=> $def->{mon_to} || 0,
+	# color 	=> $def->{color} || 0,
+	# multi 	=> $def->{multi} || 0,
+
+	$this->{ports_by_addr}->{$addr} = $service_port;
+
+		# only take the first named service (by name)
+
+	#=======================================================
+	# start implemented services
+	#=======================================================
+	# If the $def has implemented=>1, we will attempt to create, and
+	# start, the "real" service for the given function if it has
+	# not already been starrted.
+	
+	my $name = $service_port->{name};
+	if ($AUTO_START_IMPLEMENTED_SERVICES &&
+		$service_port->{implemented} &&
+		!$this->findImplementedService($name,1))
+	{
+		$this->startImplementedService($service_port);
+	}
+
+	return 1;	# new
 }
 
 
-sub promote_to_real_service
+sub startImplementedService
 {
-    my ($service_port) = @_;
-    my $class = "d_$service_port->{name}";
-	warning(0,0,"SPAWNING REAL $class !!!");
+    my ($this,$service_port) = @_;
+	my $name = $service_port->{name};
+    my $class = "d_$name";
+	warning(0,0,"STARTING IMPLEMENTED SERVICE $class !!!");
     bless $service_port, $class;
+	$this->{implemented_services}->{$name} = $service_port;
+	
     $service_port->init();
+	$service_port->{DELAY_START} = 4;
+		# give the E80 a chance to open the port after advertising it
     $service_port->start();
+	b_sock::incVersion();	# addition or deletion of implemented services causes h_server to send a new page
+
 }
 
 
 
 
 #-------------------------------------------------------
-# packet handling
+# handlePacket() b_sock override
 #-------------------------------------------------------
-
 
 sub _decode_header
 {
@@ -371,10 +425,7 @@ sub _decode_header
 
 
 sub handlePacket
-	# Returns 1 on the first time an interesting message is found,
-	# 	or 0 for known repetitive or previously decoded mesages,
-	#	noting that I have not yet established a use for handlePacket's
-	#	return value in b_sock.
+	# Always returns undef so that b_sock does not queue replies.
 	#
 	# Note that with a "typical" command processor, these wouuld
 	# 	all come in as    cmd_word(0) service_id(0), except IDENT
@@ -394,6 +445,7 @@ sub handlePacket
     #my $raw = $packet->{raw_data};
     my $len = length($raw);
     display($dbg_raysys+1,0,"decodeRAYSYS($len) raw=".unpack('H*',$raw));
+	lock($raysys);
 
     # packets we can skip merely based on the raw contents
 
@@ -429,7 +481,12 @@ sub handlePacket
 
 		$device_id = unpack('H*',substr($raw,8,4));
 		$device_id = $KNOWN_DEVICES{$device_id} || $device_id;
-		return undef if $this->{devices}->{$device_id};
+		my $found_device = $this->{devices}->{$device_id};
+		if ($found_device)
+		{
+			$found_device->{alive_time} = time();
+			return undef;
+		}
 
  		my $version = unpack('v',substr($raw,12,2))/100;
 		my $ip = inet_ntoa(pack('N', unpack('V',substr($raw,16,4))));
@@ -439,7 +496,8 @@ sub handlePacket
 			$is_master ? "MASTER" : "SLAVE";
 
 		$this->{devices}->{$device_id} = shared_clone({
-			device_id => $device_id,
+			alive_time	=> time(),
+			device_id 	=> $device_id,
 			version		=> $version,
 			ip 			=> $ip,
 			is_master	=> $is_master,
@@ -454,19 +512,12 @@ sub handlePacket
 		return undef;
 	}
 
-    # set the count and return if the device_service packet has already been parsed
 
-    my $device_service = "$device_id.$service_id";
-    my $found = $this->{device_services}->{$device_service};
-    my $count = $found ? $found->{count} : 0;
-    $count++;
-    $rec->{count} = $count;
-    return undef if $found;
-
-    # PARSE AND ADD A NEW device_service and set of service_port records
+    # PARSE the packet and call addServicePort for any service ports found
 
     my $text2 = '';
-
+	my $is_new = 0;
+	
 	my $service_id_name = $KNOWN_SERVICES{$service_id} || "service_id";
 	my $service_id_string = pad("$service_id_name($service_id)",14);
 
@@ -478,26 +529,26 @@ sub handlePacket
     if ($len == 28)
     {
         $text2 = _decode_header(0,$rec, $payload, qw(ip port));
-        $this->addServicePort($rec,$rec->{ip},$rec->{port});
+        $is_new = 1 if $this->addServicePort($rec,$rec->{ip},$rec->{port});
     }
     elsif ($len == 36)
     {
         $text2 = _decode_header(0,$rec, $payload, qw(mcast_ip mcast_port ip port));
-        $this->addServicePort($rec,$rec->{mcast_ip},$rec->{mcast_port});
-        $this->addServicePort($rec,$rec->{ip},$rec->{port});
+        $is_new = 1 if $this->addServicePort($rec,$rec->{mcast_ip},$rec->{mcast_port});
+        $is_new = 1 if $this->addServicePort($rec,$rec->{ip},$rec->{port});
     }
     elsif ($len == 37)
     {
         $text2 = _decode_header(1, $rec, $payload, qw(mcast_ip mcast_port ip port));
-        $this->addServicePort($rec,$rec->{mcast_ip},$rec->{mcast_port});
-        $this->addServicePort($rec,$rec->{ip},$rec->{port});
+        $is_new = 1 if $this->addServicePort($rec,$rec->{mcast_ip},$rec->{mcast_port});
+        $is_new = 1 if $this->addServicePort($rec,$rec->{ip},$rec->{port});
     }
     elsif ($len == 40)
     {
         $text2 = _decode_header(0,$rec, $payload, qw(ip port1 port2 mcast_ip mcast_port));
-        $this->addServicePort($rec,$rec->{mcast_ip},$rec->{mcast_port});
-        $this->addServicePort($rec,$rec->{ip},$rec->{port1});
-        $this->addServicePort($rec,$rec->{ip},$rec->{port2});
+        $is_new = 1 if $this->addServicePort($rec,$rec->{mcast_ip},$rec->{mcast_port});
+        $is_new = 1 if $this->addServicePort($rec,$rec->{ip},$rec->{port1});
+        $is_new = 1 if $this->addServicePort($rec,$rec->{ip},$rec->{port2});
     }
 
     # UNKNOWN packets that show the first time we see them
@@ -516,27 +567,89 @@ sub handlePacket
 		return undef;
     }
 
-	# finished. Register the new device_service and show its facts
+	# finished. Display new ones
 
-	if ($dbg_raysys <= 0)
+	if ($is_new && $dbg_raysys <= 0)
 	{
 		setConsoleColor($DISPLAY_COLOR_LOG);
 		print "RAYSYS $text1 $text2\n";
 		setConsoleColor();
 	}
-	$this->{device_services}->{$device_service} = $rec;
+
 	return undef;
 }
 
 
+
+#------------------------------------------------
+# other virtual b_sock overrides
+#------------------------------------------------
+
 sub onStartSocketThread
+	# wakeup_e80 must be called, likely because of MSWindows,
+	# before attempting to open the RAYSYS multicast socket
 {
 	my ($this) = @_;
 	display($dbg_raysys,0,"RAYSYS onStartSocketThread()");
 	wakeup_e80();
-		# Must be called, perhaps because MSWindows,
-		# before attempting to open the RAYSYS multicast socket
 }
 
 
-1;
+
+sub onIdle
+	# Delete and possibly destroy() any service ports that have
+	# not been advertised in SERVICE_PORT_TIMEOUT seconds
+{
+	my ($this) = @_;
+	lock($raysys);
+
+	my $now = time();
+	my $ports_by_addr = $this->{ports_by_addr};
+	for my $addr (keys %$ports_by_addr)
+	{
+		my $service_port = $ports_by_addr->{$addr};
+		my $name = $service_port->{name};
+		if ($now > $service_port->{alive_time} + $SERVICE_PORT_TIMEOUT)
+		{
+			warning($dbg_raysys,0,"deleting service_port $addr=$name");
+			delete $ports_by_addr->{$addr};
+
+			# We need to destroy() promoted ports that are really going away,
+			# but NOT willy-nilly for udp implemented services.
+			# We always remove it from {ports_by_addr}, but we only
+			# destroy it if its (a) promoted and (b) not an implemented
+			# service, or (c) its the last instance of the implemetned
+			# service NAME.
+			#
+			# Thus, the given 'service_port' will disappear, but the
+			# 'implemented_service' might not.
+
+			my $implemented = $this->{implemented_services}->{$name};
+			my $still_exists = $this->findServicePortByName($name,1);
+			my $imp_desc = $implemented ? "$implemented->{addr} $name created("._def($implemented->{created}).")" : 'undef';
+			warning($dbg_raysys+1,1,"implemented($imp_desc)  still_exists="._def($still_exists));
+
+			# Note that the implemented service might not be the one triggering the delete
+			
+			if ($service_port->{created} && !$implemented)
+			{
+				warning($dbg_raysys,2,"DESTROYING service_port $addr $name");
+				$service_port->destroy();
+				bless $service_port,'HASH';
+				b_sock::incVersion();	# addition or deletion of implemented services causes h_server to send a new page
+			}
+			elsif ($implemented && !$still_exists)				# its implemented and there are no more instances
+			{
+				warning($dbg_raysys,2,"DESTROYING IMPLEMENTED SERVICE $implemented->{addr} $name");
+				delete $this->{implemented_services}->{$name};
+				$implemented->destroy();
+				bless $implemented,'HASH';
+				b_sock::incVersion();	# addition or deletion of implemented services causes h_server to send a new page
+			}
+		}
+	}
+}
+
+
+
+1; 

@@ -19,8 +19,12 @@ use Pub::Utils;
 # temporary implementation
 # Try to find the last two unmapped TCP client in Raymarine Services Menu
 
-my $TARGET_IP = "10.0.241.54";
-	# $E80_1_IP
+my $E80_1_IP	= '10.0.241.54';
+my $E80_2_IP	= '10.0.241.83';
+my $RNS_IP 		= '128.118.142.1';
+
+my $TARGET_IP = $E80_2_IP;
+
 
 # known E80, or previously probed ports
 #
