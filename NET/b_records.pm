@@ -23,7 +23,7 @@ use a_utils;
 
 
 my $dbg_wp		= 1;
-my $dbg_route	= 1;
+my $dbg_route	= -1;
 my $dbg_group	= 1;
 my $dbg_mta		= 1;
 my $dbg_track	= 1;
@@ -120,16 +120,22 @@ my $ROUTE_HDR2_SPECS = [
 	u8		    => [ 2,	2,	'H4',   ],		# unknown
 ];		# 34 = e039 - 0x39e = 926
 
-# Points, which never seems to be populated by E80 or RNS
-# are only shown at $detail >= 2
+
+
+# Route Points
+# I have conclusivly determined that the E80 SETS these on any
+# routes and that these are the correct fields (more corrections
+# to parseFSH)
 
 my $ROUTE_PT_SIZE = 10;
+
 my $ROUTE_PT_SPECS = [
-	p_u0_0		=> [ 1,	2,	'H4',   ],		# 0		uint16_t;
-	p_depth		=> [ 1,	2,	'H4',   ],		# 2		uint16_t;
-	p_u1_0		=> [ 1,	4,	'H8',   ],		# 4		uint32_t;
-	p_sym		=> [ 1,	2,	'H4',   ],		# 8		uint16_t;
+	bearing		=> [ 0,	2,	'v',   ],		# 0		uint16_t;
+	legLength	=> [ 1,	4,	'V',   ],		# 2		uint32_t;
+	totLength 	=> [ 0, 4,	'V'	   ],		# 4		uint32_t;
 ];
+
+
 
 
 sub parseWPMGRRecord
@@ -168,6 +174,14 @@ sub addOutput
 	return $text."\n";
 }
 
+
+sub outputBearing
+{
+    my ($value) = @_;
+    my $degrees = roundTwo(($value / 10000) * (180 / $PI));
+	my $hex = unpack('H*',pack('v',$value));
+	return "($hex) $degrees";
+}
 
 sub outputLL
 {
@@ -229,9 +243,19 @@ sub outputTime
 
 sub WPRecordToText
 {
-	my ($rec,$kind,$indent,$detail_level) = @_;
+	my ($rec,$kind,$indent,$detail_level,$index,$wpmgr) = @_;
 	my $pad = pad('',$indent);
-	my $text = "\n".$pad."$kind Record\n";
+
+	my $text = '';
+	if (defined($index))
+	{
+		$text = pad('',$indent-1)."$kind($index)\n";
+	}
+	else
+	{
+		$text = "\n".$pad."$kind Record\n";
+	}
+	
 	my $offset = 0;
 
 	$text .= addOutput($pad,'name',$rec->{name}) if $rec->{name};
@@ -243,6 +267,7 @@ sub WPRecordToText
 	my $all_specs =
 		$kind eq 'GROUP' ? [ $GROUP_REC_SPECS ] :
 		$kind eq 'ROUTE' ? [ $ROUTE_HDR1_SPECS, $ROUTE_HDR2_SPECS ] :
+		$kind eq 'POINT' ? [ $ROUTE_PT_SPECS ] :
 		[ $WP_REC_SPECS ];
 
 	my $num = 1;
@@ -259,15 +284,14 @@ sub WPRecordToText
 				$val = 0 if !defined($val);
 				my $extra = '';
 
-
 				$extra = outputLL($val,$val,1) if $key =~ /^(lat|lon)/;
 				$extra = outputLL($val,$alt_coords->{lat}) if $key eq 'north';
 				$extra = outputLL($val,$alt_coords->{lon}) if $key eq 'east';
 				$extra = outputDate($val) if $key eq 'date';
 				$extra = outputTime($val) if $key eq 'time';
-				$extra = outputDistance($val) if $key eq 'distance';
+				$extra = outputDistance($val) if $key eq 'distance' || $key =~ /length/i;
 				$extra = outputDepth($val) if $key eq 'depth';
-
+				$extra = outputBearing($val) if $key eq 'bearing';
 
 				$text .= addOutput($pad,$key,$val,$extra);
 			}
@@ -275,16 +299,32 @@ sub WPRecordToText
 	}
 
 	my $uuids = $rec->{uuids} || [];
-	my $raw_points = $rec->{raw_points} || [];
 	for (my $i=0; $i<@$uuids; $i++)
 	{
-		$text .= addOutput($pad,"UUID($i)",$$uuids[$i]);
+		my $uuid = $$uuids[$i];
+		if ($wpmgr && ($kind eq 'GROUP' || $kind eq 'ROUTE'))
+		{
+			my $wp = $wpmgr->{waypoints}->{$uuid};
+			my $name = $wp ? $wp->{name} : 'unknown';
+			$text .= addOutput($pad,"WP($i)","$uuid = $name");
+		}
+		else
+		{
+			$text .= addOutput($pad,"UUID($i)",$uuid);
+		}
 	}
-	for (my $i=0; $i<@$raw_points; $i++)
+
+	if ($kind eq 'ROUTE')
 	{
-		$text .= addOutput($pad,"PT($i)",$$raw_points[$i]);
+		my $points = $rec->{points};
+		my $num = 0;
+		for my $point (@$points)
+		{
+			$text .= WPRecordToText($point,'POINT',$indent+1,$detail_level,$num);
+			$num++;
+		}
 	}
-	
+
 	return $text;
 }
 
@@ -356,7 +396,6 @@ sub parseWPGroup
 		$offset += 8;
 	}
 
-	$rec->{text_uuids} = join(" ",@$uuids);
 	display_hash($dbg_group+1,1,"group($name)",$rec);
 	return $rec;
 }
@@ -454,11 +493,11 @@ sub parseWPRoute
 	$rec->{comment} = $comment;
 	my $uuids = $rec->{uuids} = shared_clone([]);
 	my $points = $rec->{points} = shared_clone([]);
-	my $raw_points = $rec->{raw_points} = shared_clone([]);
 
 	for (my $i=0; $i<$rec->{num_wpts}; $i++)
 	{
 		my $uuid = unpack('H*',substr($buffer,$offset,8));
+		display($dbg_route,2,"uuid($i) = $uuid");
 		push @$uuids,$uuid;
 		$offset += 8;
 	}
@@ -475,8 +514,6 @@ sub parseWPRoute
 	
 	for (my $i=0; $i<$rec->{num_wpts}; $i++)
 	{
-		my $raw_point = unpack('H*',substr($buffer,$offset,$ROUTE_PT_SIZE));
-		push @$raw_points,$raw_point;
 		my $pt = unpackRecord(
 			$dbg_route+1,
 			$ROUTE_DETAIL_LEVEL,
@@ -489,7 +526,6 @@ sub parseWPRoute
 		$offset += $ROUTE_PT_SIZE;
 	}
 
-	$rec->{text_uuids} = join(" ",@$uuids);
 	display_hash($dbg_route+1,1,"route($name)",$rec);
 	return $rec;
 }
@@ -501,12 +537,12 @@ sub buildWPRoute
 	my $name = $rec->{name} || '';
 	my $comment = $rec->{comment} || '';
 	my $uuids = $rec->{uuids} || shared_clone([]);
-	my $points = $rec->{uuids} || shared_clone([]);
+	my $points = $rec->{points} || shared_clone([]);
 
 	$rec->{name_len} = length($name);
 	$rec->{cmt_len} = length($comment);
 	$rec->{uuids} = $uuids;
-	$rec->{points} = $uuids;
+	$rec->{points} = $points;
 	my $num_wpts = $rec->{num_wpts} = @$uuids;
 
 	display($dbg_route,0,"buildWPRoute($rec->{name}");
@@ -615,7 +651,6 @@ sub parseWPWaypoint
 		$num++;
 	}
 
-	$rec->{text_uuids} = join(" ",@$uuids);
 	display_hash($dbg_wp+1,1,"wp($name)",$rec);
 	return $rec;
 }
