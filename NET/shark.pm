@@ -120,7 +120,7 @@ sub handleSerialCommand
 
 	# WPMGR
 
-	elsif ($lpart =~ /^(q|create|delete|wp|route)$/)
+	elsif ($lpart =~ /^(q|create|delete|wp|route|group)$/)
 	{
 		my $wpmgr = $raysys->findImplementedService('WPMGR');
 		return if !$wpmgr;
@@ -143,20 +143,34 @@ sub handleSerialCommand
 		elsif ($lpart eq "route")
 		{
 			my ($route_num,$op,$wp_num) = split(/\s+/,$rpart);
-			if ($op eq '+' || $op eq '-')
+			if ($op && ($op eq '+' || $op eq '-'))
 			{
 				$wpmgr->routeWaypoint($route_num,$wp_num,$op eq '+');
 			}
 			else
 			{
-				error("bad route command syntax");
+				$wpmgr->showItem('route',$rpart);
+				# error("bad route command syntax");
 			}
 		}
 		elsif ($lpart eq 'wp')
 		{
 			my ($wp_num,$group_num) = split(/\s+/,$rpart);
-			$wpmgr->setWaypointGroup($wp_num,$group_num);
+			if ($wp_num =~ /^\d+$/)
+			{
+				$wpmgr->setWaypointGroup($wp_num,$group_num);
+			}
+			else
+			{
+				$wpmgr->showItem('waypoint',$rpart);	
+			}
 		}
+		elsif ($lpart eq 'group')
+		{
+			$wpmgr->showItem('group',$rpart);
+		}
+
+
 	}	# WPMGR
 
 
