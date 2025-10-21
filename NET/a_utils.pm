@@ -478,14 +478,14 @@ sub packRecord
 		my $field = $field_specs->[$i * 2];
 		next if $field eq 'big_len';
 		my $spec = $field_specs->[$i * 2 + 1];
-		my ($size,$type,$detail) = @$spec;
+		my ($detail,$size,$type) = @$spec;
 
 		my $val  = $rec->{$field};
 		$val = 0 if !defined($val);
 		my $packed .= pack($type,$val);
 		$data .= $packed;
 
-		display($dbg+1,1,"offset($offset) ".pad($field,20)."(".unpack('H*',$packed).")= '$rec->{$field}'")
+		display($dbg+1,1,"offset($offset) ".pad($field,20)."(".unpack('H*',$packed).")= '$val'")
 			if $level >= $detail;
 
 		$offset += $size;
