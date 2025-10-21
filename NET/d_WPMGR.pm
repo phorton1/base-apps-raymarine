@@ -36,20 +36,20 @@ use c_RAYSYS;
 use base qw(b_sock);
 
 
-my $dbg = -1;
+my $dbg = 0;
+my $dbg_got = 0;
+
 
 
 my $WITH_MOD_PROCESSING = 1;
 
 my $WPMGR_SERVICE_ID = 15;
 	# 15 = 0xf0 == 'F000' in streams
-my $WPMGR_PORT = $LOCAL_TCP_PORT_BASE + $WPMGR_SERVICE_ID;
 
-
-our $SHOW_WPMGR_RAW_INPUT 		= 1;
-our $SHOW_WPMGR_RAW_OUTPUT		= 1;
-our $SHOW_WPMGR_PARSED_INPUT	= 1;
-our $SHOW_WPMGR_PARSED_OUTPUT 	= 1;
+our $SHOW_WPMGR_RAW_INPUT 		= 0;
+our $SHOW_WPMGR_RAW_OUTPUT		= 0;
+our $SHOW_WPMGR_PARSED_INPUT	= 0;
+our $SHOW_WPMGR_PARSED_OUTPUT 	= 0;
 
 my $IN_COLOR = $UTILS_COLOR_BROWN;
 my $OUT_COLOR = $UTILS_COLOR_LIGHT_MAGENTA;
@@ -58,11 +58,11 @@ my $OUT_COLOR = $UTILS_COLOR_LIGHT_MAGENTA;
 sub init
 {
 	my ($this) = @_;
-	display($dbg,0,"d_WPMGR init($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto} local_port=$WPMGR_PORT)");
+	display($dbg,0,"d_WPMGR init($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
 
 	$this->SUPER::init();
-	$this->{local_port}			= $WPMGR_PORT;
 	
+	$this->{local_ip}			= $LOCAL_IP;
 	$this->{show_raw_input} 	= $SHOW_WPMGR_RAW_INPUT;
 	$this->{show_raw_output} 	= $SHOW_WPMGR_RAW_OUTPUT;
 	$this->{show_parsed_input}  = $SHOW_WPMGR_PARSED_INPUT;
@@ -84,7 +84,7 @@ sub init
 sub destroy
 {
 	my ($this) = @_;
-	display($dbg,0,"d_WPMGR destroy($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto} local_port=$WPMGR_PORT)");
+	display($dbg,0,"d_WPMGR destroy($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
 
 	$this->SUPER::destroy();
 
@@ -191,7 +191,7 @@ sub sendRequest
 	if ($this->{show_parsed_output})
 	{
 		my $text = "# sendRequest($seq) $name\n";
-		my $rec = $this->parseWPMGR($this->{show_parsed_output},0,$WPMGR_PORT,$request);
+		my $rec = $this->parseWPMGR($this->{show_parsed_output},0,$this->{local_port},$request);
 		$text .= $rec->{text};
 		# 1=with_text, 0=is_reply		$text .= $rec->{text};
 		setConsoleColor($OUT_COLOR) if $OUT_COLOR;
@@ -239,7 +239,6 @@ sub update_item_request
 	return 0 if !$reply;
 	return error("No {item} in $name $what_name reply") if !$reply->{item};
 
-	my $dbg_got = 1;
 	display($dbg_got,0,"got $what_name($uuid) = '$reply->{item}->{name}'");
 
 	my $hash_name = lc($what_name)."s";
@@ -448,6 +447,14 @@ sub handleCommand
 # overriden tcpBase methods
 #========================================================================
 
+sub onConnect
+{
+	my ($this) = @_;
+	$this->queueWPMGRCommand($API_DO_QUERY,0,'auto_populate',0,'')
+		if $this->{auto_populate};
+}
+
+
 
 sub handlePacket
 {
@@ -455,7 +462,7 @@ sub handlePacket
 
 	warning($dbg+1,0,"handlePacket(".length($buffer).") called");
 
-	my $reply = $this->parseWPMGR($this->{show_parsed_input},1,$WPMGR_PORT,$buffer);
+	my $reply = $this->parseWPMGR($this->{show_parsed_input},1,$this->{local_port},$buffer);
 		# 1=is_reply
 
 	if ($this->{show_parsed_input})

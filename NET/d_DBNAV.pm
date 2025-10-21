@@ -56,6 +56,7 @@ sub init
 
 	$this->SUPER::init();
 
+	$this->{local_ip}			= $LOCAL_IP;
 	$this->{show_raw_input} 	= $SHOW_DBNAV_RAW_INPUT;
 	$this->{show_raw_output} 	= $SHOW_DBNAV_RAW_OUTPUT;
 	$this->{show_parsed_input}  = $SHOW_DBNAV_PARSED_INPUT;

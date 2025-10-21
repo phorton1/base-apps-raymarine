@@ -23,11 +23,11 @@ use b_records;	# temporary name
 use base qw(b_sock);
 
 
-my $dbg 		= 0;
-my $dbg_parse 	= 0;
+my $dbg 		= 1;
+my $dbg_parse 	= 1;
 my $dbg_got 	= 0;		# for returned tracks (including Current Track)
-my $dbg_events 	= 0;
-my $dbg_mods 	= 0;
+my $dbg_events 	= 1;
+my $dbg_mods 	= 1;
 
 
 my $WITH_EVENT_PROCESSING	= 1;
@@ -36,8 +36,6 @@ my $WITH_MOD_PROCESSING 	= 1;
 
 my $TRACK_SERVICE_ID = 19;
 	# 19 == 0x13 == '1300' in streams
-my $TRACK_PORT = $LOCAL_TCP_PORT_BASE + $TRACK_SERVICE_ID;
-
 
 our $SHOW_TRACK_RAW_INPUT 		= 0;
 our $SHOW_TRACK_RAW_OUTPUT		= 0;
@@ -51,11 +49,11 @@ my $OUT_COLOR = $UTILS_COLOR_LIGHT_CYAN;
 sub init
 {
 	my ($this) = @_;
-	display($dbg,0,"d_TRACK init($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto} local_port=$TRACK_PORT)");
+	display($dbg,0,"d_TRACK init($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
 
 	$this->SUPER::init();
-	$this->{local_port}			= $TRACK_PORT;
 	
+	$this->{local_ip}			= $LOCAL_IP;
 	$this->{show_raw_input} 	= $SHOW_TRACK_RAW_INPUT;
 	$this->{show_raw_output} 	= $SHOW_TRACK_RAW_OUTPUT;
 	$this->{show_parsed_input}  = $SHOW_TRACK_PARSED_INPUT;
@@ -74,7 +72,7 @@ sub init
 sub destroy
 {
 	my ($this) = @_;
-	display($dbg,0,"d_TRACK destroy($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto} local_port=$TRACK_PORT)");
+	display($dbg,0,"d_TRACK destroy($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
 
 	$this->SUPER::destroy();
 
@@ -630,6 +628,15 @@ sub sendRequest
 #============================================================
 # virtual handleCommand and class specific atoms
 #============================================================
+
+
+sub onConnect
+{
+	my ($this) = @_;
+	$this->trackUICommand('')
+		if $this->{auto_populate};
+}
+
 
 sub get_tracks
 	# get all track_mts uuids, then all tracks

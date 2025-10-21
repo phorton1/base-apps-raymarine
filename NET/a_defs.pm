@@ -45,7 +45,6 @@ BEGIN
 		$HIDDEN_PORT1
 
 		$LOCAL_UDP_PORT_BASE
-        $LOCAL_TCP_PORT_BASE
         $LOCAL_UDP_SEND_PORT
 
 		$SUCCESS_SIG
@@ -107,8 +106,6 @@ our $HIDDEN_PORT1 = 6668;
 # tcp ports, when needed, will be created at  $LOCAL_TCP_PORT_BASE + func
 
 our $LOCAL_UDP_PORT_BASE		= 9000;
-our $LOCAL_TCP_PORT_BASE		= 12000;
-
 our $LOCAL_UDP_SEND_PORT 		= $LOCAL_UDP_PORT_BASE;
 	# the recognizable port of the single
 	# global udp send-only socket
@@ -287,34 +284,48 @@ our %KNOWN_SERVICES = (
 
 our %SERVICE_PORT_DEFS  = (
 
-	2048 => { sid => 35,	name => 'func35_u',	proto=>'udp',	},								# shows on bareE80
-	2049 => { sid => 5,		name => 'FILESYS',	proto=>'udp',	implemented => $WITH_FILESYS },	# shows on bareE80;	addl added by E80#2
-	2050 => { sid => 16,	name => 'Database',	proto=>'tcp',	},								# shows on bareE80
-	2051 => { sid => 16,	name => 'database',	proto=>'udp',	},								# shows on bareE80
-	2052 => { sid => 15,	name => 'WPMGR',	proto=>'tcp',	implemented => $WITH_WPMGR },	# shows on bareE80
-	2053 => { sid => 19,	name => 'TRACK',	proto=>'tcp',	implemented => $WITH_TRACK },	# shows on bareE80
-	2054 => { sid => 7,		name => 'Navig',	proto=>'tcp',	},								# shows on bareE80
-	2055 => { sid => 22,	name => 'func22_t',	proto=>'tcp',	},								# shows on bareE80; tcp connect immediately starts getting events
-	2056 => { sid => 8,		name => 'func8_u',	proto=>'udp',	},								# shows with E80 Fix/Heading
-	2058 => { sid => -2,	name => 'exists?',	proto=>'',		},								# seen in distant past
+	2048 => { sid => 35,	name => 'func35_u',	proto=>'udp',	},	# shows on bareE80
+	2049 => { sid => 5,		name => 'FILESYS',	proto=>'udp',	},	# shows on bareE80;	addl added by E80#2
+	2050 => { sid => 16,	name => 'Database',	proto=>'tcp',	},	# shows on bareE80
+	2051 => { sid => 16,	name => 'database',	proto=>'udp',	},	# shows on bareE80
+	2052 => { sid => 15,	name => 'WPMGR',	proto=>'tcp',	},	# shows on bareE80
+	2053 => { sid => 19,	name => 'TRACK',	proto=>'tcp',	},	# shows on bareE80
+	2054 => { sid => 7,		name => 'Navig',	proto=>'tcp',	},	# shows on bareE80
+	2055 => { sid => 22,	name => 'func22_t',	proto=>'tcp',	},	# shows on bareE80; tcp connect immediately starts getting events
+	2056 => { sid => 8,		name => 'func8_u',	proto=>'udp',	},	# shows with E80 Fix/Heading
+	2058 => { sid => -2,	name => 'exists?',	proto=>'',		},	# seen in distant past
 
-	2560 => { sid => 35,	name => 'func35_m',	proto=>'mcast',	},								# shows on bareE80
-	2561 => { sid => 5,		name => 'filesys',	proto=>'mcast',	},								# shows on bareE80
-	2562 => { sid => 16,	name => 'DBNAV',	proto=>'mcast',	implemented => $WITH_DBNAV },	# shows on bareE80; database variant; lots of packets with E80 Fix/Heading and RNS
-	2563 => { sid => 8,		name => 'func8_m',	proto=>'mcast',	},								# shows, starts getting events with E80 Fix/Heading
+	2560 => { sid => 35,	name => 'func35_m',	proto=>'mcast',	},	# shows on bareE80
+	2561 => { sid => 5,		name => 'filesys',	proto=>'mcast',	},	# shows on bareE80
+	2562 => { sid => 16,	name => 'DBNAV',	proto=>'mcast',	},	# shows on bareE80; database variant; lots of packets with E80 Fix/Heading and RNS
+	2563 => { sid => 8,		name => 'func8_m',	proto=>'mcast',	},	# shows, starts getting events with E80 Fix/Heading
 
-	5800 => { sid => 0,		name => 'RAYSYS',	proto=>'mcast',	},								# RAYSYS not advertised
-	5801 => { sid => 27,	name => 'Alarm',	proto=>'mcast',	},								# show on bare E80
-	5802 => { sid => 27,	name => 'alarm',	proto=>'udp',	},								# show on bare E80; addl added by RNS
+	5800 => { sid => 0,		name => 'RAYSYS',	proto=>'mcast',	},	# RAYSYS not advertised
+	5801 => { sid => 27,	name => 'Alarm',	proto=>'mcast',	},	# show on bare E80
+	5802 => { sid => 27,	name => 'alarm',	proto=>'udp',	},	# show on bare E80; addl added by RNS
 
-	6668 => { sid => -1,	name => 'hidden_t',	proto=>'tcp',	},								# Hidden tcp port on E80; not probed yet
+	6668 => { sid => -1,	name => 'hidden_t',	proto=>'tcp',	},	# Hidden tcp port on E80; not probed yet
 );
 
 
+# Add fields for implemented service_ports
 
-
-
-
+mergeHash($SERVICE_PORT_DEFS{2049},{
+	implemented 	=> $WITH_FILESYS,
+	auto_connect 	=> 1,
+	auto_populate	=> 1 });
+mergeHash($SERVICE_PORT_DEFS{2052},{
+	implemented 	=> $WITH_WPMGR,
+	auto_connect 	=> 1,
+	auto_populate 	=> 1 });
+mergeHash($SERVICE_PORT_DEFS{2053},{
+	implemented 	=> $WITH_TRACK,
+	auto_connect 	=> 1,
+	auto_populate 	=> 1 });
+mergeHash($SERVICE_PORT_DEFS{2562},{
+	implemented 	=> $WITH_DBNAV,
+	auto_connect 	=> 1,
+	auto_populate 	=> 1 });
 
 
 1;

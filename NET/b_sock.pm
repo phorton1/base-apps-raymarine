@@ -11,14 +11,32 @@
 #		they are not passed in during construction.
 #	{proto} 		REQUIRED
 #		'tcp', 'udp', or 'mcast'
-#	{service_id} 	RECOMMENDED
+#	{service_id} 	REQUIRED
 #		The 'service id' of a RAYNET service, for identification
 #		and debugging, which may be -1 indicating that the RAYNET
 #		service_id has not yet have been identified.
-#   {ip} 			REQUIRED
-#		human readable ip address
-#   {port} 			REQUIRED
-#		a remote port
+#
+# The connection addresses are treated differently depending on {proto}.
+# IP:PORT are the Advertised service_port addresses gotten by c_RAYSYS
+#
+# 	{ip}:{port}
+#		TCP: 		the remote tcp peer ip:port to connect to
+#		MCAST:		the local ip:port (multicast group and port) to open
+#		UDP:		unused by this code; client code uses remote {ip}:{port}
+#			    	to send request to
+#
+#	{local_ip}		will be (re) set to whatever the socket returns after open
+#		TCP: 		optional, may be the specific adapter ip on this machine or left undef
+#		MCAST:  	optional, may be the specific adapter ip on this machine or left undef
+#		MCAST:  	optional, may be the specific adapter ip on this machine or left undef
+#
+#	{local_port}	will be (re) set to whatever the socket returns after open
+#						which *may* be important for monitoring tcp connections
+#		TCP:		not used. if it was used, Windows enforces a 60+ second TIME_WAIT
+#						between reconnects which I found unacceptable
+#		MCAST:		not used. The LocalAddr is set to the advertised IP
+#		UDP:		may be (probably *should* be) specified as a constant per
+#					service_port for easier monitoring
 #
 # Optional:
 #
@@ -43,7 +61,6 @@
 #
 # Optional NOT USED ON MCAST PORTS
 #
-#	{local_port} - useful for identifying traffic
 #   {local_ip} - not recommended
 #
 #
@@ -78,12 +95,26 @@ use IO::Socket::Multicast;
 use Pub::Utils;
 use a_utils qw(parse_dwords setConsoleColor);
 
+BEGIN
+{
+ 	use Exporter qw( import );
+    our @EXPORT = qw(
+
+		$SHUTDOWN_NONE
+		$SHUTDOWN_START
+		$SHUTDOWN_SENT
+		$SHUTDOWN_DONE
+
+		@SHUTDOWN_NAME
+	);
+}
 
 
-my $dbg_api 	= 0;
+
+my $dbg_api 	= 1;
 my $dbg_thread  = 0;
-my $dbg_cmd  	= 0;
-my $dbg_wait 	= 0;
+my $dbg_cmd  	= 1;
+my $dbg_wait 	= 1;
 
 my $DESTROY_TIMEOUT				= 3;
 my $DEFAULT_CONNECT_TIMEOUT 	= 2;
@@ -100,6 +131,16 @@ my %r_socks:shared;
 	
 
 my @command_done;
+
+
+my $SHUTDOWN_TIMEOUT 	= 2;		# How long to wait for FIN after shutdown(1)
+
+our $SHUTDOWN_NONE 		= 0;		# attempt reconnections after timeout or hard close socket on destruction
+our $SHUTDOWN_START 	= 1;		# start disconnection cycle
+our $SHUTDOWN_SENT		= 2;		# $sock->shutdown(1) has been sent; waiting for FIN or timeout
+our $SHUTDOWN_DONE		= 3;		# socket has been closed,
+
+our @SHUTDOWN_NAME = qw(NONE START SENT DONE);
 
 
 #-----------------------------
@@ -119,9 +160,15 @@ sub init
 
 	$this->{created}			= 1;
     $this->{started}   			= 0;
+	$this->{running}			= 0;
     $this->{connected} 			= 0;
-    $this->{stopping}  			= 0;
     $this->{destroyed} 			= 0;
+	$this->{shutdown}			= 0;
+		# this is a command that carries state
+		# 0 = don't change connection state
+		# 1 = connect subject to reconnect time (normal)
+		# 2 = connect immediately (goes to 1)
+
     $this->{CONNECT_TIMEOUT}    ||= $DEFAULT_CONNECT_TIMEOUT;
     $this->{RECONNECT_INTERVAL} ||= $DEFAULT_RECONNECT_INTERVAL;
     $this->{READ_TIME}          ||= $DEFAULT_READ_TIME;
@@ -155,7 +202,9 @@ sub destroy
 	if ($this->{started} && !$this->{destroyed})
 	{
 		display($dbg_api,1,"b_sock destroy($this->{name}) stopping threads",0,$UTILS_COLOR_BROWN);
-		$this->{stopping} = 1;
+		$this->{running} = 0;
+			# object is being destroyed.
+			# exit loop post-hasted
 		my $start_destroy = time();
 		while (!$this->{destroyed} &&
 			   time() - $start_destroy < $DESTROY_TIMEOUT)
@@ -170,8 +219,9 @@ sub destroy
     delete @$this{qw(
 		created
         started
+		running
 		connected
-		stopping
+		shutdown
 		destroyed
         CONNECT_TIMEOUT
 		RECONNECT_INTERVAL
@@ -212,7 +262,8 @@ sub start
 {
 	my ($this) = @_;
 	display($dbg_api,1,"b_sock start($this->{name}) called");
-	return error("start($this->{name})  already started") if $this->{started};
+	# return error("start($this->{name}) already created") if $this->{created};
+	return error("start($this->{name}) already started") if $this->{started};
 	return error("start($this->{name}) has been destroyed") if $this->{detroyed};
 	$this->{started} = 1;
 
@@ -227,6 +278,35 @@ sub start
 	display($dbg_api,1,"b_sock start($this->{name}) returning");
 }
 
+
+
+sub connect
+	# This method is not appropriate for EXIT_ON_CLOSE sockets
+	# 1 = connect immediately
+	# 0 = disconnect with shutdown cycle
+{
+	my ($this,$connect) = @_;
+	warning($dbg_cmd,1,"b_sock connect($this->{name},$connect=".($connect?"CONNECT":"DISCONNECT").")");
+	return error("connect($this->{name}) not started") if !$this->{started};
+	return error("connect($this->{name}) is not running") if !$this->{running};
+	return error("connect($this->{name}) has been destroyed") if $this->{destroyed};
+
+	if ($connect)
+	{
+		return error("connect($this->{name}) already connected") if $this->{connected};
+		return error("connect($this->{name}) is in shutdown state($this->{shutdown})")
+			if $this->{shutdown} && $this->{shutdown} != $SHUTDOWN_DONE;
+		$this->{shutdown} = $SHUTDOWN_NONE;
+		$this->{connect_time} = -$this->{RECONNECT_INTERVAL};
+	}
+	else
+	{
+		return error("connect($this->{name}) not connected") if !$this->{connected};
+		return error("connect($this->{name}) is in shutdown state($this->{shutdown})")
+			if $this->{shutdown};
+		$this->{shutdown} = $SHUTDOWN_START;
+	}
+}
 
 
 #------------------------------------------------
@@ -246,7 +326,16 @@ sub handleCommand
 }
 
 sub onStartSocketThread
-	# to allow c_RAYSYS to send wakeup packets
+	# called when thread is started
+	# allows c_RAYSYS to send wakeup packets
+{
+	my ($this) = @_;
+}
+
+
+sub onConnect
+	# called upon a connection
+	# allows d_WPMGR and d_TRACK to queue populate commands
 {
 	my ($this) = @_;
 }
@@ -254,7 +343,7 @@ sub onStartSocketThread
 
 sub onIdle
 	# called from commandThread when no commands in queue
-	# to allow service_ports to do cleanup activities
+	# allows c_RAYSYS to cull unadvertised service_port timeouts
 {
 	my ($this) = @_;
 }
@@ -285,9 +374,10 @@ sub sendPacket
 	my ($this,$buffer) = @_;
 	display($dbg_cmd,1,"b_sock sendPacket($this->{name}) len(".length($buffer).")");
 	return error("sendPacket($this->{name}) not started") if !$this->{started};
+	return error("sendPacket($this->{name}) is not running") if !$this->{running};
 	return error("sendPacket($this->{name}) no connection") if !$this->{connected};
+	return error("sendPacket($this->{name}) is in shutdown state($this->{shutdown})") if $this->{shutdown};
 	return error("sendPacket($this->{name}) has been destroyed") if $this->{destroyed};
-	return error("sendPacket($this->{name}) is stopping") if $this->{stopping};
 	push @{$this->{out_queue}},$buffer;
 }
 
@@ -303,7 +393,8 @@ sub waitReply
 	display($dbg_wait,0,"$name waitReply($seq) $wait_name");
 
 	while ($this->{connected} &&
-		   !$this->{stopping} &&
+		   $this->{running} &&
+		   !$this->{shutdown} &&
 		   !$this->{destroyed})
 	{
 		my $replies = $this->{replies};
@@ -345,19 +436,42 @@ sub waitReply
 #======================================================================================
 # sockThread
 #======================================================================================
+use Devel::Peek;
 
 
-sub _close_socket
+sub _shutdown_socket
 {
-	my ($this,$sock) = @_;
-	display($dbg_thread,0,"closing tcp socket($this->{name})");
-	$this->{buffer} = '';
-	$this->{out_queue} = shared_clone([]);
-	$this->{connected} = 0;
-	setsockopt($sock, SOL_SOCKET, SO_LINGER, pack("ss", 1, 0));
-	$sock->close();
-	return undef;
+	my ($this,$psock,$psel) = @_;
+	lock($this);
+	my $shutdown = $this->{shutdown};
+	display($dbg_thread,0,"shutting down tcp socket($this->{name}) shutdown($shutdown=$SHUTDOWN_NAME[$shutdown]) sock=$$psock sel=".($psel?$$psel:'undef'));
+	if ($this->{connected})
+	{
+		display($dbg_thread,0,"clearing connection members");
+		$this->{buffer} = '';
+		$this->{out_queue} = shared_clone([]) if !@{$this->{out_queue}};
+		$this->{connected} = 0;
+	}
+	if ($this->{shutdown} == $SHUTDOWN_START)
+	{
+		$this->{shutdown} = $SHUTDOWN_SENT;
+		$$psock->shutdown(1);		# disable further sends
+		display($dbg_thread,1,"_shutdown_socket short return");
+		return;
+	}
+	if ($this->{shutdown} == $SHUTDOWN_SENT)
+	{
+		$$psock->shutdown(2);
+		$this->{shutdown} = $SHUTDOWN_DONE;
+		sleep(0.5);
+	}
 
+	setsockopt($$psock, SOL_SOCKET, SO_LINGER, pack("II", 1, 0));  # Linger active, timeout 0
+
+	$$psock->close();
+	$$psock = undef;
+	$$psel = undef;
+	display($dbg_thread,1,"_shutdown_socket closed socket")
 }
 
 
@@ -389,12 +503,13 @@ sub sockThread
 		# mysteriously gets plugged with the previous (c_RAYSYS mcast) socket!!!
 		
 	display($dbg_thread,0,"sockThread($name,$this->{remote}) running sock="._def($sock));
-	while (!$this->{stopping})
+	while ($this->{running})
 	{
 		# (a) OPEN THE SOCKET if appropriate
 
 		if (!$sock &&
-			!$this->{stopping} &&
+			$this->{running} &&
+			!$this->{shutdown} &&
 			time() > $this->{connect_time} + $this->{RECONNECT_INTERVAL})
 		{
 			display($dbg_thread,1,"connecting $this->{proto} $name($this->{local}) to socket($this->{remote})");
@@ -403,7 +518,7 @@ sub sockThread
 			{
 				$sock = IO::Socket::INET->new(
 					LocalAddr => $this->{local_ip},
-					LocalPort => $this->{local_port},
+					# LocalPort => $this->{local_port},
 					PeerAddr  => $this->{ip},
 					PeerPort  => $this->{port},
 					Proto     => $this->{proto},
@@ -413,13 +528,11 @@ sub sockThread
 			elsif ($this->{proto} eq 'udp')
 			{
 				# udp service ports merely open a listener
-				# and do not use the base class send command
+				# and do not use the base class sendPacket method
 				
 				$sock = IO::Socket::INET->new(
 					LocalAddr => $this->{local_ip},
 					LocalPort => $this->{local_port},
-					# PeerAddr  => $this->{ip},
-					# PeerPort  => $this->{port},
 					Proto     => $this->{proto},
 					ReuseAddr => 1,	# allows open even if windows is timing it out
 					Timeout	  => $this->{CONNECT_TIMEOUT} );
@@ -432,6 +545,7 @@ sub sockThread
 			elsif ($this->{proto} eq 'mcast')
 			{
 				$sock = IO::Socket::Multicast->new(
+					LocalHost => $this->{local_ip},
 					LocalPort => $this->{port},
 					ReuseAddr => 1,
 					Proto     => 'udp',
@@ -458,6 +572,7 @@ sub sockThread
 				$this->{local} = "$this->{local_ip}:$this->{local_port}";
 				display($dbg_thread,2,"$name $this->{local} CONNECTED to socket($this->{remote})");
 				$sel = IO::Select->new($sock);
+				$this->onConnect();
 			}
 			else
 			{
@@ -467,12 +582,15 @@ sub sockThread
 			}
 			$this->{connect_time} = time();
 
-		}	# !$sock && !stopping and connect_time>RECONNECT_INTERVAL
+		}	# !$sock && running and connect_time>RECONNECT_INTERVAL
 
 
 		# (b) SEND THE NEXT OUT BOUND PACKET if any
 
-		if ($sock && !$this->{stopping})
+		if ($sock &&
+			$this->{running} &&
+			$this->{connected} &&
+			!$this->{shutdown})
 		{
 			if ($sel->can_write() && @{$this->{out_queue}})
 			{
@@ -489,7 +607,7 @@ sub sockThread
 				if (!defined($rslt))
 				{
 					error("Could not write to $this->{remote}: $!");
-					$sock = $this->_close_socket($sock);
+					$this->_shutdown_socket(\$sock,\$sel);
 					last if $this->{EXIT_ON_CLOSE};
 				}
 				$this->{connect_time} = time();
@@ -498,9 +616,19 @@ sub sockThread
 
 		# (c) READ THE SOCKET
 
-		if ($sock && !$this->{stopping})
+		if ($sock &&
+			$this->{running} &&
+			$this->{shutdown} != $SHUTDOWN_DONE)
 		{
-			if ($sel->can_read($this->{READ_TIME}))
+			# handle SHUTDOWN_START pre-read
+			
+			if ($this->{shutdown} == $SHUTDOWN_START)
+			{
+				# $sock= not needed as this will merely call shutdown(1)
+				$this->_shutdown_socket(\$sock,\$sel);
+			}
+
+			if ($sock && $sel->can_read($this->{READ_TIME}))
 			{
 				my $buf;
 				my $rslt = recv($sock,$buf,4096,0);
@@ -509,16 +637,16 @@ sub sockThread
 				{
 					# connection closed by remote
 					error("sockThread($this->{remote}) read error: $!");
-					$sock = $this->_close_socket($sock);
+					$this->_shutdown_socket(\$sock,\$sel);
 					last if $this->{EXIT_ON_CLOSE};
 				}
 				elsif ($len == 0)
 				{
 					warning($dbg_thread,0,"received FIN.");
-					$sock = $this->_close_socket($sock);
+					$this->_shutdown_socket(\$sock,\$sel);
 					last if $this->{EXIT_ON_CLOSE};
 				}
-				elsif (!$this->{stopping})
+				elsif ($this->{running} && $this->{connected})
 				{
 					$this->{buffer} .= $buf;
 					my $buflen = length($this->{buffer});
@@ -553,14 +681,23 @@ sub sockThread
 				$this->{connect_time} = time();
 
 			}	# can_read()
+
+			# handle shutdown timeout POST read
+
+			if ($this->{shutdown} == $SHUTDOWN_SENT &&
+				time() > $this->{connect_time} + $SHUTDOWN_TIMEOUT)
+			{
+				display($dbg_thread+1,"NOTE: $this->{name} SHUTDOWN_TIMEOUT",0,$UTILS_COLOR_RED);
+				$this->_shutdown_socket(\$sock,\$sel);
+			}
+
 		}	# $sock
 	}	# while 1
 
 
 	display($dbg_thread,1,"finishing sockThread($name)");
 
-	$this->_close_socket($sock) if $sock;
-	$sock = undef;
+	$sock->close() if $sock;
 	delete $r_socks{$this->{remote}};
 	$this->{running} = 0;
 	$this->{destroyed} = 1;
@@ -584,10 +721,12 @@ sub commandThread
 		sleep($this->{DELAY_START});
 	}
 
-	while (!$this->{stopping} && !$this->{destroyed})
+	while ($this->{running} &&
+		   !$this->{destroyed})
 	{
-		if (!$this->{stopping} &&
+		if ($this->{running} &&
 			$this->{connected} &&
+			!$this->{shutdown} &&
 			@{$this->{command_queue}})
 		{
 			my $command = shift @{$this->{command_queue}};

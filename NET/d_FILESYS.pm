@@ -197,6 +197,8 @@ sub init
 	display($dbg_fs,0,"d_FILESYS init($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto} local_port=$FILESYS_PORT");
 
 	$this->SUPER::init();
+	
+	$this->{local_ip}			= $LOCAL_IP;
 	$this->{local_port}			= $FILESYS_PORT;
 	$this->{COMMAND_TIMEOUT}	= $SHORT_TIMEOUT;
 

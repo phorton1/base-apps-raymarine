@@ -102,6 +102,7 @@ use IO::Select;
 use Pub::Utils;
 use a_defs;
 use a_utils;
+use b_sock;
 use base qw(b_sock);
 
 my $dbg_raysys = 0;
@@ -156,6 +157,7 @@ sub new
 		name 			=> $RAYSYS_NAME,
 		proto			=> 'mcast',
 		service_id		=> $RAYSYS_SID,
+		local_ip		=> $LOCAL_IP,
 		ip   			=> $RAYSYS_IP,
 		port 			=> $RAYSYS_PORT,
 
@@ -226,28 +228,39 @@ sub findImplementedService
 }
 
 
-sub spawnServicePortByName
+sub connectServicePort
 	# Called by winRAYSYS directly when the spawn checkbox is
 	# checked or unchecked.
 {
-	my ($this,$name,$create) = @_;
-	warning($dbg_raysys,0,"spawnServicePortByName($name,$create)");
-	my $service_port = $this->findServicePortByName($name);
-	return if !$service_port;
+	my ($this,$addr,$checked) = @_;
+	my $service_port = $this->{ports_by_addr}->{$addr};
+	return error("Could not find service_port($addr)") if !$service_port;
+	my $name = $service_port->{name};
+	warning($dbg_raysys,0,"connectServicePort($addr=$name,$checked)");
+
+	# If the service_port is IMPLEMENTED, that means that the command
+	# is actually 'connectServicePortByName() and we call connect()
+
+	if ($service_port->{implemented})
+	{
+		$service_port = $this->{implemented_services}->{$name};
+		error("no implemented_services($name)") if !$service_port;
+		$service_port->connect($checked);
+		return;
+	}
 
 	my $proto = $service_port->{proto};
-	return error("cannot spawn IMPLMENTED service($name)") if $service_port->{implemented};
-	return error("$name is already created") if $create && $service_port->{created};
-	return error("$name is not created") if !$create && !$service_port->{created};
+	return error("$name is already created") if $checked && $service_port->{created};
+	return error("$name is not created") if !$checked && !$service_port->{created};
 	return error("Don't know how to spawn $proto->{proto} for $name")
 		if $proto ne 'udp' && $proto ne 'tcp' && $proto ne 'mcast';
 		
-	if ($create)
+	if ($checked)
 	{
 		$service_port->{EXIT_ON_CLOSE} = 1;
-		$service_port->{local_port}	= $service_port->{service_id};
-		$service_port->{local_port} += $LOCAL_UDP_PORT_BASE if $proto eq 'udp';
-		$service_port->{local_port} += $LOCAL_TCP_PORT_BASE if $proto eq 'tcp';
+		$service_port->{local_port} = $LOCAL_UDP_PORT_BASE + $service_port->{service_id}
+			if $proto eq 'udp';
+
 		bless $service_port, 'b_sock';
 		$service_port->init();
 		$service_port->start();
@@ -365,13 +378,19 @@ sub startImplementedService
     my ($this,$service_port) = @_;
 	my $name = $service_port->{name};
     my $class = "d_$name";
-	warning(0,0,"STARTING IMPLEMENTED SERVICE $class !!!");
+	warning(0,0,"STARTING IMPLEMENTED SERVICE $class auto_start($service_port->{auto_connect}) populate($service_port->{auto_populate})");
     bless $service_port, $class;
 	$this->{implemented_services}->{$name} = $service_port;
 	
     $service_port->init();
-	$service_port->{DELAY_START} = 4;
-		# give the E80 a chance to open the port after advertising it
+
+	# if auto_start give the E80 a chance to open the port after advertising it
+	# otherwise set $SHUTDOWN_DONE to prevent it from connecting
+	
+	$service_port->{auto_connect} ?
+		$service_port->{DELAY_START} = 4 :
+		$service_port->{shutdown} = $SHUTDOWN_DONE;
+		
     $service_port->start();
 	b_sock::incVersion();	# addition or deletion of implemented services causes h_server to send a new page
 

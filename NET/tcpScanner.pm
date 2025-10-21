@@ -61,7 +61,7 @@ my $num_scanning:shared = 0;
 my $num_unscanned:shared = 0;
 my $master_started:shared = 0;
 my %scans:shared;
-my $next_local_port:shared = 12000;
+
 
 if (0)
 {
@@ -167,12 +167,11 @@ sub scanMasterThread
 sub scanThread
 {
 	my ($port) = @_;
-	my $local_port = $next_local_port++;
-	display(0,0,"scanThread($port) started with local_port($local_port)");
+	display(0,0,"scanThread($port) started");
 
 	my $sock = IO::Socket::INET->new(
 		# LocalAddr => $LOCAL_IP,
-		LocalPort => $local_port++,
+		# LocalPort => $local_port++,
 		PeerAddr  => $TARGET_IP,
 		PeerPort  => $port,
 		Proto     => 'tcp',

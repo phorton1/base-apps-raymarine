@@ -41,7 +41,7 @@ use a_defs qw($SUCCESS_SIG);
 use b_records;
 use e_wp_defs;
 
-my $dbg_wpp = -1;
+my $dbg_wpp = 1;
 
 
 #--------------------------------------------------
