@@ -65,10 +65,22 @@ sub emptyRoute
 	my ($name,$bits) = @_;
 	$bits = 0 if !defined($bits);
 	my $name_len = length($name);
+
+	
 	my $buffer = buildWPRoute({
+
 		name => $name,
 		bits => $bits,
-		color => $next_color++ % $NUM_ROUTE_COLORS, });
+		color => $next_color++ % $NUM_ROUTE_COLORS,
+
+		# So far nothing has caused the E80 to show a TimePerPoint
+		# or the Date, Time, or Actual SOG in the E80 Route Details window
+
+		u1_0 => 123,
+		u5   => 456,	# gets overwritten by e80 to 'b8975601'
+		u8   => 789,	# gets overwritten by e80 to 7cb7 (0xb78c)
+
+	});
 	my $ret_hex = unpack('H*',$buffer);
 	return $ret_hex;
 }
@@ -186,7 +198,7 @@ sub setWaypointGroup
 	{
 		$group_uuid = std_uuid($STD_GROUP_UUID,$group_num);
 		$group = $this->{groups}->{$group_uuid};
-		return error("Could not group($group_uuid)") if !$group;
+		return error("Could not find group($group_uuid)") if !$group;
 
 		display_hash(0,0,"got group",$group);
 		push @{$group->{uuids}},$wp_uuid;
@@ -268,36 +280,6 @@ sub deleteRoute
 #------------------------------------------------
 # routeWaypoint command still buggy
 #------------------------------------------------
-# It's the only UI command that must perform an
-# asynchronous operation to get the given route first,
-# before queuing an API command  ....
-#
-# this functionality should probably be moved DOWN
-# into the actual WPMGR commandHandler as an atom.
-
-
-sub _commandBusy
-{
-	my ($this) = @_;
-	return $this->{busy} || @{$this->{command_queue}} ? 1 : 0;
-}
-
-
-
-sub _wait_queue_command
-{
-	my ($this,@params) = @_;
-	return 0 if !$this->queueWPMGRCommand(@params);
-	while ($this->_commandBusy())
-	{
-		display_hash(0,0,"_wait_queue_command",$this);
-		sleep(1);
-	}
-	error("_wait_queue_command failed") if !$this->{command_rslt};
-	display(0,0,"_wait_queue_command returning $this->{command_rslt}");
-	return $this->{command_rslt};
-}
-
 
 
 sub routeWaypoint
@@ -306,17 +288,93 @@ sub routeWaypoint
 	$this->showCommand("routeWaypoint($route_num) wp_num($wp_num) add($add)");
 	my $route_uuid = std_uuid($STD_ROUTE_UUID,$route_num);
 	my $wp_uuid = std_uuid($STD_WP_UUID,$wp_num);
-	my $route_name = "testRoute$route_num";
 
-	return if !$this->_wait_queue_command($API_GET_ITEM,$WHAT_ROUTE,$route_name,$wp_uuid,$wp_uuid);
 	my $route = $this->{routes}->{$route_uuid};
-	return error("Could not find route($route_name) $route_uuid") if !$route;
+	return error("Could not find route($route_uuid)") if !$route;
+	my $route_name = $route->{name};
 
-	display_hash(0,0,"got route",$route);
-	my $uuids = $route->{uuids};
-	push @$uuids,$wp_uuid if $add;
+	# display_record(1,0,"got route",$route);
 
-	return $this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,$route);
+	my $exists = 0-1;
+	my @uuids = @{$route->{uuids}};
+	my @points = @{$route->{points}};
+	
+	my $num = 0;
+	for my $uuid (@uuids)
+	{
+		if ($uuid eq $wp_uuid)
+		{
+			$exists = $num;
+			last;
+		}
+		$num++;
+	}
+
+	return error("route($route_uuid=$route_name) already contains wp($wp_uuid)")
+		if $add && $exists != -1;
+	return error("route($route_uuid=$route_name) does not contain wp($wp_uuid)")
+		if !$add && $exists == -1;
+
+	if ($add)
+	{
+		push @uuids,$wp_uuid;
+		push @points,shared_clone({});
+			# buildWPRoute will populate the point implicitly, with zero values
+			# since the record does not contain any fields.
+			# The E80 will then fill in the fields, but we need to get the modified route after the change.
+			# For some reason, I'm not getting a MOD event for this change.
+	}
+	else
+	{
+		splice @uuids,$exists,1;
+		splice @points,$exists,1;
+	}
+
+
+	@uuids = sort { $this->{waypoints}->{$a}->{name} cmp $this->{waypoints}->{$b}->{name} } @uuids;
+		# Note that my API is too limited, and that the uuids can be specified in any order
+		# or with any number of them, as long as the points has the same number of records,
+		# the points will be adjusted.  I can see a potential UI for Groups (waypoints)
+		# that allows 'cut' and 'paste' (drag and drop) to move more than one waypoint at
+		# a time, and a Route UI that allows one to completely build, or re-order the routes,
+		# and 'save' or 'cancel to commit all of the changes at once.
+				   
+	$route->{uuids} = shared_clone(\@uuids);
+	$route->{points} = shared_clone(\@points);
+
+	# display_record(0,0,"new route",$route);
+
+	my $buffer = buildWPRoute($route);
+	my $data = unpack('H*',$buffer);
+	return $this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,$data);
+}
+
+
+sub showItem
+{
+	my ($this,$what,$name) = @_;
+	my $hash_key = lc($what)."s";
+	my $hash = $this->{$hash_key};
+
+	my $found = undef;
+	for my $rec (values %$hash)
+	{
+		if ($rec->{name} eq $name)
+		{
+			$found = $rec;
+			last;
+		}
+	}
+
+	return error("Could not find $what($name)") if !$found;
+	
+	my $text = WPRecordToText($found,uc($what),2,2,undef,$this);
+		# indent = 2
+		# detail_level = 2;
+		# undef = index
+		# $this = $wpmgr
+		
+	print "----------------------showItem($name) -----------------------------\n$text\n\n";
 }
 
 
