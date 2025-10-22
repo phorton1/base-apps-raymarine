@@ -21,7 +21,7 @@ use a_defs;
 use a_utils;
 use c_RAYSYS;
 use d_DBNAV;
-use base qw(Wx::ScrolledWindow MyWX::Window);
+use base qw(Wx::ScrolledWindow Pub::WX::Window);
 
 my $dbg_win = 0;
 
@@ -70,7 +70,7 @@ sub new
 	my ($class,$frame,$book,$id,$data) = @_;
 	my $this = $class->SUPER::new($book,$id);
 	display(0,0,"winDBNAV::new() called");
-	$this->MyWindow($frame,$book,$id,"DBNAV");
+	$this->MyWindow($frame,$book,$id,'DBNAV',$data);
 
 	$this->SetFont($font_fixed);
 	my $dc = Wx::ClientDC->new($this);

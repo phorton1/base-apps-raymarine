@@ -12,7 +12,9 @@ use Time::HiRes qw(sleep);
 use IO::Socket::INET;
 use Wx qw(:everything);
 use Pub::Utils;
+use Pub::WX::AppConfig;
 use a_defs;
+use w_resources;
 
 # use b_records;
 # use e_wp_packet;
@@ -79,6 +81,9 @@ Pub::Utils::initUtils();
 # createSTDOUTSemaphore("sem$appGroup");
 setStandardTempDir($appGroup);
 setStandardDataDir($appGroup);
+
+$ini_file = "$temp_dir/$appName";
+
 
 
 # The global $UDP_SEND_SOCKET is opened

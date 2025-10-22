@@ -25,7 +25,7 @@ use c_RAYSYS;
 use d_FILESYS;
 use w_resources;
 use x_Progress;
-use base qw(Wx::Window MyWX::Window);
+use base qw(Pub::WX::Window);
 
 my $dbg_win = -1;		# window basics
 my $dbg_sort = 1;		# sorting
@@ -83,7 +83,7 @@ sub new
 	my ($class,$frame,$book,$id,$data) = @_;
 	my $this = $class->SUPER::new($book,$id);
 	display(0,0,"winFILESYS::new() called");
-	$this->MyWindow($frame,$book,$id,"FILESYS");
+	$this->MyWindow($frame,$book,$id,'FILESYS',$data);
 
 	$this->{vol_id} = '';
 	$this->{cur_path} = '';

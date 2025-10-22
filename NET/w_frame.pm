@@ -29,6 +29,10 @@ sub new
 	my ($class, $parent) = @_;
 	my $rect = Wx::Rect->new(200,100,1100,800);
 
+	Pub::WX::Frame::setHowRestore(
+		# $RESTORE_MAIN_RECT);
+		$RESTORE_ALL);
+
 	my $this = $class->SUPER::new($parent,$rect);
 
 	EVT_MENU($this, $WIN_RAYSYS, \&onCommand);
@@ -36,9 +40,6 @@ sub new
 	EVT_MENU($this, $WIN_DBNAV,	\&onCommand);
     EVT_IDLE($this, \&onIdle);
 
-	my $data = undef;
-	$this->createPane($WIN_RAYSYS,$this->{book},$data,"test234");
-	# $this->createPane($WIN_DBNAV,$this->{book},$data,"test235");
 	return $this;
 }
 
@@ -61,10 +62,10 @@ sub createPane
 	return error("No id in createPane()") if (!$id);
     $book ||= $this->{book};
 	display(0,0,"minimumFrame::createPane($id) book="._def($book)."  data="._def($data));
-	return winRAYSYS->new($this,$book,$id,"test236 $id") if $id == $WIN_RAYSYS;
-	return winFILESYS->new($this,$book,$id,"test237 $id") if $id == $WIN_FILESYS;
-	return winDBNAV->new($this,$book,$id,"test238 $id") if $id == $WIN_DBNAV;
-    return $this->SUPER::createPane($id,$book,$data,"test237");
+	return winRAYSYS->new($this,$book,$id,$data) if $id == $WIN_RAYSYS;
+	return winFILESYS->new($this,$book,$id,$data) if $id == $WIN_FILESYS;
+	return winDBNAV->new($this,$book,$id,$data) if $id == $WIN_DBNAV;
+    return $this->SUPER::createPane($id,$book,$data);
 }
 
 
