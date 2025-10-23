@@ -67,7 +67,7 @@ my $MAXIMUM_FILE_SIZE = 'ffffff01'; #;
 	# Agrees with buffer size set for udp sockets in b_sock.
 	# YAY .. its the maximum file length to retrieve.
 	# The highest number I was able to plug in and get a response
-	# is 0x1ffffff, which correlate to a maximum file size of 32K.
+	# is 0x1ffffff, which correlate to a maximum file size of 32M.
 	# It took me a long time to figure out that the '9a9d0100' I'd
 	# seen from RNS was not some kind of a "magic" key.
 
@@ -125,26 +125,10 @@ my $COMMAND_REPLY       = pack('C',0);
 
 my $COMMAND_DIRECTORY   = 0;		# returns a directory listing without any file or directory sizes (plus some other stuff)
 my $COMMAND_GET_SIZE    = 1;		# returns a dword size of FILES only (success completely understood)
-my $COMMAND_GET_FILE    = 2;		# returns the contents of a file (success completely understood)
+my $COMMAND_GET_FILE    = 2;		# returns the contents of a file (success completely understood) from a given offset
 my $COMMAND_CARD_ID     = 9;		# returns a string (plus some other stuff) that I think is related to the particular CF card
     # the string 0014910F06D62062  returned with my RAY_DATA CF card in the E80
     # the string 0014802A08W79223  returned with Caribbean Navionics CF card in the E80
-
-my %COMMAND_NAME = (
-	$COMMAND_DIRECTORY	=> 'DIR',
-	$COMMAND_GET_SIZE	=> 'SIZE',
-	$COMMAND_GET_FILE	=> 'FILE',
-	$COMMAND_CARD_ID	=> 'ID',
-);
-
-my %COMMAND_NUMBER = (
-	'DIR'	=> $COMMAND_DIRECTORY,
-	'SIZE'	=> $COMMAND_GET_SIZE,
-	'FILE'	=> $COMMAND_GET_FILE,
-	'ID'	=> $COMMAND_CARD_ID,
-);
-
-
 
 #------ unused command constants
 # I probed these, and did not find them useful to the implementation
@@ -156,7 +140,7 @@ my $COMMAND_GET_ATTR	= 4;		# returns dword size (files only) AND byte of attribu
 	# apparently does not require extra inserted word(0)
 my $COMMAND_FILE_EXISTS = 5;		# appears to return $FILE_SUCCESS on existing files only, an error otherwise
 my $COMMAND_GET_SIZE2	= 6;		# appears to return exactly the same thing as GET_SIZE
-	# but apparently does not require extra insered word(0)
+	# but apparently does not want the extra insered word(0)
 my $COMMAND_LOCK		= 7;		# increments an internal lock counter
 my $COMMAND_UNLOCK		= 8;		# decrements an internal lock counter
 	# LOCKING: it appears as if this implements an advisory database locking scheme.
@@ -176,6 +160,32 @@ my $COMMAND_UNLOCK		= 8;		# decrements an internal lock counter
 # buffer junk from whatever followed the 00000400 in the
 # most recent success reply.
 
+
+
+# GRUMBLE - MAJOR ISSUES EVEN WITH READ-ONLY
+# (a) Once I GET_FILE archive.fsh, I can no longer save to the ARCHIVE.FSH
+# (b) Even if you save WRGT's to ARCHIVE.FSH, you must removeCFCard before
+#     those changes are actually written to the disk
+#
+# The fact of (a) really made me think FILESYS was writable and I spent
+# 	a hard 14 hours probing it with no joy; still no response from cmd(3)
+# Combined, these facts push us back to the notion that the use of ARCHIVE.FSH,
+#	even with FILESYS remains an oneroous manual process
+
+
+my %COMMAND_NUMBER = (
+	'DIR'	=> $COMMAND_DIRECTORY,
+	'SIZE'	=> $COMMAND_GET_SIZE,
+	'FILE'	=> $COMMAND_GET_FILE,
+	'ID'	=> $COMMAND_CARD_ID,
+);
+
+my %COMMAND_NAME = (
+	$COMMAND_DIRECTORY	=> 'DIR',
+	$COMMAND_GET_SIZE	=> 'SIZE',
+	$COMMAND_GET_FILE	=> 'FILE',
+	$COMMAND_CARD_ID	=> 'ID',
+);
 
 #---------------------------------------------------------
 # instantiation
@@ -376,20 +386,8 @@ sub dbgFatStr
 
 
 sub handleCommand
-	# Note that it is possible to crash the E80 with this method.
-	# First time I tried this it crashed the E80 with the packet
-	#
-	# 	02010500 01000000 01482000 5c6a756e 6b5f6461 74615c74 6573745f 64617461   .........H .\junk_data\test_data
-	# 	5f696d61 6765312e 6a706700                                                _image1.jpg.
-	#
-	# in which I did not include the exter dword(0) and dword(maximum_file_size)
-	# that I observed when RNS made this call.  Presumably it crashed because
-	# it has a fixed buffer size and/or tried to allocate a buffer of 7461 (0x6174)
-	# bytes and either failed the allocate or read past the buffer.
-	#
-	# So, some care must be taken when probing the E80, and therefore, for
-	# the time being I invariantly add the needed extra words for the GET_SIZE
-	# and GET_FILE commands, which I already know work.
+	# Note that it is possible to crash the E80 generally
+	# with packets with bad string lengths.
 {
 	my ($this,$command) = @_;
 	my $command_name = $command->{name};
@@ -419,9 +417,9 @@ sub handleCommand
 	if ($path)
 	{
 		$packet .= pack('H*','0000') if $cmd == $COMMAND_GET_SIZE;
-			# add a dword for GET_SIZE
+			# add a dword for GET_SIZE; no idea of its semantic
 		$packet .= pack('H*','00000000'.$MAXIMUM_FILE_SIZE) if $cmd == $COMMAND_GET_FILE;
-			# add the extra dword and  maximum file size for GET_FILE
+			# '00000000' = offset within the file to start getting from
 		$packet .= pack('v',$len);
 		$packet .= $path;
 		$packet .= chr(0);
@@ -434,15 +432,9 @@ sub handleCommand
 	#-------------------------------
 	# The packet is sent directly to the registered service
 	# PRH TODO - modernize and handle sendUDPPacket failures
+	# in case command was interrupted by killAllJobs();
 	
 	return if $this->{file_state} != $FILE_STATE_START;
-
-		# in case command was interrupted by killAllJobs();
-    sendUDPPacket(
-        "fileCommand($command_name)",
-		$this->{ip},
-        $this->{port},
-        $packet);
 	$this->{file_state} = $FILE_STATE_BUSY;
 	if ($this->{show_raw_output})
 	{
@@ -450,6 +442,13 @@ sub handleCommand
 		print "FILESYS <-- ".unpack('H*',$packet)."\n";
 		setConsoleColor() if $this->{out_color};
 	}
+
+    sendUDPPacket(
+        "fileCommand($command_name)",
+		$this->{ip},
+        $this->{port},
+        $packet);
+
 
 	#---------------------------------------------------
 	# Wait for a reply (from our packetHandler)
@@ -509,7 +508,7 @@ sub handlePacket
 	#----------------------------
 	
 	my $state = $this->{file_state};
-	return $this->fileError("unexpected file_state($state)") if $state != $FILE_STATE_BUSY;
+	return $this->fileRequestError(-1,"unexpected file_state($state)") if $state != $FILE_STATE_BUSY;
 
 	my $cmd = $this->{file_command};	# THE ONE WE SENT
 
@@ -517,9 +516,9 @@ sub handlePacket
 	display($dbg_fs,1,"GOT cmd_word($cmd_word) service_id($service_id) seq($seq) in response to cmd($cmd)");
 	my $offset = 8;
 
-	return $this->fileError(-1,"unexpected service_id($service_id)")
+	return $this->fileRequestError(-1,"unexpected service_id($service_id)")
 		if $service_id != $FILESYS_SERVICE_ID;
-	return $this->fileError($seq,"unexpected seq_num($seq)")
+	return $this->fileRequestError($seq,"unexpected seq_num($seq)")
 		 if $seq != $this->{wait_seq};
 	
 	#------------------------------------

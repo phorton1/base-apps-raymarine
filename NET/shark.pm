@@ -210,7 +210,10 @@ sub handleSerialCommand
 		$name = 'TRACK' 	if $name eq 't';
 		$name = 'WPMGR' 	if $name eq 'w';
 		$name = 'FILESYS'	if $name eq 'f';
-		my $service_port = $raysys->findImplementedService($name);
+		$name = 'filemcast' if $name eq 'm';
+		my $service_port = $name eq 'filemcast' ?
+			$raysys->findServicePortByName($name) :
+			$raysys->findImplementedService($name);
 		return if !$service_port;
 		$service_port->doProbe($params);
 	}

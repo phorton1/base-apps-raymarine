@@ -89,6 +89,7 @@ use threads;
 use threads::shared;
 use Time::HiRes qw(sleep time);
 use Socket;
+
 use IO::Select;
 use IO::Socket::INET;
 use IO::Socket::Multicast;
@@ -595,6 +596,9 @@ sub sockThread
 			if ($sel->can_write() && @{$this->{out_queue}})
 			{
 				my $packet = shift @{$this->{out_queue}};
+				# my $tm = pack('V',(time() * 10000) % 10000);
+				# $packet .= $tm if $this->{proto} eq 'mcast';
+
 				my $pack_len = length($packet);
 				if ($this->{show_raw_output})
 				{
@@ -603,7 +607,10 @@ sub sockThread
 					print parse_dwords($header,$packet,1);
 					setConsoleColor() if $this->{out_color};
 				}
-				my $rslt = $sock->send($packet);
+
+				my $rslt = $this->{proto} eq 'mcast' ?
+					$sock->mcast_send($packet, "$this->{ip}:$this->{port}") :
+					$sock->send($packet);
 				if (!defined($rslt))
 				{
 					error("Could not write to $this->{remote}: $!");
@@ -648,6 +655,10 @@ sub sockThread
 				}
 				elsif ($this->{running} && $this->{connected})
 				{
+					# my ($port, $ip) = sockaddr_in($rslt);
+					# my $sender_ip = inet_ntoa($ip);
+					# print "ip:addr=$sender_ip:$port\n";
+
 					$this->{buffer} .= $buf;
 					my $buflen = length($this->{buffer});
 					if ($buflen > 2)
@@ -656,6 +667,7 @@ sub sockThread
 						$this->{buffer} = '';
 						if ($this->{show_raw_input})
 						{
+							# my $header = "$name $sender_ip:$port --> ".pad(" len($buflen)",9)." ";
 							my $header = "$name --> ".pad(" len($buflen)",9)." ";
 							setConsoleColor($this->{in_color}) if $this->{in_color};
 							print parse_dwords($header,$client_buffer,1);

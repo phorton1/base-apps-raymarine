@@ -296,7 +296,7 @@ our %SERVICE_PORT_DEFS  = (
 	2058 => { sid => -2,	name => 'exists?',	proto=>'',		},	# seen in distant past
 
 	2560 => { sid => 35,	name => 'func35_m',	proto=>'mcast',	},	# shows on bareE80
-	2561 => { sid => 5,		name => 'filesys',	proto=>'mcast',	},	# shows on bareE80
+	2561 => { sid => 5,		name => 'filemcast',	proto=>'mcast',	},	# shows on bareE80
 	2562 => { sid => 16,	name => 'DBNAV',	proto=>'mcast',	},	# shows on bareE80; database variant; lots of packets with E80 Fix/Heading and RNS
 	2563 => { sid => 8,		name => 'func8_m',	proto=>'mcast',	},	# shows, starts getting events with E80 Fix/Heading
 

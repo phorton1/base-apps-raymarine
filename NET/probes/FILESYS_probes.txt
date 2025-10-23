@@ -6,5 +6,79 @@
 PROBE dir
 
 	INC_SEQ
-	MSG		0001 {sid} {seq} {port} {string {params}}
+	UDP_DEST	10.0.240.83		# E80 #2
+	MSG			0001 {sid} {seq} {port} {string \}
 	WAIT
+
+
+PROBE lock
+
+	INC_SEQ
+	UDP_DEST	10.0.240.83		# E80 #2
+	MSG			0701 {sid} {seq} {port} 00
+	WAIT
+
+PROBE unlock
+
+	INC_SEQ
+	UDP_DEST	10.0.240.83		# E80 #2
+	MSG			0801 {sid} {seq} {port} 01
+	WAIT
+
+PROBE card
+
+	INC_SEQ
+	UDP_DEST	10.0.240.83		# E80 #2
+	MSG			0901 {sid} {seq} {port} 01
+	WAIT
+
+PROBE size1
+
+	INC_SEQ
+	UDP_DEST	10.0.240.83		# E80 #2
+	MSG			0101 {sid} {seq} {port} 0000 {string \test.txt}	# {params}}
+	WAIT
+
+PROBE size2
+
+	INC_SEQ
+	UDP_DEST	10.0.240.83		# E80 #2
+	MSG			0601 {sid} {seq} {port}  {string \test.txt}
+	WAIT
+
+PROBE file
+
+	# maximum file size: ffffff01
+	INC_SEQ
+	UDP_DEST	10.0.240.83		# E80 #2
+	MSG			0201 {sid} {seq} {port} 00000000 ffffff01 {string test.txt}	# {params}}
+	WAIT		30
+
+
+PROBE a
+
+	INC_SEQ
+	UDP_DEST	10.0.240.83		# E80 #2
+	# MSG			0301 {sid} {seq} {port} 00000000 ffffff01 {string \test.txt} ffff {string \test2.txt}
+	# MSG			0301 {sid} {seq} {port} 01000000
+	# MSG			0301 {sid} {seq} {port} 00000000 ffffff01 {string \test2.txt}
+	# MSG			0301 {sid} {seq} {port} 01000000
+	# MSG			0301 {sid} {port}
+
+# filesys -->  len(31)  00020500 01000000 00000000 00000000 00000000 00000000 00000000 0f270c     .............................'.
+# filesys -->  len(31)  00020500 00001400 20202020 30303134 39313046 30364436 32303632 0f270c     ........    0014910F06D62062.'.
+
+	# MSG			0301 {sid} 0001
+	MSG			0301 {sid} {seq} {port} 01000000 00000000 00000000 00000000 00000000 00000000 0f270c
+
+
+	
+	WAIT		1
+
+	#                  num_packets v    v packet_num
+	# MSG 		0300 {sid} {seq}  0001 0000  {string Hello from coPilot!}
+	# WAIT
+
+
+
+

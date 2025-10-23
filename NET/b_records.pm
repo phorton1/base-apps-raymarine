@@ -113,11 +113,12 @@ my $ROUTE_HDR2_SPECS = [
 	lat_end		=> [ 0,	4,	'l',	],		# 8
 	lon_end 	=> [ 0,	4,	'l',	],		# 12
 	distance	=> [ 2,	4,	'V', 	],		# 16 = uint32_t distance in meters
-	u4_0200		=> [ 2,	4,	'H8',	],		# 20 = 02000000 number?
-	u5			=> [ 2,	4,	'H8',	],		# 24 = b8975601 data? end marker?
-	u6_self		=> [ 1,	8,	'H16',	],		# 28 = self uuid dc82990f f567e68e
-	u7_self		=> [ 1,	8,	'H16',	],		# 36 = self uuid dc82990f f567e68e
-	u8		    => [ 2,	2,	'H4',   ],		# unknown
+
+	u2_0200		=> [ 2,	4,	'H8',	],		# 20 = 02000000 number?
+	u3			=> [ 2,	4,	'H8',	],		# 24 = b8975601 data? end marker?
+	u4_self		=> [ 1,	8,	'H16',	],		# 28 = self uuid dc82990f f567e68e
+	u5_self		=> [ 1,	8,	'H16',	],		# 36 = self uuid dc82990f f567e68e
+	u6		    => [ 2,	2,	'H4',   ],		# 44 = unknown
 ];		# 34 = e039 - 0x39e = 926
 
 
@@ -296,6 +297,7 @@ sub WPRecordToText
 				$text .= addOutput($pad,$key,$val,$extra);
 			}
 		}
+		$num++;
 	}
 
 	my $uuids = $rec->{uuids} || [];
@@ -511,6 +513,7 @@ sub parseWPRoute
 		$offset,
 		$ROUTE_HDR2_SIZE);
 	$offset += $ROUTE_HDR2_SIZE;
+	mergeHash($rec,$hdr2);
 	
 	for (my $i=0; $i<$rec->{num_wpts}; $i++)
 	{
@@ -526,7 +529,7 @@ sub parseWPRoute
 		$offset += $ROUTE_PT_SIZE;
 	}
 
-	display_hash($dbg_route+1,1,"route($name)",$rec);
+	display_hash($dbg_route,1,"route($name)",$rec);
 	return $rec;
 }
 

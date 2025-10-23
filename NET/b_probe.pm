@@ -12,6 +12,7 @@
 # RAW		hex strings with replacements that will be sent
 # MSG		creates word(length) prepended message
 # INC_SEQ	bump the sequence number
+# UDP_DEST	change the destination IP address; useful for testing FILESYS without doing a DIR first
 # WAIT 		wait for any reply
 # >>>		text will be output to console
 #
@@ -189,6 +190,7 @@ sub do_probe
 	my $num_steps = @$probe;
 	my $seq = $this->{next_seqnum};
 
+	my $save_ip = $this->{ip};
 	my $save_raw_input  = $this->{show_raw_input};
 	my $save_raw_output = $this->{show_raw_output};
 	$this->{show_raw_input} = 1;
@@ -205,11 +207,14 @@ sub do_probe
 		{
 			print "$line\n";
 		}
-		elsif ($line =~ /&INC_SEQ/)
+		elsif ($line =~ /INC_SEQ/)
 		{
 			$seq = ++$this->{next_seqnum};
 		}
-		elsif ($line =~ /^(RAW|MSG) (.*)$/)
+		elsif ($line =~ /^(UDP_DEST)\s+(.*)$/)
+		{
+		}
+		elsif ($line =~ /^(RAW|MSG)\s+(.*)$/)
 		{
 			my ($cmd,$text) = ($1,$2);
 			my $hex_seq = unpack('H*',pack('V',$seq));
@@ -270,14 +275,14 @@ sub do_probe
 		elsif ($line =~ /^WAIT\s*(.*)$/)
 		{
 			my $extra = $1;
-			my $PROBE_TIMEOUT = 3;
+			my $PROBE_TIMEOUT = $1 || 3;
 			$this->{probe_wait} = 1;
 			my $time = time();
 			while ($this->{probe_wait})
 			{
 				if (time() > $time + $PROBE_TIMEOUT)
 				{
-					warning($dbg_probe,0,"PROBE WAIT TIMEOUT");
+					warning($dbg_probe,0,"PROBE WAIT($PROBE_TIMEOUT) TIMEOUT");
 					last;
 				}
 				sleep(0.1);
@@ -286,6 +291,7 @@ sub do_probe
 		}
 	}
 
+	$this->{ip} = $save_ip;
 	$this->{show_raw_input}  = $save_raw_input;
 	$this->{show_raw_output} = $save_raw_output;
 	display(0,0,"PROBE($this->{name},$this->{proto},$ident,$command->{params}) FINISHED");

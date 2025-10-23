@@ -181,7 +181,7 @@ our $wx_color_medium_grey   = Wx::Colour->new(0xC0, 0xC0, 0xC0);
 sub sendUDPPacket
 {
     my ($name,$dest_ip,$dest_port,$packet) = @_;
-    display(0,1,"sending $name packet: ".unpack('H*',$packet));
+    display(0,1,"sending $dest_ip:$dest_port $name packet: ".unpack('H*',$packet));
     if (!$LOCAL_UDP_SOCKET)
     {
         error("LOCAL_UDP_SOCKET not open in sendRequest packet");

@@ -331,14 +331,12 @@ sub routeWaypoint
 	}
 
 
-	@uuids = sort { $this->{waypoints}->{$a}->{name} cmp $this->{waypoints}->{$b}->{name} } @uuids;
-		# Note that my API is too limited, and that the uuids can be specified in any order
-		# or with any number of them, as long as the points has the same number of records,
-		# the points will be adjusted.  I can see a potential UI for Groups (waypoints)
-		# that allows 'cut' and 'paste' (drag and drop) to move more than one waypoint at
-		# a time, and a Route UI that allows one to completely build, or re-order the routes,
-		# and 'save' or 'cancel to commit all of the changes at once.
-				   
+	# @uuids = sort { $this->{waypoints}->{$a}->{name} cmp $this->{waypoints}->{$b}->{name} } @uuids;
+		# New added points get their values adjusted.
+		# Sorting the list without adjusting the values whacks out the e80, it will NOT
+		# recalculate everything. For example, it doesn't set the new 0th record to 0,0,0
+		# as hoped.
+		
 	$route->{uuids} = shared_clone(\@uuids);
 	$route->{points} = shared_clone(\@points);
 
@@ -347,6 +345,16 @@ sub routeWaypoint
 	my $buffer = buildWPRoute($route);
 	my $data = unpack('H*',$buffer);
 	return $this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,$data);
+
+	# The command appears to be executed OK, and as such, in case of adding a new point,
+	# the point's bearing and distances are updated, and the overal route's end lat/lon
+	# and distance is updated .  It appears to have self UUIDs as expected, u2_200 is
+	# '2000000' as expected, u3 is the familiar but not understood 'b8975601', however
+	# u1_0, expected to be zero is 1230 cuze I set it in emptyRoute(), and u6, the
+	# unknown is 'c81c'.
+
+	# THE E80 does not send an event mod for the addition of a new point, so it
+	# needs to be refreshed.
 }
 
 
@@ -356,25 +364,27 @@ sub showItem
 	my $hash_key = lc($what)."s";
 	my $hash = $this->{$hash_key};
 
-	my $found = undef;
-	for my $rec (values %$hash)
+	my $found = '';
+	for my $uuid (keys %$hash)
 	{
+		my $rec = $hash->{$uuid};
 		if ($rec->{name} eq $name)
 		{
-			$found = $rec;
+			$found = $uuid;
 			last;
 		}
 	}
 
 	return error("Could not find $what($name)") if !$found;
 	
-	my $text = WPRecordToText($found,uc($what),2,2,undef,$this);
+	my $rec = $hash->{$found};
+	my $text = WPRecordToText($rec,uc($what),2,2,undef,$this);
 		# indent = 2
 		# detail_level = 2;
 		# undef = index
 		# $this = $wpmgr
 		
-	print "----------------------showItem($name) -----------------------------\n$text\n\n";
+	print "----------------------showItem($found=$name) -----------------------------\n$text\n\n";
 }
 
 

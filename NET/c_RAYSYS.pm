@@ -263,6 +263,9 @@ sub connectServicePort
 
 		bless $service_port, 'b_sock';
 		$service_port->init();
+
+		$service_port->{show_raw_input} = 1;
+		$service_port->{show_raw_output} = 1;
 		$service_port->start();
 	}
 	else
