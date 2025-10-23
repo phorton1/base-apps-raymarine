@@ -29,10 +29,10 @@ use base qw(Wx::ScrolledWindow Pub::WX::Window);
 
 my $dbg_win = 0;
 
-my $TOP_MARGIN = 70;
-my $HEADER_Y = 45;
+my $TOP_MARGIN = 60;
+my $HEADER_Y = 37;
 my $LEFT_MARGIN = 10;
-my $LINE_HEIGHT = 24;
+my $LINE_HEIGHT = 20;
 
 
 my $COL_NAME 		= 2;
@@ -40,12 +40,12 @@ my $COL_CONNECT 	= 6;
 my $COL_LOCAL_PORT 	= 7;
 
 my @COL_WIDTHS = (
-	10,		# $COL_DEVICE_ID
+	9,		# $COL_DEVICE_ID
 	4,		# $COL_SERVICE_ID
 	10,		# $COL_NAME
 	6,      # $COL_PROTO
-	17,     # $COL_IP
-	8,      # $COL_PORT
+	15,     # $COL_IP
+	6,      # $COL_PORT
 	10,     # $COL_CONNECT
 	8,		# $COL_LOCAL_PORT
 );
@@ -90,7 +90,7 @@ my $CONNECT_ID_BASE		= 1100;
 
 
 
-my $font_fixed = Wx::Font->new(11,wxFONTFAMILY_MODERN,wxFONTSTYLE_NORMAL,wxFONTWEIGHT_BOLD);
+my $font_fixed = Wx::Font->new(9,wxFONTFAMILY_MODERN,wxFONTSTYLE_NORMAL,wxFONTWEIGHT_BOLD);
 
 
 sub new
@@ -116,9 +116,9 @@ sub new
 	}
 
 
-	Wx::StaticText->new($this,-1,'Sort by',[10,13]);
+	Wx::StaticText->new($this,-1,'Sort by',[10,10]);
 	Wx::ComboBox->new($this, $ID_SORT_BY, $$SORT_BYS[0],
-		[84,10],wxDefaultSize,$SORT_BYS,wxCB_READONLY);
+		[84,7],wxDefaultSize,$SORT_BYS,wxCB_READONLY);
 
 	$this->{sort_by} = $$SORT_BYS[0];
 	$this->{slots} = [];
