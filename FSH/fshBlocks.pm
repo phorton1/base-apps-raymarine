@@ -3,6 +3,9 @@
 #--------------------------------------
 # Based on the C code at https://github.com/rahra/parsefsh
 #
+# See PRH NEWLY DISCOVERED for fields I've found that parseFSH
+# didn't know about.
+#
 # This code mimics the C data structures from the parsefsh C
 # code using perl unpack() calls.
 #
@@ -18,6 +21,26 @@
 # and then allow for the MTAs to reference possible multiple BLK_TRACKS
 # by guid as the data structure implies.
 
+# GRUMBLE - The E80 appears to use the archive to keep a history
+# of things INSIDE the ARCHIVE.FSH file.  As I save the SAME route
+# I get multiple copies in the FSH, I guess with the idea that I will
+# parse it into a hash by UUID, and the LAST one will win.
+#
+# The E80 somehow KNOWS that records are deleted.
+# There are a number of changes from the 'sole' version that
+# exists in memory in shark's WPMGR gotten Route, specifically
+#
+#	u2_0200 is always '02000000' on the E80 (in shark); it is always '00000000' in the FSH
+#	u3 is always the  'b8975601' on the E80,           and is always '00000000' in the FSH
+#	u6 is always      'c81c'     on the E80,           and always    '2100'	    in the FSH
+#
+# but most importantly
+#		u4_self and u5_self area ALWAYS THE SELF_UUID on the E80
+#		but appear to be SOMETHING ELSE IN THE FSH
+#
+# Somehow these MUST (?) be marked as free space, because if you delete everything from
+# the ARCHIVE.FSH on the E80, the E80 KNOWS, on a fresh boot that it's 'EMPTY'.
+# Jeez. 
 
 package apps::raymarine::FSH::fshBlocks;
 use strict;
@@ -35,7 +58,10 @@ my $dbg_wpt = 0;
 my $dbg_rte = 0;
 my $dbg_grp = 0;
 
+
 my $LL_SCALE_FACTOR = 1e7;
+my $PI = 3.14159265358979323846;
+our $METERS_PER_NM 	= 1852;
 
 
 BEGIN
@@ -84,6 +110,7 @@ sub getRoutes()			{ return $routes; }
 sub getGroups()			{ return $groups; }
 
 
+my $ACTIVE_BLOCKS_ONLY = 1;
 
 sub processBlocks
 {
@@ -107,6 +134,7 @@ sub decodeBlock
 {
     my ($blk_num,$block) = @_;
     my $type = $block->{type};
+	return 1 if $ACTIVE_BLOCKS_ONLY && !$block->{active};
     # display(0,0,"decodeBlock($blk_num] ".blockTypeToStr($type)."(".guidToStr($block->{guid}).")");
     return 0 if $type == $FSH_BLK_TRK && !decodeTRK($blk_num,$block);
     return 0 if $type == $FSH_BLK_MTA && !decodeMTA($blk_num,$block);
@@ -361,11 +389,11 @@ sub decodeRTE   # BLK_RTE
 	# the big_len in NAVQRY ethernet ROUTE BUFFER messages.
 
     my $hdr1_specs = [				# struct fsh_route21_header;  8 bytes
-        k1_0		=> 'S',			#   int16_t a;        	// unknown, always 0
+        u1_0		=> 'H4',		#   int16_t a;        	// unknown, always 0
 		name_len	=> 'C',			#   char name_len;    	// length of name of route
 		cmt_len		=> 'C',			#   char cmt_len;     	// length of comment
-		guid_cnt	=> 's',			#   int16_t guid_cnt; 	// number of guids following this header
-		u1			=> 'H2',		#   uint8_t b;       	// unknown, often 05 or 00
+		guid_cnt	=> 'v',			#   int16_t guid_cnt; 	// number of guids following this header
+		bits		=> 'H2',		#   uint8_t b;       	// unknown, 1=temporary; 2=don't transfer to RNS?
 		color		=> 'C',			#   uint8_t color;		// NEWLY DISCOVERED: color index (red, yellow, green, blue, purple, black)
 	];								# }
 
@@ -374,18 +402,25 @@ sub decodeRTE   # BLK_RTE
 		lon_start	=> 'l',         #	4  int32_t lon0;  		// lat/lon of first waypoint
 		lat_end		=> 'l',         #	8  int32_t lat1;
 		lon_end		=> 'l',         #	12 int32_t lon1;  		// lat/lon of last waypoint
-		distance	=> 'V',         #	16 uint32_t distance;	// NEWLY DISCOVERED: distance of route in meters
-		u3			=> 'S',         #	20 int16_t c;
-		u4			=> 'H48',       #	22 char d[24];
-	];								# }
+		distance	=> 'V',         #	16 uint32_t distance;	// PRH NEWLY DISCOVERED: distance of route in meters
+
+		u2_0200	    => 'H8',		# 20 = 02000000 number?
+        u3		    => 'H8',        # 24 = b8975601 data? end marker?
+        u4_self	    => 'H16',       # 28 = self uuid dc82990f f567e68e
+        u5_self	    => 'H16',       # 36 = self uuid dc82990f f567e68e
+        u6		    => 'H4',        # 44 = unknown
+	];
+
+	# parseFSH had these points entirely wrong.
+	# I believe I have discovered their true structure
+	# This whole structure is PRH NEWLY DISCOVERED
 
 	my $fsh_pt_specs = [			# struct fsh_pt; 10 bytes
-		u5			=> 'S',			#	int16_t a;
-		u6			=> 'S',			#	int16_t b;        	// depth?
-		k2_0		=> 'S',			#	int16_t c;        	// always 0
-		u3			=> 'S',			# 	int16_t d;        	// in the first element same value like b
-		sym			=> 'S',			#	int16_t sym;      	// seems to be the symbol
+		bearing		=> 'v',			#	int16_t bearing;			// radians × 10,000 - bearing from previous waypoint; converted to degrees
+		legLength	=> 'V',			#	uint32_t leg_length;        // meters - from previous waypoint;
+		totLength	=> 'V',			#	uint32_t tot_length;        // meters - cumulative for route;
 	];								# }
+
 
 	my $hdr3_specs = [				# struct fsh_hdr3; 4 bytes
 		wpt_cnt		=> 'S',			# 	int16_t wpt_cnt;  	// number of waypoints
@@ -441,6 +476,14 @@ sub decodeRTE   # BLK_RTE
 	{
 		display($dbg_rte+2,1,"POINT($i)");
 		my $pt = unpackRecord($dbg_rte+2,$fsh_pt_specs,substr($bytes,$offset,$FSH_PT_SIZE));
+		$pt->{bearing} =  roundTwo(($pt->{bearing} / 10000) * (180 / $PI));
+
+		display($dbg_rte,2,sprintf("PT($i) bearing=$pt->{bearing} leg(%d)=%0.3f tot(%d)=%0.3f",
+			$pt->{legLength},
+			$pt->{legLength} / $METERS_PER_NM,
+			$pt->{totLength},
+			$pt->{totLength} / $METERS_PER_NM ));
+
 		$offset += $FSH_PT_SIZE;
 		push @{$hdr1->{pts}},$pt;
 	}
@@ -465,7 +508,7 @@ sub decodeRTE   # BLK_RTE
 	}
 
 	push @$routes,$hdr1;
-	display_hash($dbg_rte+1,1,"Route Record",$hdr1);
+	display_hash($dbg_rte,1,"Route Record",$hdr1);
 	
 }	# decodeRTE()
 

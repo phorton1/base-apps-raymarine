@@ -12,6 +12,14 @@
 #
 # fshFileToBlocks() parses the file and returns $all_blocks
 # for further processing by fshBlocks.pm.
+#
+# WHEN THEY SAY "ARCHIVE" THEY MEAN IT.
+# Subsequent saves of Routes, at least, and I will confirm for Groups and
+# Waypoints, MARK the existing Blocks for those items as "deleted" (see
+# PRH NEWLY DISCOVERED) and NEW ONES ARE WRITTEN with 0x4000 for the
+# (new) Block 'active' field.  Generally speaking, one could/should SKIP the unused
+# blocks while parsing, or implement a "collection by UUID" for WRG's and
+# thus, only take the last one of a particular uuid found, I suppose.
 
 package apps::raymarine::FSH::fshFile;
 use strict;
@@ -113,7 +121,7 @@ sub getFlobHeader
         #   c = 0xfffe, 0xfffc, or 0xfff0
 
     return error(showOffset()."Invalid FLOB[$num] header: $flob_sig") if $flob_sig ne $FLOB_SIG;
-    display($dbg_flobs,0,showOffset()."FLOB[$num] ($a,$b,$c)");
+    display($dbg_flobs,0,showOffset().sprintf("FLOB[$num] ($a,$b,0x%04x)",$c));
     $file_offset += $FSH_FLOB_HEADER_SIZE;
     return 1;
 }
@@ -123,11 +131,14 @@ sub getBlock
     #   // total length 14 bytes
     #   typedef struct fsh_block_header
     #   {
-    #       uint16_t len;     //!< length of block in bytes excluding this header
-    #       uint64_t guid;    //!< unique ID of block
-    #       uint16_t type;    //!< type of block
-    #       uint16_t unknown; //!< always 0x4000 ?
+    #       uint16_t len;     // length of block in bytes excluding this header
+    #       uint64_t guid;    // unique ID of block
+    #       uint16_t type;    // type of block
+    #       uint16_t active;  // PRH NEWLY DISCOVERED. 0x0000=deleted, 0x4000=active
     #   }
+	#
+	# I believe 0x4000 means "in use" and 0x0000 means 'free space' or 'deleted',
+	# but the file keeps EVERYTHING you ever save.
 {
     my ($fh) = @_;
     my $block_header;
@@ -140,7 +151,7 @@ sub getBlock
 
     read($fh, $block_header, $FSH_BLOCK_HEADER_SIZE) ||
         return error("Could not read FLOB header at ".showOffset().": $!");
-    my ($len, $guid, $type, $unknown) = unpack('SA8SS', $block_header);
+    my ($len, $guid, $type, $active) = unpack('SA8SS', $block_header);
         # S = unsigned 16 bit integer
         # A8 = 8 byte (uint64) guid
         # S = type
@@ -148,12 +159,13 @@ sub getBlock
 
     my $block_type = blockTypeToStr($type);
     my $block_num = ($type == $FSH_BLK_ILL) ? '' : $global_blk_num++;
-    my $msg = sprintf("[%-3s] %s guid(%s) len(%d)", # type(0x%04x) unknown(0x%04x)",
+    my $msg = sprintf("[%-3s] %s guid(%s) len(%d) active(0x%04x)",
         $block_num,
         $block_type,
         guidToStr($guid),
-        $len); #,
-
+        $len,
+		$active);
+	
     display($dbg_blocks,1,showOffset().$msg);
     return error("Illegal block type at ".showOffset())
         if $type > $FSH_BLK_GRP && $type != $FSH_BLK_ILL;
@@ -169,6 +181,7 @@ sub getBlock
     return {
         type => $type,
         guid => $guid,
+		active => $active,
         bytes => $bytes };
 }
 
