@@ -14,7 +14,6 @@ use Time::HiRes qw(sleep time);
 use Socket;
 use IO::Select;
 use Pub::Utils;
-# use r_utils;	was used for uneeded $LOCAL_IP
 
 # temporary implementation
 # Try to find the last two unmapped TCP client in Raymarine Services Menu
@@ -23,33 +22,14 @@ my $E80_1_IP	= '10.0.241.54';
 my $E80_2_IP	= '10.0.241.83';
 my $RNS_IP 		= '128.118.142.1';
 
-my $TARGET_IP = $E80_2_IP;
-
-
-# known E80, or previously probed ports
-#
-#	2048-2055
-#   5802
-#
-# used as mcast ports with explicit mcas address
-# and so, are, to me, unlikely candidates
-#
-#	2560-2563
-#	5800,5801
-#
-# Due to (likely) limitation on number of simultaneous perl threads
-# and/or handles, this method is limited to probing 32 sockets at a time
+my $TARGET_IP = $E80_1_IP;
 
 
 BEGIN
 {
  	use Exporter qw( import );
     our @EXPORT = qw(
-		create
-
-		scanRange
-		showAliveScans
-
+		$tcp_scanner
     );
 }
 
@@ -57,29 +37,34 @@ my $MAX_SCANS  = 10;
 my $MIN_PORT    = 23;
 my $MAX_PORT	= 32768;
 
-my $num_scanning:shared = 0;
-my $num_unscanned:shared = 0;
-my $master_started:shared = 0;
-my %scans:shared;
 
+our $tcp_scanner:shared;
 
-if (0)
+sub new
 {
-	$scans{5082} = 1;
-	for my $num (2048 .. 2055)
-	{
-		$scans{$num} = 1;
-	}
+	my ($class) = @_;
+	return error("tcp scanner already exists",1) if $tcp_scanner;
+
+	$tcp_scanner = shared_clone({
+		started => 0,
+		num_scanned => 0,
+		num_unscanned => 0,
+		scans => shared_clone({}), });
+	bless $tcp_scanner,$class;
+	return $tcp_scanner;
 }
+
+
 
 
 sub showAliveScans
 {
-	display(0,0,"The following ports are alive");
+	my ($this) = @_;
+	display(0,0,"The following TCP ports are alive");
 	my $num_alive = 0;
-	for my $port (sort keys %scans)
+	for my $port (sort keys %{$this->{scans}})
 	{
-		my $exists = $scans{$port} || 0;
+		my $exists = $this->{scans}{$port} || 0;
 		if ($exists > 0)
 		{
 			display(0,1,"PORT($port) is ALIVE!");
@@ -93,7 +78,9 @@ sub showAliveScans
 
 sub scanRange
 {
-	my ($low,$high) = @_;
+	my ($this,$low,$high) = @_;
+	lock($this);
+
 	$low ||= 0;
 	$high ||= $low;
 	display(0,0,"scanRange($low,$high)");
@@ -107,127 +94,74 @@ sub scanRange
 	my $num_new = 0;
 	for my $port ($low..$high)
 	{
-		my $exists = $scans{$port};
+		my $exists = $this->{scans}->{$port};
 		next if defined($exists);
 		$num_new++;
-		$scans{$port} = 0;
+		$this->{scans}->{$port} = 0;
 	}
 
-	return warning(0,0,"NO NEW PORTS ADDED TO PROBE RANGE")
+	return warning(0,0,"NO NEW PORTS ADDED TO TCP SCAN RANGE")
 		if !$num_new;
-	display(0,1,"added $num_new ports to probe range");
-	$num_unscanned += $num_new;
+	display(0,1,"added $num_new ports to tcp_scan range");
+	$this->{num_unscanned} += $num_new;
 
 	# start the scanMasterThread if !started
 
-	if (!$master_started)
+	if (!$this->{started})
 	{
-		display(0,1,"creating scanMasterThread");
-		my $master_thread = threads->create(\&scanMasterThread);
-		display(0,1,"detatching master_thread");
+		display(0,1,"creating tcp scanMasterThread");
+		my $master_thread = threads->create(\&scanMasterThread,$this);
 		$master_thread->detach();
-		display(0,1,"master_thread detached");
-		$master_started = 1;
-	}
-	else
-	{
-		display(0,1,"scanMasterThread already running");
+		$this->{started} = 1;
 	}
 }
 
 
 sub scanMasterThread
 {
-	display(0,0,"scanMasterThread started");
+	my ($this) = @_;
+	display(0,0,"tcp scanMasterThread running");
 	while (1)
 	{
-		while ($num_unscanned>0 && $num_scanning < $MAX_SCANS)
+		if ($this->{num_unscanned})
 		{
-			for my $port (sort keys %scans)
+			lock($this);
+			for my $port (sort keys %{$this->{scans}})
 			{
-				my $scan = $scans{$port};
+				my $scan = $this->{scans}->{$port};
 				if ($scan == 0)
 				{
-					$num_unscanned--;
-					$num_scanning++;
+					display(0,1,"scanning tcp port($port)");
+					$this->{num_unscanned}--;
+					$this->{num_scanned}++;
 
-					display(0,1,"scanMasterThread creating scanThread($port)");
-					my $thread = threads->create(\&scanThread,$port);
-					display(1,1,"detatching thread");
-					$thread->detach();
-					display(1,1,"thread detached");
+					my $sock = IO::Socket::INET->new(
+						PeerAddr  => $TARGET_IP,
+						PeerPort  => $port,
+						Proto     => 'tcp',
+						Reuse	  => 1,	# allows open even if windows is timing it out
+						Timeout	  => 2 );
+
+					if ($sock)
+					{
+						$this->{scans}->{$port} = 1;
+						display(0,2,"CONNECTED TO remote port($port) !!!",0,$UTILS_COLOR_LIGHT_GREEN);
+						$sock->close();
+					}
+					else
+					{
+						$this->{scans}->{$port} = -1;
+					}
 				}
 			}
 		}
-		sleep(0.1);
+		else
+		{
+			sleep(0.1);
+		}
 	}
 }
 
-
-sub scanThread
-{
-	my ($port) = @_;
-	display(0,0,"scanThread($port) started");
-
-	my $sock = IO::Socket::INET->new(
-		# LocalAddr => $LOCAL_IP,
-		# LocalPort => $local_port++,
-		PeerAddr  => $TARGET_IP,
-		PeerPort  => $port,
-		Proto     => 'tcp',
-		Reuse	  => 1,	# allows open even if windows is timing it out
-		Timeout	  => 2 );
-
-	if (!$sock)
-	{
-		error("Could not connect to remote port($port)");
-		$scans{$port} = -1;
-		$num_scanning--;
-		return;
-	}
-	$scans{$port} = 1;
-	$num_scanning--;
-	display(0,1,"CONNECTED TO remote port($port) !!!",0,$UTILS_COLOR_LIGHT_GREEN);
-
-	# keep the thread alive, monitoring traffic
-	# until the remote closes it
-
-	my $msg_time = time();
-	my $sel = IO::Select->new($sock);
-	while (1)
-	{
-		if ($sel->can_read(2))
-		{
-			my $buf;
-			my $ok = recv($sock,$buf,4096,0);
-			if (!defined($ok))
-			{
-				# connection closed by remote
-				warning(0,0,"remote port($port) undef=socket error: $@");
-				last;
-			}
-			elsif (length($buf) == 0)
-			{
-				warning(0,0,"received FIN. exiting loop");
-				last;
-			}
-			else
-			{
-				$msg_time = time();
-				my $header = "remote($port) --> ";
-				print parse_dwords($header,$buf,1);
-			}
-		}
-		if (time() > $msg_time + 10)
-		{
-			$msg_time = time();
-			display(0,0,"remote port($port) alive",0,$UTILS_COLOR_LIGHT_CYAN);
-		}
-	}
-
-	warning(0,1,"scanThread($port) ending");
-	$sock->close();
-}
 
 
 

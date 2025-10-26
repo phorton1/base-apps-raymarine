@@ -13,6 +13,7 @@
 # MSG		creates word(length) prepended message
 # INC_SEQ	bump the sequence number
 # UDP_DEST	change the destination IP address; useful for testing FILESYS without doing a DIR first
+# UDP_PORT  change the udp destination port; probing RmlMon possible listening port
 # WAIT 		wait for any reply
 # >>>		text will be output to console
 #
@@ -112,6 +113,8 @@ sub parseProbes
 		$line =~ s/^\s+|\s+$//g;
 		next if !$line;
 
+		display($dbg_probe+2,0,"line=$line");
+
 		if ($line =~ /^PROBE\s+(.*)$/i)
 		{
 			my $ident = $1;
@@ -125,10 +128,9 @@ sub parseProbes
 			$probe = shared_clone([]);
 			$probes->{$ident} = $probe;
 		}
-		elsif ($line =~ /^(RAW|MSG|INC_SEQ|WAIT)(.*)$/)
+		elsif ($line =~ /^(RAW|MSG|INC_SEQ|WAIT|UDP_DEST|UDP_PORT)(.*)$/)
 		{
 			my ($sec,$text) = ($1,$2);
-			$text =~ s/#.*$//;
 			$text =~ s/^\s|\s$//g;
 			display($dbg_probe+1,1,"$line_num: $sec $text");
 
@@ -191,6 +193,7 @@ sub do_probe
 	my $seq = $this->{next_seqnum};
 
 	my $save_ip = $this->{ip};
+	my $save_port = $this->{port};
 	my $save_raw_input  = $this->{show_raw_input};
 	my $save_raw_output = $this->{show_raw_output};
 	$this->{show_raw_input} = 1;
@@ -211,8 +214,15 @@ sub do_probe
 		{
 			$seq = ++$this->{next_seqnum};
 		}
-		elsif ($line =~ /^(UDP_DEST)\s+(.*)$/)
+		elsif ($line =~ /^UDP_DEST\s+(.*)$/)
 		{
+			$this->{ip} = $1;
+			warning(0,0,"udp_dest($this->{ip})");
+		}
+		elsif ($line =~ /^UDP_PORT\s+(.*)$/)
+		{
+			$this->{port} = $1;
+			warning(0,0,"udp_port($this->{port})");
 		}
 		elsif ($line =~ /^(RAW|MSG)\s+(.*)$/)
 		{
@@ -292,6 +302,7 @@ sub do_probe
 	}
 
 	$this->{ip} = $save_ip;
+	$this->{port} = $save_port;
 	$this->{show_raw_input}  = $save_raw_input;
 	$this->{show_raw_output} = $save_raw_output;
 	display(0,0,"PROBE($this->{name},$this->{proto},$ident,$command->{params}) FINISHED");

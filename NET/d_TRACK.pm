@@ -369,13 +369,13 @@ my %PARSE_RULES = (
 #	info	REPLY_BUFFER	<trk>
 
 
-sub parseTRACK
+sub parseTRACKPacket
 {
 	my ($is_reply, $buffer) = @_;
 	my $offset = 0;
 	my $pack_len = length($buffer);
 	my $r_name = $is_reply ? "Reply" : "Request";
-	display($dbg_parse,0,"parseTRACK($r_name) pack_len($pack_len)");
+	display($dbg_parse,0,"parseTRACKPacket($r_name) pack_len($pack_len)");
 
 	my @parts;
 	my $num = 0;
@@ -456,7 +456,7 @@ sub parseTRACK
 		
 	}	# for each part
 
-	display_hash($dbg_parse+1,1,"parseTRACK returning",$rec);
+	display_hash($dbg_parse+1,1,"parseTRACKPacket returning",$rec);
 	return $rec;
 }
 
@@ -606,7 +606,7 @@ sub sendRequest
 
 	if ($SHOW_TRACK_PARSED_OUTPUT)
 	{
-		my $rec = parseTRACK(0,$request);
+		my $rec = parseTRACKPacket(0,$request);
 		# my $text = "# sendRequest($seq) $name\n";
 		# $text .= $rec->{text};
 		# # 1=with_text, 0=is_reply		$text .= $rec->{text};
@@ -914,7 +914,7 @@ sub handlePacket
 
 	warning($dbg+1,0,"handlePacket(".length($buffer).") buffer=".unpack('H*',$buffer));
 
-	my $reply = parseTRACK(1,$buffer);
+	my $reply = parseTRACKPacket(1,$buffer);
 		# 1=is_reply
 
 	if (0 && $this->{show_parsed_input})

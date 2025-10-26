@@ -153,7 +153,8 @@ sub new
 	my ($class) = @_;
 	display($dbg_raysys,0,"c_RAYSYS new()");
 
-	my $this = shared_clone({	# $class->SUPER::new({
+	my $this = shared_clone($RAYSYS_DEFAULTS{$RAYSYS_PORT});
+	mergeHash($this, shared_clone({
 		name 			=> $RAYSYS_NAME,
 		proto			=> 'mcast',
 		service_id		=> $RAYSYS_SID,
@@ -163,9 +164,6 @@ sub new
 
 		DELAY_START		=> $DELAY_START,
 
-		show_raw_input 	=> 0,
-		show_raw_output => 0,
-
 		devices 		=> shared_clone({}),	# by friendly name; never culled
 		ports_by_addr 	=> shared_clone({}),	# by ip:port addr; culled after $SERVICE_PORT_TIMEOUT if not re-advertised
 		unknown			=> shared_clone({}),	# unknown messages, for debugging, none at this time, only shown once
@@ -173,11 +171,18 @@ sub new
 		implemented_services => shared_clone({}),
 			# a separate hash by NAME of implemented services that
 			# have been discovered, and created, but not yet destroyed
-	});
+	}));
 
 	bless $this,$class;
 	$this->init();
 	$raysys = $this;
+
+	$this->addServicePort({
+		proto => 'tcp',
+		service_id => -1,
+		device_id  => $KNOWN_DEVICES{'37a681b2'}, # 'E80 #1'
+		},$E80_1_IP,$HIDDEN_PORT1,1);
+	
 	return $this;
 }
 
@@ -311,7 +316,7 @@ sub findServicePortByName
 
 sub addServicePort
 {
-    my ($this,$rec,$ip,$port) = @_;
+    my ($this,$rec,$ip,$port,$no_delete) = @_;
     my $addr = "$ip:$port";
     my $found = $this->{ports_by_addr}->{$addr};
 	display_hash($dbg_raysys+1,0,"addServicePort($addr)",$rec);
@@ -323,7 +328,7 @@ sub addServicePort
 		return 0;	# not new
 	}
 
-	my $def = $SERVICE_PORT_DEFS{$port};
+	my $def = $RAYSYS_DEFAULTS{$port};
 	if (!$def)
 	{
 		error("NO DEFINITION FOR RAYSYS PORT($port)");
@@ -347,6 +352,7 @@ sub addServicePort
 	$service_port->{port}		= $port;
 	$service_port->{addr}		= $addr;
 	$service_port->{alive_time} = time();
+	$service_port->{no_delete}	= $no_delete if $no_delete;
 	
 	# mon_from => $def->{mon_from} || 0,
 	# mon_to 	=> $def->{mon_to} || 0,
@@ -431,10 +437,9 @@ sub _decode_header
 
 		if ($field =~ /^port/)	# for non-multicast ports, show my guess as to the internet protocol
 		{
-			my $def = $SERVICE_PORT_DEFS{$value};
-			my $guess = $def ? $def->{proto} : '';
-
-			$text .= "$field($value)='$guess' ";
+			my $def = $RAYSYS_DEFAULTS{$value};
+			my $proto = $def ? $def->{proto} : '';
+			$text .= "$field($value)='$proto' ";
 		}
 		else
 		{
@@ -503,6 +508,34 @@ sub handlePacket
 
 		$device_id = unpack('H*',substr($raw,8,4));
 		$device_id = $KNOWN_DEVICES{$device_id} || $device_id;
+ 		my $version = unpack('V',substr($raw,12,4))/100;
+
+		# The ip and name are obvious, the ports are likely, and the service id
+		# is pure conjecture.
+
+		my $ip = inet_ntoa(pack('N', unpack('V',substr($raw,16,4))));
+		my $listen_port = unpack('v',substr($raw,20,2));
+		my $svc_port = unpack('v',substr($raw,22,2));
+
+		my $name_len = unpack('V',substr($raw,24,4));
+			# includes a dword for the service id?
+		my $service_id = unpack('V',substr($raw,28,4));
+		my $name = $name_len ? unpack('a*',substr($raw,32,($name_len-2)*2)) : '';
+		$name =~ s/\x00//g;
+
+		my $is_master = $len == 56 ? unpack('v',substr($raw,54,2)) : -1;
+		my $role =
+			$is_master == -1 ? "UNDEFINED" :
+			$is_master ? "MASTER" : "SLAVE";
+
+		# "RML Monito"
+
+		$this->addServicePort({
+			device_id => $device_id,
+			service_id => $service_id,
+			},
+			$ip,$svc_port) if $svc_port;
+
 		my $found_device = $this->{devices}->{$device_id};
 		if ($found_device)
 		{
@@ -510,27 +543,26 @@ sub handlePacket
 			return undef;
 		}
 
- 		my $version = unpack('v',substr($raw,12,2))/100;
-		my $ip = inet_ntoa(pack('N', unpack('V',substr($raw,16,4))));
-		my $is_master = $len == 56 ? unpack('v',substr($raw,54,2)) : -1;
-		my $role =
-			$is_master == -1 ? "UNDEFINED" :
-			$is_master ? "MASTER" : "SLAVE";
-
 		$this->{devices}->{$device_id} = shared_clone({
 			alive_time	=> time(),
 			device_id 	=> $device_id,
 			version		=> $version,
+			listen_port	=> $listen_port,
 			ip 			=> $ip,
+			svc_port	=> $svc_port,
 			is_master	=> $is_master,
 			role		=> $role, });
 
 		if ($dbg_raysys <= 0)
 		{
+			my $text = "RAYSYS IDENT type($type) device_id($device_id) role($role) vers($version) ip($ip)";
+			$text .= " name($name) sid($service_id) svc($svc_port) listen($listen_port)" if $svc_port;
+
 			setConsoleColor($DISPLAY_COLOR_WARNING);
-			print "RAYSYS IDENT type($type) device_id($device_id) vers($version) ip($ip) role($role)\n";
+			print $text."\n";
 			setConsoleColor();
 		}
+
 		return undef;
 	}
 
@@ -630,6 +662,7 @@ sub onIdle
 	for my $addr (keys %$ports_by_addr)
 	{
 		my $service_port = $ports_by_addr->{$addr};
+		next if $service_port->{no_delete};
 		my $name = $service_port->{name};
 		if ($now > $service_port->{alive_time} + $SERVICE_PORT_TIMEOUT)
 		{

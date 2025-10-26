@@ -23,14 +23,14 @@ use a_utils;
 
 
 my $dbg_wp		= 1;
-my $dbg_route	= -1;
+my $dbg_route	= 1;
 my $dbg_group	= 1;
 my $dbg_mta		= 1;
 my $dbg_track	= 1;
 my $dbg_point	= 1;
 
 
-my $WP_DETAIL_LEVEL		= 2;
+my $WP_DETAIL_LEVEL		= 0;
 my $ROUTE_DETAIL_LEVEL	= 2;
 my $GROUP_DETAIL_LEVEL	= 2;
 my $MTA_DETAIL_LEVEL	= 2;

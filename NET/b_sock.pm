@@ -49,20 +49,16 @@
 #		socket, or a failure reading from or writing to
 #		the socket, will cause the threada to exit
 #
-#	{show_raw_input}
-#	{show_raw_output}
-#	{show_parsed_input}
-#	{show_parsed_output}
+# Monitoring used at this level are passed in from a_defs.pm
+#
 #	{in_color}
 #	{out_color}
-#		Monitoring variables; partially implemented
-#		The 'parsed' versins are intended for client classes
-#		but enumerated here
+#	{show_raw_in}
+#	{show_raw_ou}
+#	{in_multi}
+#	{out_multi}
 #
-# Optional NOT USED ON MCAST PORTS
-#
-#   {local_ip} - not recommended
-#
+# And are passed (along with the protocol) to a_utils::parseRawPacket
 #
 # All sockets implement a listener thread that waits for incoming
 # packets and a commandThread that acts on the {command_queue} if
@@ -71,11 +67,6 @@
 # THIS CLASS COMBINES received tcp packets until their
 # length is greater than 2 (i.e. until a full Reply is received),
 # before further processing.
-#
-# This class performs no parsing or monitoring of the packets
-# that are recieved or sent, although it does containing debugging
-# to see raw bytes of the packets to help identify problems in
-# higher level (parser) code.
 #
 # if !WITH_EXIT_ON_CLOSE this class handles loss of tcp connections
 # as identified by results to $sock->send() and $sock->receive() and
@@ -596,17 +587,7 @@ sub sockThread
 			if ($sel->can_write() && @{$this->{out_queue}})
 			{
 				my $packet = shift @{$this->{out_queue}};
-				# my $tm = pack('V',(time() * 10000) % 10000);
-				# $packet .= $tm if $this->{proto} eq 'mcast';
-
-				my $pack_len = length($packet);
-				if ($this->{show_raw_output})
-				{
-					my $header = "$name <-- ".pad(" len($pack_len)",9)." ";
-					setConsoleColor($this->{out_color}) if $this->{out_color};
-					print parse_dwords($header,$packet,1);
-					setConsoleColor() if $this->{out_color};
-				}
+				showRawPacket(0,$this,$packet,1) if $this->{mon_raw_out};
 
 				my $rslt = $this->{proto} eq 'mcast' ?
 					$sock->mcast_send($packet, "$this->{ip}:$this->{port}") :
@@ -665,14 +646,7 @@ sub sockThread
 					{
 						my $client_buffer = $this->{buffer};
 						$this->{buffer} = '';
-						if ($this->{show_raw_input})
-						{
-							# my $header = "$name $sender_ip:$port --> ".pad(" len($buflen)",9)." ";
-							my $header = "$name --> ".pad(" len($buflen)",9)." ";
-							setConsoleColor($this->{in_color}) if $this->{in_color};
-							print parse_dwords($header,$client_buffer,1);
-							setConsoleColor() if $this->{in_color};
-						}
+						showRawPacket(0,$this,$client_buffer,0) if $this->{mon_raw_in};
 
 						# hook for probes to not call derived handle packet
 

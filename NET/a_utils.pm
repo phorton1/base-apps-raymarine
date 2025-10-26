@@ -42,6 +42,8 @@ BEGIN
 		northEastToLatLon
 		latLonToNorthEast
 
+		showRawPacket
+		splitIntoMessages
 		parse_dwords
 
 		@console_color_names
@@ -78,7 +80,7 @@ our $appGroup = 'raymarine';
 
 
 Pub::Utils::initUtils();
-# createSTDOUTSemaphore("sem$appGroup");
+createSTDOUTSemaphore("sem$appGroup");
 setStandardTempDir($appGroup);
 setStandardDataDir($appGroup);
 
@@ -180,15 +182,25 @@ our $wx_color_medium_grey   = Wx::Colour->new(0xC0, 0xC0, 0xC0);
 
 sub sendUDPPacket
 {
-    my ($name,$dest_ip,$dest_port,$packet) = @_;
-    display(0,1,"sending $dest_ip:$dest_port $name packet: ".unpack('H*',$packet));
+    my ($name, $dest_ip, $dest_port, $packet) = @_;
+    display(0, 1, "sending $dest_ip:$dest_port $name packet: " . unpack('H*', $packet));
+
     if (!$LOCAL_UDP_SOCKET)
     {
-        error("LOCAL_UDP_SOCKET not open in sendRequest packet");
-        return;
+        error("LOCAL_UDP_SOCKET not open in sendUDPPacket");
+        return 0;
     }
+
     my $dest_addr = pack_sockaddr_in($dest_port, inet_aton($dest_ip));
-    $LOCAL_UDP_SOCKET->send($packet, 0, $dest_addr);
+    my $sent = $LOCAL_UDP_SOCKET->send($packet, 0, $dest_addr);
+
+    if (!defined($sent))
+    {
+        error("send() failed for $dest_ip:$dest_port: $!");
+        return 0;
+    }
+
+    return 1;
 }
 
 
@@ -340,6 +352,78 @@ sub latLonToNorthEast
 # parse_dwords
 #----------------------------------------------------
 
+sub showRawPacket
+	# shall only be called when mon_raw_xx=1 based on $is_send
+	#	in otherwords, when we really want to show it
+{
+	my ($is_sniffer,$params,$packet,$is_send) = @_;
+									
+	my $is_tcp = $params->{proto} eq 'tcp' ? 1 : 0;
+
+	my $name = $params->{name};
+	$name .= "(RNS)" if $is_sniffer;
+
+	my $arrow = $is_send ? "<--" : "-->";
+	my $packet_len = length($packet);
+	my $header = pad($name,9).pad("len($packet_len)",10)."$arrow ";
+	my $multi = $params->{$is_send ? "out_multi" : "in_multi" };
+
+	my $text = '';
+	if ($is_tcp)
+	{
+		my $started = 0;
+		my @parts = splitIntoMessages($packet);
+
+		for my $part (@parts)
+		{
+			my $len_str = substr($part,0,2);
+			my $len = unpack('v',$len_str);
+			my $len_hex = unpack('H*',$len_str);
+			my $part_header = $header."$len_hex ";
+			my $part_data = substr($part,2);
+			$text .= parse_dwords($part_header,$part_data,$multi);
+			if (!$started)
+			{
+				$started = 1;
+				$header = pad('',length($header));
+			}
+		}
+	}
+	else
+	{
+		$text .= parse_dwords($header,$packet,$multi);
+	}
+
+	my $color = $params->{$is_send ? "out_color" : "in_color"};
+	setConsoleColor($color) if $color;
+	print $text;
+	setConsoleColor() if $color;
+}
+
+
+sub splitIntoMessages
+{
+	my ($packet) = @_;
+	my @parts;
+
+	my $offset = 0;
+	my $packet_len = length($packet);
+	while ($packet_len - $offset >= 4)
+	{
+		my $len = unpack('v',substr($packet,$offset,2));
+		my $part = substr($packet,$offset,$len+2);
+		push @parts,$part;
+		$offset += $len + 2;
+	}
+	return @parts;
+}
+
+
+
+#-------------------------------------------------------
+# parse_dwords
+#-------------------------------------------------------
+
 my $BYTES_PER_GROUP = 4;
 my $GROUPS_PER_LINE = 8;
 my $BYTES_PER_LINE	= $GROUPS_PER_LINE * $BYTES_PER_GROUP;
@@ -390,29 +474,6 @@ sub parse_dwords
 }
 
 
-
-
-
-sub packetWireHeader
-	# General printable packet header for console-type messages
-{
-	my ($packet,$backwards) = @_;
-
-	my $len = length($packet->{raw_data});
-	my $left_ip = $backwards ? $packet->{dest_ip} : $packet->{src_ip};
-	my $left_port = $backwards ? $packet->{dest_port} : $packet->{src_port};
-	my $right_ip = $backwards ? $packet->{src_ip} : $packet->{dest_ip};
-	my $right_port = $backwards ? $packet->{src_port} : $packet->{dest_port};
-	my $arrow = $backwards ? '<--' : '-->';
-
-	return
-		$packet->{proto}.
-		pad("($len)",7).
-		pad("$left_ip:$left_port",21).
-		$arrow.' '.
-		pad("$right_ip:$right_port",21).
-		' ';
-}
 
 
 
@@ -511,6 +572,30 @@ sub packRecord
 my %built_buffers;	# by port
 
 my $MON_SELF_WPMGR = 1;
+
+
+sub packetWireHeader
+	# General printable packet header for console-type messages
+{
+	my ($packet,$backwards) = @_;
+
+	my $len = length($packet->{raw_data});
+	my $left_ip = $backwards ? $packet->{dest_ip} : $packet->{src_ip};
+	my $left_port = $backwards ? $packet->{dest_port} : $packet->{src_port};
+	my $right_ip = $backwards ? $packet->{src_ip} : $packet->{dest_ip};
+	my $right_port = $backwards ? $packet->{src_port} : $packet->{dest_port};
+	my $arrow = $backwards ? '<--' : '-->';
+
+	return
+		$packet->{proto}.
+		pad("($len)",7).
+		pad("$left_ip:$left_port",21).
+		$arrow.' '.
+		pad("$right_ip:$right_port",21).
+		' ';
+}
+
+
 
 
 sub showPacket

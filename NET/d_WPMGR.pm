@@ -188,10 +188,10 @@ sub sendRequest
 {
 	my ($this,$seq,$name,$request) = @_;
 
-	if ($this->{show_parsed_output})
+	if ($this->{mon_parsed_out})
 	{
 		my $text = "# sendRequest($seq) $name\n";
-		my $rec = $this->parseWPMGR($this->{show_parsed_output},0,$this->{local_port},$request);
+		my $rec = $this->parseWPMGRPacket($this->{mon_parsed_out},0,$this->{local_port},$request);
 		$text .= $rec->{text};
 		# 1=with_text, 0=is_reply		$text .= $rec->{text};
 		setConsoleColor($OUT_COLOR) if $OUT_COLOR;
@@ -462,10 +462,10 @@ sub handlePacket
 
 	warning($dbg+1,0,"handlePacket(".length($buffer).") called");
 
-	my $reply = $this->parseWPMGR($this->{show_parsed_input},1,$this->{local_port},$buffer);
+	my $reply = $this->parseWPMGRPacket($this->{mon_parsed_in},1,$this->{local_port},$buffer);
 		# 1=is_reply
 
-	if ($this->{show_parsed_input})
+	if ($this->{mon_parsed_in})
 	{
 		my $text = $reply->{text};
 		setConsoleColor($IN_COLOR) if $IN_COLOR;

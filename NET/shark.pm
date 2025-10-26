@@ -8,25 +8,6 @@ use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(sleep time);
-
-# use Socket;
-# use Win32::Console;
-# use IO::Handle;
-# use IO::Socket::INET;
-# use IO::Select;
-# use a_utils;
-
-# use r_DBNAV;
-# use d_FILESYS;
-# use d_WPMGR;
-# use d_TRACK;
-# use e_wp_api;
-
-#
-# use tcpBase;
-
-# use tcpScanner;
-
 use Pub::Utils;
 use Pub::WX::Resources;
 use Pub::WX::Main;
@@ -45,6 +26,7 @@ use s_sniffer;
 use w_resources;
 use w_frame;
 use tcpScanner;
+use udpScanner;
 use base 'Wx::App';
 
 my $dbg_shark = 0;
@@ -53,7 +35,9 @@ my $dbg_shark = 0;
 my $WITH_SERIAL			= 1;
 my $WITH_RAYSYS			= 1;
 my $WITH_HTTP_SERVER	= 1;
-my $WITH_SNIFFER 		= 0;
+my $WITH_SNIFFER 		= 1;
+my $WITH_TCP_SCANNER	= 1;
+my $WITH_UDP_SCANNER	= 0;	# sniffer must be disabled for udp_scanner
 my $WITH_WX				= 1;
 
 
@@ -196,12 +180,25 @@ sub handleSerialCommand
 		writeLog($msg,'shark.log');
 	}
 
-	# PORT SCANS and (track) PROBING
+	# PORT SCANS and PROBES
 
 	elsif ($lpart eq 'scan')
 	{
 		my ($low,$high) = split(/\s+/,$rpart);
-		scanRange($low,$high);
+		return error("No tcpScanner!") if !$tcp_scanner;
+		$rpart ?
+			$tcp_scanner->scanRange($low,$high) :
+			$tcp_scanner->showAliveScans();
+	}
+	elsif ($lpart eq 'udp')
+	{
+		my $aggresive = $rpart =~ s/a// ? 1 : 0;
+		$rpart =~ s/^\s+|\s$//g;
+		my ($low,$high) = split(/\s+/,$rpart);
+		return error("No udpScanner!") if !$udp_scanner;
+		$rpart ?
+			$udp_scanner->scanRange($low,$high,$aggresive) :
+			$udp_scanner->showAliveScans();
 	}
 	elsif ($lpart eq 'p')
 	{
@@ -210,64 +207,16 @@ sub handleSerialCommand
 		$name = 'TRACK' 	if $name eq 't';
 		$name = 'WPMGR' 	if $name eq 'w';
 		$name = 'FILESYS'	if $name eq 'f';
-		$name = 'filecast' if $name eq 'm';
-		my $service_port = $name eq 'filecast' ?
-			$raysys->findServicePortByName($name) :
-			$raysys->findImplementedService($name);
-		return if !$service_port;
+
+		my $service_port =
+			$raysys->findImplementedService($name,1) ||
+			$raysys->findServicePortByName($name,1);
+		return error("service $name("._def($service_port).") doesn't exist or is not connected")
+			if !$service_port || !$service_port->{connected};
 		$service_port->doProbe($params);
 	}
 
 }   #   handleCommand()
-
-
-
-#-----------------------------------------
-# handleSniffPacket
-#-----------------------------------------
-
-sub handleSniffPacket
-{
-	my ($packet) = @_;
-
-   # my $rayport_raysys = findImplementedService('RAYSYS');
-   # my $rayport_my_file = findImplementedService('MY_FILE');
-   # my $rayport_file_rns = findImplementedService('FILE_RNS');
-
-	my $len = length($packet->{raw_data});
-	# display($dbg_shark+1,1,"got $packet->{proto} packet len($len)");
-	if ($packet->{udp} &&
-		$packet->{dest_port} == $RAYSYS_PORT)
-	{
-		 my $header = 'RAYSYS <-- ';
-		 print parse_dwords($header,$packet->{raw_data},1);
-
-		# decodeRAYSYS($packet);
-		  #if ($rayport_raysys &&
-		#     $rayport_raysys->{mon_to})
-		# {
-		#     # one time monitoring of new RAYSYS ports
-		#     showPacket($rayport_raysys,$packet,0);
-		# }
-	}
-
-	#	my $ray_src = findRayPort($packet->{src_ip},$packet->{src_port});
-	#	my $ray_dest = findRayPort($packet->{dest_ip},$packet->{dest_port});
-	#
-	#	if ($ray_src && $ray_src->{mon_from})
-	#	{
-	#	    showPacket($ray_src,$packet,0);
-	#	}
-	#	elsif ($ray_dest && $ray_dest->{mon_to})
-	#	{
-	#	    showPacket($ray_dest,$packet,1);
-	#	    if (1 && $ray_dest->{name} eq "DBNAV")
-	#	    {
-	#	        decodeDBNAV($packet);
-	#	    }
-	#	}
-}
-
 
 
 
@@ -291,15 +240,14 @@ if ($WITH_RAYSYS)
 	$raysys->start();
 }
 
-
-# if ($WITH_FILESYS)  # filesysThread())
-# {
-#     display(0,0,"initing filesysThread");
-#     my $filesys_thread = threads->create(\&filesysThread);
-#     display(0,0,"filesysThread created");
-#     $filesys_thread->detach();
-#     display(0,0,"filesysThread detached");
-# }
+if ($WITH_TCP_SCANNER)
+{
+	tcpScanner->new();
+}
+if ($WITH_TCP_SCANNER)
+{
+	udpScanner->new();
+}
 
 
 startHTTPServer() if $WITH_HTTP_SERVER;
@@ -311,10 +259,9 @@ startHTTPServer() if $WITH_HTTP_SERVER;
 
 if ($WITH_SNIFFER)
 {
-	my $sniffer = s_sniffer->new(\&handleSniffPacket);
+	my $sniffer = s_sniffer->new();
 	$sniffer->start();
 }
-
 
 
 

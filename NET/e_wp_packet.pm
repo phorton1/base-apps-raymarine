@@ -45,16 +45,16 @@ my $dbg_wpp = 1;
 
 
 #--------------------------------------------------
-# parseWPMGR
+# parseWPMGRPacket
 #--------------------------------------------------
 
 
-sub parseWPMGR
+sub parseWPMGRPacket
 	# For the text with normal packets, it's src_port --> dest_port
 	# 	but for nav packets, its WPMGR <-> client_port
 	#
-	# $is_reply is passed in as one when the source is NOT
-	#	the WPMGR service
+	# $is_reply is passed in as one when the source is
+	#	the WPMGR service, 0 for requests,
 	# $client_port differentiates this program, shark, from RNS
 	#	and is used as the key to the nav_context hash.
 	# $raw_data is a fully re-assembled Request or Reply which
@@ -114,7 +114,7 @@ sub parseWPMGR
 
 {
 	my ($this,$with_text,$is_reply,$client_port,$raw_data) = @_;
-	display($dbg_wpp,0,"parseWPMGR($is_reply,$client_port) ".unpack('H*',$raw_data));
+	display($dbg_wpp,0,"parseWPMGRPacket($with_text,$is_reply,$client_port) ".unpack('H*',$raw_data));
 
 	# create the header
 
@@ -232,7 +232,7 @@ sub parseWPMGR
 		$rec->{text} = $text;
 	}
 
-	display_hash($dbg_wpp+2,0,"parseWPMGR() returning",$rec);
+	display_hash($dbg_wpp+2,0,"parseWPMGRPacket() returning",$rec);
 	
 	return $rec;
 }
@@ -248,7 +248,7 @@ sub parsePiece
 	{
 		if (!$rec->{is_dict})
 		{
-			my $detail_level = 2;
+			my $detail_level = 0;
 			my $show_what = $NAV_WHAT{$rec->{what}};
 			my $item = parseWPMGRRecord($show_what,substr($data,$$pdata));
 			$text = WPRecordToText($item,$show_what,$indent,$detail_level)

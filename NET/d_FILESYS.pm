@@ -58,9 +58,7 @@ BEGIN
 
 
 
-my $FILESYS_SERVICE_ID = 5;
-	# 5 = 0x005 = '0500'
-my $FILESYS_PORT = $LOCAL_UDP_PORT_BASE + $FILESYS_SERVICE_ID;
+
 
 
 my $MAXIMUM_FILE_SIZE = 'ffffff01'; #;
@@ -436,12 +434,7 @@ sub handleCommand
 	
 	return if $this->{file_state} != $FILE_STATE_START;
 	$this->{file_state} = $FILE_STATE_BUSY;
-	if ($this->{show_raw_output})
-	{
-		setConsoleColor($this->{out_color}) if $this->{out_color};
-		print "FILESYS <-- ".unpack('H*',$packet)."\n";
-		setConsoleColor() if $this->{out_color};
-	}
+	showRawPacket(0,$this,$packet,1) if $this->{mon_raw_out};
 
     sendUDPPacket(
         "fileCommand($command_name)",
