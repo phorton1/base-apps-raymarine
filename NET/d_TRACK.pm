@@ -34,6 +34,57 @@ my $WITH_EVENT_PROCESSING	= 1;
 my $WITH_MOD_PROCESSING 	= 1;
 
 
+BEGIN
+{
+ 	use Exporter qw( import );
+	our @EXPORT = qw(
+
+		$TRACK_DIR_RECV
+		$TRACK_DIR_SEND
+		$TRACK_DIR_INFO
+
+		$TRACK_CMD_GET_NTH
+		$TRACK_CMD_SET_NAME
+		$TRACK_CMD_GET_CUR2
+		$TRACK_CMD_GET_CUR
+		$TRACK_CMD_SAVE
+		$TRACK_CMD_GET_TRACK
+		$TRACK_CMD_GET_MTA
+		$TRACK_CMD_ERASE
+		$TRACK_CMD_RENAME
+		$TRACK_CMD_START
+		$TRACK_CMD_STOP
+		$TRACK_CMD_DISCARD
+		$TRACK_CMD_GET_DICT
+		$TRACK_CMD_GET_STATE
+		$TRACK_CMD_USELESS_E
+		$TRACK_CMD_NOREPLY_F
+		$TRACK_CMD_BUMP_NAME
+		$TRACK_CMD_NO_REPLY_11
+
+		$TRACK_REPLY_CONTEXT
+		$TRACK_REPLY_BUFFER
+		$TRACK_REPLY_END
+		$TRACK_REPLY_CURRENT
+		$TRACK_REPLY_TRACK
+		$TRACK_REPLY_MTA
+		$TRACK_REPLY_ERASED
+		$TRACK_REPLY_DICT
+		$TRACK_REPLY_STATE
+		$TRACK_REPLY_EVENT
+		$TRACK_REPLY_CHANGED
+		$TRACK_REPLY_NAMED
+		$TRACK_REPLY_RENAMED
+
+		%TRACK_DIR_NAME
+		%TRACK_REPLY_NAME
+		%TRACK_REQUEST_NAME
+		%TRACK_PARSE_RULES 
+	);
+}
+
+
+
 my $TRACK_SERVICE_ID = 19;
 	# 19 == 0x13 == '1300' in streams
 
@@ -177,6 +228,13 @@ our $TRACK_DIR_RECV		= 0x000;
 our $TRACK_DIR_SEND		= 0x100;
 our $TRACK_DIR_INFO		= 0x200;
 
+our %TRACK_DIR_NAME = (
+	$TRACK_DIR_RECV => 'recv',
+	$TRACK_DIR_SEND => 'send',
+	$TRACK_DIR_INFO => 'info',
+);
+
+
 # Command Nibble
 # E80 closes TCP connection on 0x12 and higher
 # The commands nibbles have completely different semantics in
@@ -184,49 +242,49 @@ our $TRACK_DIR_INFO		= 0x200;
 # getting info from the server. Only some are parsed in replies.
 
 										# Reply			Request (command)
-my $TRACK_CMD_GET_NTH   	= 0x00;		# recv,info		GET_NTH {seq} {nth} 		Current Track Point
-my $TRACK_CMD_SET_NAME		= 0x01;		# recv,info		SET_NAME {seq} {hex16} 		Current Track
-my $TRACK_CMD_GET_CUR2		= 0x02;		# recv,info		GET_CUR2 					Current Track MTA and points
-my $TRACK_CMD_GET_CUR   	= 0x03;		# recv			GET_CUR 					Current Track MTA
-my $TRACK_CMD_SAVE			= 0x04;		# recv			SAVE						Current Track
-my $TRACK_CMD_GET_TRACK 	= 0x05;		# 				GET_TRACK {seq} {uuid} 		Get Saved Track - funky results with Current Track uuid
-my $TRACK_CMD_GET_MTA		= 0x06;		# recv			GET_MTA   {seq} {uuid}		GEt Track MTA
-my $TRACK_CMD_ERASE			= 0x07;		# recv			ERASE_TRACK {seq} {uuid} 	Saved Track only
-my $TRACK_CMD_RENAME		= 0x08; 	# recv			RENAME {seq} {uuid} {hex16} Renames a saved track
-my $TRACK_CMD_START			= 0x09;		#  				START						starts Current Track tracking
-my $TRACK_CMD_STOP			= 0x0a;		# recv			STOP 						stops Current Track
-my $TRACK_CMD_DISCARD   	= 0x0b;		# info			DISCARD 					current track, but only after stop and not saved
-my $TRACK_CMD_GET_DICT		= 0x0c;		# recv			GET_DICT {seq_num}			gets Saved Tracks (MTAs) index
-my $TRACK_CMD_GET_STATE		= 0x0d;		# recv			GET_STATE					returns {stopable} = 1 if Current Track Stop button is enabled
-my $TRACK_CMD_USELESS_E		= 0x0e;		# 				useless						returns an event with byte=6, possibly to event others?
-my $TRACK_CMD_NOREPLY_F		= 0x0f;		# 				xxxx						never got a reply
-my $TRACK_CMD_BUMP_NAME 	= 0x10;		# 				BUMP 						Increment the default Current Track name, talk about useless
-my $TRACK_CMD_NO_REPLY_11	= 0x11;		# 				xxxx						never got a reply
+our $TRACK_CMD_GET_NTH   	= 0x00;		# recv,info		GET_NTH {seq} {nth} 		Current Track Point
+our $TRACK_CMD_SET_NAME		= 0x01;		# recv,info		SET_NAME {seq} {hex16} 		Current Track
+our $TRACK_CMD_GET_CUR2		= 0x02;		# recv,info		GET_CUR2 					Current Track MTA and points
+our $TRACK_CMD_GET_CUR   	= 0x03;		# recv			GET_CUR 					Current Track MTA
+our $TRACK_CMD_SAVE			= 0x04;		# recv			SAVE						Current Track
+our $TRACK_CMD_GET_TRACK 	= 0x05;		# 				GET_TRACK {seq} {uuid} 		Get Saved Track - funky results with Current Track uuid
+our $TRACK_CMD_GET_MTA		= 0x06;		# recv			GET_MTA   {seq} {uuid}		GEt Track MTA
+our $TRACK_CMD_ERASE		= 0x07;		# recv			ERASE_TRACK {seq} {uuid} 	Saved Track only
+our $TRACK_CMD_RENAME		= 0x08; 	# recv			RENAME {seq} {uuid} {hex16} Renames a saved track
+our $TRACK_CMD_START		= 0x09;		#  				START						starts Current Track tracking
+our $TRACK_CMD_STOP			= 0x0a;		# recv			STOP 						stops Current Track
+our $TRACK_CMD_DISCARD   	= 0x0b;		# info			DISCARD 					current track, but only after stop and not saved
+our $TRACK_CMD_GET_DICT		= 0x0c;		# recv			GET_DICT {seq_num}			gets Saved Tracks (MTAs) index
+our $TRACK_CMD_GET_STATE	= 0x0d;		# recv			GET_STATE					returns {stopable} = 1 if Current Track Stop button is enabled
+our $TRACK_CMD_USELESS_E	= 0x0e;		# 				useless						returns an event with byte=6, possibly to event others?
+our $TRACK_CMD_NOREPLY_F	= 0x0f;		# 				xxxx						never got a reply
+our $TRACK_CMD_BUMP_NAME 	= 0x10;		# 				BUMP 						Increment the default Current Track name, talk about useless
+our $TRACK_CMD_NO_REPLY_11	= 0x11;		# 				xxxx						never got a reply
 
 
 # Synonyms for known nibbles that come in replies
 
-my $TRACK_REPLY_CONTEXT   	= 0x00;
-my $TRACK_REPLY_BUFFER		= 0x01;
-my $TRACK_REPLY_END			= 0x02;
-my $TRACK_REPLY_CURRENT   	= 0x03;
-my $TRACK_REPLY_TRACK		= 0x04;
-my $TRACK_REPLY_MTA 		= 0x05;
-my $TRACK_REPLY_ERASED		= 0x06;
-my $TRACK_REPLY_DICT		= 0x07;
-my $TRACK_REPLY_STATE		= 0x08;
-# my $TRACK_REPLY_START		= 0x09;
-my $TRACK_REPLY_EVENT		= 0x0a;
-my $TRACK_REPLY_CHANGED  	= 0x0b;
-# my $TRACK_REPLY_GET_DICT	= 0x0c;
-my $TRACK_REPLY_NAMED		= 0x0d;
-my $TRACK_REPLY_RENAMED		= 0x0e;
-# my $TRACK_REPLY_F			= 0x0f;
-# my $TRACK_REPLY_BUMP_NAME = 0x10;
-# my $TRACK_REPLY_11		= 0x11;
+our $TRACK_REPLY_CONTEXT   	= 0x00;
+our $TRACK_REPLY_BUFFER		= 0x01;
+our $TRACK_REPLY_END		= 0x02;
+our $TRACK_REPLY_CURRENT   	= 0x03;
+our $TRACK_REPLY_TRACK		= 0x04;
+our $TRACK_REPLY_MTA 		= 0x05;
+our $TRACK_REPLY_ERASED		= 0x06;
+our $TRACK_REPLY_DICT		= 0x07;
+our $TRACK_REPLY_STATE		= 0x08;
+# our $TRACK_REPLY_START	= 0x09;
+our $TRACK_REPLY_EVENT		= 0x0a;
+our $TRACK_REPLY_CHANGED  	= 0x0b;
+# our $TRACK_REPLY_GET_DICT	= 0x0c;
+our $TRACK_REPLY_NAMED		= 0x0d;
+our $TRACK_REPLY_RENAMED	= 0x0e;
+# our $TRACK_REPLY_F		= 0x0f;
+# our $TRACK_REPLY_BUMP_NAME = 0x10;
+# our $TRACK_REPLY_11		= 0x11;
 
 
-my %TRACK_REPLY_NAME = (							# recv
+our %TRACK_REPLY_NAME = (							# recv
 	$TRACK_REPLY_CONTEXT		=> 'CONTEXT',		# header for get nth track point
 	$TRACK_REPLY_BUFFER			=> 'BUFFER',        # header for get 'mta' current track
 	$TRACK_REPLY_END			=> 'END',           # header for get 'full' current track
@@ -248,7 +306,7 @@ my %TRACK_REPLY_NAME = (							# recv
 );
 
 
-my %TRACK_REQUEST_NAME = (
+our %TRACK_REQUEST_NAME = (
 	$TRACK_CMD_GET_NTH		=> 'GET_NTH',
 	$TRACK_CMD_SET_NAME		=> 'SET_NAME',
 	$TRACK_CMD_GET_CUR2		=> 'GET_CUR2',
@@ -304,7 +362,7 @@ my %TRACK_REQUEST_NAME = (
 # Packet Parser
 #----------------------------------------------------------------------
 
-my %PARSE_RULES = (
+our %TRACK_PARSE_RULES = (
 
 	# Replies
 
@@ -410,7 +468,7 @@ sub parseTRACKPacket
 		$num++;
 
 		# get the rule
-		my $rule = $PARSE_RULES{ $cmd_word };
+		my $rule = $TRACK_PARSE_RULES{ $cmd_word };
 		if (!$rule)
 		{
 			error("NO RULE dir($dir_hex) cmd($cmd=$cmd_name)");
@@ -558,16 +616,6 @@ sub parsePiece
 		display($dbg_parse,1,"rec($piece) = '$value'");
 				
 		$rec->{$piece} = $value;
-
-		if (0 && $piece eq 'context_bits')
-		{
-			if ($value & 0x10)
-			{
-				$rec->{is_dict} = 1;
-				$rec->{uuids} = shared_clone([]);
-				display($dbg_parse,2,"setting is_dict bit");
-			}
-		}
 
 	}
 }

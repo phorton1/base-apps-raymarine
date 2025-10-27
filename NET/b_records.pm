@@ -214,7 +214,7 @@ sub outputDate
 {
 	my ($date_int) = @_;
 	my $hex = unpack("H*",pack('v',$date_int));
-	my $seconds = $date_int * 86400;
+	my $seconds = $date_int * $SECS_PER_DAY;
 		# date encoded as days since 1970-01-01 unix epoch
 	my ($sec, $min, $hour, $mday, $mon, $year) = gmtime($seconds);
 	$year += 1900;
@@ -368,7 +368,7 @@ sub parseWPGroup
 	display($dbg_group,0,"parseWPGroup len($buf_len)");
 
 	my $offset = 0;
-	my $rec = unpackRecord(
+	my $rec = old_unpackRecord(
 		$dbg_group+1,
 		$GROUP_DETAIL_LEVEL,
 		'group_hdr',
@@ -416,7 +416,7 @@ sub buildWPGroup
 	$rec->{num_uuids} = @$uuids;
 
 	display($dbg_group,0,"buildWPGroup($rec->{name} num_uuids($rec->{num_uuids})");
-	my $buffer = packRecord(
+	my $buffer = old_packRecord(
 		$dbg_group+1,
 		$GROUP_DETAIL_LEVEL,
 		'group',
@@ -467,7 +467,7 @@ sub parseWPRoute
 	display($dbg_route,0,"parseWPRoute len($buf_len)");
 
 	my $offset = 0;
-	my $rec = unpackRecord(
+	my $rec = old_unpackRecord(
 		$dbg_route+1,
 		$ROUTE_DETAIL_LEVEL,
 		'route_hdr1',
@@ -504,7 +504,7 @@ sub parseWPRoute
 		$offset += 8;
 	}
 
-	my $hdr2 = unpackRecord(
+	my $hdr2 = old_unpackRecord(
 		$dbg_route+1,
 		$ROUTE_DETAIL_LEVEL,
 		'hdr2',
@@ -517,7 +517,7 @@ sub parseWPRoute
 	
 	for (my $i=0; $i<$rec->{num_wpts}; $i++)
 	{
-		my $pt = unpackRecord(
+		my $pt = old_unpackRecord(
 			$dbg_route+1,
 			$ROUTE_DETAIL_LEVEL,
 			'point',
@@ -549,7 +549,7 @@ sub buildWPRoute
 	my $num_wpts = $rec->{num_wpts} = @$uuids;
 
 	display($dbg_route,0,"buildWPRoute($rec->{name}");
-	my $buffer = packRecord(
+	my $buffer = old_packRecord(
 		$dbg_route+1,
 		$ROUTE_DETAIL_LEVEL,
 		'route_hdr1',
@@ -565,7 +565,7 @@ sub buildWPRoute
 		$buffer .= pack('H*',$uuid);
 	}
 
-	$buffer .= packRecord(
+	$buffer .= old_packRecord(
 		$dbg_route+1,
 		$ROUTE_DETAIL_LEVEL,
 		'route_hdr2',
@@ -575,7 +575,7 @@ sub buildWPRoute
 	for (my $i=0; $i<$num_wpts; $i++)
 	{
 		my $point = $$points[$i];
-		$buffer .= packRecord(
+		$buffer .= old_packRecord(
 			$dbg_route+1,
 			$ROUTE_DETAIL_LEVEL,
 			"route_pt($i)",
@@ -622,7 +622,7 @@ sub parseWPWaypoint
 	}
 
 	my $offset = 0;
-	my $rec = unpackRecord(
+	my $rec = old_unpackRecord(
 		$dbg_wp+1,
 		$WP_DETAIL_LEVEL,
 		'waypoint',
@@ -668,7 +668,7 @@ sub buildWPWaypoint
 	$rec->{cmt_len} = length($comment);
 	
 	display($dbg_wp,0,"buildWPWaypoint($rec->{name}");
-	my $buffer = packRecord(
+	my $buffer = old_packRecord(
 		$dbg_wp+1,
 		$WP_DETAIL_LEVEL,
 		'waypoint',
@@ -776,7 +776,7 @@ sub parseMTA
 	my $buf_len = length($buffer);
 	display($dbg_mta,0,"parseMTA len($buf_len)");
 	my $offset = 0;
-	my $rec = unpackRecord(
+	my $rec = old_unpackRecord(
 		$dbg_mta+1,
 		$MTA_DETAIL_LEVEL,
 		'mta',
@@ -826,7 +826,7 @@ sub parseTrack
 	# there's some garbage in the front
 
 	my $offset = 0;
-	my $rec = unpackRecord(
+	my $rec = old_unpackRecord(
 		$dbg_track+1,
 		$TRACK_DETAIL_LEVEL,
 		'track_hdr',
@@ -844,7 +844,7 @@ sub parseTrack
 	my $points = $rec->{points} = shared_clone([]);
 	for (my $i=0; $i<$rec->{cnt}; $i++)
 	{
-		my $pt = unpackRecord(
+		my $pt = old_unpackRecord(
 			$dbg_track+1,
 			$TRACK_DETAIL_LEVEL,
 			'track_point',
@@ -878,7 +878,7 @@ sub parsePoint
 	my $offset = 2;
 		# skip garbage word efef
 
-	my $pt = unpackRecord(
+	my $pt = old_unpackRecord(
 		$dbg_point+1,
 		$POINT_DETAIL_LEVEL,
 		'track_point',

@@ -158,7 +158,7 @@ sub decodeDate
 {
 	my ($data) = @_;
 	my $date_int = unpack("v",$data);
-	my $date_seconds = $date_int * 86400;
+	my $date_seconds = $date_int * $SECS_PER_DAY;
 	my ($sec, $min, $hour, $mday, $mon, $year) = gmtime($date_seconds);
 	$year += 1900;
 	$mon  += 1;

@@ -263,7 +263,7 @@ sub showDate
 	my $date_bytes = substr($data,$offset,2);
 	my $date_int = unpack("v",$date_bytes);
 	my $date_str = unpack("H*",$date_bytes);
-	my $date_seconds = $date_int * 86400;
+	my $date_seconds = $date_int * $SECS_PER_DAY;
 		# date encoded as days since 1970-01-01 unix epoch
 	my ($sec, $min, $hour, $mday, $mon, $year) = gmtime($date_seconds);
 	$year += 1900;

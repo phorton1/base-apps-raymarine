@@ -28,6 +28,7 @@ use c_RAYSYS;
 use base qw(Wx::ScrolledWindow Pub::WX::Window);
 
 my $dbg_win = 0;
+my $dbg_slots = 1;
 
 my $TOP_MARGIN = 60;
 my $HEADER_Y = 37;
@@ -97,7 +98,7 @@ sub new
 {
 	my ($class,$frame,$book,$id,$data) = @_;
 	my $this = $class->SUPER::new($book,$id);
-	display(0,0,"winRAYSYS::new() called");
+	display($dbg_win,0,"winRAYSYS::new() called");
 	$this->MyWindow($frame,$book,$id,'RAYSYS',$data);
 
 	$this->SetFont($font_fixed);
@@ -153,7 +154,7 @@ sub onCheckBox
 	my $service_port = $raysys->{ports_by_addr}->{$addr};
 	my $name = $service_port->{name};
 
-	display(0,0,"$addr = $name connect($checked) $service_port->{proto}");
+	display($dbg_win,0,"$addr = $name connect($checked) $service_port->{proto}");
 	$raysys->connectServicePort($addr,$checked);
 
 }
@@ -435,18 +436,18 @@ sub onIdle
 	my $slots = $this->{slots};
 	my $num_slots = @$slots;
 
-	display($dbg_win,0,"num_slots=$num_slots",0,$UTILS_COLOR_CYAN);
-	display($dbg_win,1,"found $num_found out of ".scalar(keys %$addrs)." existing addrs",0,$UTILS_COLOR_LIGHT_CYAN);
-	display($dbg_win,1,"found ".scalar(@new_addrs)." new and ".scalar(@delete_addrs)." ports to delete",0,$UTILS_COLOR_LIGHT_CYAN);
+	display($dbg_slots,0,"num_slots=$num_slots",0,$UTILS_COLOR_CYAN);
+	display($dbg_slots,1,"found $num_found out of ".scalar(keys %$addrs)." existing addrs",0,$UTILS_COLOR_LIGHT_CYAN);
+	display($dbg_slots,1,"found ".scalar(@new_addrs)." new and ".scalar(@delete_addrs)." ports to delete",0,$UTILS_COLOR_LIGHT_CYAN);
 
 	for my $addr (sort @delete_addrs)
 	{
-		display($dbg_win,2,"deleting service_port->($addr)",0,$UTILS_COLOR_LIGHT_CYAN);
+		display($dbg_slots,2,"deleting service_port->($addr)",0,$UTILS_COLOR_LIGHT_CYAN);
 		delete $addrs->{$addr};
 	}
 	for my $addr (sort @new_addrs)
 	{
-		display($dbg_win,2,"adding service_port->{$addr}",0,$UTILS_COLOR_LIGHT_CYAN);
+		display($dbg_slots,2,"adding service_port->{$addr}",0,$UTILS_COLOR_LIGHT_CYAN);
 		$addrs->{$addr} = { addr=>$addr, found=>1, };
 	}
 
@@ -459,7 +460,7 @@ sub onIdle
 
 	if ($new_num_slots < $num_slots)
 	{
-		display($dbg_win,1,"num($num_slots) new_num($new_num_slots) removing ".(-$num_slots_added)." slots",0,$UTILS_COLOR_LIGHT_CYAN);
+		display($dbg_slots,1,"num($num_slots) new_num($new_num_slots) removing ".(-$num_slots_added)." slots",0,$UTILS_COLOR_LIGHT_CYAN);
 		for (my $i=$num_slots-1; $i>=0 && $i>$new_num_slots-1; $i--)
 		{
 			$this->deleteSlot($i);
@@ -469,7 +470,7 @@ sub onIdle
 	}
 	elsif ($new_num_slots > $num_slots)
 	{
-		display($dbg_win,1,"num($num_slots) new_num($new_num_slots)  adding $num_slots_added slots",0,$UTILS_COLOR_LIGHT_CYAN);
+		display($dbg_slots,1,"num($num_slots) new_num($new_num_slots)  adding $num_slots_added slots",0,$UTILS_COLOR_LIGHT_CYAN);
 		for (my $i=$num_slots; $i<$new_num_slots; $i++)
 		{
 			push @$slots,$this->createSlot($i);
@@ -490,7 +491,7 @@ sub createSlot
 	# create a new empty slot
 {
 	my ($this,$slot_num) = @_;
-	display($dbg_win+2,3,"createSlot($slot_num)");
+	display($dbg_slots+2,3,"createSlot($slot_num)");
 	my $ypos = $TOP_MARGIN + $slot_num * $LINE_HEIGHT;
 
 	my $num = 0;
@@ -522,7 +523,7 @@ sub createSlot
 sub deleteSlot
 {
 	my ($this,$slot_num) = @_;
-	display($dbg_win+1,3,"deleteSlot($slot_num)");
+	display($dbg_slots+1,3,"deleteSlot($slot_num)");
 	my $slots = $this->{slots};
 	my $slot = $$slots[$slot_num];
 	my $controls = $slot->{controls};

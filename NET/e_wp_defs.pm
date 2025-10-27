@@ -2,7 +2,7 @@
 # e_wp_defs.pm
 #---------------------------------------------
 
-package e_wp_defs;	# continued
+package e_wp_defs;	
 use strict;
 use warnings;
 use threads;
@@ -54,7 +54,7 @@ BEGIN
 		$CMD_EVERB
 		$CMD_FVERB
 
-		%PARSE_RULES
+		%WPMGR_PARSE_RULES
 
     );
 }
@@ -137,7 +137,7 @@ my $BUF_DATABASE = $WHAT_DATABASE | $CMD_BUFFER ;
 # This list includes every Request and Reply I have ever
 # seen between the E80 and RNS.  We only use some (most) of them.
 
-our %PARSE_RULES = (
+our %WPMGR_PARSE_RULES = (
 
 	# monadic
 

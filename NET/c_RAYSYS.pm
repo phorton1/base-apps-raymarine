@@ -510,8 +510,10 @@ sub handlePacket
 		$device_id = $KNOWN_DEVICES{$device_id} || $device_id;
  		my $version = unpack('V',substr($raw,12,4))/100;
 
-		# The ip and name are obvious, the ports are likely, and the service id
-		# is pure conjecture.
+		# The ip is obvious, the ports are maybe, the service id
+		# and name are pur conjecture. One time I saw something that
+		# looked like a legitimate name for the E80, but I now think it,
+		# and quite possibly the ports, are buffer junk.
 
 		my $ip = inet_ntoa(pack('N', unpack('V',substr($raw,16,4))));
 		my $listen_port = unpack('v',substr($raw,20,2));
@@ -528,14 +530,15 @@ sub handlePacket
 			$is_master == -1 ? "UNDEFINED" :
 			$is_master ? "MASTER" : "SLAVE";
 
-		# "RML Monito"
-
-		$this->addServicePort({
-			device_id => $device_id,
-			service_id => $service_id,
-			},
-			$ip,$svc_port) if $svc_port;
-
+		if (0)	# when I saw, and was trying to probe "RML Monito"
+		{
+			$this->addServicePort({
+				device_id => $device_id,
+				service_id => $service_id,
+				},
+				$ip,$svc_port) if $svc_port;
+		}
+		
 		my $found_device = $this->{devices}->{$device_id};
 		if ($found_device)
 		{

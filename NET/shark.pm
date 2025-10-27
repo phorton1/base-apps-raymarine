@@ -14,11 +14,16 @@ use Pub::WX::Main;
 use a_defs;
 use a_utils;
 use b_probe;
+
 use c_RAYSYS;
 use d_TRACK;
 use d_WPMGR;
 use d_FILESYS;
 use d_DBNAV;
+
+use e_WPMGR;
+use e_TRACK;
+
 use e_wp_api;
 use h_server;
 use s_serial;
@@ -34,9 +39,9 @@ my $dbg_shark = 0;
 
 my $WITH_SERIAL			= 1;
 my $WITH_RAYSYS			= 1;
-my $WITH_HTTP_SERVER	= 1;
+my $WITH_HTTP_SERVER	= 0;
 my $WITH_SNIFFER 		= 1;
-my $WITH_TCP_SCANNER	= 1;
+my $WITH_TCP_SCANNER	= 0;
 my $WITH_UDP_SCANNER	= 0;	# sniffer must be disabled for udp_scanner
 my $WITH_WX				= 1;
 
@@ -234,9 +239,9 @@ if ($WITH_SERIAL)
 	$serial->start();
 }
 
+c_RAYSYS->new();
 if ($WITH_RAYSYS)
 {
-	my $raysys = c_RAYSYS->new();
 	$raysys->start();
 }
 

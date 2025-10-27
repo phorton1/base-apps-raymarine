@@ -30,13 +30,15 @@ BEGIN
 		wakeup_e80
 
 		setConsoleColor
+		printConsole
+
 		clearLog
 		writeLog
 
 		sendUDPPacket
 		name16_hex
-		packRecord
-		unpackRecord
+		old_packRecord
+		old_unpackRecord
 		
 		degreeMinutes
 		northEastToLatLon
@@ -78,9 +80,11 @@ our $appGroup = 'raymarine';
 	# same data and temp directories for
 	# shark and raynet (to become 'raynet')
 
+# createSTDOUTSemaphore("sem$appGroup");
+$USE_SHARED_LOCK_SEM = 1;
 
 Pub::Utils::initUtils();
-createSTDOUTSemaphore("sem$appGroup");
+
 setStandardTempDir($appGroup);
 setStandardDataDir($appGroup);
 
@@ -151,6 +155,7 @@ our $console_color_values = { map { $console_color_names[$_] => $_ } 0..$#consol
 	# map takes a list and applies a block of code to each element, returning a new list.
 	# The block of code is within the {} and $_ is each element of the elist is presented to the right
 	# map {block} list
+
 
 
 #-------------------------------------------
@@ -226,6 +231,15 @@ sub setConsoleColor
 	Pub::Utils::_setColor($utils_color);
 }
 
+
+sub printConsole
+{
+	my ($color,$text) = @_;
+	lock($local_stdout_sem);
+	setConsoleColor($color) if $color;
+	print $text."\n";
+	setConsoleColor() if $color;
+}
 
 
 sub clearLog
@@ -446,7 +460,7 @@ sub parse_dwords
 		$byte_num = $offset % $BYTES_PER_LINE;
 		if ($offset && !$byte_num)
 		{
-			$full_packet .= $left_side.'  '.$right_side;
+			$full_packet .= $left_side.'# '.$right_side;
 			$full_packet .= ' >>>' if !$multi;
 			$full_packet .= "\n";
 			$left_side = '';
@@ -468,7 +482,7 @@ sub parse_dwords
 	}
 	if ($left_side)
 	{
-		$full_packet .= pad($left_side,$LEFT_SIZE).'  '.$right_side."\n";
+		$full_packet .= pad($left_side,$LEFT_SIZE).'# '.$right_side."\n";
 	}
 	return $full_packet;
 }
@@ -487,7 +501,7 @@ my $PACK_SIZE	= 1;	# the size (for moving to the next piece of buffer
 my $PACK_TYPE	= 2;	# the perl pack/unpack type
 
 
-sub unpackRecord
+sub old_unpackRecord
 	# All fields are packed/unpacked into the reccord so that
 	# 	the operations are symetrical and no information is lost
 	# $level is merely used to adjust what things show in debugging
@@ -500,7 +514,7 @@ sub unpackRecord
 		$rec_offset,		# REQUIRED offset into the buffer to parse at
 		$rec_size) = @_;	# the record size, if defined, will show the raw data bytes at $dbg+1
 	
-	display($dbg,0,"unpackRecord($name) offset($rec_offset) rec_size("._def($rec_size).")");
+	display($dbg,0,"old_unpackRecord($name) offset($rec_offset) rec_size("._def($rec_size).")");
 
 	my $data = substr($buffer,$rec_offset,$rec_size) if defined($rec_size);
 	display($dbg+1,1,"data=".unpack('H*',$data));
@@ -527,14 +541,14 @@ sub unpackRecord
 }
 
 
-sub packRecord
+sub old_packRecord
 	# builds the record WITHOUT the big_len field
 {
 	my ($dbg,$level,$name,$rec,$field_specs) = @_;
 	$rec ||= {};
 
-	display_hash($dbg+1,0,"packRecord($name)",$rec) if $dbg==0;
-	display($dbg+1,0,"packRecord($name)");
+	display_hash($dbg+1,0,"old_packRecord($name)",$rec) if $dbg==0;
+	display($dbg+1,0,"old_packRecord($name)");
 
 	my $data = '';
 	my $offset = 0;

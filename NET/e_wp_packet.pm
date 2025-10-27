@@ -114,6 +114,7 @@ sub parseWPMGRPacket
 
 {
 	my ($this,$with_text,$is_reply,$client_port,$raw_data) = @_;
+	$with_text ||= 0;
 	display($dbg_wpp,0,"parseWPMGRPacket($with_text,$is_reply,$client_port) ".unpack('H*',$raw_data));
 
 	# create the header
@@ -197,8 +198,8 @@ sub parseWPMGRPacket
 
 		# find rule, first by full command word, then by $dir | $cmd
 
-		my $rule = $PARSE_RULES{$command_word};
-		$rule = $PARSE_RULES{ $D | $C } if !$rule;
+		my $rule = $WPMGR_PARSE_RULES{$command_word};
+		$rule = $WPMGR_PARSE_RULES{ $D | $C } if !$rule;
 		if ($rule)
 		{
 			my $comment = '';
