@@ -46,16 +46,27 @@ sub new
 
 	$this->{parent} 	= $parent;
 	$this->{what} 		= $what;
+	$this->{cancelled}  = 0;
+
 	$this->{num_files} 	= $num_files;
 	$this->{num_dirs} 	= $num_dirs;
 	$this->{entry}      = '';
-	$this->{cancelled}  = 0;
 	$this->{files_done} = 0;
 	$this->{dirs_done} 	= 0;
 	$this->{sub_range}  = 0;
 	$this->{sub_done}   = 0;
 	$this->{sub_msg}    = '';
 
+	$this->{last_title} = '';
+	$this->{last_num_dirs}  = $num_dirs;
+	$this->{last_dirs_done} = 0;
+	$this->{last_num_files}  = $num_files;
+	$this->{last_files_done} = 0;
+	$this->{last_entry} = '';
+	$this->{last_sub_msg} = '';
+	$this->{last_sub_done} = 0;
+	$this->{last_sub_range} = 0;
+	
 	$this->{what_msg} 	= Wx::StaticText->new($this,-1,$what,	[20,10],  [170,20]);
 	$this->{file_msg} 	= Wx::StaticText->new($this,-1,'',		[200,10], [120,20]);
 	$this->{dir_msg} 	= Wx::StaticText->new($this,-1,'',		[340,10], [120,20]);
@@ -130,26 +141,70 @@ sub update
 	$title .= "and " if $num_files && $num_dirs;
 	$title .= "$num_dirs directories " if $num_dirs;
 
-	$this->SetLabel($title);
-	$this->{file_msg}->SetLabel("$files_done/$num_files files") if $num_files;
-	$this->{dir_msg}->SetLabel("$dirs_done/$num_dirs dirs") if $num_dirs;
-	$this->{entry_msg}->SetLabel($this->{entry});
-
-	$this->{gauge}->SetRange($num_files + $num_dirs);
-	$this->{gauge}->SetValue($files_done + $dirs_done);
-
-	$this->{sub_ctrl}->SetLabel($this->{sub_msg});
-
-	if ($this->{sub_range})
+	if ($this->{last_title} ne $title)
 	{
-		$this->{sub_gauge}->SetRange($this->{sub_range});
-		$this->{sub_gauge}->SetValue($this->{sub_done});
-		$this->{sub_gauge}->Show();
+		$this->SetLabel($title);
 	}
-	else
+	
+	if ($this->{last_num_files}  != $num_files ||
+		$this->{last_files_done} != $files_done)
 	{
-		$this->{sub_gauge}->Hide();
+		$this->{file_msg}->SetLabel("$files_done/$num_files files") if $num_files;
 	}
+	if ($this->{last_num_dirs}  != $num_dirs ||
+		$this->{last_dirs_done} != $dirs_done)
+	{
+		$this->{dir_msg}->SetLabel("$dirs_done/$num_dirs dirs") if $num_dirs;
+	}
+
+	if ($this->{last_entry} ne $this->{entry})
+	{
+		$this->{entry_msg}->SetLabel($this->{entry});
+	}
+
+
+	if ($this->{last_num_dirs} != $num_dirs ||
+		$this->{last_num_files} != $num_files)
+	{
+		$this->{gauge}->SetRange($num_files + $num_dirs);
+	}
+
+	if ($this->{last_dirs_done}  != $dirs_done ||
+		$this->{last_files_done} != $files_done)
+	{
+		$this->{gauge}->SetValue($files_done + $dirs_done);
+	}
+
+	if ($this->{last_sub_msg} ne $this->{sub_msg})
+	{
+		$this->{sub_ctrl}->SetLabel($this->{sub_msg});
+	}
+
+	if ($this->{last_sub_done} != $this->{sub_done} ||
+		$this->{last_sub_range} != $this->{sub_range})
+	{
+
+		if ($this->{sub_range})
+		{
+			$this->{sub_gauge}->SetRange($this->{sub_range});
+			$this->{sub_gauge}->SetValue($this->{sub_done});
+			$this->{sub_gauge}->Show();
+		}
+		else
+		{
+			$this->{sub_gauge}->Hide();
+		}
+	}
+
+	$this->{last_title} = $title;
+	$this->{last_num_dirs}  = $num_dirs;
+	$this->{last_dirs_done} = $dirs_done;
+	$this->{last_num_files}  = $num_files;
+	$this->{last_files_done} = $files_done;
+	$this->{last_entry} = $this->{entry};
+	$this->{last_sub_msg} = $this->{sub_msg};
+	$this->{last_sub_done} = $this->{sub_done};
+	$this->{last_sub_range} = $this->{sub_range};
 
 	Wx::App::GetInstance()->Yield();
 	display($dbg_fpd,0,"x_Progress::update() finished");

@@ -39,10 +39,6 @@ BEGIN
  	use Exporter qw( import );
 	our @EXPORT = qw(
 
-		$TRACK_DIR_RECV
-		$TRACK_DIR_SEND
-		$TRACK_DIR_INFO
-
 		$TRACK_CMD_GET_NTH
 		$TRACK_CMD_SET_NAME
 		$TRACK_CMD_GET_CUR2
@@ -76,7 +72,6 @@ BEGIN
 		$TRACK_REPLY_NAMED
 		$TRACK_REPLY_RENAMED
 
-		%TRACK_DIR_NAME
 		%TRACK_REPLY_NAME
 		%TRACK_REQUEST_NAME
 		%TRACK_PARSE_RULES 
@@ -222,20 +217,8 @@ sub queueTRACKCommand
 #----------------------------------
 # TRACK PROTOCOL
 #-----------------------------------
-# Direction Nibble
-
-our $TRACK_DIR_RECV		= 0x000;
-our $TRACK_DIR_SEND		= 0x100;
-our $TRACK_DIR_INFO		= 0x200;
-
-our %TRACK_DIR_NAME = (
-	$TRACK_DIR_RECV => 'recv',
-	$TRACK_DIR_SEND => 'send',
-	$TRACK_DIR_INFO => 'info',
-);
-
-
 # Command Nibble
+
 # E80 closes TCP connection on 0x12 and higher
 # The commands nibbles have completely different semantics in
 # Requests, when used as commands, as opposed to Replies, when
@@ -366,47 +349,47 @@ our %TRACK_PARSE_RULES = (
 
 	# Replies
 
-	$TRACK_DIR_RECV | $TRACK_REPLY_CONTEXT 		=>	[ 'success', 'is_point' ],		# header for get nth track point
-	$TRACK_DIR_RECV | $TRACK_REPLY_BUFFER 		=>	[ 'success' ],					# header for get 'mta' current track
-	$TRACK_DIR_RECV | $TRACK_REPLY_END 			=>	[ 'success' ],					# header for get 'full' current track
-	$TRACK_DIR_RECV	| $TRACK_REPLY_CURRENT		=>  [ 'success' ],					# reply to 0x04=SAVE
-	$TRACK_DIR_RECV | $TRACK_REPLY_TRACK 		=>	[ 'success' ],					# header for track replies
-	$TRACK_DIR_RECV | $TRACK_REPLY_MTA 			=>	[ 'success' ],					# header for mta replies
-	$TRACK_DIR_RECV	| $TRACK_REPLY_ERASED		=>  [ 'success' ],					# reply to 0x07=ERASE
-	$TRACK_DIR_RECV | $TRACK_REPLY_DICT 		=>	[ 'success', 'is_dict'],		# header for dictionary replies
-	$TRACK_DIR_RECV	| $TRACK_REPLY_STATE		=>  [ 'stopable',],					# reply to 0x0d Tracking state inquiry
-	$TRACK_DIR_RECV	| $TRACK_REPLY_NAMED		=>  [ 'success' ],					# confirms name set (in an event packet) with sequence number
-	$TRACK_DIR_RECV	| $TRACK_REPLY_RENAMED		=>  [ 'success' ],					# confirms name change (as RECV with RECV CHANGED)
+	$DIRECTION_RECV | $TRACK_REPLY_CONTEXT 		=>	[ 'success', 'is_point' ],		# header for get nth track point
+	$DIRECTION_RECV | $TRACK_REPLY_BUFFER 		=>	[ 'success' ],					# header for get 'mta' current track
+	$DIRECTION_RECV | $TRACK_REPLY_END 			=>	[ 'success' ],					# header for get 'full' current track
+	$DIRECTION_RECV	| $TRACK_REPLY_CURRENT		=>  [ 'success' ],					# reply to 0x04=SAVE
+	$DIRECTION_RECV | $TRACK_REPLY_TRACK 		=>	[ 'success' ],					# header for track replies
+	$DIRECTION_RECV | $TRACK_REPLY_MTA 			=>	[ 'success' ],					# header for mta replies
+	$DIRECTION_RECV	| $TRACK_REPLY_ERASED		=>  [ 'success' ],					# reply to 0x07=ERASE
+	$DIRECTION_RECV | $TRACK_REPLY_DICT 		=>	[ 'success', 'is_dict'],		# header for dictionary replies
+	$DIRECTION_RECV	| $TRACK_REPLY_STATE		=>  [ 'stopable',],					# reply to 0x0d Tracking state inquiry
+	$DIRECTION_RECV	| $TRACK_REPLY_NAMED		=>  [ 'success' ],					# confirms name set (in an event packet) with sequence number
+	$DIRECTION_RECV	| $TRACK_REPLY_RENAMED		=>  [ 'success' ],					# confirms name change (as RECV with RECV CHANGED)
 
 	# events
-	$TRACK_DIR_RECV	| $TRACK_REPLY_CHANGED		=> 	[ 'no_seq', 'uuid','byte' ],
-	$TRACK_DIR_RECV	| $TRACK_REPLY_EVENT		=> 	[ 'no_seq', 'byte' ],
+	$DIRECTION_RECV	| $TRACK_REPLY_CHANGED		=> 	[ 'no_seq', 'uuid','byte' ],
+	$DIRECTION_RECV	| $TRACK_REPLY_EVENT		=> 	[ 'no_seq', 'byte' ],
 	# infos
-	$TRACK_DIR_INFO	| $TRACK_REPLY_CONTEXT  	=>	[ 'uuid','context_bits' ],		# uuid context for the reply; bits 01n
-	$TRACK_DIR_INFO	| $TRACK_REPLY_BUFFER		=> 	[ 'buffer' ],					# dictionary, MTA, or Track depending on state
-	$TRACK_DIR_INFO	| $TRACK_REPLY_END			=> 	[ 'track_uuid' ],				# actually carries mta_uuid, but sets is_track=1
-	$TRACK_DIR_INFO	| $TRACK_REPLY_RENAMED		=>  [ 'success' ],					# confirms name change (in an event packet) with sequence number
+	$DIRECTION_INFO	| $TRACK_REPLY_CONTEXT  	=>	[ 'uuid','context_bits' ],		# uuid context for the reply; bits 01n
+	$DIRECTION_INFO	| $TRACK_REPLY_BUFFER		=> 	[ 'buffer' ],					# dictionary, MTA, or Track depending on state
+	$DIRECTION_INFO	| $TRACK_REPLY_END			=> 	[ 'track_uuid' ],				# actually carries mta_uuid, but sets is_track=1
+	$DIRECTION_INFO	| $TRACK_REPLY_RENAMED		=>  [ 'success' ],					# confirms name change (in an event packet) with sequence number
 
 	# Requests
 
-	$TRACK_DIR_SEND | $TRACK_CMD_GET_NTH		=> 	[ 'point_number' ],
-	$TRACK_DIR_SEND | $TRACK_CMD_SET_NAME		=> 	[ 'name16' ],
-	$TRACK_DIR_SEND | $TRACK_CMD_GET_CUR2		=> 	[],
-	$TRACK_DIR_SEND | $TRACK_CMD_GET_CUR		=> 	[],
-	$TRACK_DIR_SEND | $TRACK_CMD_SAVE			=> 	[ 'no_seq', ],
-	$TRACK_DIR_SEND | $TRACK_CMD_GET_TRACK 		=> 	[ 'uuid', ],
-	$TRACK_DIR_SEND | $TRACK_CMD_GET_MTA		=> 	[ 'uuid', ],
-	$TRACK_DIR_SEND | $TRACK_CMD_ERASE			=> 	[ 'uuid', ],
-	$TRACK_DIR_SEND | $TRACK_CMD_RENAME			=> 	[ 'uuid', 'name16' ],
-	$TRACK_DIR_SEND | $TRACK_CMD_START			=> 	[ 'no_seq', ],
-	$TRACK_DIR_SEND | $TRACK_CMD_STOP			=> 	[ 'no_seq', ],
-	$TRACK_DIR_SEND | $TRACK_CMD_DISCARD		=> 	[ 'no_seq', ],
-	$TRACK_DIR_SEND | $TRACK_CMD_GET_DICT		=> 	[],
-	$TRACK_DIR_SEND | $TRACK_CMD_GET_STATE		=> 	[],
-    # $TRACK_DIR_SEND | $TRACK_CMD_USELESS_E	=> 	[],
-    # $TRACK_DIR_SEND | $TRACK_CMD_NOREPLY_F	=> 	[],
-	$TRACK_DIR_SEND | $TRACK_CMD_BUMP_NAME		=> 	[ 'name16', ],
-	# $TRACK_DIR_SEND | $TRACK_CMD_NO_REPLY_11	=>  [],
+	$DIRECTION_SEND | $TRACK_CMD_GET_NTH		=> 	[ 'point_number' ],
+	$DIRECTION_SEND | $TRACK_CMD_SET_NAME		=> 	[ 'name16' ],
+	$DIRECTION_SEND | $TRACK_CMD_GET_CUR2		=> 	[],
+	$DIRECTION_SEND | $TRACK_CMD_GET_CUR		=> 	[],
+	$DIRECTION_SEND | $TRACK_CMD_SAVE			=> 	[ 'no_seq', ],
+	$DIRECTION_SEND | $TRACK_CMD_GET_TRACK 		=> 	[ 'uuid', ],
+	$DIRECTION_SEND | $TRACK_CMD_GET_MTA		=> 	[ 'uuid', ],
+	$DIRECTION_SEND | $TRACK_CMD_ERASE			=> 	[ 'uuid', ],
+	$DIRECTION_SEND | $TRACK_CMD_RENAME			=> 	[ 'uuid', 'name16' ],
+	$DIRECTION_SEND | $TRACK_CMD_START			=> 	[ 'no_seq', ],
+	$DIRECTION_SEND | $TRACK_CMD_STOP			=> 	[ 'no_seq', ],
+	$DIRECTION_SEND | $TRACK_CMD_DISCARD		=> 	[ 'no_seq', ],
+	$DIRECTION_SEND | $TRACK_CMD_GET_DICT		=> 	[],
+	$DIRECTION_SEND | $TRACK_CMD_GET_STATE		=> 	[],
+    # $DIRECTION_SEND | $TRACK_CMD_USELESS_E	=> 	[],
+    # $DIRECTION_SEND | $TRACK_CMD_NOREPLY_F	=> 	[],
+	$DIRECTION_SEND | $TRACK_CMD_BUMP_NAME		=> 	[ 'name16', ],
+	# $DIRECTION_SEND | $TRACK_CMD_NO_REPLY_11	=>  [],
 
 
 );
@@ -636,7 +619,7 @@ sub createMsg
 	my $cmd_name = $TRACK_REQUEST_NAME{$cmd} || 'HUH?';
 	display($dbg,0,"createMsg($seq,$cmd,$uuid,$param) $cmd_name");
 	my $data =
-		pack('v',$cmd | $TRACK_DIR_SEND).
+		pack('v',$cmd | $DIRECTION_SEND).
 		pack('v',$TRACK_SERVICE_ID);
 	$data .= pack('V',$seq) if $seq;
 	$data .= pack('H*',$uuid) if $uuid;

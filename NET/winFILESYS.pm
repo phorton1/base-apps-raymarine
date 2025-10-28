@@ -27,7 +27,7 @@ use w_resources;
 use x_Progress;
 use base qw(Pub::WX::Window);
 
-my $dbg_win = -1;		# window basics
+my $dbg_win = 1;		# window basics
 my $dbg_sort = 1;		# sorting
 my $dbg_dl = -1;			# downloads
 my $dbg_rr = -1;			# request and replies
@@ -192,7 +192,7 @@ sub onDoubleClick
 
     else
 	{
-		$this->downloadOneFile($name);
+		$this->downloadOneFile($entry);
 	}
 }
 
@@ -230,7 +230,7 @@ sub setPendingRequest
 	$this->{pending_request} = $request;
 	$this->{command_ctrl}->SetLabel($request);
 	$this->{command_ctrl}->SetForegroundColour(wxBLACK);
-	$this->{last_state} = $FILE_STATE_IDLE;
+	# $this->{last_state} = $FILE_STATE_IDLE;
 		# make sure we notice a change to $FILE_STATE_COMPLETE or ERROR
 		# as we might have left it at FILE_STATE_COMPLETE
 }
@@ -250,10 +250,11 @@ sub changeDirectory
 
 sub downloadOneFile
 {
-	my ($this,$name) = @_;
+	my ($this,$entry) = @_;
 	my $filesys = $this->{filesys};
 	return error("no filesys") if !$filesys;
 
+	my $name = $entry->{name};
 	my $full_name = "$DEFAULT_SAVE_DIR/$name";
 	my $d = Wx::FileDialog->new($this,
 		"Save As...",
@@ -264,6 +265,18 @@ sub downloadOneFile
 	my $rslt = $d->ShowModal();
 	$d->Destroy();
 	return if ($rslt == wxID_CANCEL);
+
+	my $size = $entry->{size};
+	if ($size > 1000000)
+	{
+		my $progress = $this->{progress} = x_Progress->new(
+			$this,
+			'download',
+			1,
+			0);
+		# $progress->setEntry($full_name);
+		$progress->setSubRange(1000,$full_name);
+	}
 
 	my $dest = $d->GetPath();
 	my $src = appendPath($this->{cur_path},$name);
@@ -330,7 +343,7 @@ sub completeRequest
 		my ($src,$dest) = ($1,$2,$3);
 
 		my $recurse = $this->{recurse};
-		my $progress = $recurse->{progress};
+		my $progress = $this->{progress};
 		my $stage = $recurse->{stage};
 		my $what_name = $stage ? 'file' : 'dir';
 		my $array_name = $what_name.'s';
@@ -472,6 +485,8 @@ sub completeRequest
 		my $row = 0;
 		my $entries = [];
 		my $content = $filesys->{file_content};
+		print "got content: $content\n";
+		
 		for my $line (split(/\n/,$content))
 		{
 			my ($attr,$name) = split(/\t/,$line);
@@ -533,6 +548,8 @@ sub completeRequest
 		printVarToFile(1,$dest,$content,1);
 		$this->{command_ctrl}->SetLabel("len($len) $dest");
 		$this->{pending_request} = '';
+		$this->{progress}->Destroy() if $this->{progress};
+		$this->{progress} = undef;
 	}
 	else
 	{
@@ -726,6 +743,7 @@ sub downloadSelected
 
 	my $default_ug = '';
 	my $default_mode = '';
+	my $single_entry = '';
 
     for (my $i=0; $i<$num; $i++)
     {
@@ -733,6 +751,7 @@ sub downloadSelected
         {
             my $row = $ctrl->GetItemData($i);
             my $entry = $this->{entries}->[$row];
+			$single_entry = $entry;
 			my $name = $entry->{name};
 			next if $name eq $ROOT_NAME || $name eq $UP_NAME;
 			
@@ -761,7 +780,7 @@ sub downloadSelected
     }
     elsif ($num_dirs == 0 && $num_files == 1)
     {
-		$this->downloadOneFile($names[0]);
+		$this->downloadOneFile($single_entry);
 		return;
     }
     elsif ($num_files == 0)
@@ -807,7 +826,7 @@ sub downloadSelected
 
 	# start the recursive file download
 	
-	my $progress = x_Progress->new(
+	$this->{progress} = x_Progress->new(
 		$this,
 		'download',
 		$num_files,
@@ -819,8 +838,7 @@ sub downloadSelected
 		dir_idx => 0,
 		file_idx => 0,
 		dirs => $dirs,
-		files => $files,
-		progress => $progress };
+		files => $files };
 
 }   # doCommandSelected()
 
@@ -834,7 +852,7 @@ sub doOneRecurse
 	my $recurse = $this->{recurse};
 	$recurse->{busy} = 1;
 
-	my $progress = $recurse->{progress};
+	my $progress = $this->{progress};
 	my $stage = $recurse->{stage};
 	my $what_name = $stage ? 'file' : 'dir';
 
@@ -883,20 +901,56 @@ sub onIdle
 		$this->{started} = 1;
 		display($dbg_win,0,"getting root directory",0,$UTILS_COLOR_LIGHT_MAGENTA);
 		$this->changeDirectory($ROOT_PATH);
+		return;
 	}
 
-	elsif ($state != $this->{last_state})
+	my $progress = $this->{progress};
+	my $recurse = $this->{recurse};
+	my $do_progress = !$recurse || $recurse->{stage};
+	if ($progress)
 	{
-		display($dbg_win,0,"onIdle() state($this->{last_state}) changed to $state");
+		if ($progress->{cancelled})
+		{
+			$this->clearEverything($filesys);
+			$this->{command_ctrl}->SetLabel("CANCELLED BY USER");
+			error("Cancelled by User");
+			$progress->Destroy();
+			return;
+		}
+
+		my $got = $filesys->{got_len} || 0;
+		my $total = $filesys->{file_total} || 0;
+
+		if (!$got || !$total)
+		{
+			$progress->updateSubRange(0);
+		}
+		else
+		{
+			# fudge 1/20th for problem with bar disappearing
+			# before the file is really done
+			my $thousandths = int(($got / $total) * 1000);
+			$progress->updateSubRange($thousandths);
+		}
+	}
+
+	if ($state != $this->{last_state})
+	{
 		my $name = $FILE_STATE_NAME{$state};
-		$this->{status_ctrl}->SetLabel($name);
-		$this->{status_ctrl}->SetForegroundColour(
-			$state == $FILE_STATE_ILLEGAL ?	 $wx_color_light_grey :
-			$state == $FILE_STATE_ERROR ? 	 $wx_color_red :
-			$state == $FILE_STATE_COMPLETE ? $wx_color_green :
-			$state == $FILE_STATE_START ?  	 $wx_color_blue :
-			$state == $FILE_STATE_BUSY ?  	 $wx_color_cyan :
-			wxBLACK );
+		my $old_name = $FILE_STATE_NAME{$this->{last_state}};
+		display($dbg_win,0,"onIdle() state($old_name) changed to $name");
+
+		if ($state != $FILE_STATE_BUSY)
+		{
+			$this->{status_ctrl}->SetLabel($name);
+			$this->{status_ctrl}->SetForegroundColour(
+				$state == $FILE_STATE_ILLEGAL ?	 $wx_color_light_grey :
+				$state == $FILE_STATE_ERROR ? 	 $wx_color_red :
+				$state == $FILE_STATE_COMPLETE ? $wx_color_green :
+				$state == $FILE_STATE_START ?  	 $wx_color_blue :
+				$state == $FILE_STATE_BUSY ?  	 $wx_color_cyan :
+				wxBLACK );
+		}
 
 		if ($state == $FILE_STATE_COMPLETE)
 		{
@@ -910,47 +964,24 @@ sub onIdle
 			$filesys->clearFileRequestError();
 			$state = $filesys->{file_state};
 		}
-
 		$this->{last_state} = $state;
+		return;
 	}
-	elsif ($this->{sizes_needed})
+
+	if ($this->{sizes_needed})
 	{
 		$this->getFileSizes();
+		return;
 	}
-	elsif ($this->{recurse} &&
-		   !$this->{recurse}->{busy} &&
-		   !$this->{pending_request})
+
+	if ($this->{recurse} &&
+		!$this->{recurse}->{busy} &&
+		!$this->{pending_request})
 	{
 		$this->doOneRecurse();
+		return;
 	}
-	elsif ($this->{recurse})
-	{
-		my $recurse = $this->{recurse};
-		my $progress = $recurse->{progress};
-		if ($progress->{cancelled})
-		{
-			$this->{pending_request} = '';
-			$this->{recurse} = undef;
-			$this->{command_ctrl}->SetLabel("CANCELLED BY USER");
-			error("Cancelled by User");
-			$progress->Destroy();
-			return;
-		}
-		if ($recurse->{stage})
-		{
-			my $num = $filesys->{file_num_buffers};
-			my $cur = $filesys->{file_cur_buf_num};
-			if ($cur == 1)
-			{
-				$progress->updateSubRange(1000);
-			}
-			else
-			{
-				my $thousandths = int(($cur / ($num-1)) * 1000);
-				$progress->updateSubRange($thousandths);
-			}
-		}
-	}
+
 
 }
 
@@ -975,8 +1006,10 @@ sub clearEverything
 	$this->{cur_path} = '';
 	$this->{last_state} = $FILE_STATE_ILLEGAL;
 	$this->{pending_request} = '';
-	$this->{recurse}->{progress}->Destroy() if $this->{recurse} && $this->{recurse}->{progress};
 	$this->{recurse} = undef;
+
+	$this->{progress}->Destroy() if $this->{progress};
+	$this->{progress} = undef;
 }
 
 
@@ -996,9 +1029,9 @@ sub checkFilesysPorts
 			'NO FILESYS service_port!!';
 		if ($this->{disconnect_reported} ne $msg)
 		{
-			display($dbg_win,0,"No Filesys or not running",0,$UTILS_COLOR_LIGHT_MAGENTA);
+			warning($dbg_win-1,0,"No Filesys or not running",0,$UTILS_COLOR_LIGHT_MAGENTA);
 			$this->{disconnect_reported} = $msg;
-			$filesys->{file_state} = $FILE_STATE_IDLE if $filesys;
+			$filesys->setState($FILE_STATE_IDLE) if $filesys;
 
 			$this->clearEverything($filesys);
 			$this->{filesys_ports} = {};

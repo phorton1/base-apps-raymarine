@@ -166,11 +166,11 @@ sub parseWPMGRPacket
 		my $D = $command_word & 0xf00;	# substr($hex_data,3,1);
 		my $W = $command_word & 0xf0;	# substr($hex_data,0,1);
 		my $C = $command_word & 0xf;	# substr($hex_data,1,1);
-		my $dir = $NAV_DIRECTION{$D};
+		my $dir = $DIRECTION_NAME{$D};
 		my $command = $NAV_COMMAND{$C};
 		my $what = $NAV_WHAT{$W};
 
-		$rec->{what} = $W if $W || $D != $DIR_INFO;
+		$rec->{what} = $W if $W || $D != $DIRECTION_INFO;
 		my $show_what = $NAV_WHAT{$rec->{what}};
 
 		display($dbg_wpp,1,"PART($num) offset($offset) dir($dir) command($command) what($what) context($show_what) dict($rec->{is_dict}) uuid($rec->{uuid})");

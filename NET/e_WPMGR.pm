@@ -43,7 +43,7 @@ sub setContext
 	my $D = $cmd_word & 0xf00;
 	my $W = $cmd_word & 0xf0;
 	$packet->{cmd_word} = $cmd_word;
-	$packet->{what} = $W if $W || $D != $DIR_INFO;
+	$packet->{what} = $W if $W || $D != $DIRECTION_INFO;
 }
 
 
@@ -127,7 +127,7 @@ sub parseMessage
 	my $D = $cmd_word & 0xf00;
 	my $W = $cmd_word & 0xf0;
 	my $C = $cmd_word & 0xf;
-	my $dir_name = $NAV_DIRECTION{$D};
+	my $dir_name = $DIRECTION_NAME{$D};
 	my $what_name = $NAV_WHAT{$W};
 	my $cmd_name = $NAV_COMMAND{$C};
 

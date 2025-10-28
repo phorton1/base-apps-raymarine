@@ -9,6 +9,7 @@ use threads;
 use threads::shared;
 use Time::HiRes qw(time sleep);
 use Pub::Utils;
+use a_defs;
 my $dbg_wpp = -1;
 
 
@@ -24,13 +25,8 @@ BEGIN
 		$API_DEL_ITEM
 		$API_MOD_ITEM
 
-		%NAV_DIRECTION
 		%NAV_WHAT
 		%NAV_COMMAND
-
-		$DIR_RECV
-		$DIR_SEND
-		$DIR_INFO
 
 		$WHAT_WAYPOINT
 		$WHAT_ROUTE
@@ -67,10 +63,6 @@ our $API_DEL_ITEM 	= 4;
 our $API_MOD_ITEM	= 5;
 
 
-our $DIR_RECV		= 0x000;
-our $DIR_SEND		= 0x100;
-our $DIR_INFO		= 0x200;
-
 our $WHAT_WAYPOINT	= 0x00;
 our $WHAT_ROUTE		= 0x40;
 our $WHAT_GROUP		= 0x80;
@@ -93,12 +85,6 @@ our $CMD_COUNT     	= 0xd;
 our $CMD_EVERB    	= 0xe;
 our $CMD_FVERB     	= 0xf;
 
-
-our %NAV_DIRECTION = (
-	$DIR_RECV => 'recv',
-	$DIR_SEND => 'send',
-	$DIR_INFO => 'info',
-);
 
 our %NAV_WHAT = (
 	$WHAT_WAYPOINT  => 'WAYPOINT',
@@ -141,52 +127,52 @@ our %WPMGR_PARSE_RULES = (
 
 	# monadic
 
-	$DIR_SEND	| $CMD_COUNT	=> [],		# returns NUMBER; can this count Routes & Groups?
-	$DIR_SEND	| $CMD_EVERB	=> [],		# returns AVERB; only ever seen $WHAT_GROUP
-	$DIR_SEND	| $CMD_CONTEXT  => [],		# both ways, establishes WHAT context;
+	$DIRECTION_SEND	| $CMD_COUNT	=> [],		# returns NUMBER; can this count Routes & Groups?
+	$DIRECTION_SEND	| $CMD_EVERB	=> [],		# returns AVERB; only ever seen $WHAT_GROUP
+	$DIRECTION_SEND	| $CMD_CONTEXT  => [],		# both ways, establishes WHAT context;
 
-	$DIR_SEND	| $CTX_DATABASE => [],		# WHAT_DATABASE is a special case
-	$DIR_SEND	| $LST_DATABASE => [],		# WHAT_DATABASE is a special case
-	$DIR_SEND	| $BUF_DATABASE => [],		# WHAT_DATABASE is a special case
+	$DIRECTION_SEND	| $CTX_DATABASE => [],		# WHAT_DATABASE is a special case
+	$DIRECTION_SEND	| $LST_DATABASE => [],		# WHAT_DATABASE is a special case
+	$DIRECTION_SEND	| $BUF_DATABASE => [],		# WHAT_DATABASE is a special case
 
 	# single dword parameter
 	# CMD_EVENT consists of a series of messages, starting with
 	# FIND CMD_EVENT(0)'s ending with WHAT CMD_EVENT(1)'s bracketing
 	# zero or more MODIFY messages
 
-	$DIR_RECV	| $CMD_EVENT	=> [ 'evt_flag'  ],
+	$DIRECTION_RECV	| $CMD_EVENT	=> [ 'evt_flag'  ],
 		# Does not have a sequence number, uhm,
 		# That dword is 0 or 1 inicating start, and end of an event series.
 		# Indicates, generrally that WHAT items/dictinoaries have changed.
 		# Brackets MODIFY messages with more detail about what changed.
 
-	$DIR_RECV	| $CMD_NUMBER	=> [ 'db_count'	],		# count of used items (per WHAT?)
-	$DIR_RECV	| $CTX_DATABASE	=> [ 'db_version' ],	# DATABASE is a specific non standard reply
-	$DIR_RECV	| $CMD_AVERB	=> [ 'amagic'	],		# non standard, not understood reply
+	$DIRECTION_RECV	| $CMD_NUMBER	=> [ 'db_count'	],		# count of used items (per WHAT?)
+	$DIRECTION_RECV	| $CTX_DATABASE	=> [ 'db_version' ],	# DATABASE is a specific non standard reply
+	$DIRECTION_RECV	| $CMD_AVERB	=> [ 'amagic'	],		# non standard, not understood reply
 
-	$DIR_RECV	| $CMD_CONTEXT	=> [ 'success'  ],  	# can establish WHAT context
-	$DIR_RECV	| $CMD_LIST		=> [ 'success'	],		# establishes WHAT context
-	$DIR_RECV	| $CMD_DATA		=> [ 'success'	],		# establishes WHAT context
-	$DIR_RECV	| $CMD_ITEM		=> [ 'success'	],		# reply to a successful delete (from sending UUID)
-	$DIR_RECV	| $CMD_BUFFER	=> [ 'success'	],		# a response to an EXIST uuid call to delete a folder (no actual buffer)
-	$DIR_RECV	| $CMD_EXIST	=> [ 'success'	],		# reply to a successful delete (from sending UUID)
+	$DIRECTION_RECV	| $CMD_CONTEXT	=> [ 'success'  ],  	# can establish WHAT context
+	$DIRECTION_RECV	| $CMD_LIST		=> [ 'success'	],		# establishes WHAT context
+	$DIRECTION_RECV	| $CMD_DATA		=> [ 'success'	],		# establishes WHAT context
+	$DIRECTION_RECV	| $CMD_ITEM		=> [ 'success'	],		# reply to a successful delete (from sending UUID)
+	$DIRECTION_RECV	| $CMD_BUFFER	=> [ 'success'	],		# a response to an EXIST uuid call to delete a folder (no actual buffer)
+	$DIRECTION_RECV	| $CMD_EXIST	=> [ 'success'	],		# reply to a successful delete (from sending UUID)
 
 	# success & uuid
 
-	$DIR_RECV	| $CMD_UUID		=> [ 'success',	'uuid' ],	# reply to FIND
+	$DIRECTION_RECV	| $CMD_UUID		=> [ 'success',	'uuid' ],	# reply to FIND
 
 	# single parameter
 
-	$DIR_SEND	| $CMD_ITEM		=> [ 'uuid'		],		# atomic command, returns DATA;
-	$DIR_SEND	| $CMD_MODIFY 	=> [ 'uuid'		],		# I send this with no bits to start create_item()
-	$DIR_SEND	| $CMD_UUID		=> [ 'uuid'		],		# REALLY seems to mean 'delete' on a send, and info on a recv
-	$DIR_INFO	| $CMD_LIST		=> [ 'uuid'		],		# 00000000 00000000 = send/receive for listing indexes
-	$DIR_INFO	| $CMD_LIST		=> [ 'uuid'		],		# received with uuid at end of DATA series
-	$DIR_SEND	| $CMD_FIND		=> [ 'name16' 	],		# atomic command, returns UUID
+	$DIRECTION_SEND	| $CMD_ITEM		=> [ 'uuid'		],		# atomic command, returns DATA;
+	$DIRECTION_SEND	| $CMD_MODIFY 	=> [ 'uuid'		],		# I send this with no bits to start create_item()
+	$DIRECTION_SEND	| $CMD_UUID		=> [ 'uuid'		],		# REALLY seems to mean 'delete' on a send, and info on a recv
+	$DIRECTION_INFO	| $CMD_LIST		=> [ 'uuid'		],		# 00000000 00000000 = send/receive for listing indexes
+	$DIRECTION_INFO	| $CMD_LIST		=> [ 'uuid'		],		# received with uuid at end of DATA series
+	$DIRECTION_SEND	| $CMD_FIND		=> [ 'name16' 	],		# atomic command, returns UUID
 
 	# uuid and bits
 
-	$DIR_RECV	| $CMD_MODIFY	=> [ 'uuid', 'mod_bits' ],
+	$DIRECTION_RECV	| $CMD_MODIFY	=> [ 'uuid', 'mod_bits' ],
 		# Does not have a sequence number.
 		# Received alone, or within EVENT series
 		# CMD_MODIFY (which doesn't have a sequence number) are out of band messages where bits
@@ -194,19 +180,19 @@ our %WPMGR_PARSE_RULES = (
 		#		1 = deleted
 		#		2 = changed
 
-	$DIR_INFO	| $CMD_CONTEXT	=> [ 'uuid', 'context_bits' ],
+	$DIRECTION_INFO	| $CMD_CONTEXT	=> [ 'uuid', 'context_bits' ],
 		# 00000000 00000000 1n00000000	1n indicates DICTIONARY, n is 9,a,c
 		# zzzzzzzz zzzzzzzz 0n00000000	0n indicates ITEM		 n is 0,1,2,3
 		# zzzzzzzz zzzzzzzz 0300000000	I send for create_item() and modify_item()
 
 	# leading magic number and uuid
 
-	$DIR_SEND	| $CMD_EXIST	=> [ 'magic', 'uuid' ],		# atomic command BUT required for modify_item()
-	$DIR_SEND	| $CMD_DATA		=> [ 'magic', 'uuid' ],		# I use this, after EXIST, for modify_item
+	$DIRECTION_SEND	| $CMD_EXIST	=> [ 'magic', 'uuid' ],		# atomic command BUT required for modify_item()
+	$DIRECTION_SEND	| $CMD_DATA		=> [ 'magic', 'uuid' ],		# I use this, after EXIST, for modify_item
 		# 07000000 	cccccccc cccf0100
 		# 0a000000 	dc82a921 f567e68e 	deleting a folder
 
-	$DIR_INFO 	| $CMD_BUFFER 	=> [ 'buffer' ],
+	$DIRECTION_INFO 	| $CMD_BUFFER 	=> [ 'buffer' ],
 		# $CMD_BUFFER is handled specially
 		# bits(1n00000) = dict_buffer_data	on send, CONTEXT bits(0x1n) the buffer is some kind of allocation scheme
 		#									on recv, CONTEXT bits(0x1n) indicatss an INDEX (or dictionary if you prefer)

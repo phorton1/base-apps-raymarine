@@ -86,7 +86,7 @@ sub parseMessage
 
 	my $cmd_name = $packet->{is_reply} ? $TRACK_REPLY_NAME{$cmd} : $TRACK_REQUEST_NAME{$cmd};
 	$cmd_name ||= 'WHO CARES?';
-	my $dir_name = $TRACK_DIR_NAME{$dir};
+	my $dir_name = $DIRECTION_NAME{$dir};
 	display($dbg_tp+2,1,"e_TRACK::parseMessage() dir($dir)=$dir_name cmd($cmd)=$cmd_name");;
 
 	my $pad = pad('',9);

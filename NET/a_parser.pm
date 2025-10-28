@@ -316,16 +316,5 @@ use a_defs;
 use a_utils;
 use base qw(a_parser);
 
-package e_FILESYS;
-use strict;
-use warnings;
-use threads;
-use threads::shared;
-use Pub::Utils;
-use a_defs;
-use a_utils;
-use base qw(a_parser);
-
-
 
 1;

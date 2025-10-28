@@ -185,10 +185,12 @@ our $wx_color_medium_grey   = Wx::Colour->new(0xC0, 0xC0, 0xC0);
 # methods
 #---------------------------------
 
+my $dbg_udp_send = 1;
+
 sub sendUDPPacket
 {
     my ($name, $dest_ip, $dest_port, $packet) = @_;
-    display(0, 1, "sending $dest_ip:$dest_port $name packet: " . unpack('H*', $packet));
+    display($dbg_udp_send, 1, "sending $dest_ip:$dest_port $name packet: " . unpack('H*', $packet));
 
     if (!$LOCAL_UDP_SOCKET)
     {
@@ -239,6 +241,7 @@ sub printConsole
 	setConsoleColor($color) if $color;
 	print $text."\n";
 	setConsoleColor() if $color;
+	# writeLog($text."\n","rns_startup.log");
 }
 
 

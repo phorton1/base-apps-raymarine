@@ -1,6 +1,20 @@
 #---------------------------------------------
 # shark.pm
 #---------------------------------------------
+# I'm moving in a lot of directions at once.
+#   - angling to directly read encryped navionics card
+#   - thinking of ripping the card with sniffer as a fallback
+#   - porting FILESYS to new parser architecture with bifurcation and all that entails for the quirks
+#   - gotta do DBNAV too, at least minimally
+#   - incorporate new parser arch into b_sock and existing services
+#
+#   - simplify new parser (monitoring) arch
+#   - implement user interfaces for controlling monitoring
+#   - possibly UI's for WPMGR and TRACK
+#   - possible UI for sniffer
+#   - still wanting to probe and learn Database
+#	- still want generalized record and playback capabilities for spoofing
+
 
 package shark;
 use strict;
@@ -40,7 +54,7 @@ my $dbg_shark = 0;
 my $WITH_SERIAL			= 1;
 my $WITH_RAYSYS			= 1;
 my $WITH_HTTP_SERVER	= 0;
-my $WITH_SNIFFER 		= 1;
+my $WITH_SNIFFER 		= 0;
 my $WITH_TCP_SCANNER	= 0;
 my $WITH_UDP_SCANNER	= 0;	# sniffer must be disabled for udp_scanner
 my $WITH_WX				= 1;

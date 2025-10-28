@@ -18,6 +18,7 @@ my $dbg_sniff = -1;
 
 my $ignore_ip_re = join('|',(
 	'224.0.0.251',			# router
+	'224.0.0.252',			# router
 	'10.0.241.254',			# router ssdp
 	'10.255.255.255',		# windows netbios dnd
 	'239.255.255.250', ));	# ssdp

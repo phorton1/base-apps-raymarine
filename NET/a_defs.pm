@@ -43,6 +43,11 @@ BEGIN
 		%RAYSYS_DEFAULTS
 		%SNIFFER_DEFAULTS
 
+		$DIRECTION_RECV
+		$DIRECTION_SEND
+		$DIRECTION_INFO
+		%DIRECTION_NAME
+
 		$RNS_FILESYS_PORT
         $FILESYS_SERVICE_ID
         $FILESYS_PORT
@@ -166,6 +171,20 @@ our $HIDDEN_PORT1 = 6668;
 
 our $SUCCESS_SIG = '00000400';
 our $RAYSYS_WAKEUP_PACKET = 'ABCDEFGHIJKLMNOP',
+
+# The direction nibble of the command word seems to
+# be consistent across all services
+
+our $DIRECTION_RECV		= 0x000;
+our $DIRECTION_SEND		= 0x100;
+our $DIRECTION_INFO		= 0x200;
+
+our %DIRECTION_NAME = (
+	$DIRECTION_RECV => 'recv',
+	$DIRECTION_SEND => 'send',
+	$DIRECTION_INFO => 'info',
+);
+
 
 
 #------------------------------
@@ -669,7 +688,7 @@ sub addMonCtrl
 
 
 my $SHARK_MON_RAYSYS	= 0;	# $MON_RAW;
-my $SHARK_MON_FILESYS	= $MON_ALL;
+my $SHARK_MON_FILESYS	= 0;	# $MON_ALL;
 my $SHARK_MON_DBNAV		= $MON_ALL;
 
 my $SHARK_MON_DICT 		= $MON_ALL;

@@ -260,10 +260,10 @@ sub query_one
 
 	my $seq = $this->{next_seqnum}++;
 	my $request =
-		createMsg($seq,$DIR_SEND,$CMD_CONTEXT,$what).
-		createMsg($seq,$DIR_INFO,$CMD_CONTEXT,0,$dict_context).
-		createMsg($seq,$DIR_INFO,$CMD_BUFFER,0,$dict_buffer).
-		createMsg($seq,$DIR_INFO,$CMD_LIST,0,'00000000 00000000');
+		createMsg($seq,$DIRECTION_SEND,$CMD_CONTEXT,$what).
+		createMsg($seq,$DIRECTION_INFO,$CMD_CONTEXT,0,$dict_context).
+		createMsg($seq,$DIRECTION_INFO,$CMD_BUFFER,0,$dict_buffer).
+		createMsg($seq,$DIRECTION_INFO,$CMD_LIST,0,'00000000 00000000');
 
 	return 0 if !$this->sendRequest($seq,"$what_name DICT",$request);
 	my $reply = $this->waitReply(1);
@@ -276,7 +276,7 @@ sub query_one
 	for my $uuid (@$uuids)
 	{
 		$seq = $this->{next_seqnum}++;
-		$request = createMsg($seq,$DIR_SEND,$CMD_ITEM,$what,$uuid);
+		$request = createMsg($seq,$DIRECTION_SEND,$CMD_ITEM,$what,$uuid);
 		return 0 if !$this->update_item_request($seq,$what,"query($num)",$uuid,$request);
 		$num++;
 	}
@@ -315,14 +315,14 @@ sub create_item
 	# check the name
 
 	my $seq = $this->{next_seqnum}++;
-	my $request = createMsg($seq,$DIR_SEND,$CMD_FIND,$what,name16_hex($name));
+	my $request = createMsg($seq,$DIRECTION_SEND,$CMD_FIND,$what,name16_hex($name));
 	return 0 if !$this->sendRequest($seq,"$what_name name must not exist",$request);
 	return 0 if !$this->waitReply(-1);
 
 	# check the uuid
 
 	$seq = $this->{next_seqnum}++;
-	$request = createMsg($seq,$DIR_SEND,$CMD_ITEM,$what,$uuid);
+	$request = createMsg($seq,$DIRECTION_SEND,$CMD_ITEM,$what,$uuid);
 	return 0 if !$this->sendRequest($seq,"$what_name uuid must not exist",$request);
 	return 0 if !$this->waitReply(-1);
 
@@ -331,10 +331,10 @@ sub create_item
 
 	$seq = $this->{next_seqnum}++;
 	$request =
-		createMsg($seq,$DIR_SEND,$CMD_MODIFY,	$what,	$uuid).
-		createMsg($seq,$DIR_INFO,$CMD_CONTEXT,	0,		$uuid.'03000000').	#.'00000000').
-		createMsg($seq,$DIR_INFO,$CMD_BUFFER,	0,		$data).
-		createMsg($seq,$DIR_INFO,$CMD_LIST,		0,		'00000000 00000000'); # $uuid);
+		createMsg($seq,$DIRECTION_SEND,$CMD_MODIFY,	$what,	$uuid).
+		createMsg($seq,$DIRECTION_INFO,$CMD_CONTEXT,	0,		$uuid.'03000000').	#.'00000000').
+		createMsg($seq,$DIRECTION_INFO,$CMD_BUFFER,	0,		$data).
+		createMsg($seq,$DIRECTION_INFO,$CMD_LIST,		0,		'00000000 00000000'); # $uuid);
 
 	return 0 if !$this->sendRequest($seq,"$name $what_name",$request);
 	return 0 if !$this->waitReply(1);
@@ -360,7 +360,7 @@ sub modify_item
 
 	# MUST apparently do $CMD_EXIST before the $CMD_DATA
 	
-	$request = createMsg($seq,$DIR_SEND,$CMD_EXIST,$what,'07000000'.$uuid);	# '15000000'.$uuid);
+	$request = createMsg($seq,$DIRECTION_SEND,$CMD_EXIST,$what,'07000000'.$uuid);	# '15000000'.$uuid);
 	return 0 if !$this->sendRequest($seq,"modify1 $what_name",$request);
 	return 0 if !$this->waitReply(1);
 
@@ -368,10 +368,10 @@ sub modify_item
 	
 	$seq = $this->{next_seqnum}++;
 	$request =
-		createMsg($seq,$DIR_SEND,$CMD_DATA,		$what,	'07000000'.$uuid).	# '15000000'.$uuid);
-		createMsg($seq,$DIR_INFO,$CMD_CONTEXT,	0,		$uuid.'00000000').	#.'03000000').
-		createMsg($seq,$DIR_INFO,$CMD_BUFFER,	0,		$data).
-		createMsg($seq,$DIR_INFO,$CMD_LIST,		0,		$uuid);
+		createMsg($seq,$DIRECTION_SEND,$CMD_DATA,		$what,	'07000000'.$uuid).	# '15000000'.$uuid);
+		createMsg($seq,$DIRECTION_INFO,$CMD_CONTEXT,	0,		$uuid.'00000000').	#.'03000000').
+		createMsg($seq,$DIRECTION_INFO,$CMD_BUFFER,	0,		$data).
+		createMsg($seq,$DIRECTION_INFO,$CMD_LIST,		0,		$uuid);
 	return 0 if !$this->sendRequest($seq,"modify $what_name",$request);
 	return 0 if !$this->waitReply(1);
 	return 1;
@@ -389,7 +389,7 @@ sub delete_item
 	display($dbg,0,"delete_item($what=$what_name) $uuid $name");
 
 	my $seq = $this->{next_seqnum}++;
-	my $request = createMsg($seq,$DIR_SEND,$CMD_UUID,$what,$uuid);
+	my $request = createMsg($seq,$DIRECTION_SEND,$CMD_UUID,$what,$uuid);
 	return 0 if !$this->sendRequest($seq,"delete $what_name",$request);
 	return 0 if !$this->waitReply(1);
 
@@ -412,7 +412,7 @@ sub get_item
 	my $seq = $this->{next_seqnum}++;
 
 
-	my $request = createMsg($seq,$DIR_SEND,$CMD_ITEM,$what,$uuid);
+	my $request = createMsg($seq,$DIRECTION_SEND,$CMD_ITEM,$what,$uuid);
 	return $this->update_item_request($seq,$what,'get',$uuid,$request);
 }
 
