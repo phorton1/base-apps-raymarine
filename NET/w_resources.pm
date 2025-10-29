@@ -20,6 +20,7 @@ BEGIN
         $resources
 
         $WIN_RAYSYS
+		$WIN_SNIFFER
 		$WIN_FILESYS
 		$WIN_DBNAV
 		$CMD_DOWNLOAD
@@ -33,6 +34,7 @@ our $appName = "shark";
 # the 'command_id' member on the notebook info.
 
 our ($WIN_RAYSYS,
+	 $WIN_SNIFFER,
 	 $WIN_FILESYS,
 	 $WIN_DBNAV,
 
@@ -44,6 +46,7 @@ our ($WIN_RAYSYS,
 
 my $pane_data = {
 	$WIN_RAYSYS		=> ['Unused String1',		'content'	],
+	$WIN_SNIFFER	=> ['Unused String1',		'content'	],
 	$WIN_FILESYS	=> ['Unused String1',		'content'	],
 	$WIN_DBNAV		=> ['Unused String1',		'content'	],
 };
@@ -55,7 +58,8 @@ my $pane_data = {
 
 my $command_data = {
 	%{$resources->{command_data}},
-	$WIN_RAYSYS    => ['RayDP', 	'Raynet Discover Protocol'],
+	$WIN_RAYSYS    => ['RaySys', 	'The Raynet Discover Protocol'],
+	$WIN_SNIFFER    => ['Sniffer', 	'tshark based packet sniffer with parsers'],
 	$WIN_FILESYS   => ['FileSys', 	'Removable Media Fiile System'],
 	$WIN_DBNAV	   => ['DBNav', 	'Navigation Data'],
 	$CMD_DOWNLOAD  => ['Download',	'Download Selected Items'],
@@ -92,6 +96,8 @@ my $file_menu = [];
 
 my $view_menu = [
 	$WIN_RAYSYS,
+	$WIN_SNIFFER,
+	$ID_SEPARATOR,
 	$WIN_FILESYS,
 	$WIN_DBNAV,
 	$ID_SEPARATOR,

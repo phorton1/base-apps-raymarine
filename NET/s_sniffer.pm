@@ -11,8 +11,24 @@ use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use a_defs;
 use a_parser;
+use c_RAYSYS;
+
 
 my $dbg_sniff = -1;
+
+my $DEFAULT_RUNNING = 1;
+
+
+BEGIN
+{
+ 	use Exporter qw( import );
+	our @EXPORT = qw(
+		$sniffer
+	);
+}
+
+our $sniffer:shared;
+
 
 # ELIMINATE NON RAYNET TRAFFICE
 
@@ -53,7 +69,8 @@ my @sniff_fields = (
 sub new
 {
 	my ($class) = @_;
-	my $this = shared_clone({});
+	my $this = shared_clone({
+		name => 'sniffer', });
 	bless $this,$class;
 
     my $filter = '(tcp.len>1) || (udp.length>0)';
@@ -76,7 +93,10 @@ sub new
 		# for buffering tcp packets that come in pairs
 		# starting with a length word, followed by another packet
 	$this->{parsers} = shared_clone({});
+
+	$this->{running} = $DEFAULT_RUNNING;
     display($dbg_sniff+1,0,"sniffer started");
+	$sniffer = $this;
     return $this;
 }
 
@@ -88,6 +108,7 @@ sub start
 	my $thread = threads->create(\&sniffer_thread,$this);
     $thread->detach();
 }
+
 
 
 my $unknown = 0;
@@ -102,7 +123,7 @@ sub sniffer_thread
     while (1)
     {
 		my $line = <$sniff_fh>;
-		if (defined($line) && length($line))
+		if ($this->{running} && defined($line) && length($line))
 		{
 			chomp $line;
 			# print "line=$line\n";
@@ -245,11 +266,15 @@ sub sniffer_thread
 						sid => -3,
 						name => 'new'.$unknown++,
 						proto => $proto,
-						rx => { $MCTRL_WHAT_DEFAULT => { ctrl => $MCTRL_DIRECTION_REPLY,	mon => 0xffffffff, color => $UTILS_COLOR_RED, } },
-						tx => { $MCTRL_WHAT_DEFAULT => { ctrl => $MCTRL_DIRECTION_REQUEST,	mon => 0xffffffff, color => $UTILS_COLOR_RED, } },
+						mon_in => $MON_ALL,
+						mon_out => $MON_ALL,
+						in_color => $UTILS_COLOR_RED,
+						out_color => $UTILS_COLOR_RED,
 					};
-				
-				# next;
+				$client_ip 	 = $dst_ip;
+				$client_port = $dst_port;
+				$server_ip 	 = $src_ip;
+				$server_port = $src_port;
 			}
 
 
@@ -274,7 +299,6 @@ sub sniffer_thread
 
 			if ($proto eq 'tcp')
 			{
-				use c_RAYSYS;
 				my $addr = "$server_ip:$server_port";
 				my $service_port =
 					$raysys->{implemented_services}->{$def->{name}} ||
@@ -307,10 +331,6 @@ sub sniffer_thread
 			#---------------------------------------------------
 			# construct or use existing parser
 			#---------------------------------------------------
-
-			my $mctrl_device = $is_shark ?
-				$MCTRL_DEVICE_SHARK :
-				$MCTRL_DEVICE_RNS ;
 				
 			my $parse_class = $def->{parser_class} || 'a_parser';
 			my $parse_id = "$server_ip.$parse_class";
@@ -319,7 +339,7 @@ sub sniffer_thread
 			if (!$parser)
 			{
 				display($dbg_sniff+1,0,"creating new parser($parse_id)");
-				$parser = $this->{parsers}->{$parse_id} = $parse_class->new($def,$mctrl_device)
+				$parser = $this->{parsers}->{$parse_id} = $parse_class->new($this,$server_port)
 			}
 
 			# construct and parse the packet
@@ -335,6 +355,7 @@ sub sniffer_thread
 			{
 				# my $packet = a_packet->new({
 				my $packet = shared_clone({
+					is_sniffer	=> 1,
 					is_shark	=> $is_shark,
 					is_reply	=> $is_reply,
 					time		=> $time,

@@ -85,7 +85,10 @@ use IO::Select;
 use IO::Socket::INET;
 use IO::Socket::Multicast;
 use Pub::Utils;
+use a_defs;
 use a_utils qw(parse_dwords setConsoleColor);
+
+
 
 BEGIN
 {
@@ -183,6 +186,10 @@ sub init
 	# {out_color}
 	# {local_port} - optional
 	# {local_ip} - optional but not recommended
+
+	my $parser_class = $this->{parser_class} || 'a_parser';
+	$this->{parser} = $parser_class->new($this,$this->{port});
+
 }
 
 
@@ -244,6 +251,8 @@ sub destroy
 		wait_seq
 		wait_name
 		
+		parser
+
     )};
 	display($dbg_api,0,"b_sock destroy($this->{name}) returning",0,$UTILS_COLOR_BROWN);
 }
@@ -304,6 +313,18 @@ sub connect
 #------------------------------------------------
 # virtual (stub) API
 #------------------------------------------------
+
+sub applyMonDefs
+{
+	my ($this,$packet) = @_;
+	my $is_reply = $packet->{is_reply};
+	my $def = $RAYSYS_DEFAULTS{$this->{port}};
+	$packet->{mon} = $is_reply ? $def->{mon_in} : $def->{mon_out};
+	$packet->{color} = $is_reply ? $def->{in_color} : $def->{out_color};
+}
+
+
+
 
 sub handlePacket
 {

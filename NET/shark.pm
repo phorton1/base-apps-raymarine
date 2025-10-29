@@ -51,16 +51,6 @@ use base 'Wx::App';
 my $dbg_shark = 0;
 
 
-my $WITH_SERIAL			= 1;
-my $WITH_RAYSYS			= 1;
-my $WITH_HTTP_SERVER	= 0;
-my $WITH_SNIFFER 		= 0;
-my $WITH_TCP_SCANNER	= 0;
-my $WITH_UDP_SCANNER	= 0;	# sniffer must be disabled for udp_scanner
-my $WITH_WX				= 1;
-
-
-
 #-----------------------------------------
 # handleSerialCommand()
 #-----------------------------------------

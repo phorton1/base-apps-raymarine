@@ -21,6 +21,7 @@ use w_resources;
 use winRAYSYS;
 use winFILESYS;
 use winDBNAV;
+use winSniffer;
 use base qw(Pub::WX::Frame);
 
 
@@ -36,6 +37,7 @@ sub new
 	my $this = $class->SUPER::new($parent,$rect);
 
 	EVT_MENU($this, $WIN_RAYSYS, \&onCommand);
+	EVT_MENU($this, $WIN_SNIFFER, \&onCommand);
 	EVT_MENU($this, $WIN_FILESYS, \&onCommand);
 	EVT_MENU($this, $WIN_DBNAV,	\&onCommand);
     EVT_IDLE($this, \&onIdle);
@@ -63,6 +65,7 @@ sub createPane
     $book ||= $this->{book};
 	display(0,0,"minimumFrame::createPane($id) book="._def($book)."  data="._def($data));
 	return winRAYSYS->new($this,$book,$id,$data) if $id == $WIN_RAYSYS;
+	return winSniffer->new($this,$book,$id,$data) if $id == $WIN_SNIFFER;
 	return winFILESYS->new($this,$book,$id,$data) if $id == $WIN_FILESYS;
 	return winDBNAV->new($this,$book,$id,$data) if $id == $WIN_DBNAV;
     return $this->SUPER::createPane($id,$book,$data);
@@ -74,6 +77,7 @@ sub onCommand
     my ($this,$event) = @_;
     my $id = $event->GetId();
 	if ($id == $WIN_RAYSYS ||
+		$id == $WIN_SNIFFER ||
 		$id == $WIN_FILESYS ||
 		$id == $WIN_DBNAV)
 	{

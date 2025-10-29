@@ -236,12 +236,22 @@ sub setConsoleColor
 
 sub printConsole
 {
-	my ($color,$text) = @_;
-	lock($local_stdout_sem);
-	setConsoleColor($color) if $color;
-	print $text."\n";
-	setConsoleColor() if $color;
-	# writeLog($text."\n","rns_startup.log");
+	my ($color,$text,$mon) = @_;
+	$mon ||= 0;
+	
+	if (!($mon & $MON_LOG_ONLY))
+	{
+		lock($local_stdout_sem);
+		setConsoleColor($color) if $color;
+		print $text."\n";
+		setConsoleColor() if $color;
+	}
+	if ($mon & $MON_WRITE_LOG)
+	{
+		my $output_file = ($mon & $MON_SRC_SHARK) ?
+			"shark.log" : "rns.log";
+		writeLog($text."\n",$output_file);
+	}
 }
 
 

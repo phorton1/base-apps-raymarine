@@ -23,24 +23,20 @@ my $dbg_tp = 0;
 
 sub new
 {
-	my ($class, $mon_def, $mctrl_device) = @_;
-	display($dbg_tp,0,"e_TRACK::new()");
-	my $this = $class->SUPER::new($mon_def,$mctrl_device);
+	my ($class, $parent, $def_port) = @_;
+	display($dbg_tp,0,"e_TRACK::new($parent->{name}) def_port($def_port)");
+	my $this = $class->SUPER::new($parent,$def_port);
 	bless $this,$class;
+	$this->{name} = 'e_TRACK';
 	return $this;
 }
 
 
 sub parsePacket
-	# Calls base clase AFTER figuring out what mon_spec to use.
-	# We know that WBPMGR is tcp and know to skip the message length word
-	# 	to look ahead to 0th message to get the cmd_word which is
-	# 	needed to get the mon_spec for the packet, so we, and the
-	# 	base class know whether or not to display/parse the packet.
-	# We pass the {mon_spec} member back to the base class
+	# Sets up class specific state members, then
+	# calls base class to do all the work.
 {
 	my ($this,$packet) = @_;
-	my $payload = $packet->{payload};
 
 	# the packet namespace is crowded and it is crucial
 	# that no base class names are overwritten by derived classes
@@ -51,19 +47,13 @@ sub parsePacket
 		is_event 	=> 0,
 		evt_mask	=> 0, });
 
-	my $mon_key = $MCTRL_WHAT_TRACK;
-	my $mon_dir = $packet->{is_reply} ? $RX : $TX;
-	my $dir_def = $this->{$mon_dir};
-	my $mon_spec = $packet->{mon_spec} = $dir_def->{$mon_key};
-
-	my $mon = $mon_spec->{mon} || 0;
-	my $ctrl = $mon_spec->{ctrl} || 0;
-	display($dbg_tp,0,sprintf("e_TRACK::parsePacket($mon_dir) ctrl(%04x) mon(%08x)",$ctrl,$mon));
+	display($dbg_tp,0,"e_TRACK::parsePacket() is_reply($packet->{is_reply})");
 
 	my $rslt = $this->SUPER::parsePacket($packet);
+		# returns the packet as confirmation there were no errors
 
-	# temp debugging
-	display_record(0,0,"packet",$packet,'payload|points') if $mon & $MON_PIECE;
+	display_record(0,0,"final packet($packet->{name})",$packet,'payload|points')
+		if $packet->{mon} & $MON_DUMP_RECORD;
 
 	return $rslt;
 }
@@ -91,8 +81,8 @@ sub parseMessage
 
 	my $pad = pad('',9);
 	my $mon = $packet->{mon};
-	printConsole($packet->{color},$pad."# $dir_name $cmd_name")
-		if $mon & ($MON_PARSE | $MON_PIECE);
+	printConsole($packet->{color},$pad."# $dir_name $cmd_name",$mon)
+		if $mon & $MON_PARSE;
 
 	# get the rule
 
@@ -109,8 +99,8 @@ sub parseMessage
 		display($dbg_tp+2,2,"seq=$seq");
 		$offset += 4;
 		$packet->{seq_num} ||= $seq;
-		printConsole($packet->{color},$pad."#     seq_num = $seq")
-			if $mon & ($MON_PARSE | $MON_PIECE);
+		printConsole($packet->{color},$pad."#     seq_num = $seq",$mon)
+			if $mon & $MON_PARSE;
 	}
 
 	# parse the pieces
@@ -134,8 +124,8 @@ sub parseMessage
 			$packet->{is_event} = 1;
 			$packet->{evt_mask} |= $packet->{byte};
 			warning($dbg_tp-1,0,"TRACK EVENT($packet->{byte})");
-			printConsole($packet->{color},$pad."#     TRACK_EVENT($packet->{byte})")
-				if $mon & ($MON_PARSE | $MON_PIECE);
+			printConsole($packet->{color},$pad."#     TRACK_EVENT($packet->{byte})",$mon)
+				if $mon & $MON_PARSE;
 		}
 		elsif ($cmd == $TRACK_REPLY_CHANGED)
 		{
@@ -168,8 +158,8 @@ sub parsePiece
 			$packet->{is_track} ? 'track' :
 			$packet->{is_point} ? 'point' : 'mta';
 
-		printConsole($packet->{color},$pad."#     buffer piece($buffer_type)")
-			if $mon & $MON_PIECE;
+		printConsole($packet->{color},$pad."#     buffer piece($buffer_type)",$mon)
+			if $mon & $MON_PIECES;
 
 		# skip biglen
 		# Track messages may return more than one buffer per packet,
@@ -192,8 +182,8 @@ sub parsePiece
 		$packet->{is_track} = 1;
 		$$pdata += 8;
 
-		printConsole($packet->{color},$pad."#     track_uuid = $uuid; is_track=1")
-			if $mon & $MON_PIECE;
+		printConsole($packet->{color},$pad."#     track_uuid = $uuid; is_track=1",$mon)
+			if $mon & $MON_PIECES;
 	}
 
 	# Call the base class to handle many common piece types

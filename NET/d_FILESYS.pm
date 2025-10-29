@@ -839,8 +839,41 @@ sub handlePacket
 #=================================================================
 # MUST PLAY NICELY WITH b_sock::waitReply and existing onCommand() handler.
 # Optionally constructed in context of the real d_FILESYS?
-# Lets start off by just implementing it efficiently on top of sniffer,
-# with the ability to grab files from the streams it sees.
+# We started off by just implementing it efficiently on top of sniffer,
+# without barfing.
+#
+# I originally thought it might be necessary to implement actual file
+# downloads via sniffer to get at the 'unencrypted' Navionic charts,
+# but now I believe that RNS gets the same thing I do, and that
+# they are likely (a) not actually encrypted, but that (b) the E80 and
+# RNS just "know" if there is a Navionics card in the slot.  I *may*
+# be able to prove this by more sniffing por-que Navionics can ONLY
+# find it out via RAYNET, and perhaps I could spoof RNS into using
+# *my* charts, but no way I'm ever gonna get the E80 to use a
+# non-Navionic chart card.  So even a BACKUP still implies it gets
+# copied to a real Navionic chart card, and the only way to use
+# these files with openCPN is if I effing figure them out and essentially
+# convert them to a format (i.e. S57) that openCPN knows.
+#
+# The primary role of a parser is to return a packet that is a complete
+# reply with parsed informtation and secondarily to display requests.
+# In sniffer the parser is assumed to be 'context' free and generally
+# not carry any state, or worry about any command_queue or parent b_sock
+# processing, or for that matter, return value.
+#
+# but for FILESYS, this isn't sufficient as GET_FILE replies  happen over
+# many packets, and a full file download involves multiple ones of those.
+#
+# Therefore there must be SOMETHING on the e_FILESYS parser that tells it
+# that it is in the context of d_FILEYSYS and needs to respect the reply
+# conventions for waitReply to trigger a a response, as opposed to sniffer
+# where it may just blindly parse packets (including comands not used in
+# in d_FILESYS) and return nothing.
+#
+# Hence derived parsers may have a {parent} member, and if that is set
+# may have intimate knowledge of the parent's (i.e. d_FILESYS) state
+# and/or modify it.
+
 
 
 package e_FILESYS;
@@ -858,10 +891,12 @@ my $dbg_fp = 0;
 
 sub new
 {
-	my ($class, $mon_def, $mctrl_device) = @_;
-	display($dbg_fp,0,"e_FILESYS::new()");
-	my $this = $class->SUPER::new($mon_def,$mctrl_device);
+	my ($class, $parent, $def_port) = @_;
+	display($dbg_fp,0,"e_FILESYS::new($parent->{name}) def_port($def_port)");
+	my $this = $class->SUPER::new($parent,$def_port);
 	bless $this,$class;
+
+	$this->{name} = 'e_FILESYS';
 
 	$this->{file_content} = '';
 	$this->{file_cur_buf_num} = 0;
@@ -871,29 +906,29 @@ sub new
 }
 
 
-sub parsePacket
-	# Calls base clase AFTER figuring out what mon_spec to use.
-	# We pass the {mon_spec} member back to the base class
-{
-	my ($this,$packet) = @_;
-	my $payload = $packet->{payload};
-
-	my $mon_key = $MCTRL_WHAT_DEFAULT;
-	my $mon_dir = $packet->{is_reply} ? $RX : $TX;
-	my $dir_def = $this->{$mon_dir};
-	my $mon_spec = $packet->{mon_spec} = $dir_def->{$mon_key};
-
-	my $mon = $mon_spec->{mon} || 0;
-	my $ctrl = $mon_spec->{ctrl} || 0;
-	display($dbg_fp+1,0,sprintf("e_FILESYS::parsePacket($mon_dir) ctrl(%04x) mon(%08x)",$ctrl,$mon));
-
-	my $rslt = $this->SUPER::parsePacket($packet);
-
-	# temp debugging
-	# display_record(0,0,"packet",$packet,'payload|points') if $mon & $MON_PIECE;
-
-	return $rslt;
-}
+#	sub parsePacket
+#		# Calls base clase AFTER figuring out what mon_spec to use.
+#		# We pass the {mon_spec} member back to the base class
+#	{
+#		my ($this,$packet) = @_;
+#		my $payload = $packet->{payload};
+#
+#		my $mon_key = $MCTRL_WHAT_DEFAULT;
+#		my $mon_dir = $packet->{is_reply} ? $RX : $TX;
+#		my $dir_def = $this->{$mon_dir};
+#		my $mon_spec = $packet->{mon_spec} = $dir_def->{$mon_key};
+#
+#		my $mon = $mon_spec->{mon} || 0;
+#		my $ctrl = $mon_spec->{ctrl} || 0;
+#		display($dbg_fp+1,0,sprintf("e_FILESYS::parsePacket($mon_dir) ctrl(%04x) mon(%08x)",$ctrl,$mon));
+#
+#		my $rslt = $this->SUPER::parsePacket($packet);
+#
+#		# temp debugging
+#		# display_record(0,0,"packet",$packet,'payload|points') if $mon & $MON_PIECE;
+#
+#		return $rslt;
+#	}
 
 
 
@@ -920,7 +955,7 @@ sub parseMessage
 
 	my $pad = pad('',13);
 	my $mon = $packet->{mon};
-	printConsole($packet->{color},$pad."# $dir_name $cmd_name cmd($cmd) seq($seq)")
+	printConsole($packet->{color},$pad."# $dir_name $cmd_name cmd($cmd) seq($seq)",$mon)
 		if $mon & $MON_PARSE;
 
 	# Requests and replies have completely different layouts
@@ -965,7 +1000,7 @@ sub parseMessage
 			$text .= "\n$pad#    len($name_len) path = '$path'";
 		}
 
-		printConsole($packet->{color},$text)
+		printConsole($packet->{color},$text,$mon)
 			if $mon & $MON_PARSE;
 
 		return undef;	# packet not needed
@@ -1006,12 +1041,11 @@ sub parseMessage
 		my ($u3,$u4) = unpack('vC',substr($part,$offset,6));
 		$offset += 6;
 		
-		display_bytes(0,0,"id",$id);
+		# display_bytes(0,0,"id",$id);
 
 		printConsole($packet->{color},$pad.
-			sprintf("#    u1(0x%04x=$u1) u2($u2) u3(0x%04x=$u3) u4(%02x) len($len) CARD_ID = '$id'",
-				$u1,$u3,$u4))
-			if $mon & $MON_PARSE;
+			sprintf("#    u1(0x%04x=$u1) u2($u2) u3(0x%04x=$u3) u4(%02x) len($len) CARD_ID = '$id'",$u1,$u3,$u4),
+			$mon) if $mon & $MON_PARSE;
 
 		$packet->{content} = $id;
 		$success = $packet->{success} = 1;
@@ -1023,7 +1057,7 @@ sub parseMessage
 		$offset += 4;
 		$packet->{success} = $success;
 
-		printConsole($packet->{color},$pad."#    success = $success ".($success?'':" code($code)"))
+		printConsole($packet->{color},$pad."#    success = $success ".($success?'':" code($code)"),$mon)
 			if $mon & $MON_PARSE;
 
 		if ($success)
@@ -1032,7 +1066,7 @@ sub parseMessage
 				$cmd == $COMMAND_GET_SIZE2)
 			{
 				my $size = unpack('V',substr($part,$offset));
-				printConsole($packet->{color},$pad."# SIZE = $size")
+				printConsole($packet->{color},$pad."# SIZE = $size",$mon)
 					if $mon & $MON_PARSE;
 				$packet->{content} = $size;
 			}
@@ -1076,7 +1110,7 @@ sub parseMessage
 					$packet->{content} .= "$attr\t$name";
 				}
 
-				printConsole($packet->{color},$text)
+				printConsole($packet->{color},$text,$mon)
 					if $mon & $MON_PARSE;
 			}
 
@@ -1100,7 +1134,7 @@ sub parseMessage
 				display($dbg_fp,2,"FILE packet($packet_num/$num_packets) bytes=$bytes");
 				$offset += 6;
 
-				printConsole($packet->{color},$pad."#    num_packets($num_packets) packet_num($packet_num) bytes($bytes)")
+				printConsole($packet->{color},$pad."#    num_packets($num_packets) packet_num($packet_num) bytes($bytes)",$mon)
 					if $mon & $MON_PARSE;
 
 				$this->{file_content} = '' if !$packet_num;
@@ -1114,7 +1148,7 @@ sub parseMessage
 					my $msg = "Unexpected packet_num($packet_num) expected($expected)";
 					error($msg);
 					$packet->{success} = 0;
-					printConsole($UTILS_COLOR_RED,$pad."#     ERROR: $msg")
+					printConsole($UTILS_COLOR_RED,$pad."#     ERROR: $msg",$mon)
 						if $mon & $MON_PARSE;
 
 				}
@@ -1125,7 +1159,7 @@ sub parseMessage
 					if ($packet_num == $num_packets - 1)
 					{
 						display($dbg_fs,2,"FILE COMPLETED!!");
-						printConsole($UTILS_COLOR_YELLOW,$pad."# FILE COMPLETED!!")
+						printConsole($UTILS_COLOR_YELLOW,$pad."# FILE COMPLETED!!",$mon)
 							if $mon & $MON_PARSE;
 						$success = 1;
 					}

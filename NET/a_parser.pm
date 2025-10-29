@@ -23,71 +23,60 @@ sub new
 	# $mctrl_device as the identified 'client' devices, RNS or SHARK.
 	# Applies the mctrl_device to all mon_specs within {$RX} and {$TX}
 {
-	my ($class, $mon_def, $mctrl_device) = @_;
-	$mctrl_device ||= 0;
-	display($dbg_parse,0,sprintf("a_parser::new($mon_def->{name},$mon_def->{sid},$mon_def->{proto}) mctrl_device(%04x)",$mctrl_device));
-	my $this = shared_clone($mon_def);
-	for my $dir ($RX,$TX)
-	{
-		my $dir_def = $mon_def->{$dir};
-		for my $what (keys %$dir_def)
-		{
-			my $mon_spec = $dir_def->{$what};
-			$mon_spec->{ctrl} |= $mctrl_device;
-			display($dbg_parse+1,1,sprintf("a_parser::new() mon_spec($dir,$what) color(%d) mctrl(%04x) mon(%08x)",
-				$mon_spec->{color} || 0,
-				$mon_spec->{ctrl} || 0,
-				$mon_spec->{mon} || 0));
-		}
-	}
+	my ($class, $parent, $def_port) = @_;
+	display($dbg_parse,0,"a_parser::new($parent->{name}) def_port($def_port)");
+	my $this = shared_clone({
+		name => 'a_parser',
+		parent => $parent,
+		def_port => $def_port });
 	bless $this,$class;
 	return $this;
 }
 
 
 
+sub applyMonDefs
+{
+	my ($this,$packet) = @_;
+	my $is_reply = $packet->{is_reply};
+	my $defs = $packet->{is_sniffer} ?
+		\%SNIFFER_DEFAULTS :
+		\%RAYSYS_DEFAULTS;
+	my $def = $defs->{$this->{def_port}};
+	$packet->{name} = $def->{name};
+	$packet->{mon} = $is_reply ? $def->{mon_in} : $def->{mon_out};
+	$packet->{color} = $is_reply ? $def->{in_color} : $def->{out_color};
+	display($dbg_parse+1,0,"a_parser::applyMonDefs($this->{name}) ".
+		"is_sniffer($packet->{is_sniffer}) is_reply($is_reply) ".
+		sprintf("mon(%04x) color($packet->{color})",$packet->{mon}));
+}
+
+
 
 sub parsePacket
-	# Derived classes figure out {mon_spec} first, then call base class
-	# before any monitoring output has taken place.
 {
 	my ($this,$packet) = @_;
 	lock($local_stdout_sem);
 		# lock stdout so all of our display and prints occur contiguously
 		# within a single color
-		
+	$packet->{mon} = 0;
+	$packet->{color} = 0;
+
+
+	$this->applyMonDefs($packet);
+		# the parent is responsible for placing the monitor definition,
+		# {mon} and {color} on the packet based on what it is, and knows.
+
+	my $mon = $packet->{mon};
+	my $color = $packet->{color};
 	my $payload = $packet->{payload};
 	my $packet_len = length($payload);
-	display_hash($dbg_parse+3,0,"a_parser::parsePacket($packet_len)",$packet,'payload');
-	
-	# derived classes may have set a service specific $mon_spec
-	# otherwise, we get the $MCTRL_WHAT_DEFAULT spec from this
-	# base class a_parser
+	display($dbg_parse+1,1,sprintf("a_parser::parsePacket($this->{name}) len($packet_len) mon(%04x) color(%d)",$mon,$color));
+	display_hash($dbg_parse+3,0,"packet($this->{name})",$packet,'payload');
 
-	my $mon_spec = $packet->{mon_spec};
-	if (!$mon_spec)
+	if ($packet->{is_sniffer})
 	{
-		my $dir = $packet->{is_reply} ? $RX : $TX;
-		my $dir_defs = $this->{$dir};
-		$mon_spec = $dir_defs->{$MCTRL_WHAT_DEFAULT};
-		return error("Could not find mon_spec(MCTRL_WHAT_NONE) for dir($dir) in b_parser")
-			if !$mon_spec;
-		$packet->{mon_spec} = $mon_spec;
-	}
-
-	# don't parse SNIFFER PACKETS from ourself, unless
-	# $MCTRL_SNIFF_SELF is also specified.
-
-	display($dbg_parse+1,1,sprintf("a_parser::parsePacket mon_spec color(%d) ctrl(%04x) mon(%08x)",
-		$mon_spec->{color} || 0,
-		$mon_spec->{ctrl} || 0,
-		$mon_spec->{mon} || 0));
-
-	my $ctrl = $mon_spec->{ctrl};
-	my $mon = $mon_spec->{mon} || 0;
-	if ($ctrl & $MCTRL_SOURCE_SNIFFER)
-	{
-		if ($packet->{is_shark} && !($ctrl & $MCTRL_SNIFF_SELF))
+		if ($packet->{is_shark} && !($mon & $MON_SNIFF_SELF))
 		{
 			display($dbg_parse+2,1,"a_parser::parsePacket() abandoning sniffer packet to/from self");
 			return;
@@ -102,25 +91,24 @@ sub parsePacket
 		}
 	}
 
-	mergeHash($packet,$mon_spec);
-		# the packet directly takes on {color} {ctrl} and {mon}
 
-	# Show the raw packet header if the $MON_RAW bit is set
+	# Show the packet header if the $MON_HEADER bit is set
 	
-	if ($mon & $MON_RAW)
+	if ($mon & $MON_HEADER)
 	{
 		printConsole($packet->{color},
-			pad($packet->{server_name},20).
-			($packet->{is_reply} ? '--> ' : '<-- ').
-			pad($packet->{client_name},20).
-			" $packet->{proto} ".
-			pad("len($packet_len)",41).
-			"# $packet->{src_ip}:$packet->{src_port} --> $packet->{dst_ip}:$packet->{dst_port}");
+			$packet->{server_name}.
+			($packet->{is_reply} ? ' --> ' : ' <-- ').
+			$packet->{client_name}."  ".
+			"proto($packet->{proto}) ".
+			"len($packet_len)    ".
+			"# $packet->{src_ip}:$packet->{src_port} --> $packet->{dst_ip}:$packet->{dst_port}", $mon);
+		# print parse_dwords(' debug ',$packet->{payload},1);
 	}
 	
 	# Parse the message(s) in the packet
 
-	if ($this->{proto} eq 'tcp')
+	if ($packet->{proto} eq 'tcp')
 	{
 		my $offset = 0;
 		while ($packet_len - $offset >= 4)
@@ -160,7 +148,7 @@ sub parseMessage
 	my $sid 		= unpack('v',$sid_bytes);
 	my $sid_hex 	= unpack('H*',$sid_bytes);
 	
-	display($dbg_parse+2,0,"a_parser::parseMessage($len) hdr($hdr) cmd_word($cmd_hex) sid($sid)");
+	display($dbg_parse+2,0,"a_parser::parseMessage($this->{name}) len($len) hdr($hdr) cmd_word($cmd_hex) sid($sid)");
 
 	my $mon = $packet->{mon} || 0;
 	if ($mon & $MON_RAW)
@@ -168,7 +156,7 @@ sub parseMessage
 		$hdr .= "$cmd_hex $sid_hex ";
 		my $text = parse_dwords($hdr,substr($part,4),$mon & $MON_MULTI);
 		$text =~ s/\n$//s;	# get rid of last trailing word from parse_words or change semantic of printConsole
-		printConsole($packet->{color},$text);
+		printConsole($packet->{color},$text,$mon);
 	}
 
 	return 1;
@@ -206,16 +194,16 @@ sub parsePiece
 			return error("too many dict_uuids!!") if $num>1024;
 				# prevent runaway implementation bug endless loops
 
-			printConsole($packet->{color},$pad."#     dictionary($num)")
-				if $mon & $MON_PIECE;
+			printConsole($packet->{color},$pad."#     dictionary($num)",$mon)
+				if $mon & $MON_PIECES;
 			my $dict_uuids = $packet->{dict_uuids};
 			for (my $i=0; $i<$num; $i++)
 			{
 				my $uuid = unpack('H*',substr($data,$$pdata,8));
 				$$pdata += 8;
 				push @$dict_uuids,$uuid;
-				printConsole($packet->{color},$pad."#         dict_uuid($i) = $uuid")
-					if $mon & $MON_PIECE;
+				printConsole($packet->{color},$pad."#         dict_uuid($i) = $uuid",$mon)
+					if $mon & $MON_DICT;
 			}
 		}
 	}
@@ -224,16 +212,16 @@ sub parsePiece
 		my $uuid = unpack('H*',substr($data,$$pdata,8));
 		$packet->{uuid} = $uuid;
 		$$pdata += 8;
-		printConsole($packet->{color},$pad."#     $piece = $uuid")
-			if $mon & $MON_PIECE;
+		printConsole($packet->{color},$pad."#     $piece = $uuid",$mon)
+			if $mon & $MON_PIECES;
 	}
 	elsif ($piece eq 'name16')
 	{
 		my $name = unpack('Z*',substr($data,$$pdata,17));
 		$packet->{name} = $name;
 		$$pdata += 17;
-		printConsole($packet->{color},$pad."#     name = $name")
-			if $mon & $MON_PIECE;
+		printConsole($packet->{color},$pad."#     name = $name",$mon)
+			if $mon & $MON_PIECES;
 	}
 	elsif ($piece eq 'success')
 	{
@@ -241,8 +229,8 @@ sub parsePiece
 		my $ok = $status eq $SUCCESS_SIG ? 1 : 0;
 		$packet->{success} = $ok;
 		$$pdata += 4;
-		printConsole($packet->{color},$pad."#     $piece = $ok")
-			if $mon & $MON_PIECE;
+		printConsole($packet->{color},$pad."#     $piece = $ok",$mon)
+			if $mon & $MON_PIECES;
 	}
 
 	# implemented in base class with 'some' knowledge
@@ -252,26 +240,26 @@ sub parsePiece
 	{
 		my $byte = unpack('C',substr($data,$$pdata++,1));
 		$packet->{$piece} = $byte;
-		printConsole($packet->{color},$pad."#     $piece = $byte")
-			if $mon & $MON_PIECE;
+		printConsole($packet->{color},$pad."#     $piece = $byte",$mon)
+			if $mon & $MON_PIECES;
 	}
 	elsif ($piece eq 'bits')				# one word (flag on wpmgr changed events)
 	{
 		my $word = unpack('v',substr($data,$$pdata,2));
 		$packet->{$piece} = $word;
 		$$pdata += 2;
-		printConsole($packet->{color},$pad."#     $piece = $word")
-			if $mon & $MON_PIECE;
+		printConsole($packet->{color},$pad."#     $piece = $word",$mon)
+			if $mon & $MON_PIECES;
 	}
 	elsif ($piece =~ /is_dict|is_point/)	# generic boolean value
 	{
 		# state only to the degree that the $pieces are
 		# defined in the rules of derived classes, yet
 		# there is no special handling here
-		display($dbg_parse,1,"$piece = 1");
+		display($dbg_parse + 1,1,"$piece = 1");
 		$packet->{$piece} = 1;
-		printConsole($packet->{color},$pad."#     $piece = 1")
-			if $mon & $MON_PIECE;
+		printConsole($packet->{color},$pad."#     $piece = 1",$mon)
+			if $mon & $MON_PIECES;
 	}
 
 	# DERIVED CLASSES MUST EXPLICITLY HANDLE OTHER PIECES THAT CHANGE STATE
@@ -291,30 +279,13 @@ sub parsePiece
 		$show_value = sprintf("0x%02x",$value)
 			if $piece !~ /db_count|db_version|evt_flag/;
 
-		printConsole($packet->{color},$pad."#     $piece = $show_value")
-			if $mon & $MON_PIECE;
+		printConsole($packet->{color},$pad."#     $piece = $show_value",$mon)
+			if $mon & $MON_PIECES;
 	}
 
 	return 1;
 }
 
-
-
-
-
-#---------------------------------------
-# temporary derived classes
-#---------------------------------------
-
-package e_DBNAV;
-use strict;
-use warnings;
-use threads;
-use threads::shared;
-use Pub::Utils;
-use a_defs;
-use a_utils;
-use base qw(a_parser);
 
 
 1;

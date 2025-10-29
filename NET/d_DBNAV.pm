@@ -513,7 +513,7 @@ sub decode_field
 		my $subtype_hex= sprintf("%02x",$subtype);
 		my $record_type_hex = sprintf("%02x",$record_type);
 
-		return "        ".
+		return "        # ".
 			pad("field($field_num)",10).
 			pad("offset($save_offset)=$some_offset",16).
 			pad("type($type_hex)",9).
@@ -565,7 +565,7 @@ sub handlePacket
 
 	if ($text)
 	{
-		$text = "    DATABASE len($packet_len) cmd($cmd) dir($dir) sid($sid) num_fields($num_fields)\n".$text;
+		$text = "#        len($packet_len) cmd($cmd) dir($dir) sid($sid) num_fields($num_fields)\n".$text;
 		setConsoleColor($this->{in_color}) if $this->{in_color};
 		print $text;
 		setConsoleColor() if $this->{in_color};
@@ -608,6 +608,98 @@ sub onIdle
 	}
 }
 
+
+
+#========================================================
+# e_DBNAV parser
+#========================================================
+
+
+package e_DBNAV;
+use strict;
+use warnings;
+use threads;
+use threads::shared;
+use Pub::Utils;
+use a_defs;
+use a_utils;
+use base qw(a_parser);
+
+
+my $dbg_dp = 0;
+
+
+sub new
+{
+	my ($class, $parent, $def_port) = @_;
+	display($dbg_dp,0,"e_DBNAV::new($parent->{name}) def_port($def_port)");
+	my $this = $class->SUPER::new($parent,$def_port);
+	bless $this,$class;
+	$this->{name} = 'e_DBNAV';
+	return $this;
+}
+
+
+#	sub parsePacket
+#		# Calls base clase AFTER figuring out what mon_spec to use.
+#		# We pass the {mon_spec} member back to the base class
+#	{
+#		my ($this,$packet) = @_;
+#		my $payload = $packet->{payload};
+#
+#		my $mon_key = $MCTRL_WHAT_DEFAULT;
+#		my $mon_dir = $packet->{is_reply} ? $RX : $TX;
+#		my $dir_def = $this->{$mon_dir};
+#		my $mon_spec = $packet->{mon_spec} = $dir_def->{$mon_key};
+#
+#		my $mon = $mon_spec->{mon} || 0;
+#		my $ctrl = $mon_spec->{ctrl} || 0;
+#		display($dbg_dp+1,0,sprintf("e_DBNAV::parsePacket($mon_dir) ctrl(%04x) mon(%08x)",$ctrl,$mon));
+#
+#		my $rslt = $this->SUPER::parsePacket($packet);
+#
+#		# temp debugging
+#		# display_record(0,0,"packet",$packet,'payload|points') if $mon & $MON_PIECE;
+#
+#		return $rslt;
+#	}
+#
+
+
+
+sub parseMessage
+	# Calls base_clase BEFORE doing WPMGR specific stuff,
+	# which particularly involves maintaing the 'what' context
+	# across messages, knowing what messages have sequence numbers,
+	# and checking twice for rules,
+{
+	my ($this,$packet,$len,$part,$hdr) = @_;
+	display($dbg_dp+2,0,"e_DBNAV::parseMessage($len)");
+	return 0 if !$this->SUPER::parseMessage($packet,$len,$part,$hdr);
+
+	my ($cmd_word,$sid,$num_fields) = unpack('vvV',substr($part,0,8));
+	my $cmd = $cmd_word & 0xff;
+	my $dir = $cmd_word & 0xff00;
+	my $offset = 8;
+
+	display($dbg_dp+2,1,"e_DBNAV num_fields=$num_fields");
+	
+	$this->{instance_counters} = shared_clone({});
+
+	my $text = '';
+	for (my $i=0; $i<$num_fields; $i++)
+	{
+		$text .= d_DBNAV::decode_field($this,$i,$part,\$offset);
+	}
+
+	my $mon = $packet->{mon};
+	if ($text && ($mon & $MON_PARSE))
+	{
+		$text = "    # DBNAV len($len) cmd($cmd) dir($dir) sid($sid) num_fields($num_fields)\n".$text;
+		printConsole($packet->{color},$text,$mon);
+	}
+
+}	# e_DBNAV::parseMessage()
 
 
 

@@ -5,18 +5,32 @@
 package a_defs;
 use strict;
 use warnings;
+use threads;
+use threads::shared;
 use Socket qw(pack_sockaddr_in inet_aton);
 use Pub::Utils;
+
+
+# shark features that can be turned on and off
+
+our $WITH_SERIAL		= 1;
+our $WITH_RAYSYS		= 1;
+our $WITH_HTTP_SERVER	= 0;
+our $WITH_SNIFFER 		= 1;
+our $WITH_TCP_SCANNER	= 0;
+our $WITH_UDP_SCANNER	= 0;	# sniffer must be disabled for udp_scanner
+our $WITH_WX				= 1;
+
+# implemented service_ports that can be turned on and of
+
+our $WITH_TRACK 		= 0;
+our $WITH_WPMGR 		= 0;
+our $WITH_FILESYS 		= 0;
+our $WITH_DBNAV 		= 0;
 
 our $AUTO_START_IMPLEMENTED_SERVICES = 1;
 	# RAYSYS will automatically start service_ports marked as 'implemented'.
 	# Otherwise shark will start them, and they will wait for RAYSYS to find them.
-	
-my $WITH_TRACK 		= 0;
-my $WITH_WPMGR 		= 0;
-my $WITH_FILESYS 	= 1;
-my $WITH_DBNAV 		= 0;
-	# Allow RAYSYS to start implemented 'real' services
 	
 
 BEGIN
@@ -24,6 +38,18 @@ BEGIN
  	use Exporter qw( import );
     our @EXPORT = qw(
 
+		$WITH_SERIAL
+		$WITH_RAYSYS
+		$WITH_HTTP_SERVER
+		$WITH_SNIFFER
+		$WITH_TCP_SCANNER
+		$WITH_UDP_SCANNER
+		$WITH_WX
+
+		$WITH_TRACK
+		$WITH_WPMGR
+		$WITH_FILESYS
+		$WITH_DBNAV
 		$AUTO_START_IMPLEMENTED_SERVICES
 	
 		$LOCAL_IP
@@ -78,54 +104,42 @@ BEGIN
 		$E80_1_IP
         $E80_2_IP
 
-
-		$RX
-		$TX
-
-		$MCTRL_SOURCE_SNIFFER
-		$MCTRL_DEVICE_SHARK
-		$MCTRL_DEVICE_RNS
-		$MCTRL_SNIFF_SELF
-		$MCTRL_DIRECTION_REQUEST
-		$MCTRL_DIRECTION_REPLY
-		$MCTRL_WHAT_DEFAULT
-		$MCTRL_WHAT_DICT
-		$MCTRL_WHAT_TRACK
-		$MCTRL_WHAT_WP
-		$MCTRL_WHAT_ROUTE
-		$MCTRL_WHAT_GROUP
-
+		$MON_HEADER
 		$MON_RAW
 		$MON_MULTI
 		$MON_PARSE
-		$MON_PIECE
-		$MON_SEMANTIC
-		$MON_RECORD
+		$MON_PIECES
+		$MON_DICT
 		$MON_PACK
 		$MON_PACK_CONTROL
 		$MON_PACK_UNKNOWN
-		$MON_UNPACK
-		$MON_UNPACK_CONTROL
-		$MON_UNPACK_UNKNOWN
-		$MON_REC_RX
-		$MON_REC_RX_CONTROL
-		$MON_REC_RX_UNKNOWN
-		$MON_REC_RX_DECODED
-		$MON_REC_TX
-		$MON_REC_TX_CONTROL
-		$MON_REC_TX_UNKNOWN
-		$MON_REC_TX_DECODED				
+		$MON_REC
+		$MON_REC_CONTROL
+		$MON_REC_UNKNOWN
+		$MON_ALL
+		$MON_DUMP_RECORD
+		$MON_DUMP_DETAILS
+		$MON_SNIFF_SELF
+
+
+		$MON_WRITE_LOG
+		$MON_LOG_ONLY
+		$MON_SRC_SHARK
+	
+		$MON_WHAT_WAYPOINT
+		$MON_WHAT_ROUTE
+		$MON_WHAT_GROUP
+		
     );
 }
 
 
 
-# Interesting factoids that I want to remember
 
+# Interesting factoids that I want to remember
 
 our $E80_1_IP = '10.0.241.54';
 our $E80_2_IP = '10.0.241.83';
-
 
 
 #----------------------------------------
@@ -330,147 +344,6 @@ our %KNOWN_SERVICES = (
 		27	=> 'Alarm' );
 
 
-
-#------------------------------------------------
-# PACKET MONITORING BITS
-#------------------------------------------------
-# Monitoring/logging is controlled by per-service_id, per-direction,
-# and per-subclass MASKS that tell what to show/log and at what
-# level of detail to do so, in parsing PACKETS that contain RAYSYS
-# MESSAGES.
-#
-# This monitoring is focused entirely on the packets, and is
-# not intended to provide options for service monitoring,
-# which might include things like service_port public API's,
-# database states, event handling, control flow, etc.
-#
-# It is built on the notion that certain services are IMPLEMENTED
-# and/or have sophisticated parsers for understanding the semantic
-# content of messages, whereas other services don't, and yet we
-# still want to see traffic to/from them, and/or probe them.
-#
-# Monitoring inherently knows that there is a difference between
-# packets sent/received by REAL service_ports derived from B_SOCK,
-# which have a {SERVICE_ID} and a {PARSER}, and packets from SNIFFER,
-# from which the service_id, and hence the parseer, must be derived
-# from the packet (messages).
-#
-# Particularly important is the notion that SNIFFER is intended primarily
-# for understanding traffic between RAYNET devices, particularly RNS<->E80,
-# an only secondarily, for monitoring SHARK<->E80 'self' communications,
-# i.e. comms between this program (b_sock service_ports), and RAYNET,
-# which is mostly just the E80s at this time.
-#
-# For BSOCK device_ports, these monitoring bit-masks are placed on the
-# single parser that is constructed when the b_sock is instantiated by RAYSYS.
-# For SNIFFER the monitoring bits are used to create a hash of parsers
-# that can be re-used on subsequent similar packet.
-#
-# Although parsing can be viewed as a LINEAR process, proceeding from
-# the raw packets, through breaking them up into messages, through
-# parsing those messages, and including parsing known record types,
-# the packing/unpacking of those, and the highest level semantic
-# interpretaion (decoding) of their contents, the MASK allows the
-# selective visualization of any or all of those steps in the process
-# independently for debugging, learning, and monitoring purposes.
-#
-#-----------------------------------------------------------------------
-# PROBLEM
-#-----------------------------------------------------------------------
-# For 'real' service ports created by RAYSYS, these default bits
-# are denormalized onto the service_ports, where it would then
-# make sense to change them on a per-service_port basis, i.e. when
-# there are multiple advertisers (at different ip's) for a 'soft'
-# diffentiation.  This is/was especially convenient in the UI,
-# which keeps track of advertised, not potential, service ports.
-#
-# For sniffer, however, there is no concept of a maintained list of
-# advertised ports, and to some degree denormalizing these bits
-# in that same way doesn't make any sense.  However, for each unique
-# service ip:port that sniffer does see, it creates a new parser,
-# so the UI equivilant of RAYSYS's list of service ports, *could be*
-# sniffers list of parsers.
-#
-# I am tempted to just make the RAYSYS_DEFAULTS and SNIFFER_DEFAULTS
-# shared and NOT denormalize them, and then let the UI modify them
-# in place.
-
-
-
-# directions as nice readable strings
-
-our $RX = 'rx';
-our $TX = 'tx';
-
-# control bits go into the {ctrl} word and are used to
-# provide meta information like the source of the packet,
-# the client device (shark or rns), and/or record subtypes
-# within associate with the monitoring bits.
-
-our $MCTRL_SOURCE_SNIFFER			= 0x8000;				# packet orginated in sniffer as opposed to shark
-
-our $MCTRL_DEVICE_SHARK				= 0x1000;				# shark is the client device
-our $MCTRL_DEVICE_RNS				= 0x2000;				# RNS is the client device
-our $MCTRL_SNIFF_SELF				= 0x4000;				# whether to sniff "self" (shark) packets in sniffer
-
-our $MCTRL_DIRECTION_REQUEST		= 0x0100;				# packets sent from client --> server
-our $MCTRL_DIRECTION_REPLY			= 0x0200;				# packets sent from server --> client
-
-our $MCTRL_WHAT_DEFAULT				= 0x0000;				# default subtype for base parser and services that only have one record type
-our $MCTRL_WHAT_DICT				= 0x0010;
-our $MCTRL_WHAT_TRACK				= 0x0020;			    # duplicated; service specific
-our $MCTRL_WHAT_WP					= 0x0020;
-our $MCTRL_WHAT_ROUTE				= 0x0040;
-our $MCTRL_WHAT_GROUP				= 0x0080;
-
-# monitoring bits
-
-our $MON_RAW						= 0x00000001;			# the raw packet, with source and destination addresses, arrow, and length header
-our $MON_MULTI						= 0x00000002;			# show full messages vs only the first line
-
-our $MON_PARSE						= 0x00000010;			# bracketting of multi-message packet parsing, including start and final return values
-our $MON_PIECE						= 0x00000020;			# parsing of individual messages into pieces
-our $MON_SEMANTIC					= 0x00000040;			# individual message semantic header COMMAND, SID, SEQ, {value}, etc
-
-our $MON_RECORD						= 0x00000100;			# bracketting of parsing of known record types
-
-our $MON_PACK						= 0x00001000;			# monitoring of packing
-our $MON_PACK_CONTROL				= 0x00002000;
-our $MON_PACK_UNKNOWN				= 0x00004000;
-
-our $MON_UNPACK						= 0x00010000;			# monitoring of unpackking
-our $MON_UNPACK_CONTROL				= 0x00020000;
-our $MON_UNPACK_UNKNOWN				= 0x00040000;			# question whether unpacked uknowns should be propogated
-
-our $MON_REC_RX						= 0x00100000;			# monitor reply records with most important fields (i.e. name, latlon, etc)
-our $MON_REC_RX_CONTROL				= 0x00200000;			# 'control fields' within records (i.e. name_len, num_wpts, etc)
-our $MON_REC_RX_UNKNOWN				= 0x00400000;			# as-yet unknown fields within records, typically displayed as their raw hex strings
-our $MON_REC_RX_DECODED				= 0x00800000;			# decoded semantics, i.e. unscaled lat/lons, conversions of north/east to lat longs, times, dates, etc)
-
-our $MON_REC_TX						= 0x01000000;			# monitor request records with most important fields (i.e. name, latlon, etc)
-our $MON_REC_TX_CONTROL				= 0x02000000;           # 'control fields' within records (i.e. name_len, num_wpts, etc)
-our $MON_REC_TX_UNKNOWN				= 0x04000000;           # as-yet unknown fields within records, typically displayed as their raw hex strings
-our $MON_REC_TX_DECODED				= 0x08800000;			# decoded semantics, i.e. unscaled lat/lons, conversions of north/east to lat longs, times, dates, etc)
-
-
-# Global Defaults and useful masks
-
-my $MCTRL_TRACK		= $MCTRL_WHAT_DICT | $MCTRL_WHAT_TRACK;
-my $MCTRL_WP		= $MCTRL_WHAT_DICT | $MCTRL_WHAT_WP;
-my $MCTRL_ROUTE		= $MCTRL_WHAT_DICT | $MCTRL_WHAT_ROUTE;
-my $MCTRL_GROUP		= $MCTRL_WHAT_DICT | $MCTRL_WHAT_GROUP;
-
-my $MON_ALL			= 0xffffffff;
-my $MON_MASK_RAW	= 0x0000000f;
-my $MON_MASK_PARSE	= 0x000000f0;
-my $MON_MASK_REC	= 0x00000f00;
-my $MON_MASK_PACK	= 0x0000f000;
-my $MON_MASK_UNPACK	= 0x000f0000;
-my $MON_MASK_REC_RX	= 0x00f00000;
-my $MON_MASK_REC_TX	= 0x0f000000;
-
-
-
 #--------------------------------------------------------------------------------------
 # BASE SERVICE_PORT (by PORT) definitions
 #--------------------------------------------------------------------------------------
@@ -574,204 +447,313 @@ our %SERVICE_PORT_DEFS  = (
 );
 
 
-for my $port (keys %SERVICE_PORT_DEFS)
-{
-	my $def = $SERVICE_PORT_DEFS{$port};
-	$def->{$RX} = { $MCTRL_WHAT_DEFAULT => { ctrl => $MCTRL_DIRECTION_REPLY, 	mon => $MON_MULTI, } };
-	$def->{$TX} = { $MCTRL_WHAT_DEFAULT => { ctrl => $MCTRL_DIRECTION_REQUEST,	mon => $MON_MULTI, } };
-}
 
 
 # Add fields for implemented service_ports
 # I use tPORT here to connote that I have defined these
 # ports by other constants but I am not using those here yet.
 
-my $tPORT_RAYSYS 	= 5800;
-my $tPORT_FILESYS 	= 2049;
-my $tPORT_WPMGR 	= 2052;
-my $tPORT_TRACK 	= 2053;
-my $tPORT_DBNAV 	= 2562;
+my $SPORT_FILESYS 	= 2049;
+my $SPORT_WPMGR 	= 2052;
+my $SPORT_TRACK 	= 2053;
+my $SPORT_DBNAV 	= 2562;
 
 
-mergeHash($SERVICE_PORT_DEFS{$tPORT_FILESYS},{
+mergeHash($SERVICE_PORT_DEFS{$SPORT_FILESYS},{
 	parser_class	=> 'e_FILESYS',
 	implemented 	=> $WITH_FILESYS,
 	auto_connect 	=> 1,
 	auto_populate	=> 1 });
-mergeHash($SERVICE_PORT_DEFS{$tPORT_WPMGR},{
+mergeHash($SERVICE_PORT_DEFS{$SPORT_WPMGR},{
 	parser_class	=> 'e_WPMGR',
 	implemented 	=> $WITH_WPMGR,
 	auto_connect 	=> 1,
-	auto_populate 	=> 1,
-	tx => {
-		$MCTRL_WHAT_DICT	=> { ctrl => $MCTRL_DIRECTION_REQUEST | $MCTRL_WHAT_DICT, },
-		$MCTRL_WHAT_WP		=> { ctrl => $MCTRL_DIRECTION_REQUEST | $MCTRL_WHAT_WP, },
-		$MCTRL_WHAT_GROUP	=> { ctrl => $MCTRL_DIRECTION_REQUEST | $MCTRL_WHAT_ROUTE, },
-		$MCTRL_WHAT_ROUTE	=> { ctrl => $MCTRL_DIRECTION_REQUEST | $MCTRL_WHAT_GROUP, }, },
-	rx => {
-		$MCTRL_WHAT_DICT	=> { ctrl => $MCTRL_DIRECTION_REPLY   | $MCTRL_WHAT_DICT, },
-		$MCTRL_WHAT_WP		=> { ctrl => $MCTRL_DIRECTION_REPLY   | $MCTRL_WHAT_WP, },
-		$MCTRL_WHAT_GROUP	=> { ctrl => $MCTRL_DIRECTION_REPLY   | $MCTRL_WHAT_ROUTE, },
-		$MCTRL_WHAT_ROUTE	=> { ctrl => $MCTRL_DIRECTION_REPLY   | $MCTRL_WHAT_GROUP, }, },
-	});
-mergeHash($SERVICE_PORT_DEFS{$tPORT_TRACK},{
+	auto_populate 	=> 1, });
+mergeHash($SERVICE_PORT_DEFS{$SPORT_TRACK},{
 	parser_class	=> 'e_TRACK',
 	implemented 	=> $WITH_TRACK,
 	auto_connect 	=> 1,
-	auto_populate 	=> 1,
-	tx => {
-		$MCTRL_WHAT_DICT	=> { ctrl => $MCTRL_DIRECTION_REQUEST | $MCTRL_WHAT_DICT, },
-		$MCTRL_WHAT_TRACK	=> { ctrl => $MCTRL_DIRECTION_REQUEST | $MCTRL_WHAT_TRACK, }, },
-	rx => {
-		$MCTRL_WHAT_DICT	=> { ctrl => $MCTRL_DIRECTION_REPLY   | $MCTRL_WHAT_DICT, },
-		$MCTRL_WHAT_TRACK	=> { ctrl => $MCTRL_DIRECTION_REPLY   | $MCTRL_WHAT_TRACK, }, },
-	});
-mergeHash($SERVICE_PORT_DEFS{$tPORT_DBNAV},{
+	auto_populate 	=> 1, });
+mergeHash($SERVICE_PORT_DEFS{$SPORT_DBNAV},{
 	parser_class	=> 'e_DBNAV',
 	implemented 	=> $WITH_DBNAV,
 	auto_connect 	=> 1,
 	auto_populate 	=> 1 });
 
 
-#---------------------------------------------------------
+#---------------------------------------------
+# monitor bit utilities
+#---------------------------------------------
+# moved away from end of this file for readability
+# array positions for WPMGR mon_ins/outs and colors
+
+our $MON_WHAT_WAYPOINT		= 0;
+our $MON_WHAT_ROUTE			= 1;
+our $MON_WHAT_GROUP			= 2;
+
+
+sub applyMonBits
+	# apply the $MON_SNIFF_SELF to the in/outs of
+	# of the given port. i.e. show this implemented
+	# service_ports messages in sniffer as well
+{
+	my ($hash,$port,$bits,$remove) = @_;
+	my $def = $hash->{$port};
+	if ($port == $SPORT_WPMGR)
+	{
+		for my $i ($MON_WHAT_WAYPOINT..$MON_WHAT_GROUP)
+		{
+			if ($remove)
+			{
+				$def->{mon_ins}->[$i]  &= ~$bits;
+				$def->{mon_outs}->[$i] &= ~$bits;
+			}
+			else
+			{
+				$def->{mon_ins}->[$i]  |= $bits;
+				$def->{mon_outs}->[$i] |= $bits;
+			}
+		}
+	}
+	elsif ($remove)
+	{
+		$def->{mon_in} 	&= ~$bits;
+		$def->{mon_out} &= ~$bits;
+	}
+	else
+	{
+		$def->{mon_in} 	|= $bits;
+		$def->{mon_out} |= $bits;
+
+	}
+
+}
+
+
+#======================================================================
+#======================================================================
+# PACKET MONITORING BITS
+#======================================================================
+#======================================================================
+# Note that $MON_DUMP records are not placed in recordings (log files),
+# as they would break the notion of a cleanly playable recorded session.
+# Otherwise, everything shown uses # comments or is the header with an arrow
+# to make it easily parsable for playback.
+
+our $MON_HEADER				= 0x0001;			# the packet header with source and destination addresses and arrow
+our $MON_RAW				= 0x0002;			# the raw messages, tcp with length WORD, all with CMD_WORD, DWORDS, and ascii
+our $MON_MULTI				= 0x0004;			# show full raw messages vs only the first line of DWORDS
+
+our $MON_PARSE				= 0x0010;			# show parsing of ind			ividual messages within a packet
+our $MON_PIECES				= 0x0020;			# show the pieces parsed out of individual messages
+our $MON_DICT				= 0x0040;			# show the uuids in parsed dictionariees
+
+our $MON_PACK				= 0x0100;			# monitoring of packing/unpacking main fields, i.e. name, latlon, etc
+our $MON_PACK_CONTROL		= 0x0200;			# monitoring of packing/unpacking control fields, i.e. name_len, num_wpts, etc
+our $MON_PACK_UNKNOWN		= 0x0400;			# monitoring of packing/unpacking unknown fields, i.e. u1, u3_200, etc
+
+our $MON_REC				= 0x1000;			# show finished records with semantic decoding of main fields (i.e. latlon, northeast, date, time, etc)
+our $MON_REC_CONTROL		= 0x2000;			# show finished records' conntrol fields, as unpacked
+our $MON_REC_UNKNOWN		= 0x8000;			# show finished records' unknown fields as upacked
+
+our $MON_ALL				= 0xffff;			# does not include final packet dummping
+
+our $MON_DUMP_RECORD		= 0x10000;			# perl dump of finished record in json like format
+our $MON_DUMP_DETAILS		= 0x20000;			# include certain big things (i.e. arrays of points in tracks) in the dump
+
+our $MON_SNIFF_SELF			= 0x80000;			# monitor 'real' shark (b_sock) packets from sniffer
+
+our $MON_WRITE_LOG			= 0x100000;			# write to the shark.log or rns.log files based on {is_shark} packet member
+our $MON_LOG_ONLY			= 0x200000;			# don't show on console, only write to log file
+	# NOT in $MON_ALL
+
+our $MON_SRC_SHARK			= 0x1000000;		# essentially a denormalized version of $packet->{is_shark}
+	# used to determine which log file to write to
+
+
+# some common combinations
+
+our $MON_START				= $MON_HEADER | $MON_RAW;
+our $MON_PARSE_FULL			= $MON_START | $MON_PARSE | $MON_PIECES | $MON_DICT;
+our $MON_PACK_FULL			= $MON_PACK | $MON_PACK_CONTROL | $MON_PACK_UNKNOWN;
+our $MON_REC_FULL			= $MON_REC | $MON_REC_CONTROL | $MON_REC_UNKNOWN;
+
+my $MON_CMD					= $MON_HEADER | $MON_PARSE | $MON_PIECES;
+	# dont want to see dictionaries on command requests
+
+
+
+
+#======================================================================
 # Shark Defaults
-#---------------------------------------------------------
-
-
-my $dbg_startup = 1;
-
+#======================================================================
+# IN and OUT are from the CLIENT's perspective,
+# which corresponds to REPLY and REQUEST
 
 our %RAYSYS_DEFAULTS;
 for my $port (keys %SERVICE_PORT_DEFS)
 {
-	$RAYSYS_DEFAULTS{$port} = {};
-	mergeHash($RAYSYS_DEFAULTS{$port},$SERVICE_PORT_DEFS{$port});
+	my $def = $RAYSYS_DEFAULTS{$port} = shared_clone({});
+	mergeHash($def,$SERVICE_PORT_DEFS{$port});
+
+	$def->{is_shark} = 1;
+	$def->{is_sniffer} = 0;
+
+	$def->{mon_in} = 0;
+	$def->{mon_out} = 0;
+
+	$def->{in_color} = 0;
+	$def->{out_color} = 0;
 }
 
+# My current hardwired monitoring preferences, per implemented service
 
-sub setMonCol
-{
-	my ($defs,$port,$dir,$what,$color) = @_;
-	my $def = $defs->{$port};
-	display($dbg_startup,0,"setMonCol($def->{name},$port,$dir,$what,$color)");
-	my $def_dir = $def->{$dir};
-	my $defaults = $def_dir->{$what};
-	$defaults->{color} = $color;
-}
-
-sub addMonDef
-{
-	my ($defs,$port,$dir,$what,$mask) = @_;
-	my $def = $defs->{$port};
-	display($dbg_startup,0,"setMonDef($def->{name},$port,$dir,$what,$mask)");
-	my $def_dir = $def->{$dir};
-	my $defaults = $def_dir->{$what};
-	$defaults->{mon} |= $mask;
-}
-
-sub addMonCtrl
-{
-	my ($defs,$port,$dir,$bits) = @_;
-	my $def = $defs->{$port};
-	display($dbg_startup,0,"addMonCtrl($def->{name},$port,$dir,$bits)");
-	my $def_dir = $def->{$dir};
-
-	for my $what (keys %$def_dir)
-	{
-		display($dbg_startup,1,"addMonCtrl($def->{name},$dir,$what) bits($bits)");
-		$def_dir->{$what}->{ctrl} |= $bits;
-	}
-}
-
-
-# initially defining monitoring defaults, per service-what, for both input and output
-
-
-my $SHARK_MON_RAYSYS	= 0;	# $MON_RAW;
 my $SHARK_MON_FILESYS	= 0;	# $MON_ALL;
-my $SHARK_MON_DBNAV		= $MON_ALL;
+my $SHARK_MON_DBNAV		= 0;	# $MON_ALL;
+my $SHARK_MON_TRACK 	= 0;	# $MON_ALL;
+my $SHARK_MON_WAYPOINT 	= $MON_PARSE_FULL;	# $MON_ALL;
+my $SHARK_MON_ROUTE 	= $MON_HEADER | $MON_DUMP_RECORD;	#$MON_ALL;
+my $SHARK_MON_GROUP 	= 0;	# $MON_ALL;
 
-my $SHARK_MON_DICT 		= $MON_ALL;
-my $SHARK_MON_TRACK 	= $MON_ALL;
-my $SHARK_MON_WP 		= $MON_ALL;
-my $SHARK_MON_ROUTE 	= $MON_ALL;
-my $SHARK_MON_GROUP 	= $MON_ALL;
+mergeHash($RAYSYS_DEFAULTS{$SPORT_FILESYS},{
+	mon_in			=> $SHARK_MON_FILESYS,
+	mon_out 		=> $SHARK_MON_FILESYS,
+	in_color		=> $UTILS_COLOR_BROWN,
+	out_color		=> $UTILS_COLOR_LIGHT_MAGENTA, });
+mergeHash($RAYSYS_DEFAULTS{$SPORT_DBNAV},{
+	mon_in			=> $SHARK_MON_DBNAV,
+	mon_out 		=> $SHARK_MON_DBNAV,
+	in_color		=> $UTILS_COLOR_LIGHT_GREEN,
+	out_color		=> $UTILS_COLOR_LIGHT_MAGENTA, });
+mergeHash($RAYSYS_DEFAULTS{$SPORT_TRACK},{
+	mon_in			=> $SHARK_MON_TRACK,
+	mon_out 		=> $SHARK_MON_TRACK,
+	in_color		=> $UTILS_COLOR_LIGHT_CYAN,
+	out_color		=> $UTILS_COLOR_LIGHT_BLUE, });
 
+# WPMGR has arrays of mon/colors and MOVES
+# them to the scalars based on WHAT is being
+# talked about.  The order is WAYPOINT, ROUTE, GROUP
 
-# raysys
-
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_RAYSYS,  $RX, $MCTRL_WHAT_DEFAULT,	 $SHARK_MON_RAYSYS);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_RAYSYS,  $TX, $MCTRL_WHAT_DEFAULT,	 $SHARK_MON_RAYSYS);
-
-# filesys
-
-setMonCol(\%RAYSYS_DEFAULTS, $tPORT_FILESYS, $RX, $MCTRL_WHAT_DEFAULT,	 $UTILS_COLOR_BROWN);
-setMonCol(\%RAYSYS_DEFAULTS, $tPORT_FILESYS, $TX, $MCTRL_WHAT_DEFAULT,	 $UTILS_COLOR_LIGHT_MAGENTA);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_FILESYS, $RX, $MCTRL_WHAT_DEFAULT,	 $SHARK_MON_FILESYS);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_FILESYS, $TX, $MCTRL_WHAT_DEFAULT,	 $SHARK_MON_FILESYS);
-
-# dbnav
-
-setMonCol(\%RAYSYS_DEFAULTS, $tPORT_DBNAV, 	 $RX, $MCTRL_WHAT_DEFAULT,	 $UTILS_COLOR_LIGHT_GREEN);
-setMonCol(\%RAYSYS_DEFAULTS, $tPORT_DBNAV, 	 $TX, $MCTRL_WHAT_DEFAULT,	 $UTILS_COLOR_LIGHT_MAGENTA);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_DBNAV, 	 $RX, $MCTRL_WHAT_DEFAULT,	 $SHARK_MON_DBNAV);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_DBNAV, 	 $TX, $MCTRL_WHAT_DEFAULT,	 $SHARK_MON_DBNAV);
-
-# track
-
-setMonCol(\%RAYSYS_DEFAULTS, $tPORT_TRACK, 	 $RX, $MCTRL_WHAT_DICT,	 $UTILS_COLOR_WHITE);
-setMonCol(\%RAYSYS_DEFAULTS, $tPORT_TRACK,	 $TX, $MCTRL_WHAT_TRACK, $UTILS_COLOR_LIGHT_CYAN);
-setMonCol(\%RAYSYS_DEFAULTS, $tPORT_TRACK,	 $RX, $MCTRL_WHAT_TRACK, $UTILS_COLOR_LIGHT_BLUE);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_TRACK, 	 $RX, $MCTRL_WHAT_DICT,	 $SHARK_MON_DICT);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_TRACK, 	 $TX, $MCTRL_WHAT_DICT,	 $SHARK_MON_DICT);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_TRACK, 	 $RX, $MCTRL_WHAT_TRACK, $SHARK_MON_TRACK);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_TRACK, 	 $TX, $MCTRL_WHAT_TRACK, $SHARK_MON_TRACK);
-
-# wpmgr
-
-setMonCol(\%RAYSYS_DEFAULTS, $tPORT_WPMGR, 	 $RX, $MCTRL_WHAT_DICT,	 $UTILS_COLOR_WHITE);
-setMonCol(\%RAYSYS_DEFAULTS, $tPORT_WPMGR, 	 $RX, $MCTRL_WHAT_WP,	 $UTILS_COLOR_BROWN);
-setMonCol(\%RAYSYS_DEFAULTS, $tPORT_WPMGR, 	 $RX, $MCTRL_WHAT_ROUTE, $UTILS_COLOR_BROWN);
-setMonCol(\%RAYSYS_DEFAULTS, $tPORT_WPMGR, 	 $RX, $MCTRL_WHAT_GROUP, $UTILS_COLOR_BROWN);
-setMonCol(\%RAYSYS_DEFAULTS, $tPORT_WPMGR, 	 $TX, $MCTRL_WHAT_WP,	 $UTILS_COLOR_LIGHT_CYAN);
-setMonCol(\%RAYSYS_DEFAULTS, $tPORT_WPMGR, 	 $TX, $MCTRL_WHAT_ROUTE, $UTILS_COLOR_LIGHT_CYAN);
-setMonCol(\%RAYSYS_DEFAULTS, $tPORT_WPMGR, 	 $TX, $MCTRL_WHAT_GROUP, $UTILS_COLOR_LIGHT_CYAN);
-
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_WPMGR, 	 $RX, $MCTRL_WHAT_DICT,	 $SHARK_MON_DICT);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_WPMGR, 	 $TX, $MCTRL_WHAT_DICT,	 $SHARK_MON_DICT);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_WPMGR, 	 $RX, $MCTRL_WHAT_WP,	 $SHARK_MON_WP);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_WPMGR, 	 $TX, $MCTRL_WHAT_WP,	 $SHARK_MON_WP);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_WPMGR, 	 $RX, $MCTRL_WHAT_ROUTE, $SHARK_MON_ROUTE);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_WPMGR, 	 $TX, $MCTRL_WHAT_ROUTE, $SHARK_MON_ROUTE);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_WPMGR, 	 $RX, $MCTRL_WHAT_GROUP, $SHARK_MON_GROUP);
-addMonDef(\%RAYSYS_DEFAULTS, $tPORT_WPMGR, 	 $TX, $MCTRL_WHAT_GROUP, $SHARK_MON_GROUP);
+mergeHash($RAYSYS_DEFAULTS{$SPORT_WPMGR},{
+	mon_ins => shared_clone([
+		$SHARK_MON_WAYPOINT,
+		$SHARK_MON_ROUTE,
+		$SHARK_MON_GROUP,
+	]),
+	mon_outs => shared_clone([
+		$MON_CMD,	# $SHARK_MON_WAYPOINT,
+		$MON_CMD,	# $SHARK_MON_ROUTE,
+		0,#$MON_CMD,	# $SHARK_MON_GROUP,
+	]),
+	in_colors => shared_clone([
+		$UTILS_COLOR_BROWN,
+		$UTILS_COLOR_BROWN,
+		$UTILS_COLOR_BROWN, ]),
+	out_colors => shared_clone([
+		$UTILS_COLOR_LIGHT_CYAN,
+		$UTILS_COLOR_LIGHT_CYAN,
+		$UTILS_COLOR_LIGHT_CYAN, ]),
+});
 
 
 
+# apply the $MON_SRC_SHARK bits to %RAYSYS_DEFAULTS
+# after the implemented services mergeHash() calls
 
-#------------------------------
+for my $port (keys %RAYSYS_DEFAULTS)
+{
+	# print "raysys port($port)\n";
+	applyMonBits(\%RAYSYS_DEFAULTS,$port,$MON_SRC_SHARK);
+}
+
+
+
+#======================================================================
 # SNIFFER defaults
-#------------------------------
-# Initially, out of laziness or whatever, SNIFFER_DEFAULTS are the
-# same as RAYSYS_DEFAULTS, except with the $MCTRL_SOURCE_SNIFFER bit set.
-# Note that I have not started using $MCTRL_DEVICE_SHARK or $MCTRL_DEVICE_RNS yet
-
-
+#======================================================================
+# completely separated from RAYSYS_DEFAULTS
+# and regenerated from scratch from SERVICE_PORT_DEFS
 
 our %SNIFFER_DEFAULTS;
 for my $port (keys %RAYSYS_DEFAULTS)
 {
-	my $sniff_port = $SNIFFER_DEFAULTS{$port} = {};
-	mergeHash($sniff_port,$RAYSYS_DEFAULTS{$port});
-	addMonCtrl(\%SNIFFER_DEFAULTS,$port,$RX,$MCTRL_SOURCE_SNIFFER);
-	addMonCtrl(\%SNIFFER_DEFAULTS,$port,$TX,$MCTRL_SOURCE_SNIFFER);
+	my $def = $SNIFFER_DEFAULTS{$port} = shared_clone({});
+	mergeHash($def,$SERVICE_PORT_DEFS{$port});
+
+	$def->{is_shark} = 0;
+	$def->{is_sniffer} = 1;
+
+	$def->{mon_in} = $MON_ALL;
+	$def->{mon_out} = $MON_ALL;
+
+	$def->{in_color} = 0;
+	$def->{out_color} = 0;
+
 }
 
-addMonCtrl(\%SNIFFER_DEFAULTS,$tPORT_WPMGR,	 $RX, $MCTRL_SNIFF_SELF);
-addMonCtrl(\%SNIFFER_DEFAULTS,$tPORT_WPMGR,	 $TX, $MCTRL_SNIFF_SELF);
-addMonCtrl(\%SNIFFER_DEFAULTS,$tPORT_TRACK,	 $RX, $MCTRL_SNIFF_SELF);
-addMonCtrl(\%SNIFFER_DEFAULTS,$tPORT_TRACK,	 $TX, $MCTRL_SNIFF_SELF);
-addMonCtrl(\%SNIFFER_DEFAULTS,$tPORT_FILESYS,$RX, $MCTRL_SNIFF_SELF);
-addMonCtrl(\%SNIFFER_DEFAULTS,$tPORT_FILESYS,$TX, $MCTRL_SNIFF_SELF);
+my $SNIFF_MON_FILESYS	= 0;	# $MON_ALL;
+my $SNIFF_MON_DBNAV		= 0;	# $MON_ALL;
+my $SNIFF_MON_TRACK 	= $MON_ALL;
+my $SNIFF_MON_WAYPOINT 	= $MON_ALL;
+my $SNIFF_MON_ROUTE 	= $MON_ALL;
+my $SNIFF_MON_GROUP 	= $MON_ALL;
+
+mergeHash($SNIFFER_DEFAULTS{$SPORT_FILESYS},{
+	mon_in			=> $SNIFF_MON_FILESYS,
+	mon_out 		=> $SNIFF_MON_FILESYS,
+	in_color		=> $UTILS_COLOR_BROWN,
+	out_color		=> $UTILS_COLOR_LIGHT_MAGENTA, });
+mergeHash($SNIFFER_DEFAULTS{$SPORT_DBNAV},{
+	mon_in			=> $SNIFF_MON_DBNAV,
+	mon_out 		=> $SNIFF_MON_DBNAV,
+	in_color		=> $UTILS_COLOR_LIGHT_GREEN,
+	out_color		=> $UTILS_COLOR_LIGHT_MAGENTA, });
+mergeHash($SNIFFER_DEFAULTS{$SPORT_TRACK},{
+	mon_in			=> $SNIFF_MON_TRACK,
+	mon_out 		=> $SNIFF_MON_TRACK,
+	in_color		=> $UTILS_COLOR_LIGHT_CYAN,
+	out_color		=> $UTILS_COLOR_LIGHT_BLUE, });
+mergeHash($SNIFFER_DEFAULTS{$SPORT_WPMGR},{
+	mon_ins => shared_clone([
+		$SNIFF_MON_WAYPOINT,
+		$SNIFF_MON_ROUTE,
+		$SNIFF_MON_GROUP,
+	]),
+	mon_outs => shared_clone([
+		$SNIFF_MON_WAYPOINT,
+		$SNIFF_MON_ROUTE,
+		$SNIFF_MON_GROUP,
+	]),
+	in_colors => shared_clone([
+		$UTILS_COLOR_BROWN,
+		$UTILS_COLOR_BROWN,
+		$UTILS_COLOR_BROWN, ]),
+	out_colors => shared_clone([
+		$UTILS_COLOR_LIGHT_CYAN,
+		$UTILS_COLOR_LIGHT_CYAN,
+		$UTILS_COLOR_LIGHT_CYAN, ]),
+});
+
+
+
+# selected self monitoring of implemented services
+#
+# applyMonBits(\%SNIFFER_DEFAULTS,$SPORT_FILESYS,$MON_SNIFF_SELF);
+# applyMonBits(\%SNIFFER_DEFAULTS,$SPORT_DBNAV,$MON_SNIFF_SELF);
+# applyMonBits(\%SNIFFER_DEFAULTS,$SPORT_TRACK,$MON_SNIFF_SELF);
+# applyMonBits(\%SNIFFER_DEFAULTS,$SPORT_WPMGR,$MON_SNIFF_SELF);
+
+
+# apply the $MON_WRITE_LOG bits to SNIFFER_DEFAULTS
+# after the sniffer mergeHash() calls
+
+for my $port (keys %SNIFFER_DEFAULTS)
+{
+	# print "sniffer port($port)\n";
+	applyMonBits(\%SNIFFER_DEFAULTS,$port,$MON_WRITE_LOG | $MON_LOG_ONLY);
+}
+
+
 
 1;
