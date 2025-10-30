@@ -26,8 +26,8 @@ use base qw(b_sock);
 my $dbg 		= 1;
 my $dbg_parse 	= 1;
 my $dbg_got 	= 0;		# for returned tracks (including Current Track)
-my $dbg_events 	= 1;
-my $dbg_mods 	= 1;
+my $dbg_events 	= -1;
+my $dbg_mods 	= -1;
 
 
 my $WITH_EVENT_PROCESSING	= 1;
@@ -83,33 +83,16 @@ BEGIN
 my $TRACK_SERVICE_ID = 19;
 	# 19 == 0x13 == '1300' in streams
 
-our $SHOW_TRACK_RAW_INPUT 		= 0;
-our $SHOW_TRACK_RAW_OUTPUT		= 0;
-our $SHOW_TRACK_PARSED_INPUT  	= 0;
-our $SHOW_TRACK_PARSED_OUTPUT	= 0;
-
-my $IN_COLOR = $UTILS_COLOR_LIGHT_BLUE;
-my $OUT_COLOR = $UTILS_COLOR_LIGHT_CYAN;
-
 
 sub init
 {
 	my ($this) = @_;
 	display($dbg,0,"d_TRACK init($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
-
 	$this->SUPER::init();
-	
-	$this->{local_ip}			= $LOCAL_IP;
-	$this->{show_raw_input} 	= $SHOW_TRACK_RAW_INPUT;
-	$this->{show_raw_output} 	= $SHOW_TRACK_RAW_OUTPUT;
-	$this->{show_parsed_input}  = $SHOW_TRACK_PARSED_INPUT;
-	$this->{show_parsed_output} = $SHOW_TRACK_PARSED_OUTPUT;
-	$this->{in_color} 			= $IN_COLOR;
-	$this->{out_color} 			= $OUT_COLOR;
+	$this->{local_ip} = $LOCAL_IP;
 	
 	$this->{tracks} = shared_clone({});
 	$this->{current_track_uuid} = '';
-
 	return $this;
 }
 
@@ -185,7 +168,7 @@ sub queueTRACKCommand
 
 	my $cmd_name = $API_COMMAND_NAME{$api_command} || 'HUH235?';
 
-	if ($SHOW_TRACK_PARSED_OUTPUT)
+	if (1)
 	{
 		my $msg = "# queueTRACKCommand($api_command=$cmd_name) uuid($uuid) extra($extra)\n";
 		print $msg;
@@ -342,7 +325,7 @@ our %TRACK_REQUEST_NAME = (
 # show until it is started (or weirdly renamed before being started)
 
 #----------------------------------------------------------------------
-# Packet Parser
+# Parse rules
 #----------------------------------------------------------------------
 
 our %TRACK_PARSE_RULES = (
@@ -408,203 +391,7 @@ our %TRACK_PARSE_RULES = (
 #	info	REPLY_END		'track_uuid'							actualy mta_uuid, but we set is_track based on the rule
 #	info 	REPLY_CONTEXT	other_uuid		context_bits 0x11
 #	info	REPLY_BUFFER	<trk>
-
-
-sub parseTRACKPacket
-{
-	my ($is_reply, $buffer) = @_;
-	my $offset = 0;
-	my $pack_len = length($buffer);
-	my $r_name = $is_reply ? "Reply" : "Request";
-	display($dbg_parse,0,"parseTRACKPacket($r_name) pack_len($pack_len)");
-
-	my @parts;
-	my $num = 0;
-	while ($offset < $pack_len)
-	{
-		my $len = unpack('v',substr($buffer,$offset,2));
-		$offset += 2;
-		my $part = substr($buffer,$offset,$len);
-		push @parts,$part;
-		display($dbg_parse+1,2,"part($num) offset($offset) len($len) = ".unpack('H*',$part));
-		$offset += $len;
-		$num++;
-	}
-
-	$num = 0;
-	my $rec = shared_clone({is_dict=>0, is_point=>0, is_event=>0, evt_mask=>0, });
-	for my $part (@parts)
-	{
-		my $offset = 0;
-		my $len = length($part);
-		my ($cmd_word,$func) = unpack('vv',substr($part,$offset,4));
-		my $cmd = $cmd_word & 0xff;
-		my $dir = $cmd_word & 0xff00;
-		my $dir_hex = sprintf("%0x",$dir);
-
-		my $cmd_name = $is_reply ?
-			$TRACK_REPLY_NAME{$cmd} :
-			$TRACK_REQUEST_NAME{$cmd};
-		$cmd_name ||= 'WHO CARES';
-		display($dbg_parse,1,"parsePart($num) offset($offset) len($len) dir($dir_hex) cmd($cmd)=$cmd_name part="._lim(unpack('H*',$part),200));
-		$offset += 4;
-		$num++;
-
-		# get the rule
-		my $rule = $TRACK_PARSE_RULES{ $cmd_word };
-		if (!$rule)
-		{
-			error("NO RULE dir($dir_hex) cmd($cmd=$cmd_name)");
-			next;
-		}
-
-		if (@$rule && $$rule[0] ne 'no_seq')
-		{
-			my $seq = unpack('V',substr($part,$offset,4));
-			display($dbg_parse,2,"seq=$seq");
-			$offset += 4;
-			$rec->{seq_num} ||= $seq;
-		}
-
-		for my $piece (@$rule)
-		{
-			parsePiece(
-				$rec,
-				$piece,
-				$part,
-				\$offset,
-				$len);			# for checking big_len
-		}
-
-		# post pieces processing
-
-		if ($is_reply)
-		{
-			if ($cmd == $TRACK_REPLY_EVENT)
-			{
-				$rec->{is_event} = 1;
-				$rec->{evt_mask} |= $rec->{byte};
-				warning($dbg_parse-1,0,"TRACK EVENT($rec->{byte})");
-			}
-			elsif ($cmd == $TRACK_REPLY_CHANGED)
-			{
-				$rec->{mods} ||= shared_clone([]);
-				push @{$rec->{mods}},shared_clone({
-					uuid=>$rec->{uuid},
-					byte=>$rec->{byte} });
-			}
-		}
-		
-	}	# for each part
-
-	display_hash($dbg_parse+1,1,"parseTRACKPacket returning",$rec);
-	return $rec;
-}
-
-
-
-sub parsePiece
-{
-	my ($rec,$piece,$part,$poffset,$msg_len) = @_;
-	return if $piece eq 'no_seq';
-
-	my $text = '';
-	if ($piece eq 'buffer')
-	{
-		display($dbg_parse,1,"piece(buffer) is_dict($rec->{is_dict}) is_track="._def($rec->{is_track}));
-		if (!$rec->{is_dict})
-		{
-			# skip biglen
-			my $big_data = substr($part,$$poffset,4);
-			my $big_hex = unpack('H*',$big_data);
-			my $big_len = unpack('V',$big_data);
-
-			# warning(0,0,"msg_len($msg_len) big_len($big_hex)=$big_len");
-			# error("NOT PLUS 12") if $big_len + 12 != $msg_len;
-			
-			my $buffer = substr($part,$$poffset+4);
-			mergeHash($rec,parsePoint($buffer)) if $rec->{is_point};
-			mergeHash($rec,parseTrack($buffer)) if $rec->{is_track};
-			mergeHash($rec,parseMTA($buffer)) if !$rec->{is_track} && !$rec->{is_point};
-		}
-		else	# if ($context->{is_reply})
-		{
-			$$poffset += 4;	# skip biglen
-			my $num = unpack('V',substr($part,$$poffset,4));
-			$$poffset += 4;
-
-			display($dbg_parse,1,"piece(buffer) is_dict found $num uuids");
-			return error("too many uuids!!") if $num>1024;
-			$rec->{uuids} ||= shared_clone([]);
-			my $uuids = $rec->{uuids};
-			for (my $i=0; $i<$num; $i++)
-			{
-				my $uuid = unpack('H*',substr($part,$$poffset,8));
-				$$poffset += 8;
-				push @$uuids,$uuid;
-				display($dbg_parse,2,"uuids($i)=$uuid");
-			}
-		}
-	}
-	elsif ($piece eq 'uuid')
-	{
-		my $uuid = unpack('H*',substr($part,$$poffset,8));
-		my $field = $rec->{is_track} ? 'track_uuid' : 'uuid';
-		$rec->{$field} = $uuid;
-		display($dbg_parse,1,"uuid($field)=$uuid");
-		$$poffset += 8;
-	}
-	elsif ($piece eq 'track_uuid')
-	{
-		my $uuid = unpack('H*',substr($part,$$poffset,8));
-		$rec->{track_uuid} = $uuid;
-		display($dbg_parse,1,"piece(track_uuid)=$uuid");
-		$rec->{is_track} = 1;
-		$$poffset += 8;
-	}
-	elsif ($piece eq 'success')
-	{
-		my $status = unpack('H*',substr($part,$$poffset,4));
-		my $ok = $status eq $SUCCESS_SIG ? 1 : 0;
-		display($dbg_parse,1,"success=$ok");
-		$rec->{success} =1 if $ok;
-		$$poffset += 4;
-	}
-	elsif ($piece =~ /byte|stopable/)	# one byte flag on events
-	{
-		my $byte = unpack('C',substr($part,$$poffset++,1));
-		display($dbg_parse,1,"$piece=$byte");
-		$rec->{$piece} = $byte;
-	}
-	elsif ($piece eq 'bits')	# one word flag on changed events
-	{
-		my $bits = unpack('v',substr($part,$$poffset,2));
-		display($dbg_parse,1,"bits=$bits");
-		$rec->{$piece} = $bits;
-		$$poffset += 2;
-	}
-	elsif ($piece =~ /is_dict|is_point/)
-	{
-		display($dbg_parse,1,"$piece = 1");
-		$rec->{$piece} = 1;
-	}
-	else
-	{
-		my $str = substr($part,$$poffset,4);
-		my $value = unpack('V',$str);
-		$$poffset += 4;
-
-		$value = unpack('H*',$str) if $piece eq 'junk';
-
-		display($dbg_parse,1,"rec($piece) = '$value'");
-				
-		$rec->{$piece} = $value;
-
-	}
-}
-
-
-
+#
 
 
 #-------------------------------------------------
@@ -635,7 +422,7 @@ sub sendRequest
 {
 	my ($this,$seq,$name,$request) = @_;
 
-	if ($SHOW_TRACK_PARSED_OUTPUT)
+	if (0)
 	{
 		my $rec = parseTRACKPacket(0,$request);
 		# my $text = "# sendRequest($seq) $name\n";
@@ -709,9 +496,10 @@ sub get_tracks
 			if ($reply)
 			{
 				my $uuid = $reply->{uuid};
+				my $item = $reply->{item};
 				my $tracks = $this->{tracks};
-				$tracks->{$uuid} = $reply;
-				$reply->{version} = $this->incVersion();
+				$tracks->{$uuid} = $item;
+				$item->{version} = $this->incVersion();
 				$this->{current_track_uuid} = $uuid;
 			}
 		}
@@ -727,7 +515,7 @@ sub get_tracks
 	
 	# enqueue from dictionary
 
-	my $uuids = $reply->{uuids};
+	my $uuids = $reply->{dict_uuids};
 	my $num = 0;
 	for my $uuid (@$uuids)
 	{
@@ -768,11 +556,14 @@ sub get_track
 	my $reply = $this->waitReply(1);
 	return 0 if !$reply;
 
-	warning($dbg_got,0,"got track($uuid) = '$reply->{name}'");
 
+	# my $uuid = $reply->{uuid};
+	my $item = $reply->{item};
 	my $tracks = $this->{tracks};
-	$tracks->{$uuid} = $reply;
-	$reply->{version} = $this->incVersion();
+	$tracks->{$uuid} = $item;
+	$item->{version} = $this->incVersion();
+
+	warning($dbg_got,0,"got track($uuid) = '$item->{name}'");
 	return 1;
 
 }   # get_track()
@@ -901,11 +692,13 @@ sub do_general
 	if ($returns_current_track)
 	{
 		my $ct_uuid = $reply->{uuid};
-		warning($dbg_got,0,"got Current Track($ct_uuid) = '$reply->{name}'");
-	
+		my $item 	= $reply->{item};
 		my $tracks = $this->{tracks};
-		$tracks->{$ct_uuid} = $reply;
-		$reply->{version} = $this->incVersion();
+
+		warning($dbg_got,0,"got Current Track($ct_uuid) = '$item->{name}'");
+	
+		$tracks->{$ct_uuid} = $item;
+		$item->{version} = $this->incVersion();
 		$this->{current_track_uuid} = $ct_uuid;
 	}
 
@@ -936,36 +729,27 @@ sub handleCommand
 
 
 #========================================================================
-# virtual handlePacket method
+# implemented derived class specific event handler
 #========================================================================
+# Only called on replies via $parent->handleEvent($packet) from specific
+# derived parsePacket() methods
 
-sub handlePacket
+sub handleEvent
+	# handles any Events or Mods that the packet might have,
+	# returning undef if the packet has been completely handled.
 {
-	my ($this,$buffer) = @_;
+	my ($this,$packet) = @_;
+	return $packet if (
+		!($WITH_EVENT_PROCESSING && $packet->{is_event}) &&
+		!($WITH_MOD_PROCESSING   && $packet->{mods}) );
 
-	warning($dbg+1,0,"handlePacket(".length($buffer).") buffer=".unpack('H*',$buffer));
-
-	my $reply = parseTRACKPacket(1,$buffer);
-		# 1=is_reply
-
-	if (0 && $this->{show_parsed_input})
-	{
-		my $text = $reply->{text};
-		setConsoleColor($IN_COLOR);
-		print $text;
-		setConsoleColor() if $IN_COLOR;
-		writeLog($text,'shark.log');
-	}
-
-	# EVENTS do nothing
-	# CHANGED deletes a record or generates $API_GET_TRACK command
 
 	my $skip_reply = 0;
-	if ($reply->{is_event} && $WITH_EVENT_PROCESSING)
+	if ($packet->{is_event})
 	{
 		$skip_reply = 1;
-		my $mask = $reply->{evt_mask};
-		display($dbg_events,0,"readbuf reply EVT_MASK($mask)",0,$UTILS_COLOR_LIGHT_MAGENTA);
+		my $mask = $packet->{evt_mask};
+		display($dbg_events,0,"handleEvent EVT_MASK($mask)",0,$UTILS_COLOR_LIGHT_MAGENTA);
 
 			# 	1,3 = start
 			# 	0   = point added
@@ -983,7 +767,7 @@ sub handlePacket
 		{
 			if ($this->{current_track_uuid})
 			{
-				warning($dbg_events,0,"removing current track($this->{current_track_uuid})");
+				warning($dbg_events,1,"removing current track($this->{current_track_uuid})");
 				delete $this->{tracks}->{$this->{current_track_uuid}};
 				$this->{current_track_uuid} = '';
 				$this->incVersion();
@@ -991,20 +775,20 @@ sub handlePacket
 		}
 		if ($mask != 1)
 		{
-			warning($dbg_events,2,"enquing GET_CUR2");
+			warning($dbg_events,1,"enquing GET_CUR2");
 			$this->queueTRACKCommand($API_GENERAL_CMD,0,'cur2');
 		}
 	}
 
-	if ($reply->{mods} && $WITH_MOD_PROCESSING)
+	if ($packet->{mods})
 	{
 		$skip_reply = 1;
-		for my $mod (@{$reply->{mods}})
+		for my $mod (@{$packet->{mods}})
 		{
 			my $byte = $mod->{byte};
 			my $uuid = $mod->{uuid};
 
-			display($dbg_mods,1,"TRACK_CHANGED($uuid,$byte)");
+			display($dbg_mods,0,"handleEvent TRACK_CHANGED($uuid,$byte)");
 
 			if ($byte == 2)	# delete it
 			{
@@ -1012,24 +796,23 @@ sub handlePacket
 				my $exists = $tracks->{$uuid};
 				if ($exists)
 				{
-					warning($dbg_mods,2,"deleting tracks($uuid) $exists->{name}");
+					warning($dbg_mods,1,"deleting tracks($uuid) $exists->{name}");
 					delete $tracks->{$uuid};
 					$this->incVersion();
 				}
 			}
 			else	# enqueue a GET_TRACK command
 			{
-				warning($dbg_mods,2,"enquing GET_TRACK($uuid)");
+				warning($dbg_mods,1,"enquing GET_TRACK($uuid)");
 				$this->queueTRACKCommand($API_GET_TRACK,$uuid);
 			}
 		}	# for each $mod
 	}	# {mods} && $WITH_MOD_PROCESSING
 
-	$reply = undef if $skip_reply;	# event handled
-	warning(0,0,"handlePacket() returning reply="._def($reply));
-	return $reply;
+	warning(0,0,"handleEvent() returning undef");
+	return undef;
 
-}	# handlePacket()
+}	# handleEvent()
 
 
 1;

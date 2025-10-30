@@ -18,16 +18,16 @@ use b_records;
 use d_TRACK;
 use base qw(a_parser);
 
-my $dbg_tp = 0;
+my $dbg_tp = -2;
 
 
-sub new
+sub newParser
 {
-	my ($class, $parent, $def_port) = @_;
-	display($dbg_tp,0,"e_TRACK::new($parent->{name}) def_port($def_port)");
-	my $this = $class->SUPER::new($parent,$def_port);
+	my ($class, $parent) = @_;
+	display($dbg_tp,0,"e_TRACK::new($parent->{name})");
+	my $this = $class->SUPER::newParser($parent);
 	bless $this,$class;
-	$this->{name} = 'e_TRACK';
+	# $this->{name} = 'e_TRACK';
 	return $this;
 }
 
@@ -49,13 +49,20 @@ sub parsePacket
 
 	display($dbg_tp,0,"e_TRACK::parsePacket() is_reply($packet->{is_reply})");
 
-	my $rslt = $this->SUPER::parsePacket($packet);
+	my $rslt_packet = $this->SUPER::parsePacket($packet);
 		# returns the packet as confirmation there were no errors
 
 	display_record(0,0,"final packet($packet->{name})",$packet,'payload|points')
 		if $packet->{mon} & $MON_DUMP_RECORD;
 
-	return $rslt;
+	# derived classes that handle events (WPMGR, TRACK) should
+	# call their handleEvent methods on replies.
+	# sniffer doesn't implement handleEvent().
+
+	$rslt_packet = $this->{parent}->handleEvent($rslt_packet)
+		if $packet->{is_reply} && $this->{parent}->can('handleEvent');
+
+	return $rslt_packet;
 }
 
 
@@ -68,7 +75,7 @@ sub parseMessage
 {
 	my ($this,$packet,$len,$part,$hdr) = @_;
 	display($dbg_tp+2,0,"e_TRACK::parseMessage($len) hdr($hdr)");
-	return 0 if !$this->SUPER::parseMessage($packet,$len,$part,$hdr);
+	return undef if !$this->SUPER::parseMessage($packet,$len,$part,$hdr);
 
 	my $cmd_word = unpack('v',substr($part,0,2));
 	my $cmd = $cmd_word & 0xff;
@@ -136,7 +143,7 @@ sub parseMessage
 		}
 	}
 
-	return 1;
+	return $packet;
 }
 
 

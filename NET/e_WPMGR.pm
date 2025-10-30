@@ -20,11 +20,11 @@ use base qw(a_parser);
 my $dbg_ewp = 0;
 
 
-sub new
+sub newParser
 {
-	my ($class, $parent, $def_port) = @_;
-	display($dbg_ewp,0,"e_WPMGR::new($parent->{name}) def_port($def_port)");
-	my $this = $class->SUPER::new($parent,$def_port);
+	my ($class, $parent) = @_;
+	display($dbg_ewp,0,"e_WPMGR::newParser($parent->{name})");
+	my $this = $class->SUPER::newParser($parent);
 	bless $this,$class;
 	$this->{name} = 'e_WPMGR';
 	return $this;
@@ -41,11 +41,13 @@ sub applyMonDefs
 	my $what = $packet->{what};
 	$packet->{name} = $NAV_WHAT{$what};
 	
+	my $parent = $this->{parent};
 	my $is_reply = $packet->{is_reply};
-	my $defs = $packet->{is_sniffer} ?
-		\%SNIFFER_DEFAULTS :
-		\%RAYSYS_DEFAULTS;
-	my $def = $defs->{$this->{def_port}};
+
+	# my $defs = $packet->{is_sniffer} ?
+	# 	\%SNIFFER_DEFAULTS :
+	# 	\%RAYSYS_DEFAULTS;
+	# my $def = $defs->{$this->{def_port}};
 
 	my $idx =
 		$what == $WHAT_GROUP ? $MON_WHAT_GROUP :
@@ -53,11 +55,11 @@ sub applyMonDefs
 		$MON_WHAT_WAYPOINT;
 
 	$packet->{mon} = $is_reply ?
-		$def->{mon_ins}->[$idx] :
-		$def->{mon_outs}->[$idx];
+		$parent->{mon_ins}->[$idx] :
+		$parent->{mon_outs}->[$idx];
 	$packet->{color} = $is_reply ?
-		$def->{in_colors}->[$idx] :
-		$def->{out_colors}->[$idx];
+		$parent->{in_colors}->[$idx] :
+		$parent->{out_colors}->[$idx];
 }
 
 
@@ -119,7 +121,7 @@ sub parseMessage
 {
 	my ($this,$packet,$len,$part,$hdr) = @_;
 	display($dbg_ewp+2,0,"e_WPMGR::parseMessage($len) hdr($hdr)");
-	return 0 if !$this->SUPER::parseMessage($packet,$len,$part,$hdr);
+	return undef if !$this->SUPER::parseMessage($packet,$len,$part,$hdr);
 
 	$this->setContext($packet,$part);
 		# parts do not include the leading length word
@@ -171,10 +173,10 @@ sub parseMessage
 	}
 	else # NO RULE!
 	{
-		error("NO RULE FOR $dir_name | $cmd_name | $what_name");
+		return error("NO RULE FOR $dir_name | $cmd_name | $what_name");
 	}
 
-	return 1;
+	return $packet;
 }
 
 

@@ -1,6 +1,11 @@
 #---------------------------------------------
 # a_defs.pm
 #---------------------------------------------
+# For sanity, Oct29, I have to start working down from the top now,
+# turning off sniffer, and only caring about syntax errors there,
+# and adding a single 'on/off' switch (mon_active) to the DEFAULTS
+# which will get reflected in the winRAYSYS UI, once I figure out
+# a bit more how this is going to work.
 
 package a_defs;
 use strict;
@@ -16,16 +21,16 @@ use Pub::Utils;
 our $WITH_SERIAL		= 1;
 our $WITH_RAYSYS		= 1;
 our $WITH_HTTP_SERVER	= 0;
-our $WITH_SNIFFER 		= 1;
+our $WITH_SNIFFER 		= 0;
 our $WITH_TCP_SCANNER	= 0;
 our $WITH_UDP_SCANNER	= 0;	# sniffer must be disabled for udp_scanner
-our $WITH_WX				= 1;
+our $WITH_WX			= 1;
 
 # implemented service_ports that can be turned on and of
 
 our $WITH_TRACK 		= 0;
 our $WITH_WPMGR 		= 0;
-our $WITH_FILESYS 		= 0;
+our $WITH_FILESYS 		= 1;
 our $WITH_DBNAV 		= 0;
 
 our $AUTO_START_IMPLEMENTED_SERVICES = 1;
@@ -593,27 +598,27 @@ my $MON_CMD					= $MON_HEADER | $MON_PARSE | $MON_PIECES;
 our %RAYSYS_DEFAULTS;
 for my $port (keys %SERVICE_PORT_DEFS)
 {
-	my $def = $RAYSYS_DEFAULTS{$port} = shared_clone({});
+	my $def = $RAYSYS_DEFAULTS{$port} = {};
 	mergeHash($def,$SERVICE_PORT_DEFS{$port});
 
-	$def->{is_shark} = 1;
-	$def->{is_sniffer} = 0;
+	$def->{mon_active}	= 1;
 
-	$def->{mon_in} = 0;
-	$def->{mon_out} = 0;
-
-	$def->{in_color} = 0;
-	$def->{out_color} = 0;
+	$def->{is_shark} 	= 1;
+	$def->{is_sniffer}	= 0;
+	$def->{mon_in}		= 0;
+	$def->{mon_out}		= 0;
+	$def->{in_color}	= 0;
+	$def->{out_color}	= 0;
 }
 
 # My current hardwired monitoring preferences, per implemented service
 
-my $SHARK_MON_FILESYS	= 0;	# $MON_ALL;
-my $SHARK_MON_DBNAV		= 0;	# $MON_ALL;
-my $SHARK_MON_TRACK 	= 0;	# $MON_ALL;
-my $SHARK_MON_WAYPOINT 	= $MON_PARSE_FULL;	# $MON_ALL;
-my $SHARK_MON_ROUTE 	= $MON_HEADER | $MON_DUMP_RECORD;	#$MON_ALL;
-my $SHARK_MON_GROUP 	= 0;	# $MON_ALL;
+my $SHARK_MON_FILESYS	= $MON_ALL;
+my $SHARK_MON_DBNAV		= $MON_ALL;
+my $SHARK_MON_TRACK 	= $MON_ALL;
+my $SHARK_MON_WAYPOINT 	= $MON_ALL; # $MON_PARSE_FULL;	# $MON_ALL;
+my $SHARK_MON_ROUTE 	= $MON_ALL; # $MON_HEADER | $MON_DUMP_RECORD;	#$MON_ALL;
+my $SHARK_MON_GROUP 	= $MON_ALL; # 0;	# $MON_ALL;
 
 mergeHash($RAYSYS_DEFAULTS{$SPORT_FILESYS},{
 	mon_in			=> $SHARK_MON_FILESYS,
@@ -636,16 +641,16 @@ mergeHash($RAYSYS_DEFAULTS{$SPORT_TRACK},{
 # talked about.  The order is WAYPOINT, ROUTE, GROUP
 
 mergeHash($RAYSYS_DEFAULTS{$SPORT_WPMGR},{
-	mon_ins => shared_clone([
+	mon_ins => [
 		$SHARK_MON_WAYPOINT,
 		$SHARK_MON_ROUTE,
 		$SHARK_MON_GROUP,
-	]),
-	mon_outs => shared_clone([
+	],
+	mon_outs => [
 		$MON_CMD,	# $SHARK_MON_WAYPOINT,
 		$MON_CMD,	# $SHARK_MON_ROUTE,
 		0,#$MON_CMD,	# $SHARK_MON_GROUP,
-	]),
+	],
 	in_colors => shared_clone([
 		$UTILS_COLOR_BROWN,
 		$UTILS_COLOR_BROWN,
@@ -681,14 +686,12 @@ for my $port (keys %RAYSYS_DEFAULTS)
 	my $def = $SNIFFER_DEFAULTS{$port} = shared_clone({});
 	mergeHash($def,$SERVICE_PORT_DEFS{$port});
 
-	$def->{is_shark} = 0;
-	$def->{is_sniffer} = 1;
-
-	$def->{mon_in} = $MON_ALL;
-	$def->{mon_out} = $MON_ALL;
-
-	$def->{in_color} = 0;
-	$def->{out_color} = 0;
+	$def->{is_shark}	= 0;
+	$def->{is_sniffer}	= 1;
+	$def->{mon_in}		= $MON_ALL;
+	$def->{mon_out}		= $MON_ALL;
+	$def->{in_color}	= 0;
+	$def->{out_color}	= 0;
 
 }
 

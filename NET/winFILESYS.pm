@@ -296,7 +296,7 @@ sub getFileSizes()
 		# JIC
 	return if $this->{pending_request};
 		# return if in a window request
-	my $state = $filesys->{file_state};
+	my $state = $filesys->getState();
 	return if $state > 0;
 		# return if FILESYS busy
 	if ($state == $FILE_STATE_ERROR)
@@ -369,7 +369,7 @@ sub completeRequest
 				return;
 			}
 
-			my $content = $filesys->{file_content};
+			my $content = $filesys->getContent();
 			my $len = length($content);
 			$recurse->{bytes} += $len;
 			
@@ -410,7 +410,7 @@ sub completeRequest
 			}
 			my $dirs = $recurse->{dirs};
 			my $files = $recurse->{files};
-			my $content = $filesys->{file_content};
+			my $content = $filesys->getContent();
 			my $num_added_files = 0;
 			my $num_added_dirs = 0;
 			for my $line (split(/\n/,$content))
@@ -450,7 +450,7 @@ sub completeRequest
 	elsif ($pending_request =~ /size\t(\d+)\t/)
 	{
 		my $row = $1;
-		my $size = $filesys->{file_content};
+		my $size = $filesys->getContent();
 		my $entries = $this->{entries};
 		my $entry = $entries->[$row];
 
@@ -484,7 +484,7 @@ sub completeRequest
 
 		my $row = 0;
 		my $entries = [];
-		my $content = $filesys->{file_content};
+		my $content = $filesys->getContent();
 		print "got content: $content\n";
 		
 		for my $line (split(/\n/,$content))
@@ -541,7 +541,7 @@ sub completeRequest
 	elsif ($pending_request =~ /file\t(.*)\t(.*)$/)
 	{
 		my ($src,$dest) = ($1,$2);
-		my $content = $filesys->{file_content};
+		my $content = $filesys->getContent();
 		my $len = length($content);
 
 		display($dbg_rr,1,"SAVING FILE($len) to $dest");
@@ -891,7 +891,7 @@ sub onIdle
 	return if !$this->checkFilesysPorts();
 
 	my $filesys = $this->{filesys};
-	my $state = $filesys->{file_state};
+	my $state = $filesys->getState();
 	my $state_name = $FILE_STATE_NAME{$state};
 
 	if (!$this->{started} && (
@@ -918,9 +918,7 @@ sub onIdle
 			return;
 		}
 
-		my $got = $filesys->{got_len} || 0;
-		my $total = $filesys->{file_total} || 0;
-
+		my ($total,$got) = $filesys->getProgress();
 		if (!$got || !$total)
 		{
 			$progress->updateSubRange(0);
@@ -959,10 +957,10 @@ sub onIdle
 		if ($state == $FILE_STATE_ERROR)
 		{
 			$this->{recurse} = undef;
-			$this->{command_ctrl}->SetLabel($filesys->{file_error});
+			$this->{command_ctrl}->SetLabel($filesys->getError());
 			$this->{command_ctrl}->SetForegroundColour($wx_color_red);
-			$filesys->clearFileRequestError();
-			$state = $filesys->{file_state};
+			$filesys->clearError();
+			$state = $filesys->getState();
 		}
 		$this->{last_state} = $state;
 		return;

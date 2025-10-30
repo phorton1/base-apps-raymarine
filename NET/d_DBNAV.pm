@@ -2,8 +2,8 @@
 # d_DBNAV.pm
 #---------------------------------------
 # A mcast listener that endeavors to decode Database records.
-# These records are only transmitted once the E80 has a fix,
-# and rapidly once it has a heading.
+# These records are transmitted rapidly once the E80 has a fix
+# and a heading, with lots of data while moving/autopilot, etc
 
 package d_DBNAV;
 use strict;
@@ -34,47 +34,45 @@ BEGIN
 	);
 }
 
+# this hash gives presumed names to the 'record types' within a packet,
+# which are identified with 0x8000 in the type word.  They demarcate
+# the packet into different semantic sections.
+
+our $RECORD_DEFAULT = 0xff;
+our $RECORD_SHIP 	= 0x07;
+our $RECORD_WIND 	= 0x0a;
+our $RECORD_WATER 	= 0x05;
+
+our %RECORD_TYPE_NAME = (
+	$RECORD_DEFAULT => 'default',
+	$RECORD_SHIP	=> 'ship',
+	$RECORD_WIND	=> 'wind',
+	$RECORD_WATER	=> 'water',
+);
+
+
+#-----------------------------------
+# winDBNAV API
+#-----------------------------------
+
+sub getFieldValues
+{
+	my ($this) = @_;
+	return $this->{parser} ? $this->{parser}->{field_values} : {};
+}
+
 
 #---------------------------------------------------------
 # instantiation
 #---------------------------------------------------------
 # 'become' and 'unbecome' a 'real' service with a socket
 
-our $SHOW_DBNAV_RAW_INPUT 		= 0;
-our $SHOW_DBNAV_RAW_OUTPUT		= 1;
-our $SHOW_DBNAV_PARSED_INPUT  	= 0;
-our $SHOW_DBNAV_PARSED_OUTPUT	= 0;
-
-my $IN_COLOR = $UTILS_COLOR_LIGHT_GREEN;
-my $OUT_COLOR = $UTILS_COLOR_YELLOW;
-
-
 sub init
 {
 	my ($this) = @_;
 	display($dbg_nav,0,"d_DBNAV init($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
-
 	$this->SUPER::init();
-
-	$this->{local_ip}			= $LOCAL_IP;
-	$this->{show_raw_input} 	= $SHOW_DBNAV_RAW_INPUT;
-	$this->{show_raw_output} 	= $SHOW_DBNAV_RAW_OUTPUT;
-	$this->{show_parsed_input}  = $SHOW_DBNAV_PARSED_INPUT;
-	$this->{show_parsed_output} = $SHOW_DBNAV_PARSED_OUTPUT;
-	$this->{in_color} 			= $IN_COLOR;
-	$this->{out_color} 			= $OUT_COLOR;
-
-	$this->{field_values}		= shared_clone({});
-	$this->{instance_counters} 	= shared_clone({});
-	$this->{seen_records}		= shared_clone({});
-	$this->{record_type} 		= 0;
-	
-		# a count, by the 'record' a field is found in
-		# of the number of instances of this field 'type',
-		# to allow for semantically distinguishing multiple
-		# fields of the same 'type' and 'subtype'
-		# It is cleared at the top of each packet, and built as-you-go
-		
+	$this->{local_ip} = $LOCAL_IP;
 	return $this;
 }
 
@@ -84,16 +82,50 @@ sub destroy
 {
 	my ($this) = @_;
 	display($dbg_nav,0,"d_DBNAV destroy($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
-
 	$this->SUPER::destroy();
-
-    delete @$this{qw(
-		field_values
-		instance_counters
-		seen_records
-		record_type
-	)};
+    #	delete @$this{qw(
+	#		field_values
+	#		instance_counters
+	#		seen_records
+	#		record_type
+	#	)};
 	return $this;
+}
+
+
+#--------------------------------------------
+# b_sock override onIdle
+#--------------------------------------------
+
+sub onIdle
+	# culls any variables who have outlived their TTL
+{
+	my ($this) = @_;
+	return;
+	lock($this);
+		# return if $this->{in_record};
+		# not while we are processing a record
+
+	my $field_values = $this->getFieldValues();
+	my $now = time();
+	for my $key (keys %$field_values)
+	{
+		my $field_value = $field_values->{$key};
+		my $time = $field_value->{time};
+		my $ttl = $field_value->{ttl};
+		if ($now > $time + $ttl)
+		{
+			my $type_hex = sprintf("%02x",$field_value->{type});
+			my $subtype_hex = sprintf("%02x",$field_value->{subtype});
+			my $rectype_hex = sprintf("%02x",$field_value->{record_type});
+			my $instance = $field_value->{instance};
+			my $name = $field_value->{name};
+			my $value = $field_value->{value};
+			warning($dbg_nav,0,"Culling type($type_hex) subtype($subtype_hex) rec($rectype_hex) inst($instance) $name = $value");
+
+			delete $field_values->{$key};
+		}
+	}
 }
 
 
@@ -116,7 +148,8 @@ sub cmpValues
 sub showValues
 {
 	my ($this) = @_;
-	my $field_values = $this->{field_values};
+	my $field_values = $this->getFieldValues();
+	
 	my $text = "-------------------------------- DBNAV field_values ------------------------------------\n";
 
 	for my $key (sort {cmpValues($field_values,$a,$b)} keys %$field_values)
@@ -149,8 +182,121 @@ sub showValues
 	print $text;
 }
 
+
+
+#========================================================
+#========================================================
+# e_DBNAV parser
+#========================================================
+#========================================================
+
+package e_DBNAV;
+use strict;
+use warnings;
+use threads;
+use threads::shared;
+use Pub::Utils;
+use a_defs;
+use a_utils;
+use base qw(a_parser);
+
+
+my $dbg_dp = 0;
+
+our $ONLY_CHANGED_FIELD_VALUES = 1;
+
+
+
+sub newParser
+{
+	my ($class, $parent) = @_;
+	display($dbg_dp,0,"e_DBNAV::newParser($parent->{name})");
+	my $this = $class->SUPER::newParser($parent);
+	bless $this,$class;
+
+	$this->{field_values}		= shared_clone({});
+	$this->{instance_counters} 	= shared_clone({});
+		# a count, by the 'record' a field is found in,
+		# of the number of instances of this field 'type',
+		# to allow for semantically distinguishing multiple
+		# fields of the same 'type' and 'subtype'
+		# It is cleared at the top of each packet, and built as-you-go
+	$this->{seen_records}		= shared_clone({});
+	$this->{record_type} 		= 0;
+
+	return $this;
+}
+
+
+
+
+
+sub parsePacket
+	# DBNAV parses the packet first, and then calls the base_clase only
+	# if there are some new fields to show, passing the text through
+	# a member 'text' field.
+{
+	my ($this,$packet) = @_;
+	my $is_sniffer = $this->{parent}->{is_sniffer} || 0;
+
+	my $payload = $packet->{payload};
+	my $payload_len = length($payload);
+	my ($cmd_word,$sid,$num_fields) = unpack('vvV',substr($payload,0,8));
+
+	display($dbg_dp+2,0,"e_DBNAV::parsePacket is_sniffer($is_sniffer) len($payload_len) num_fields($num_fields) only_new($ONLY_CHANGED_FIELD_VALUES)");
+
+	if (0)	# debug only
+	{
+		my $cmd = $cmd_word & 0xff;
+		my $dir = $cmd_word & 0xff00;
+		display($dbg_dp+2,1,"e_DBNAV cmd($cmd) dir($dir)");
+	}
+
+	$this->{instance_counters} = shared_clone({});
+
+	my $text = '';
+	my $offset = 8;
+	for (my $i=0; $i<$num_fields; $i++)
+	{
+		$text .= $this->decode_field($i,$payload,\$offset,$is_sniffer);
+	}
+
+	if ($text || $is_sniffer || !$ONLY_CHANGED_FIELD_VALUES)
+	{
+		$packet->{text} = $text;
+		$packet->{num_fields} = $num_fields;
+		$this->SUPER::parsePacket($packet);
+	}
+
+	return undef;
+}
+
+
+
+
+sub parseMessage
+	# Displays the previously parsed text if there is any
+{
+	my ($this,$packet,$len,$part,$hdr) = @_;
+	my $mon = $packet->{mon};
+	display($dbg_dp+1,0,sprintf("e_DBNAV::parseMessage($len) mon(%04x)",$mon));
+	return undef if !$this->SUPER::parseMessage($packet,$len,$part,$hdr);
+
+	my $text = $packet->{text};
+	if ($text && ($mon & $MON_PARSE))
+	{
+		$text = "    # DBNAV len($len) num_fields($packet->{num_fields})\n".$text;
+		printConsole($packet->{color},$text,$mon);
+	}
+
+	return $packet;
+
+}
+
+
+
 #----------------------------------------
-# handlePacket primitives
+# decode_field primitives
 #----------------------------------------
 
 sub decodeDate
@@ -306,22 +452,6 @@ sub decodeSubRecord
 # type(0x51) is a big record, of 256, with a ttl of 31
 
 
-# this hash gives presumed names to the 'record types' within a packet,
-# which are identified with 0x8000 in the type word.  They demarcate
-# the packet into different semantic sections.
-
-our $RECORD_DEFAULT = 0xff;
-our $RECORD_SHIP 	= 0x07;
-our $RECORD_WIND 	= 0x0a;
-our $RECORD_WATER 	= 0x05;
-
-our %RECORD_TYPE_NAME = (
-	$RECORD_DEFAULT => 'default',
-	$RECORD_SHIP	=> 'ship',
-	$RECORD_WIND	=> 'wind',
-	$RECORD_WATER	=> 'water',
-);
-
 
 # This hash defines the storage type of field_values in the packet.
 # A number of the field's semantics must be determined by looking at
@@ -345,19 +475,19 @@ our %DECODERS = (
 
 sub decode_field
 {
-	my ($this,$field_num,$raw,$poffset) = @_;
+	my ($this,$field_num,$payload,$poffset,$is_sniffer) = @_;
 	my $save_offset = $$poffset;
 
 	# Extract the serial field_value data
 	# type, len, subtype, and ttl
 
-	my ($some_offset,$type,$len) = unpack('Vvv',substr($raw,$$poffset,8));
+	my ($some_offset,$type,$len) = unpack('Vvv',substr($payload,$$poffset,8));
 	$$poffset += 8;
 
-	my $data = substr($raw,$$poffset,$len);
+	my $data = substr($payload,$$poffset,$len);
 	$$poffset += $len;
 
-	my ($subtype,$ttl,$zero) = unpack('CCv',substr($raw,$$poffset,4));
+	my ($subtype,$ttl,$zero) = unpack('CCv',substr($payload,$$poffset,4));
 	$$poffset += 4;
 
 	error("unexpected value for zero($zero)") if $zero != 0;
@@ -405,7 +535,6 @@ sub decode_field
 	$instances->{$instance_key} = defined($instances->{$instance_key}) ? ++$instances->{$instance_key} :  0;
 	my $instance = $instances->{$instance_key};
 
-
 	# See if the stored field_value (data) has changed.
 	# if not, assign the possibly changed ttl and return.
 
@@ -417,7 +546,9 @@ sub decode_field
 	{
 		$found->{ttl} = $ttl;
 		$found->{time} = time();
-		return '' if $found->{data} eq $data;
+		return '' if
+			$found->{data} eq $data &&
+			$ONLY_CHANGED_FIELD_VALUES;
 		$found->{data} = $data;
 	}
 
@@ -433,7 +564,7 @@ sub decode_field
 		record_type => $record_type,
 		instance 	=> $instance,
 		data 		=> $data, });
-	$field_values->{$key} = $field_value if !$found;
+	$field_values->{$key} = $field_value;
 
 
 	# DECODE THE STORAGE VALUE
@@ -492,23 +623,27 @@ sub decode_field
 	$field_value->{name} = $name;
 	
 
+	#------------------------------------------------
+	# $return_it == return $text
+	#------------------------------------------------
 	# Ones I only want to see once in the console that either change
 	# systematically (time), or while the boat is moving (latlon), or
 	# not at all because they are just too complicated to deal with
 	# at the moment (subrecord)
 
-	my $showit = 1;
-	$showit = 0 if $found && (
+	my $return_it = 1;
+	$return_it = 0 if
+		$found &&
+		!$this->{parent}->{is_sniffer} && (
 			$decoder_name eq 'TIME' ||
 			$decoder_name eq 'LATLON' ||
 			$decoder_name eq 'NORTHEAST' );
-	# $showit = 0 if $decoder_name eq 'SUBRECORD';
-
+	# $return_it = 0 if $decoder_name eq 'SUBRECORD';
 
 	# Show the new/changed value in the console
 	# by returning text
 
-	if ($showit)
+	if ($return_it)
 	{
 		my $subtype_hex= sprintf("%02x",$subtype);
 		my $record_type_hex = sprintf("%02x",$record_type);
@@ -527,180 +662,10 @@ sub decode_field
 			$value.
 			"\n";
 	}
-	
-	# or don't show it by returninng ''
 
 	return '';
 
 }	# decode_field()
-
-
-
-#--------------------------------------------------------------
-# handlePacket, cull, and show the values
-#--------------------------------------------------------------
-
-
-sub handlePacket
-	# 00 03 1000 01000000
-	# ... 17000000 2a000200 89780e01 0000
-{
-	my ($this,$packet) = @_;
-	lock($this);
-		# $this->{in_record} = 1;
-		# entrancy protection for winDBNAV
-
-	my ($cmd,$dir,$sid,$num_fields) = unpack('CCvV',$packet);
-	my $packet_len = length($packet);
-	my $offset = 8;
-
-	$this->{instance_counters} = shared_clone({});
-
-	my $text = '';
-	for (my $i=0; $i<$num_fields; $i++)
-	{
-		$text .= $this->decode_field($i,$packet,\$offset);
-	}
-
-
-	if ($text)
-	{
-		$text = "#        len($packet_len) cmd($cmd) dir($dir) sid($sid) num_fields($num_fields)\n".$text;
-		setConsoleColor($this->{in_color}) if $this->{in_color};
-		print $text;
-		setConsoleColor() if $this->{in_color};
-	}
-
-	# $this->{in_record} = 0;
-		# entrancy protection for winDBNAV
-
-}	# decodeDBNAV()
-
-
-
-sub onIdle
-	# culls any variables who have outlived their TTL
-{
-	my ($this) = @_;
-	lock($this);
-		# return if $this->{in_record};
-		# not while we are processing a record
-		
-	my $field_values = $this->{field_values};
-	my $now = time();
-	for my $key (keys %$field_values)
-	{
-		my $field_value = $field_values->{$key};
-		my $time = $field_value->{time};
-		my $ttl = $field_value->{ttl};
-		if ($now > $time + $ttl)
-		{
-			my $type_hex = sprintf("%02x",$field_value->{type});
-			my $subtype_hex = sprintf("%02x",$field_value->{subtype});
-			my $rectype_hex = sprintf("%02x",$field_value->{record_type});
-			my $instance = $field_value->{instance};
-			my $name = $field_value->{name};
-			my $value = $field_value->{value};
-			warning($dbg_nav,0,"Culling type($type_hex) subtype($subtype_hex) rec($rectype_hex) inst($instance) $name = $value");
-
-			delete $field_values->{$key};
-		}
-	}
-}
-
-
-
-#========================================================
-# e_DBNAV parser
-#========================================================
-
-
-package e_DBNAV;
-use strict;
-use warnings;
-use threads;
-use threads::shared;
-use Pub::Utils;
-use a_defs;
-use a_utils;
-use base qw(a_parser);
-
-
-my $dbg_dp = 0;
-
-
-sub new
-{
-	my ($class, $parent, $def_port) = @_;
-	display($dbg_dp,0,"e_DBNAV::new($parent->{name}) def_port($def_port)");
-	my $this = $class->SUPER::new($parent,$def_port);
-	bless $this,$class;
-	$this->{name} = 'e_DBNAV';
-	return $this;
-}
-
-
-#	sub parsePacket
-#		# Calls base clase AFTER figuring out what mon_spec to use.
-#		# We pass the {mon_spec} member back to the base class
-#	{
-#		my ($this,$packet) = @_;
-#		my $payload = $packet->{payload};
-#
-#		my $mon_key = $MCTRL_WHAT_DEFAULT;
-#		my $mon_dir = $packet->{is_reply} ? $RX : $TX;
-#		my $dir_def = $this->{$mon_dir};
-#		my $mon_spec = $packet->{mon_spec} = $dir_def->{$mon_key};
-#
-#		my $mon = $mon_spec->{mon} || 0;
-#		my $ctrl = $mon_spec->{ctrl} || 0;
-#		display($dbg_dp+1,0,sprintf("e_DBNAV::parsePacket($mon_dir) ctrl(%04x) mon(%08x)",$ctrl,$mon));
-#
-#		my $rslt = $this->SUPER::parsePacket($packet);
-#
-#		# temp debugging
-#		# display_record(0,0,"packet",$packet,'payload|points') if $mon & $MON_PIECE;
-#
-#		return $rslt;
-#	}
-#
-
-
-
-sub parseMessage
-	# Calls base_clase BEFORE doing WPMGR specific stuff,
-	# which particularly involves maintaing the 'what' context
-	# across messages, knowing what messages have sequence numbers,
-	# and checking twice for rules,
-{
-	my ($this,$packet,$len,$part,$hdr) = @_;
-	display($dbg_dp+2,0,"e_DBNAV::parseMessage($len)");
-	return 0 if !$this->SUPER::parseMessage($packet,$len,$part,$hdr);
-
-	my ($cmd_word,$sid,$num_fields) = unpack('vvV',substr($part,0,8));
-	my $cmd = $cmd_word & 0xff;
-	my $dir = $cmd_word & 0xff00;
-	my $offset = 8;
-
-	display($dbg_dp+2,1,"e_DBNAV num_fields=$num_fields");
-	
-	$this->{instance_counters} = shared_clone({});
-
-	my $text = '';
-	for (my $i=0; $i<$num_fields; $i++)
-	{
-		$text .= d_DBNAV::decode_field($this,$i,$part,\$offset);
-	}
-
-	my $mon = $packet->{mon};
-	if ($text && ($mon & $MON_PARSE))
-	{
-		$text = "    # DBNAV len($len) cmd($cmd) dir($dir) sid($sid) num_fields($num_fields)\n".$text;
-		printConsole($packet->{color},$text,$mon);
-	}
-
-}	# e_DBNAV::parseMessage()
-
 
 
 

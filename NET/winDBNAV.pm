@@ -21,6 +21,7 @@ use a_defs;
 use a_utils;
 use c_RAYSYS;
 use d_DBNAV;
+# use e_DBNAV;
 use base qw(Wx::ScrolledWindow Pub::WX::Window);
 
 my $dbg_win = 0;
@@ -182,7 +183,8 @@ sub onIdle
 
 	my $need_new_slots = 0;
 	my $field_values = $this->{field_values};
-	my $dbnav_field_values = $dbnav->{field_values};
+	my $dbnav_field_values = $dbnav->getFieldValues();
+	display($dbg_win+3,0,"working on ".scalar(keys  %$dbnav_field_values)." d_DBNAV values");
 
 	for my $key (keys %$field_values)
 	{

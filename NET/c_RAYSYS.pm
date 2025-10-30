@@ -66,7 +66,7 @@
 #   itself, that (a) everyone should "use" threads and threads::shared,
 #   and (b) access to the service_port shared variables must be protected
 #   by calling lock($this) (or lock($raysys) or whatever) by the various
-#   parties that handle the data.  That will typically include handlePacket(),
+#   parties that handle the data.  That will typically include,
 #   handleCommand(), and/or onIdle() in these base classes, and/or the
 #   onIdle() or other methods that access the members in the wxPerl UI.
 #
@@ -96,14 +96,14 @@ use strict;
 use warnings;
 use threads;
 use threads::shared;
-use Time::HiRes qw(sleep time);
 use Socket;
-use IO::Select;
+use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use a_defs;
 use a_utils;
 use b_sock;
-use base qw(b_sock);
+use a_parser;
+use base qw(b_sock a_parser);
 
 my $dbg_raysys = 0;
 
@@ -136,10 +136,13 @@ my %CMD_NAME = (
 
 
 
-
-#--------------------------------------------------
+#--------------------------------------------------------------
 # ctor
-#--------------------------------------------------
+#-------------------------------------------------------------
+# RAYSYS is multiply inherited from b_sock and b_parser,
+# is never destroyed, and does not use the init method.
+# Instead it knowingly sets up the required b_sock and a_parser
+# members.
 
 
 sub new
@@ -171,6 +174,17 @@ sub new
 		implemented_services => shared_clone({}),
 			# a separate hash by NAME of implemented services that
 			# have been discovered, and created, but not yet destroyed
+
+		# AS AN A_PARSER, on the known shark device_id 'aaaaaaaa'
+
+		device_id		=> $KNOWN_DEVICES{$SHARK_DEVICE_ID},
+		parent			=> $this,				# uses self as the parent of the parser
+		parser			=> $this,				# uses self AS the parser
+		# 	mon_in			=> 0,
+		# 	mon_out			=> 0,
+		# 	in_color		=> 0,
+		# 	out_color		=> 0,
+
 	}));
 
 	bless $this,$class;
@@ -198,20 +212,6 @@ sub getRaysys
 }
 
 
-#	sub findServicePort
-#		# This is what s_sniffer uses to filter packets for general display.
-#		# There can be multiple Ids that are sharing the same ip:port, implying
-#		# that the port is a mcast port, in which it really doesn't make sense
-#		# to have multiple lines for them in the UI, though we still want to
-#		# know the ip's of all the ones that have the same mcast ip:port.
-#	{
-#	    my ($this,$ip,$port) = @_;
-#	    my $addr = "$ip:$port";
-#	    return $this->{ports_by_addr}->{$addr};
-#	}
-
-
-
 sub getServicePortsByAddr
 	# returns the whole hash
 	# used by winFILESYS to setup its dropdown box
@@ -230,6 +230,22 @@ sub findImplementedService
 	my $service_port = $this->{implemented_services}->{$name};
 	error("Could not findImplementedService($name)") if !$service_port && !$quiet;
 	return $service_port;
+}
+
+
+sub findServicePortByName
+	# searches the ports_by_addr for a given name and returns
+	# it, or undef, with an error on undef if !$quiet
+{
+	my ($this,$name,$quiet) = @_;
+	my $ports_by_addr = $this->{ports_by_addr};
+	for my $addr (sort keys %$ports_by_addr)
+	{
+		my $service_port = $ports_by_addr->{$addr};
+		return $service_port if $service_port->{name} eq $name;
+	}
+	error("Could not findServicePortByName($name)") if !$quiet;
+	return undef;
 }
 
 
@@ -287,33 +303,6 @@ sub connectServicePort
 # private API
 #-----------------------------------
 
-#	sub is_multicast
-#	{
-#	    my ($ip) = @_;
-#	    return 0 if $ip !~ /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/;
-#	    my ($oct1, $oct2, $oct3, $oct4) = ($1, $2, $3, $4);
-#	    # Multicast range: 224.0.0.0 to 239.255.255.255
-#	    return ($oct1 >= 224 && $oct1 <= 239) ? 1 : 0;
-#	}
-
-
-sub findServicePortByName
-	# used internally, by c_RAYSYS only.
-	# searches the ports_by_addr for a given name and returns
-	# it, or undef, with an error on undef if !$quiet
-{
-	my ($this,$name,$quiet) = @_;
-	my $ports_by_addr = $this->{ports_by_addr};
-	for my $addr (sort keys %$ports_by_addr)
-	{
-		my $service_port = $ports_by_addr->{$addr};
-		return $service_port if $service_port->{name} eq $name;
-	}
-	error("Could not findServicePortByName($name)") if !$quiet;
-	return undef;
-}
-
-
 sub addServicePort
 {
     my ($this,$rec,$ip,$port,$no_delete) = @_;
@@ -323,7 +312,6 @@ sub addServicePort
 
     if ($found)
 	{
-
 		$found->{alive_time} = time();
 		return 0;	# not new
 	}
@@ -343,7 +331,14 @@ sub addServicePort
 		};
 	}
 
-	display_hash($dbg_raysys+2,1,"def",$def);
+	# HUH?!?!?  More weird Perl behavior when RAYSYS_DEFAULTS was shared
+	# Somehow the RAYSYS_DEFAULTS shared record was getting the fields
+	# from the SERIVCE_PORT, which is *supposed* to be a shared_clone
+	# of the RAYSYS_DEFAULTS.  I *thought* shared_clone created a DEEP
+	# clone, re-instantiating all the sub shared_references, but I
+	# changed back to a non-shared version as of this writing
+	
+	display_hash($dbg_raysys+1,1,"adding ServicePort($ip:$port) def",$def);
 	my $service_port = shared_clone($def);
 	mergeHash($service_port,$rec);
 	display_hash($dbg_raysys+2,1,"after merge",$service_port);
@@ -354,14 +349,8 @@ sub addServicePort
 	$service_port->{alive_time} = time();
 	$service_port->{no_delete}	= $no_delete if $no_delete;
 	
-	# mon_from => $def->{mon_from} || 0,
-	# mon_to 	=> $def->{mon_to} || 0,
-	# color 	=> $def->{color} || 0,
-	# multi 	=> $def->{multi} || 0,
-
 	$this->{ports_by_addr}->{$addr} = $service_port;
 
-		# only take the first named service (by name)
 
 	#=======================================================
 	# start implemented services
@@ -409,8 +398,9 @@ sub startImplementedService
 
 
 #-------------------------------------------------------
-# handlePacket() b_sock override
+# A_PARSER parsePacket() OVERRIDE !!!
 #-------------------------------------------------------
+
 
 sub _decode_header
 {
@@ -451,12 +441,9 @@ sub _decode_header
 
 
 
-sub handlePacket
+sub parsePacket
+	# a_parser override
 	# Always returns undef so that b_sock does not queue replies.
-	#
-	# Note that with a "typical" command processor, these wouuld
-	# 	all come in as    cmd_word(0) service_id(0), except IDENT
-	#	which comes in as cmd_word(1) service_id(0)
 	#
 	# I still haven't figured out
 	#	x1(01001e00) always for me so far
@@ -468,8 +455,8 @@ sub handlePacket
 	# So, as of the new b_sock implementation, the length is still the best indicator of how
 	# to decode these packets, and I am not using a command processor for RAYSYS
 {
-    my ($this,$raw) = @_;
-    #my $raw = $packet->{raw_data};
+    my ($this,$packet) = @_;
+    my $raw = $packet->{payload};
     my $len = length($raw);
     display($dbg_raysys+1,0,"decodeRAYSYS($len) raw=".unpack('H*',$raw));
 	lock($raysys);
@@ -478,7 +465,6 @@ sub handlePacket
 
 	if ($raw eq $RAYSYS_WAKEUP_PACKET)
     {
-        # print packetWireHeader($packet,0)."RAYDP_WAKEUP_PACKET: ".unpack("H*",$raw)."\n";
 		print "RAYDP_WAKEUP_PACKET: ".unpack("H*",$raw)."\n";
         return undef;
     }
@@ -616,7 +602,7 @@ sub handlePacket
 		$this->{unknown}->{$raw} = 1;
 
 		my $name = 'UNKNOWN';
-		my $header = 'RAYSYS '; # packetWireHeader($packet,0);
+		my $header = 'RAYSYS '; 
 		setConsoleColor($DISPLAY_COLOR_WARNING);
 		print $header."$name($len) $text2\n";
 		print parse_dwords(pad('',length($header)),$raw,1);
@@ -639,7 +625,7 @@ sub handlePacket
 
 
 #------------------------------------------------
-# other virtual b_sock overrides
+# b_sock overrides
 #------------------------------------------------
 
 sub onStartSocketThread

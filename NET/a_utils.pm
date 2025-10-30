@@ -16,8 +16,6 @@ use Pub::WX::AppConfig;
 use a_defs;
 use w_resources;
 
-# use b_records;
-# use e_wp_packet;
 
 
 BEGIN
@@ -44,8 +42,6 @@ BEGIN
 		northEastToLatLon
 		latLonToNorthEast
 
-		showRawPacket
-		splitIntoMessages
 		parse_dwords
 
 		@console_color_names
@@ -379,77 +375,6 @@ sub latLonToNorthEast
 # parse_dwords
 #----------------------------------------------------
 
-sub showRawPacket
-	# shall only be called when mon_raw_xx=1 based on $is_send
-	#	in otherwords, when we really want to show it
-{
-	my ($is_sniffer,$params,$packet,$is_send) = @_;
-									
-	my $is_tcp = $params->{proto} eq 'tcp' ? 1 : 0;
-
-	my $name = $params->{name};
-	$name .= "(RNS)" if $is_sniffer;
-
-	my $arrow = $is_send ? "<--" : "-->";
-	my $packet_len = length($packet);
-	my $header = pad($name,9).pad("len($packet_len)",10)."$arrow ";
-	my $multi = $params->{$is_send ? "out_multi" : "in_multi" };
-
-	my $text = '';
-	if ($is_tcp)
-	{
-		my $started = 0;
-		my @parts = splitIntoMessages($packet);
-
-		for my $part (@parts)
-		{
-			my $len_str = substr($part,0,2);
-			my $len = unpack('v',$len_str);
-			my $len_hex = unpack('H*',$len_str);
-			my $part_header = $header."$len_hex ";
-			my $part_data = substr($part,2);
-			$text .= parse_dwords($part_header,$part_data,$multi);
-			if (!$started)
-			{
-				$started = 1;
-				$header = pad('',length($header));
-			}
-		}
-	}
-	else
-	{
-		$text .= parse_dwords($header,$packet,$multi);
-	}
-
-	my $color = $params->{$is_send ? "out_color" : "in_color"};
-	setConsoleColor($color) if $color;
-	print $text;
-	setConsoleColor() if $color;
-}
-
-
-sub splitIntoMessages
-{
-	my ($packet) = @_;
-	my @parts;
-
-	my $offset = 0;
-	my $packet_len = length($packet);
-	while ($packet_len - $offset >= 4)
-	{
-		my $len = unpack('v',substr($packet,$offset,2));
-		my $part = substr($packet,$offset,$len+2);
-		push @parts,$part;
-		$offset += $len + 2;
-	}
-	return @parts;
-}
-
-
-
-#-------------------------------------------------------
-# parse_dwords
-#-------------------------------------------------------
 
 my $BYTES_PER_GROUP = 4;
 my $GROUPS_PER_LINE = 8;
@@ -587,100 +512,6 @@ sub old_packRecord
 	display($dbg,1,"data=".unpack('H*',$data));
 	return $data;
 }
-
-
-
-
-#---------------------------------------------------------
-# sniffer monitoring broken
-#---------------------------------------------------------
-# Service monitoring is now generally on the real Services
-
-my %built_buffers;	# by port
-
-my $MON_SELF_WPMGR = 1;
-
-
-sub packetWireHeader
-	# General printable packet header for console-type messages
-{
-	my ($packet,$backwards) = @_;
-
-	my $len = length($packet->{raw_data});
-	my $left_ip = $backwards ? $packet->{dest_ip} : $packet->{src_ip};
-	my $left_port = $backwards ? $packet->{dest_port} : $packet->{src_port};
-	my $right_ip = $backwards ? $packet->{src_ip} : $packet->{dest_ip};
-	my $right_port = $backwards ? $packet->{src_port} : $packet->{dest_port};
-	my $arrow = $backwards ? '<--' : '-->';
-
-	return
-		$packet->{proto}.
-		pad("($len)",7).
-		pad("$left_ip:$left_port",21).
-		$arrow.' '.
-		pad("$right_ip:$right_port",21).
-		' ';
-}
-
-
-
-
-sub showPacket
-{
-	my ($service_port,$packet,$backwards) = @_;
-	return if length($packet->{raw_data}) == 1;		# skip keep-aives
-
-	if ($service_port->{name} eq 'WPMGR')
-	{
-		my $src_port = $packet->{src_port};
-		my $dest_port = $packet->{dest_port};
-		my $raw_data = $packet->{raw_data};
-		my $is_reply = $src_port == $service_port->{port};
-		my $client_port = $is_reply ? $dest_port : $src_port;
-
-		# temporary for lack of a better UI
-		
-		# return if $client_port == $WPMGR_PORT && !$MON_SELF_WPMGR;
-		
-		# remember the length of the packet if it's length is 2
-		# or prepend it onto the current packet if available
-
-		$built_buffers{$dest_port} ||= '';
-		$built_buffers{$dest_port} .= $raw_data;
-		my $buffer = $built_buffers{$dest_port};
-		return if length($buffer) <= 2;
-
-		$built_buffers{$dest_port} = '';
-
-		# parse and display and/or log the packet
-
-		my $rec = e_wp_packet::parseWPMGR(1,$is_reply,$client_port,$buffer);
-			# 1=with_text
-
-		my $text = $rec->{text};
-		writeLog($text,"rns.log");
-
-		my $color = $service_port->{color};
-		setConsoleColor($color) if $color;
-		print $text;
-		setConsoleColor() if $color;
-
-	}
-	else
-	{
-		my $header = packetWireHeader($packet,$backwards);
-		my $multi = $service_port->{multi};
-		my $color = $service_port->{color} || 0;
-		my $raw_data = $packet->{raw_data};
-		my $full_packet = parse_dwords($header,$raw_data,$multi);
-		setConsoleColor($color) if $color;
-		print $full_packet;
-		setConsoleColor() if $color;
-	}
-}
-
-
-
 
 
 

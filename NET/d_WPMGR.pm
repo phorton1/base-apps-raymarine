@@ -31,7 +31,6 @@ use a_utils;
 use b_records;
 use e_wp_defs;
 require e_wp_api;
-require e_wp_packet;
 use c_RAYSYS;
 use base qw(b_sock);
 
@@ -46,36 +45,20 @@ my $WITH_MOD_PROCESSING = 1;
 my $WPMGR_SERVICE_ID = 15;
 	# 15 = 0xf0 == 'F000' in streams
 
-our $SHOW_WPMGR_RAW_INPUT 		= 0;
-our $SHOW_WPMGR_RAW_OUTPUT		= 0;
-our $SHOW_WPMGR_PARSED_INPUT	= 0;
-our $SHOW_WPMGR_PARSED_OUTPUT 	= 0;
-
-my $IN_COLOR = $UTILS_COLOR_BROWN;
-my $OUT_COLOR = $UTILS_COLOR_LIGHT_MAGENTA;
 
 
 sub init
 {
 	my ($this) = @_;
 	display($dbg,0,"d_WPMGR init($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
-
 	$this->SUPER::init();
-	
 	$this->{local_ip}			= $LOCAL_IP;
-	$this->{show_raw_input} 	= $SHOW_WPMGR_RAW_INPUT;
-	$this->{show_raw_output} 	= $SHOW_WPMGR_RAW_OUTPUT;
-	$this->{show_parsed_input}  = $SHOW_WPMGR_PARSED_INPUT;
-	$this->{show_parsed_output} = $SHOW_WPMGR_PARSED_OUTPUT;
-	$this->{in_color} 			= $IN_COLOR;
-	$this->{out_color} 			= $OUT_COLOR;
 
 	$this->{waypoints} = shared_clone({});
 	$this->{routes} = shared_clone({});
 	$this->{groups} = shared_clone({});
 		# hashes of buffers by uuid, where the
 		# buffer starts with the big_len
-
 	return $this;
 }
 
@@ -194,10 +177,11 @@ sub sendRequest
 		my $rec = $this->parseWPMGRPacket($this->{mon_parsed_out},0,$this->{local_port},$request);
 		$text .= $rec->{text};
 		# 1=with_text, 0=is_reply		$text .= $rec->{text};
-		setConsoleColor($OUT_COLOR) if $OUT_COLOR;
-		print $text;
-		setConsoleColor() if $OUT_COLOR;
-		writeLog($text,'shark.log');
+
+		# setConsoleColor($OUT_COLOR) if $OUT_COLOR;
+		# print $text;
+		# setConsoleColor() if $OUT_COLOR;
+		# writeLog($text,'shark.log');
 	}
 
 	$this->sendPacket($request);
@@ -453,76 +437,6 @@ sub onConnect
 	$this->queueWPMGRCommand($API_DO_QUERY,0,'auto_populate',0,'')
 		if $this->{auto_populate};
 }
-
-
-
-sub handlePacket
-{
-	my ($this,$buffer) = @_;
-
-	warning($dbg+1,0,"handlePacket(".length($buffer).") called");
-
-	my $reply = $this->parseWPMGRPacket($this->{mon_parsed_in},1,$this->{local_port},$buffer);
-		# 1=is_reply
-
-	if ($this->{mon_parsed_in})
-	{
-		my $text = $reply->{text};
-		setConsoleColor($IN_COLOR) if $IN_COLOR;
-		print $text;
-		setConsoleColor() if $IN_COLOR;
-		writeLog($text,'shark.log');
-	}
-
-	# EVENTS are not pushed onto the reply queue
-	# Instead, they can generate additional API_GET_ITEM commands
-
-	if ($WITH_MOD_PROCESSING)
-	{
-		my $mods = $reply->{mods};
-		# delete $reply->{mods} if $mods;
-		if ($mods && !$reply->{item})
-		{
-			warning($dbg+1,1,"found ".scalar(@$mods)." mods");
-			my $evt_mask = $reply->{evt_mask} || 0;
-			for my $mod (@$mods)
-			{
-				my $hash_name = lc($NAV_WHAT{$mod->{what}}).'s';
-				warning($dbg+1,2,sprintf(
-					"MOD(%02x=%s) uuid(%s) bits(%02x) evt_mask(%08x)",
-					$mod->{what},
-					$hash_name,
-					$mod->{uuid},
-					$mod->{bits},
-					$evt_mask));
-
-				# delete it, or ..
-
-				if ($mod->{bits} == 1)
-				{
-					my $hash = $this->{$hash_name};
-					my $exists = $hash->{$mod->{uuid}};
-					if ($exists)
-					{
-						warning($dbg,2,"deleting $hash_name($mod->{uuid}) $exists->{name}");
-						delete $hash->{$mod->{uuid}};
-						$this->incVersion();
-					}
-				}
-				else	# enque a GET_ITEM command for th emod
-				{
-					warning($dbg,0,"enquing mod($mod->{what}) uuid($mod->{uuid})");
-					$this->queueWPMGRCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef,undef);
-				}
-
-			}	# for each mod
-		}	# $mods
-	}	# $WITH_MOD_PROCESSING
-
-	return $reply;
-
-}
-
 
 
 

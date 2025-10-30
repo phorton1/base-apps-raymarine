@@ -189,10 +189,10 @@ or which may be a more, or totally fleshed out derived r_parser,
 depending on the service.
 
 An r_service can HAVE an r_sock, indicating that it is a "real"
-Client Service, that calls its handlePacket() method, and which
+Client Service, that calls its method, PRH TODO and which
 can Send Requests (which can also just be "Probes") via the socket,
 or it can be a Monitor Service, driven, directly, via it's
-handlePacket() method, by the r_sniffer. to merely decode
+PRH TODO() method, by the r_sniffer. to merely decode
 and monitor both incoming Requests and outgoing Replies
   to/from the given IP:PORT.
 

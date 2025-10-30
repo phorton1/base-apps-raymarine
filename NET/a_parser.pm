@@ -1,8 +1,12 @@
 #---------------------------------------------
 # a_parser.pm
 #---------------------------------------------
-# base class of parse trees
-# known by b_sock and sniffer
+# base class of parse trees, known by b_sock and sniffer
+# 	which are it's 'parents'
+# Upon each packet, the parser must FIRST get the monitoring
+# 	preferences from the parent via a call to setMonDefs.
+# $def_port is no longer used ?!?
+
 
 package a_parser;
 use strict;
@@ -14,39 +18,42 @@ use a_defs;
 use a_utils;
 
 
-my $dbg_parse = 0;
+my $dbg_parse = -2;
 
 
 
-sub new
-	# Takes a full port RAYSYS_DEFAULT/SNIFFER_DEFAULT in $mon_def and
-	# $mctrl_device as the identified 'client' devices, RNS or SHARK.
-	# Applies the mctrl_device to all mon_specs within {$RX} and {$TX}
+sub newParser
+	# not called 'new' so that it can be multiple inherited
+	# into implemented classes, particularly c_RAYSYS
 {
-	my ($class, $parent, $def_port) = @_;
-	display($dbg_parse,0,"a_parser::new($parent->{name}) def_port($def_port)");
+	my ($class, $parent) = @_;
+	display($dbg_parse,0,"a_parser::newParser($parent->{name})");
+	my $name = $parent->{name} ? "e_$parent->{name}" : 'a_parser';
 	my $this = shared_clone({
-		name => 'a_parser',
-		parent => $parent,
-		def_port => $def_port });
+		name => $name,
+		parent => $parent });
 	bless $this,$class;
+	# $this->{parent}->setMonDefs($this) if $this->{parent}->can('setMonDefs');
+	# display_hash(0,0,"newParser($name)",$this);
 	return $this;
 }
 
 
 
 sub applyMonDefs
+	# apply the (default, single, shared) monitoring preferences
+	# from the parent device to the packet based soley on $is_reply
 {
 	my ($this,$packet) = @_;
+	display($dbg_parse,0,"a_parser::applyMonDefs($this->{name})");
+
+	my $parent = $this->{parent};
 	my $is_reply = $packet->{is_reply};
-	my $defs = $packet->{is_sniffer} ?
-		\%SNIFFER_DEFAULTS :
-		\%RAYSYS_DEFAULTS;
-	my $def = $defs->{$this->{def_port}};
-	$packet->{name} = $def->{name};
-	$packet->{mon} = $is_reply ? $def->{mon_in} : $def->{mon_out};
-	$packet->{color} = $is_reply ? $def->{in_color} : $def->{out_color};
-	display($dbg_parse+1,0,"a_parser::applyMonDefs($this->{name}) ".
+	$packet->{mon} = $is_reply ? $parent->{mon_in} : $parent->{mon_out};
+	$packet->{color} = $is_reply ? $parent->{in_color} : $parent->{out_color};
+	$packet->{name} = "p_$this->{name}";
+
+	display($dbg_parse+1,0,"a_parser::applyMonDefs($packet->{name}) ".
 		"is_sniffer($packet->{is_sniffer}) is_reply($is_reply) ".
 		sprintf("mon(%04x) color($packet->{color})",$packet->{mon}));
 }
@@ -111,20 +118,20 @@ sub parsePacket
 	if ($packet->{proto} eq 'tcp')
 	{
 		my $offset = 0;
-		while ($packet_len - $offset >= 4)
+		while ($packet && $packet_len - $offset >= 4)
 		{
 			my $len_bytes = substr($payload,$offset,2);
 			my $len = unpack('v',$len_bytes);
 			my $part = substr($payload,$offset+2,$len);
 			my $hdr = pad('',4).unpack('H*',$len_bytes).' ';
-			$this->parseMessage($packet,$len,$part,$hdr);
+			$packet = $this->parseMessage($packet,$len,$part,$hdr);
 			$offset += $len + 2;
 		}
 	}
 	else
 	{
 		my $hdr = pad('',8);
-		$this->parseMessage($packet,length($payload),$payload,$hdr);
+		$packet = $this->parseMessage($packet,length($payload),$payload,$hdr);
 	}
 
 	# Return the completely constructed packet.
@@ -159,7 +166,7 @@ sub parseMessage
 		printConsole($packet->{color},$text,$mon);
 	}
 
-	return 1;
+	return $packet;
 }
 
 
@@ -196,6 +203,7 @@ sub parsePiece
 
 			printConsole($packet->{color},$pad."#     dictionary($num)",$mon)
 				if $mon & $MON_PIECES;
+			$packet->{dict_uuids} ||= shared_clone([]);
 			my $dict_uuids = $packet->{dict_uuids};
 			for (my $i=0; $i<$num; $i++)
 			{

@@ -1,6 +1,21 @@
 #---------------------------------------------
 # b_sock.pm
 #---------------------------------------------
+# WORK IN PROGRESS
+#
+#
+# A service_port carries its monitoring preferences and may be
+# promototed to a b_sock, still carrying those.
+#
+# There is a single a_parser associated with a b_sock, either
+# the generic base class, or the derived IMPLEMENTED classes.
+#
+# In any case, the parser gets its monitoring prefs from
+# its parent, THIS BSOCK.  Sniffer needs a major rework.
+
+
+
+#-------------------------------------------------
 # The base class of a RAYNET socket.
 # Sockets are constructed with the following parameters:
 #
@@ -49,16 +64,7 @@
 #		socket, or a failure reading from or writing to
 #		the socket, will cause the threada to exit
 #
-# Monitoring used at this level are passed in from a_defs.pm
-#
-#	{in_color}
-#	{out_color}
-#	{show_raw_in}
-#	{show_raw_ou}
-#	{in_multi}
-#	{out_multi}
-#
-# And are passed (along with the protocol) to a_utils::parseRawPacket
+# MONITORING is undocumented WIP
 #
 # All sockets implement a listener thread that waits for incoming
 # packets and a commandThread that acts on the {command_queue} if
@@ -105,11 +111,12 @@ BEGIN
 }
 
 
+my $dbg_mon 	= 0;		# monitor bits
 
 my $dbg_api 	= 1;
 my $dbg_thread  = 0;
 my $dbg_cmd  	= 1;
-my $dbg_wait 	= 1;
+my $dbg_wait 	= 0;
 
 my $DESTROY_TIMEOUT				= 3;
 my $DEFAULT_CONNECT_TIMEOUT 	= 2;
@@ -136,6 +143,23 @@ our $SHUTDOWN_SENT		= 2;		# $sock->shutdown(1) has been sent; waiting for FIN or
 our $SHUTDOWN_DONE		= 3;		# socket has been closed,
 
 our @SHUTDOWN_NAME = qw(NONE START SENT DONE);
+
+#------------------------------------------------------
+# monitor definitions high priority
+#------------------------------------------------------
+
+sub setMonDefs
+{
+	my ($this,$packet) = @_;
+	my $is_reply = $packet->{is_reply};
+	my $mon = $is_reply ? $this->{mon_out} : $this->{mon_in};
+	my $color = $is_reply ? $this->{out_color} : $this->{in_color};
+	my $name = "p_$this->{name}";
+	display($dbg_mon,0,sprintf("b_sock::setMonDefs($name) mon(%04x) color($color)",$mon));
+	$packet->{name} = $name;
+	$packet->{mon} = $mon;
+	$packet->{color} = $color;
+}
 
 
 #-----------------------------
@@ -188,7 +212,7 @@ sub init
 	# {local_ip} - optional but not recommended
 
 	my $parser_class = $this->{parser_class} || 'a_parser';
-	$this->{parser} = $parser_class->new($this,$this->{port});
+	$this->{parser} = $parser_class->newParser($this) if !$this->{parser};
 
 }
 
@@ -326,12 +350,6 @@ sub applyMonDefs
 
 
 
-sub handlePacket
-{
-	my ($this,$buffer) = @_;
-	return undef;
-}
-
 sub handleCommand
 {
 	my ($this,$command) = @_;
@@ -414,8 +432,10 @@ sub waitReply
 		if (@$replies)
 		{
 			my $reply = shift @$replies;
-			# is_event($reply->{is_event};
-			display_hash($dbg_wait,1,"$this->{name} got reply seq($reply->{seq_num})",$reply);
+			$dbg_wait >= 0 ?
+				display($dbg_wait,1,"$this->{name} waitReply got seq($reply->{seq_num})") :
+				display_hash($dbg_wait,1,"$this->{name} waitReply got seq($reply->{seq_num})",$reply,'payload');
+
 			if ($reply->{seq_num} == $seq)
 			{
 				if ($expect_success)
@@ -608,7 +628,7 @@ sub sockThread
 			if ($sel->can_write() && @{$this->{out_queue}})
 			{
 				my $packet = shift @{$this->{out_queue}};
-				showRawPacket(0,$this,$packet,1) if $this->{mon_raw_out};
+				# showRawPacket(0,$this,$packet,1) if $this->{mon_raw_out};
 
 				my $rslt = $this->{proto} eq 'mcast' ?
 					$sock->mcast_send($packet, "$this->{ip}:$this->{port}") :
@@ -667,7 +687,7 @@ sub sockThread
 					{
 						my $client_buffer = $this->{buffer};
 						$this->{buffer} = '';
-						showRawPacket(0,$this,$client_buffer,0) if $this->{mon_raw_in};
+						# showRawPacket(0,$this,$client_buffer,0) if $this->{mon_raw_in};
 
 						# hook for probes to not call derived handle packet
 
@@ -678,8 +698,29 @@ sub sockThread
 						}
 						else
 						{
-							my $reply = $this->handlePacket($client_buffer);
-							display($dbg_thread+1,0,"sockThread got handlePacket reply="._def($reply)) if $this->{in_color};
+							my $reply =	$this->{parser}->parsePacket(shared_clone({
+								is_reply 	=> 1,
+								is_sniffer	=> 0,
+								is_shark	=> 1,
+								client_name => "$this->{name}(shark)",
+								server_name => "$this->{name}($this->{device_id})",
+
+								proto		=> $this->{proto},
+
+								src_ip		=> $this->{local_ip},
+								src_port	=> $this->{local_port},
+								dst_ip		=> $this->{ip},
+								dst_port	=> $this->{port},
+
+								client_ip	=> $this->{local_ip},
+								client_port	=> $this->{local_port},
+								server_ip	=> $this->{ip},
+								server_port => $this->{port},
+
+								payload 	=> $client_buffer,
+								}));
+							display($dbg_thread+1,0,"sockThread got parsePacket reply="._def($reply))
+								if $this->{name} ne 'RAYSYS';
 							push @{$this->{replies}},$reply if $reply;
 						}
 					}

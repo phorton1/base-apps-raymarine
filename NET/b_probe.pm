@@ -274,14 +274,6 @@ sub do_probe
 				$this->sendPacket($data);
 		}
 
-
-		# this is where it gets weird
-		# by default, this will actually call
-		# derived classes handlePacket() method,
-		# and *could* actually be used to implement waitReply,
-		# BUT especially for testing a variety of messages,
-		# we may not want to modify their parsers as we go.
-
 		elsif ($line =~ /^WAIT\s*(.*)$/)
 		{
 			my $extra = $1;
