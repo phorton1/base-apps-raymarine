@@ -100,6 +100,7 @@ use Socket;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use a_defs;
+use a_mon;
 use a_utils;
 use b_sock;
 use a_parser;
@@ -156,10 +157,11 @@ sub new
 	my ($class) = @_;
 	display($dbg_raysys,0,"c_RAYSYS new()");
 
-	my $this = shared_clone($RAYSYS_DEFAULTS{$RAYSYS_PORT});
+	my $this = shared_clone($SERVICE_PORT_DEFS{$RAYSYS_PORT});
 	mergeHash($this, shared_clone({
 		name 			=> $RAYSYS_NAME,
 		proto			=> 'mcast',
+		device_id		=> $KNOWN_DEVICES{$SHARK_DEVICE_ID},
 		service_id		=> $RAYSYS_SID,
 		local_ip		=> $LOCAL_IP,
 		ip   			=> $RAYSYS_IP,
@@ -177,14 +179,13 @@ sub new
 
 		# AS AN A_PARSER, on the known shark device_id 'aaaaaaaa'
 
-		device_id		=> $KNOWN_DEVICES{$SHARK_DEVICE_ID},
-		parent			=> $this,				# uses self as the parent of the parser
-		parser			=> $this,				# uses self AS the parser
-		# 	mon_in			=> 0,
-		# 	mon_out			=> 0,
-		# 	in_color		=> 0,
-		# 	out_color		=> 0,
-
+		parser	=> $this,				# uses self AS the parser
+		mon_defs => shared_clone({
+			active			=> 0,
+			mon_in			=> 0,
+			mon_out			=> 0,
+			in_color		=> 0,
+			out_color		=> 0, }),
 	}));
 
 	bless $this,$class;
@@ -316,27 +317,23 @@ sub addServicePort
 		return 0;	# not new
 	}
 
-	my $def = $RAYSYS_DEFAULTS{$port};
+	my $def = $SERVICE_PORT_DEFS{$port};	# not shared
+	my $mon_defs = $SHARK_DEFAULTS{$port};	# shared
+	
 	if (!$def)
 	{
-		error("NO DEFINITION FOR RAYSYS PORT($port)");
+		error("NO DEFINITION FOR SERVICE_PORT($port)");
 		$def = {
 			sid		=> -2,
 			name	=> 'unknown',
-			proto	=> '',
-			# mon_from=>1,
-			# mon_to=>1,
-			# multi=>1,
-			# color=>0,
-		};
+			proto	=> '', };
+		$mon_defs = shared_clone({
+			mon_in	=> $MON_ALL,
+			mon_out	=> $MON_ALL,
+			in_color => $UTILS_COLOR_RED,
+			out_color => $UTILS_COLOR_RED, });
 	}
 
-	# HUH?!?!?  More weird Perl behavior when RAYSYS_DEFAULTS was shared
-	# Somehow the RAYSYS_DEFAULTS shared record was getting the fields
-	# from the SERIVCE_PORT, which is *supposed* to be a shared_clone
-	# of the RAYSYS_DEFAULTS.  I *thought* shared_clone created a DEEP
-	# clone, re-instantiating all the sub shared_references, but I
-	# changed back to a non-shared version as of this writing
 	
 	display_hash($dbg_raysys+1,1,"adding ServicePort($ip:$port) def",$def);
 	my $service_port = shared_clone($def);
@@ -348,6 +345,7 @@ sub addServicePort
 	$service_port->{addr}		= $addr;
 	$service_port->{alive_time} = time();
 	$service_port->{no_delete}	= $no_delete if $no_delete;
+	$service_port->{mon_defs}	= $mon_defs;
 	
 	$this->{ports_by_addr}->{$addr} = $service_port;
 
@@ -427,7 +425,7 @@ sub _decode_header
 
 		if ($field =~ /^port/)	# for non-multicast ports, show my guess as to the internet protocol
 		{
-			my $def = $RAYSYS_DEFAULTS{$value};
+			my $def = $SERVICE_PORT_DEFS{$value};
 			my $proto = $def ? $def->{proto} : '';
 			$text .= "$field($value)='$proto' ";
 		}

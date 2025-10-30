@@ -11,19 +11,20 @@ use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use a_defs;
+use a_mon;
 use a_utils;
 use d_FILESYS;
 use base qw(a_parser);
 
 
-my $dbg_fp = -2;
+my $dbg_fp = 0;
 
 
 sub newParser
 {
-	my ($class, $parent) = @_;
-	display($dbg_fp,0,"e_FILESYS::newParser($parent->{name})");
-	my $this = $class->SUPER::newParser($parent);
+	my ($class, $mon_defs) = @_;
+	display($dbg_fp,0,"e_FILESYS::newParser($mon_defs->{name})");
+	my $this = $class->SUPER::newParser($mon_defs);
 	bless $this,$class;
 
 	$this->{name} = 'e_FILESYS';
@@ -75,13 +76,13 @@ sub parsePacket
 	my $packet_len = length($payload);
 	my ($cmd_word,$sid,$seq) = unpack('vvV',substr($payload,0,8));
 	
-	display($dbg_fp,0,"e_FILESYS::parsePacket len($packet_len)");
+	display($dbg_fp+1,0,"e_FILESYS::parsePacket len($packet_len)");
 
 	$this->{file_error} = '';
 	$packet = $this->SUPER::parsePacket($packet);
 	return shared_clone({ seq_num=>$seq, success=>0 }) if $this->{file_error};
 
-	display($dbg_fp,0,"e_FILESYS::parsePacket returning "._def($packet));
+	display($dbg_fp+1,0,"e_FILESYS::parsePacket returning "._def($packet));
 	return $packet;
 }
 
@@ -98,7 +99,9 @@ sub parseMessage
 	my $cmd_name = $FILE_CMD_NAME{$cmd};
 	$cmd_name ||= 'WHO CARES?';
 	my $dir_name = $DIRECTION_NAME{$dir};
-	display($dbg_fp,1,"e_FILESYS::parseMessage dir($dir)=$dir_name seq($seq) cmd($cmd)=$cmd_name");;
+	display($dbg_fp+2,1,"e_FILESYS::parseMessage dir($dir)=$dir_name seq($seq) cmd($cmd)=$cmd_name");;
+
+	$this->SUPER::parseMessage($packet,$len,$part,$hdr);
 
 	my $pad = pad('',13);
 	my $mon = $packet->{mon};
@@ -275,8 +278,6 @@ sub parseMessage
 
 			elsif ($cmd == $FILE_CMD_GET_FILE)
 			{
-				$success = 2;
-
 				my ($num_packets,$packet_num,$bytes) = unpack('v3',substr($part,$offset,6));
 				$offset += 6;
 
@@ -285,49 +286,51 @@ sub parseMessage
 				my $expected_len = $file_offset + $packet_num * 1024;
 
 				my $msg = "packet($packet_num/$num_packets) offset($file_offset) cur_len($cur_len) bytes=$bytes";
-				display($dbg_fp,2,$msg);
+				display($dbg_fp+2,2,$msg);
 				printConsole($packet->{color},$pad.$msg) if $mon & $MON_PARSE;
 
-				$this->{file_content} = '' if !$file_offset && !$packet_num;
-
-				if ($cur_len != $expected_len)
+				if (!$packet->{is_sniffer})		# do 'real' file content management
 				{
-					my $expected = $cur_len / 1024;
-					return $this->fileReplyError($cmd,$seq,"Unexpected length($cur_len) != expected($expected_len) = ".
-						"$file_offset + (1024*$packet_num=".(1024*$packet_num).")");
-					# return $this->fileRequestError($seq,"Unexpected packet_num($packet_num) expected($expected)");
-				}
-				else
-				{
-					my $content = substr($part,$offset);
-					my $this_len = length($content);
-					my $total_len = $this->{file_total};
-					if ($this->{got_len} + $this_len > $total_len)
+					$success = 2;
+					$this->{file_content} = '' if !$file_offset && !$packet_num;
+
+					if ($cur_len != $expected_len)
 					{
-						my $new_this = $total_len - $this->{got_len};
-						warning(0,0,"pruning last packet from $this_len to $new_this = $total_len-$this->{got_len}");
-						$this_len = $new_this;
-						$content = substr($content,0,$this_len);
+						my $expected = $cur_len / 1024;
+						return $this->fileReplyError($cmd,$seq,"Unexpected length($cur_len) != expected($expected_len) = ".
+							"$file_offset + (1024*$packet_num=".(1024*$packet_num).")");
+						# return $this->fileRequestError($seq,"Unexpected packet_num($packet_num) expected($expected)");
 					}
-
-					$this->{file_content} .= $content;
-					$this->{got_len} += $this_len;
-
-
-
-					if ($packet_num == $num_packets - 1)
+					else
 					{
-						if ($this->{got_len} >= $total_len)
+						my $content = substr($part,$offset);
+						my $this_len = length($content);
+						my $total_len = $this->{file_total};
+						if ($this->{got_len} + $this_len > $total_len)
 						{
-							display($dbg_fp,2,"FILE($this->{file_path}) COMPLETED!!");
-							$success = 1;
+							my $new_this = $total_len - $this->{got_len};
+							warning(0,0,"pruning last packet from $this_len to $new_this = $total_len-$this->{got_len}");
+							$this_len = $new_this;
+							$content = substr($content,0,$this_len);
 						}
-						else
+
+						$this->{file_content} .= $content;
+						$this->{got_len} += $this_len;
+
+						if ($packet_num == $num_packets - 1)
 						{
-							display($dbg_fp,2,"FILE($this->{file_path}) GOT $this->{got_len}/$total_len bytes!!");
+							if ($this->{got_len} >= $total_len)
+							{
+								display($dbg_fp,2,"FILE($this->{file_path}) COMPLETED!!");
+								$success = 1;
+							}
+							else
+							{
+								display($dbg_fp,2,"FILE($this->{file_path}) GOT $this->{got_len}/$total_len bytes!!");
+							}
 						}
-					}
-				}	# got the next expected buffer		
+					}	# got the next expected buffer
+				}	# 'real' content management
 			}	# $FILE_CMD_GET_FILE
 		}	# success
 	}	# !$FILE_CMD_CARD_ID
@@ -338,13 +341,13 @@ sub parseMessage
 
 	if ($success == 1)
 	{
-		display($dbg_fp,0,"FILESYS parseMessage() returning success packet");
+		display($dbg_fp+2,0,"FILESYS parseMessage() returning success packet");
 		return shared_clone({
 			seq_num => $seq,
 			success => $success });
 	}
 
-	display($dbg_fp,0,"FILESYS parseMessage() returning undef");
+	display($dbg_fp+2,0,"FILESYS parseMessage() returning undef");
 	return undef;	# still processing file packets
 
 

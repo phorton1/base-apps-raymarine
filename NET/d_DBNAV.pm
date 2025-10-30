@@ -197,6 +197,7 @@ use threads;
 use threads::shared;
 use Pub::Utils;
 use a_defs;
+use a_mon;
 use a_utils;
 use base qw(a_parser);
 
@@ -209,9 +210,9 @@ our $ONLY_CHANGED_FIELD_VALUES = 1;
 
 sub newParser
 {
-	my ($class, $parent) = @_;
-	display($dbg_dp,0,"e_DBNAV::newParser($parent->{name})");
-	my $this = $class->SUPER::newParser($parent);
+	my ($class, $mon_defs) = @_;
+	display($dbg_dp,0,"e_DBNAV::newParser($mon_defs->{name})");
+	my $this = $class->SUPER::newParser($mon_defs);
 	bless $this,$class;
 
 	$this->{field_values}		= shared_clone({});
@@ -237,13 +238,15 @@ sub parsePacket
 	# a member 'text' field.
 {
 	my ($this,$packet) = @_;
-	my $is_sniffer = $this->{parent}->{is_sniffer} || 0;
+	my $is_sniffer = $packet->{is_sniffer} || 0;
+	my $mon = $packet->{mon};
 
 	my $payload = $packet->{payload};
 	my $payload_len = length($payload);
 	my ($cmd_word,$sid,$num_fields) = unpack('vvV',substr($payload,0,8));
 
-	display($dbg_dp+2,0,"e_DBNAV::parsePacket is_sniffer($is_sniffer) len($payload_len) num_fields($num_fields) only_new($ONLY_CHANGED_FIELD_VALUES)");
+	display($dbg_dp+2,0,"e_DBNAV::parsePacket is_sniffer($is_sniffer) len($payload_len) num_fields($num_fields) ".
+			sprintf("mon(%04x) only_new($ONLY_CHANGED_FIELD_VALUES)",$mon));
 
 	if (0)	# debug only
 	{
@@ -634,11 +637,11 @@ sub decode_field
 	my $return_it = 1;
 	$return_it = 0 if
 		$found &&
-		!$this->{parent}->{is_sniffer} && (
+		!$is_sniffer && (
 			$decoder_name eq 'TIME' ||
 			$decoder_name eq 'LATLON' ||
 			$decoder_name eq 'NORTHEAST' );
-	# $return_it = 0 if $decoder_name eq 'SUBRECORD';
+	$return_it = 0 if !$is_sniffer && $decoder_name eq 'SUBRECORD';
 
 	# Show the new/changed value in the console
 	# by returning text

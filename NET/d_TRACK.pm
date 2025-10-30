@@ -743,7 +743,6 @@ sub handleEvent
 		!($WITH_EVENT_PROCESSING && $packet->{is_event}) &&
 		!($WITH_MOD_PROCESSING   && $packet->{mods}) );
 
-
 	my $skip_reply = 0;
 	if ($packet->{is_event})
 	{

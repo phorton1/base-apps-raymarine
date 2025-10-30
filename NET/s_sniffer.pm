@@ -10,6 +10,7 @@ use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use a_defs;
+use a_mon;
 use a_parser;
 use c_RAYSYS;
 
@@ -33,17 +34,19 @@ our $sniffer:shared;
 # ELIMINATE NON RAYNET TRAFFICE
 
 my $ignore_ip_re = join('|',(
+	'255.255.255.255',		# windows 3289,10004,and 222222 spyware
 	'224.0.0.251',			# router
 	'224.0.0.252',			# router
 	'10.0.241.254',			# router ssdp
 	'10.255.255.255',		# windows netbios dnd
 	'239.255.255.250', ));	# ssdp
 
-# QUIET OWN SOME PARTICULAR ports
+# QUIET DOWN SOME PARTICULAR ports
 
 my $ignore_port_re = join('|',(
 	'5800',					# RAYSYS
-	'5801', ));				# Alarm
+	'5801', 				# Alarm
+));
 # $ignore_port_re = '';
 
 
@@ -93,6 +96,12 @@ sub new
 		# for buffering tcp packets that come in pairs
 		# starting with a length word, followed by another packet
 	$this->{parsers} = shared_clone({});
+		# by full server_ip:server_port-client_ip:client_port address
+	$this->{parser_counts} = shared_clone({});
+		# count of parsers by instantiated port number
+	$this->{shark_counts} = shared_clone({});
+		# count of shark (self) parsers by instantiated port number
+
 
 	$this->{running} = $DEFAULT_RUNNING;
     display($dbg_sniff+1,0,"sniffer started");
@@ -114,6 +123,13 @@ sub start
 my $unknown = 0;
 
 sub sniffer_thread
+	# Weirdness ..
+	# Turning sniffer on or off may happen in the middle of a multi-packet
+	# buffered tcp sequence, i.e. on the 2nd packet after the presumed first
+	# packet's length has already been received.  Therefore we do buffering
+	# even when "not running".  However, note that sniffer itself might be
+	# STARTED in the middle of such a packet, and I can't think of a good
+	# way to mitigate that.
 {
 	my ($this) = @_;
     display($dbg_sniff,0,"sniffer thread started");
@@ -158,14 +174,17 @@ sub sniffer_thread
 			my $time = sprintf("%0.3f",$seconds-$start_time);
 			# print "   time_part($time_part) seconds($seconds) start_time($start_time)\n";
 			
-
+			my $addr;
 			if ($proto eq 'tcp')
 			{
+				# unlike shark, where we more or less assume that we will send full packets,
+				# and only need to buffer incoming packets, shark must buffer in both directions.
+
 				$src_port = $values{'tcp.srcport'};
 				$dst_port = $values{'tcp.dstport'};
 				my $bytes  = pack('H*',$values{'tcp.payload'});
 
-				my $addr = "$src_ip:$src_port";
+				$addr = "$src_ip:$src_port-$dst_ip:$dst_port";
 				$this->{buffers}->{$addr} ||= '';
 				$this->{buffers}->{$addr} .= $bytes;
 				next if length($this->{buffers}->{$addr}) <= 2;
@@ -182,6 +201,7 @@ sub sniffer_thread
 				}
 				$src_port = $values{'udp.srcport'};
 				$dst_port = $values{'udp.dstport'};
+				$addr = "$src_ip:$src_port-$dst_ip:$dst_port";
 				$payload  = pack('H*',$values{'udp.payload'});
 			}
 
@@ -195,20 +215,24 @@ sub sniffer_thread
 			# Map to server/client values based on SNIFFER_DEFAULTS
 			#------------------------------------------------------------------
 
+
 			my $client_ip 	= $src_ip;
 			my $client_port = $src_port;
 			my $server_ip 	= $dst_ip;
 			my $server_port = $dst_port;
-
-			my $def = $SNIFFER_DEFAULTS{$server_port};
+			my $def 		= $SNIFFER_DEFAULTS{$server_port};
+			my $def_port 	= $server_port;
 			if (!$def)
 			{
 				$client_ip 	 = $dst_ip;
 				$client_port = $dst_port;
 				$server_ip 	 = $src_ip;
 				$server_port = $src_port;
-				$def = $SNIFFER_DEFAULTS{$server_port}
+				$def 		 = $SNIFFER_DEFAULTS{$server_port};
+				$def_port 	 = $server_port;
 			}
+
+
 			if (!$def)
 			{
 				# for ephemeral ports, we receive packets that don't map to any advertised services,
@@ -232,6 +256,7 @@ sub sniffer_thread
 					{
 						warning($dbg_sniff+2,1,"Found($port) at sid($sid) proto($proto) for existing SNIFFER_DEFAULT");
 						$def = $try;
+						$def_port = $port;
 						last;
 					}
 				}
@@ -243,14 +268,12 @@ sub sniffer_thread
 
 				if ($def)
 				{
-					if ($src_ip eq $E80_1_IP)
-					{
-						$client_ip 	 = $dst_ip;
-						$client_port = $dst_port;
-						$server_ip 	 = $src_ip;
-						$server_port = $src_port;
-					}
-					elsif ($dst_ip eq $E80_1_IP)
+					$client_ip 	 = $dst_ip;
+					$client_port = $dst_port;
+					$server_ip 	 = $src_ip;
+					$server_port = $src_port;
+
+					if ($dst_ip eq $E80_1_IP)
 					{
 						$client_ip 	 = $src_ip;
 						$client_port = $src_port;
@@ -259,11 +282,12 @@ sub sniffer_thread
 					}
 				}
 			}
-			if (!$def)
+			if (0 && !$def)
 			{
-				error("NO SNIFFER_DEFAULTS for src($src_ip:$src_port) dst($dst_ip:$dst_port)");
+				warning(0,0,"CREATING SNIFFER_DEFAULTS for src($src_ip:$src_port) dst($dst_ip:$dst_port)");
 				$def = {
-						sid => -3,
+
+					sid => -3,
 						name => 'new'.$unknown++,
 						proto => $proto,
 						mon_in => $MON_ALL,
@@ -275,6 +299,14 @@ sub sniffer_thread
 				$client_port = $dst_port;
 				$server_ip 	 = $src_ip;
 				$server_port = $src_port;
+ 			}
+
+			# finally, give an error if we couldn't figure it out
+
+			if (!$def)
+			{
+				error("NO SNIFFER_DEFAULTS for src($src_ip:$src_port) dst($dst_ip:$dst_port)");
+				next;
 			}
 
 
@@ -283,7 +315,6 @@ sub sniffer_thread
 			#--------------------------------------------------------------------
 			# this code is nasty and ugly because sniffer has to empirically
 			# determine if the client is shark or RNS (or something else?)
-
 
 			my $MAX_UDP_LISTENER_SERVICE_ID = 100;
 				# thus far we have never seen a service_id higher than this
@@ -299,10 +330,10 @@ sub sniffer_thread
 
 			if ($proto eq 'tcp')
 			{
-				my $addr = "$server_ip:$server_port";
+				my $sp_addr = "$server_ip:$server_port";
 				my $service_port =
 					$raysys->{implemented_services}->{$def->{name}} ||
-					$raysys->{ports_by_addr}->{$addr};
+					$raysys->{ports_by_addr}->{$sp_addr};
 				my $local_port = $service_port ? $service_port->{local_port} : 0;
 				$local_port ||= 0;
 				if ($client_port == $local_port)
@@ -333,13 +364,26 @@ sub sniffer_thread
 			#---------------------------------------------------
 				
 			my $parse_class = $def->{parser_class} || 'a_parser';
-			my $parse_id = "$server_ip.$parse_class";
+			my $parse_id = "$server_ip:$server_port-$client_ip:$client_port";
 			my $parser = $this->{parsers}->{$parse_id};
 
 			if (!$parser)
 			{
-				display($dbg_sniff+1,0,"creating new parser($parse_id)");
-				$parser = $this->{parsers}->{$parse_id} = $parse_class->new($this,$server_port)
+				$this->{parser_counts}->{$def_port} ||= 0;
+				$this->{parser_counts}->{$def_port}++;
+
+				if ($is_shark)
+				{
+					$this->{shark_counts}->{$def_port} ||= 0;
+					$this->{shark_counts}->{$def_port}++;
+				}
+
+				my $parser_count = $this->{parser_counts}->{$def_port} || 0;
+				my $shark_count  = $this->{shark_counts}->{$def_port} || 0;
+				warning($dbg_sniff+1,0,"creating new parser($parse_id) count=$parser_count shark_count=$shark_count");
+				$parser = $this->{parsers}->{$parse_id} = $parse_class->newParser($def);
+
+
 			}
 
 			# construct and parse the packet
@@ -371,7 +415,7 @@ sub sniffer_thread
 					client_name => $client_name,
 					server_name => $server_name,
 					payload	    => $payload, });
-				$parser->parsePacket($packet);
+				$parser->doParse($packet);
 			}
 		}
 		else

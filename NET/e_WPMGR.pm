@@ -12,8 +12,9 @@ use threads;
 use threads::shared;
 use Pub::Utils;
 use a_defs;
+use a_mon;
 use a_utils;
-use e_wp_defs;		# temp architecture
+use e_wp_defs;
 use b_records;
 use base qw(a_parser);
 
@@ -22,11 +23,10 @@ my $dbg_ewp = 0;
 
 sub newParser
 {
-	my ($class, $parent) = @_;
-	display($dbg_ewp,0,"e_WPMGR::newParser($parent->{name})");
-	my $this = $class->SUPER::newParser($parent);
+	my ($class, $mon_defs) = @_;
+	display($dbg_ewp,0,"e_WPMGR::newParser($mon_defs->{name}) is_shark($mon_defs->{is_shark}) is_sniffer($mon_defs->{is_sniffer})");
+	my $this = $class->SUPER::newParser($mon_defs);
 	bless $this,$class;
-	$this->{name} = 'e_WPMGR';
 	return $this;
 }
 
@@ -41,25 +41,32 @@ sub applyMonDefs
 	my $what = $packet->{what};
 	$packet->{name} = $NAV_WHAT{$what};
 	
-	my $parent = $this->{parent};
 	my $is_reply = $packet->{is_reply};
-
-	# my $defs = $packet->{is_sniffer} ?
-	# 	\%SNIFFER_DEFAULTS :
-	# 	\%RAYSYS_DEFAULTS;
-	# my $def = $defs->{$this->{def_port}};
+	my $mon_defs = $this->{mon_defs};
 
 	my $idx =
 		$what == $WHAT_GROUP ? $MON_WHAT_GROUP :
 		$what == $WHAT_ROUTE ? $MON_WHAT_ROUTE :
 		$MON_WHAT_WAYPOINT;
 
-	$packet->{mon} = $is_reply ?
-		$parent->{mon_ins}->[$idx] :
-		$parent->{mon_outs}->[$idx];
+	if ($mon_defs->{active})
+	{
+		my $log = $mon_defs->{log};
+		$packet->{mon} = $is_reply ?
+			$mon_defs->{mon_ins}->[$idx] :
+			$mon_defs->{mon_outs}->[$idx];
+		$packet->{mon} |= $log;
+		# identify self-sniffed packets
+		$packet->{mon} |= $MON_SELF_SNIFFED
+			if $packet->{is_sniffer} && $packet->{is_shark};
+	}
+	else
+	{
+		$packet->{mon} = 0;
+	}
 	$packet->{color} = $is_reply ?
-		$parent->{in_colors}->[$idx] :
-		$parent->{out_colors}->[$idx];
+		$mon_defs->{in_colors}->[$idx] :
+		$mon_defs->{out_colors}->[$idx];
 }
 
 
@@ -173,7 +180,7 @@ sub parseMessage
 	}
 	else # NO RULE!
 	{
-		return error("NO RULE FOR $dir_name | $cmd_name | $what_name");
+		error("NO RULE FOR $dir_name | $cmd_name | $what_name");
 	}
 
 	return $packet;

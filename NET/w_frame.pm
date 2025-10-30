@@ -18,10 +18,11 @@ use Pub::WX::Frame;
 use Win32::SerialPort;
 use Win32::Console;
 use w_resources;
+use winShark;
+use winSniffer;
 use winRAYSYS;
 use winFILESYS;
 use winDBNAV;
-use winSniffer;
 use base qw(Pub::WX::Frame);
 
 
@@ -37,6 +38,7 @@ sub new
 	my $this = $class->SUPER::new($parent,$rect);
 
 	EVT_MENU($this, $WIN_RAYSYS, \&onCommand);
+	EVT_MENU($this, $WIN_SHARK, \&onCommand);
 	EVT_MENU($this, $WIN_SNIFFER, \&onCommand);
 	EVT_MENU($this, $WIN_FILESYS, \&onCommand);
 	EVT_MENU($this, $WIN_DBNAV,	\&onCommand);
@@ -65,6 +67,7 @@ sub createPane
     $book ||= $this->{book};
 	display(0,0,"minimumFrame::createPane($id) book="._def($book)."  data="._def($data));
 	return winRAYSYS->new($this,$book,$id,$data) if $id == $WIN_RAYSYS;
+	return winShark->new($this,$book,$id,$data) if $id == $WIN_SHARK;
 	return winSniffer->new($this,$book,$id,$data) if $id == $WIN_SNIFFER;
 	return winFILESYS->new($this,$book,$id,$data) if $id == $WIN_FILESYS;
 	return winDBNAV->new($this,$book,$id,$data) if $id == $WIN_DBNAV;
@@ -77,6 +80,7 @@ sub onCommand
     my ($this,$event) = @_;
     my $id = $event->GetId();
 	if ($id == $WIN_RAYSYS ||
+		$id == $WIN_SHARK ||
 		$id == $WIN_SNIFFER ||
 		$id == $WIN_FILESYS ||
 		$id == $WIN_DBNAV)

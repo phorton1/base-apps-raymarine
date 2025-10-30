@@ -1,9 +1,9 @@
 #!/usr/bin/perl
 #-------------------------------------------------------------------------
-# winSniffer.pm
+# winShark.pm
 #-------------------------------------------------------------------------
 
-package winSniffer;
+package winShark;
 use strict;
 use warnings;
 use threads;
@@ -21,7 +21,7 @@ use a_defs;
 use a_mon;
 use a_utils;
 use s_sniffer;
-use base qw(Wx::ScrolledWindow Pub::WX::Window Pub::WX::Window);
+use base qw(Wx::ScrolledWindow Pub::WX::Window);
 
 my $dbg_win = 0;
 
@@ -41,15 +41,10 @@ my $ID_LOG_OFF    	 = 1012;
 my $ID_LOG_ON	 	 = 1013;
 my $ID_ONLY_OFF    	 = 1014;
 my $ID_ONLY_ON	 	 = 1015;
-my $ID_SELF_OFF      = 1016;
-my $ID_SELF_ON	     = 1017;
 
-my $ID_ACTIVE_BASE 	 = 1200;
-my $ID_LOG_BASE 	 = 1300;
-my $ID_ONLY_BASE 	 = 1400;
-my $ID_SELF_BASE 	 = 1500;
-my $ID_COUNT_BASE 	 = 1600;
-my $ID_SHARK_BASE 	 = 1700;
+my $ID_ACTIVE_BASE 	 = 2000;
+my $ID_LOG_BASE 	 = 3000;
+my $ID_ONLY_BASE 	 = 4000;
 
 
 
@@ -61,8 +56,8 @@ sub cmpFunc
 {
 	my ($a,$b) = @_;
 	return
-		lc($SNIFFER_DEFAULTS{$a}->{name}) cmp
-		lc($SNIFFER_DEFAULTS{$b}->{name});
+		lc($SHARK_DEFAULTS{$a}->{name}) cmp
+		lc($SHARK_DEFAULTS{$b}->{name});
 }
 
 
@@ -71,12 +66,7 @@ sub new
 	my ($class,$frame,$book,$id,$data) = @_;
 	my $this = $class->SUPER::new($book,$id);
 	display($dbg_win,0,"winSniffer::new() called");
-	$this->MyWindow($frame,$book,$id,'Sniffer',$data);
-	$this->SetFont($font_fixed);
-
-	my $running = $sniffer && $sniffer->{running} ? 1 : 0;
-	my $box = Wx::CheckBox->new($this,$ID_ONOFF,"on/off",[$LEFT_MARGIN,$START_TOP]);
-	$box->SetValue($running);
+	$this->MyWindow($frame,$book,$id,'Shark',$data);
 
 	Wx::Button->new($this,$ID_ACTIVE_OFF,'all_off',[$LEFT_MARGIN,				$START_TOP + 1*$LINE_HEIGHT],[60,$LINE_HEIGHT]);
 	Wx::Button->new($this,$ID_ACTIVE_ON, 'all_on', [$LEFT_MARGIN,				$START_TOP + 2*$LINE_HEIGHT],[60,$LINE_HEIGHT]);
@@ -84,16 +74,14 @@ sub new
 	Wx::Button->new($this,$ID_LOG_ON, 	 'all_on', [$CHECK_COL + 0*$CHECK_WIDTH,$START_TOP + 2*$LINE_HEIGHT],[60,$LINE_HEIGHT]);
 	Wx::Button->new($this,$ID_ONLY_OFF,	 'all_off',[$CHECK_COL + 1*$CHECK_WIDTH,$START_TOP + 1*$LINE_HEIGHT],[60,$LINE_HEIGHT]);
 	Wx::Button->new($this,$ID_ONLY_ON, 	 'all_on', [$CHECK_COL + 1*$CHECK_WIDTH,$START_TOP + 2*$LINE_HEIGHT],[60,$LINE_HEIGHT]);
-	Wx::Button->new($this,$ID_SELF_OFF,	 'all_off',[$CHECK_COL + 2*$CHECK_WIDTH,$START_TOP + 1*$LINE_HEIGHT],[60,$LINE_HEIGHT]);
-	Wx::Button->new($this,$ID_SELF_ON, 	 'all_on', [$CHECK_COL + 2*$CHECK_WIDTH,$START_TOP + 2*$LINE_HEIGHT],[60,$LINE_HEIGHT]);
 
-	Wx::StaticText->new($this,-1,	'count',  	   [$CHECK_COL + 3*$CHECK_WIDTH,$START_TOP + 2*$LINE_HEIGHT]);
-	Wx::StaticText->new($this,-1,   'shark/self',  [$CHECK_COL + 4*$CHECK_WIDTH,$START_TOP + 2*$LINE_HEIGHT]);
+	$this->SetFont($font_fixed);
 
+	my @ctrls;
 	my $num = 0;
-	for my $port (sort {cmpFunc($a,$b)} keys %SNIFFER_DEFAULTS)
+	for my $port (sort {cmpFunc($a,$b)} keys %SHARK_DEFAULTS)
 	{
-		my $def = $SNIFFER_DEFAULTS{$port};
+		my $def = $SHARK_DEFAULTS{$port};
 		my $title =
 			pad($port,6).
 			pad($def->{name},12).
@@ -113,20 +101,6 @@ sub new
 		$box->SetValue(($def->{log} & $MON_LOG_ONLY)?1:0);
 		$box->{port} = $port;
 
-		my $self_id = $ID_SELF_BASE + $num;
-		$box = Wx::CheckBox->new($this,$self_id,'self',[$CHECK_COL + 2*$CHECK_WIDTH,$TOP_MARGIN + $num*$LINE_HEIGHT]);
-		$box->SetValue(($def->{log} & $MON_SNIFF_SELF)?1:0);
-		$box->{port} = $port;
-
-		my $count_id = $ID_COUNT_BASE + $num;
-		my $count = $sniffer ? $sniffer->{parser_counts}->{$port} : '';
-		$count ||= '';
-		Wx::StaticText->new($this,$count_id,$count,[$CHECK_COL + 3*$CHECK_WIDTH,$TOP_MARGIN + $num*$LINE_HEIGHT]);
-
-		my $shark_id = $ID_SHARK_BASE + $num;
-		my $shark = $sniffer ? $sniffer->{shark_counts}->{$port} : '';
-		$shark ||= '';
-		Wx::StaticText->new($this,$shark_id,$shark,[$CHECK_COL + 4*$CHECK_WIDTH,$TOP_MARGIN + $num*$LINE_HEIGHT]);
 		$num++;
 	}
 
@@ -134,7 +108,7 @@ sub new
 	# $this->SetScrollRate(0,$LINE_HEIGHT);
 	EVT_BUTTON($this,-1,\&onButton);
 	EVT_CHECKBOX($this,-1,\&onCheckBox);
-	EVT_IDLE($this,\&onIdle);
+	# EVT_IDLE($this,\&onIdle);
 	# EVT_COMBOBOX($this,-1,\&onComboBox);
 	return $this;
 }
@@ -143,35 +117,6 @@ sub new
 #------------------------------------
 # event handlers
 #------------------------------------
-
-sub onIdle
-{
-	my ($this,$event) = @_;
-	$event->RequestMore();
-	return if !$sniffer;
-
-	my $num = 0;
-	for my $port (sort {cmpFunc($a,$b)} keys %SNIFFER_DEFAULTS)
-	{
-		my $id = $ID_COUNT_BASE + $num;
-		my $count = $sniffer->{parser_counts}->{$port};
-		$count ||= '';
-
-		my $text = $this->FindWindow($id);
-		my $cur = $text->GetLabel() || '';
-		$text->SetLabel($count) if $count ne $cur;
-
-		$id = $ID_SHARK_BASE + $num;
-		$count = $sniffer->{shark_counts}->{$port};
-		$count ||= '';
-
-		$text = $this->FindWindow($id);
-		$cur = $text->GetLabel() || '';
-		$text->SetLabel($count) if $count ne $cur;
-
-		$num++;
-	}
-}
 
 
 sub onButton
@@ -182,6 +127,7 @@ sub onButton
 
 	my $on = 0;
 	my $bit = 0;
+	my $active = 0;
 	my $id_base = 0;
 	if ($id == $ID_ACTIVE_OFF || $id == $ID_ACTIVE_ON)
 	{
@@ -200,17 +146,12 @@ sub onButton
 		$bit = $MON_LOG_ONLY;
 		$on = $id == $ID_ONLY_OFF ? 0 : 1;
 	}
-	elsif ($id == $ID_SELF_OFF || $id == $ID_SELF_ON)
-	{
-		$id_base = $ID_SELF_BASE;
-		$bit = $MON_SNIFF_SELF;
-		$on = $id == $ID_SELF_OFF ? 0 : 1;
-	}
+
 
 	my $num = 0;
-	for my $port (sort {cmpFunc($a,$b)} keys %SNIFFER_DEFAULTS)
+	for my $port (sort {cmpFunc($a,$b)} keys %SHARK_DEFAULTS)
 	{
-		my $def = $SNIFFER_DEFAULTS{$port};
+		my $def = $SHARK_DEFAULTS{$port};
 		if ($bit)
 		{
 			$on ? ($def->{log} |= $bit) : ($def->{log} &= ~$bit);
@@ -226,7 +167,6 @@ sub onButton
 }
 
 
-
 sub onCheckBox
 {
 	my ($this,$event) = @_;
@@ -235,29 +175,12 @@ sub onCheckBox
 	my $checked = $event->IsChecked() || 0;
 
 	display($dbg_win,0,"id($id) checked($checked)");
-	
-	if (!$sniffer)
-	{
-		$box->SetValue(0);
-		return;
-	}
-	if ($id == $ID_ONOFF)
-	{
-		$sniffer->{running} = $checked;
-		return;;
-	}
 
 	my $port = $box->{port};
-	my $def = $SNIFFER_DEFAULTS{$port};
+	my $def = $SHARK_DEFAULTS{$port};
 	display($dbg_win,1,sprintf("onCheckbox port($port) before active($def->{active}) log(%04x)",$def->{log}));
 
-	if ($id >= $ID_SELF_BASE)
-	{
-		$checked ?
-			($def->{log} |= $MON_SNIFF_SELF) :
-			($def->{log} &= ~$MON_SNIFF_SELF);
-	}
-	elsif ($id >= $ID_ONLY_BASE)
+	if ($id >= $ID_ONLY_BASE)
 	{
 		$checked ?
 			($def->{log} |= $MON_LOG_ONLY) :

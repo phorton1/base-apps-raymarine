@@ -197,6 +197,9 @@ our %WPMGR_PARSE_RULES = (
 		# bits(1n00000) = dict_buffer_data	on send, CONTEXT bits(0x1n) the buffer is some kind of allocation scheme
 		#									on recv, CONTEXT bits(0x1n) indicatss an INDEX (or dictionary if you prefer)
 		# bits(0n00000) = item buffer 		on send/recv bits(0x0n) indicates an ITEM buffer, uuid given previously in series
+
+
+
 );
 
 

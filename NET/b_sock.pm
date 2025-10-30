@@ -92,6 +92,7 @@ use IO::Socket::INET;
 use IO::Socket::Multicast;
 use Pub::Utils;
 use a_defs;
+use a_mon;
 use a_utils qw(parse_dwords setConsoleColor);
 
 
@@ -212,7 +213,7 @@ sub init
 	# {local_ip} - optional but not recommended
 
 	my $parser_class = $this->{parser_class} || 'a_parser';
-	$this->{parser} = $parser_class->newParser($this) if !$this->{parser};
+	$this->{parser} = $parser_class->newParser($this->{mon_defs}) if !$this->{parser};
 
 }
 
@@ -334,26 +335,18 @@ sub connect
 }
 
 
-#------------------------------------------------
-# virtual (stub) API
-#------------------------------------------------
-
-sub applyMonDefs
-{
-	my ($this,$packet) = @_;
-	my $is_reply = $packet->{is_reply};
-	my $def = $RAYSYS_DEFAULTS{$this->{port}};
-	$packet->{mon} = $is_reply ? $def->{mon_in} : $def->{mon_out};
-	$packet->{color} = $is_reply ? $def->{in_color} : $def->{out_color};
-}
-
-
 
 
 sub handleCommand
 {
 	my ($this,$command) = @_;
 	return 0;	# return value not used yet
+}
+
+sub handleEvent
+{
+	my ($this,$reply) = @_;
+	return $reply;
 }
 
 sub onStartSocketThread
@@ -698,7 +691,7 @@ sub sockThread
 						}
 						else
 						{
-							my $reply =	$this->{parser}->parsePacket(shared_clone({
+							my $packet = shared_clone({
 								is_reply 	=> 1,
 								is_sniffer	=> 0,
 								is_shark	=> 1,
@@ -718,7 +711,16 @@ sub sockThread
 								server_port => $this->{port},
 
 								payload 	=> $client_buffer,
-								}));
+								});
+							my $reply =	$this->{parser}->doParse($packet);
+
+							# derived classes that handle events (WPMGR, TRACK) should
+							# define handleEvent methods on reply packets, and return
+							# the packet, or undef if it is completely handled.
+
+							$reply = $this->handleEvent($reply);
+
+
 							display($dbg_thread+1,0,"sockThread got parsePacket reply="._def($reply))
 								if $this->{name} ne 'RAYSYS';
 							push @{$this->{replies}},$reply if $reply;

@@ -13,6 +13,7 @@ use threads;
 use threads::shared;
 use Pub::Utils;
 use a_defs;
+use a_mon;
 use a_utils;
 use b_records;
 use d_TRACK;
@@ -23,11 +24,10 @@ my $dbg_tp = -2;
 
 sub newParser
 {
-	my ($class, $parent) = @_;
-	display($dbg_tp,0,"e_TRACK::new($parent->{name})");
-	my $this = $class->SUPER::newParser($parent);
+	my ($class, $mon_defs) = @_;
+	display($dbg_tp,0,"e_TRACK::new($mon_defs->{name})");
+	my $this = $class->SUPER::newParser($mon_defs);
 	bless $this,$class;
-	# $this->{name} = 'e_TRACK';
 	return $this;
 }
 
@@ -54,13 +54,6 @@ sub parsePacket
 
 	display_record(0,0,"final packet($packet->{name})",$packet,'payload|points')
 		if $packet->{mon} & $MON_DUMP_RECORD;
-
-	# derived classes that handle events (WPMGR, TRACK) should
-	# call their handleEvent methods on replies.
-	# sniffer doesn't implement handleEvent().
-
-	$rslt_packet = $this->{parent}->handleEvent($rslt_packet)
-		if $packet->{is_reply} && $this->{parent}->can('handleEvent');
 
 	return $rslt_packet;
 }

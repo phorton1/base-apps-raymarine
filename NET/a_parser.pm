@@ -15,10 +15,11 @@ use threads;
 use threads::shared;
 use Pub::Utils;
 use a_defs;
+use a_mon;
 use a_utils;
 
 
-my $dbg_parse = -2;
+my $dbg_parse = 0;
 
 
 
@@ -26,15 +27,15 @@ sub newParser
 	# not called 'new' so that it can be multiple inherited
 	# into implemented classes, particularly c_RAYSYS
 {
-	my ($class, $parent) = @_;
-	display($dbg_parse,0,"a_parser::newParser($parent->{name})");
-	my $name = $parent->{name} ? "e_$parent->{name}" : 'a_parser';
+	my ($class, $mon_defs) = @_;
+	my $name = $mon_defs->{name} ? "e_$mon_defs->{name}" : 'a_parser';
+	display($dbg_parse,0,"a_parser::newParser($name) sid($mon_defs->{sid})  ".
+			"is_shark($mon_defs->{is_shark}) is_sniffer($mon_defs->{is_sniffer})");
 	my $this = shared_clone({
+		sid => $mon_defs->{sid},
 		name => $name,
-		parent => $parent });
+		mon_defs => $mon_defs });
 	bless $this,$class;
-	# $this->{parent}->setMonDefs($this) if $this->{parent}->can('setMonDefs');
-	# display_hash(0,0,"newParser($name)",$this);
 	return $this;
 }
 
@@ -45,19 +46,44 @@ sub applyMonDefs
 	# from the parent device to the packet based soley on $is_reply
 {
 	my ($this,$packet) = @_;
-	display($dbg_parse,0,"a_parser::applyMonDefs($this->{name})");
-
-	my $parent = $this->{parent};
+	my $mon_defs = $this->{mon_defs};
 	my $is_reply = $packet->{is_reply};
-	$packet->{mon} = $is_reply ? $parent->{mon_in} : $parent->{mon_out};
-	$packet->{color} = $is_reply ? $parent->{in_color} : $parent->{out_color};
+
+	if ($mon_defs->{active})
+	{
+		my $log = $mon_defs->{log};
+		$packet->{mon} = $is_reply ? $mon_defs->{mon_in} : $mon_defs->{mon_out};
+		$packet->{mon} |= $log;
+		# identify self-sniffed packets
+		$packet->{mon} |= $MON_SELF_SNIFFED
+			if $packet->{is_sniffer} && $packet->{is_shark};
+	}
+	else
+	{
+		$packet->{mon} = 0;
+	}
+	$packet->{color} = $is_reply ? $mon_defs->{in_color} : $mon_defs->{out_color};
 	$packet->{name} = "p_$this->{name}";
 
 	display($dbg_parse+1,0,"a_parser::applyMonDefs($packet->{name}) ".
+		"active($mon_defs->{active}) ".
 		"is_sniffer($packet->{is_sniffer}) is_reply($is_reply) ".
 		sprintf("mon(%04x) color($packet->{color})",$packet->{mon}));
 }
 
+
+
+sub doParse
+	# doParse() is called by b_sock and sniffer, and
+	# does the applyMonDefs() before calling derived
+	# classes' parsePacket methods.
+{
+	my ($this,$packet) = @_;
+	$packet->{mon} = 0;
+	$packet->{color} = 0;
+	$this->applyMonDefs($packet);
+	return $this->parsePacket($packet);
+}
 
 
 sub parsePacket
@@ -66,19 +92,12 @@ sub parsePacket
 	lock($local_stdout_sem);
 		# lock stdout so all of our display and prints occur contiguously
 		# within a single color
-	$packet->{mon} = 0;
-	$packet->{color} = 0;
-
-
-	$this->applyMonDefs($packet);
-		# the parent is responsible for placing the monitor definition,
-		# {mon} and {color} on the packet based on what it is, and knows.
 
 	my $mon = $packet->{mon};
 	my $color = $packet->{color};
 	my $payload = $packet->{payload};
 	my $packet_len = length($payload);
-	display($dbg_parse+1,1,sprintf("a_parser::parsePacket($this->{name}) len($packet_len) mon(%04x) color(%d)",$mon,$color));
+	display($dbg_parse+1,1,sprintf("a_parser::parsePacket($this->{name}) is_sniffer($packet->{is_sniffer}) len($packet_len) mon(%04x) color(%d)",$mon,$color));
 	display_hash($dbg_parse+3,0,"packet($this->{name})",$packet,'payload');
 
 	if ($packet->{is_sniffer})
@@ -109,7 +128,9 @@ sub parsePacket
 			$packet->{client_name}."  ".
 			"proto($packet->{proto}) ".
 			"len($packet_len)    ".
-			"# $packet->{src_ip}:$packet->{src_port} --> $packet->{dst_ip}:$packet->{dst_port}", $mon);
+			"# $packet->{src_ip}:$packet->{src_port} --> $packet->{dst_ip}:$packet->{dst_port}   ".
+			"is_sniffer($packet->{is_sniffer})",
+			$mon);
 		# print parse_dwords(' debug ',$packet->{payload},1);
 	}
 	
@@ -154,10 +175,31 @@ sub parseMessage
 	my $cmd_hex 	= unpack('H*',$cmd_bytes);
 	my $sid 		= unpack('v',$sid_bytes);
 	my $sid_hex 	= unpack('H*',$sid_bytes);
+	my $mon 		= $packet->{mon} || 0;
 	
-	display($dbg_parse+2,0,"a_parser::parseMessage($this->{name}) len($len) hdr($hdr) cmd_word($cmd_hex) sid($sid)");
+	display($dbg_parse+2,0,"a_parser::parseMessage($this->{name}) ".
+			sprintf("len($len) hdr($hdr) cmd_word($cmd_hex) sid($sid) mon(%04x)",$mon));
 
-	my $mon = $packet->{mon} || 0;
+	# there cases with sniffer packets being misasligned, where
+	# sniffer is started in the middle of a multi-packet tcp buffer,
+	# after the length word has been sent, so at this point we might get
+	# a packet that has a bogus length (which is actually the command word)
+	# and bogus command word (which is actually the sid).
+
+	# We don't really want to drop packets on sniffer as we may not know the actual
+	# sid of the packet yet, i.e. $HIDDEN_PORT1.  However, for now we compare the sid.
+
+	if ($sid != $this->{sid})
+	{
+		my $msg = "a_parser::parseMessage($this->{name}) BAD_SID($sid) != expected($this->{sid}) ".
+			"is_sniffer($packet->{is_sniffer}) is shark($packet->{is_shark}) len($len) cmd_word($cmd_hex) hdr($hdr)\n".
+			parse_dwords('BAD SID:  ',$packet->{payload},1);
+		error($msg);
+		printConsole($UTILS_COLOR_RED,$msg,$mon);
+		return undef;
+	}
+
+
 	if ($mon & $MON_RAW)
 	{
 		$hdr .= "$cmd_hex $sid_hex ";

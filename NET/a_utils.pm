@@ -14,6 +14,7 @@ use Wx qw(:everything);
 use Pub::Utils;
 use Pub::WX::AppConfig;
 use a_defs;
+use a_mon;
 use w_resources;
 
 
@@ -84,7 +85,7 @@ Pub::Utils::initUtils();
 setStandardTempDir($appGroup);
 setStandardDataDir($appGroup);
 
-$ini_file = "$temp_dir/$appName";
+$ini_file = "$temp_dir/$appName.ini";
 
 
 
@@ -231,6 +232,8 @@ sub setConsoleColor
 
 
 sub printConsole
+	# print to the console and/or to the logfile
+	# DONT write self-mons to the sniffer logfile
 {
 	my ($color,$text,$mon) = @_;
 	$mon ||= 0;
@@ -244,9 +247,14 @@ sub printConsole
 	}
 	if ($mon & $MON_WRITE_LOG)
 	{
-		my $output_file = ($mon & $MON_SRC_SHARK) ?
-			"shark.log" : "rns.log";
-		writeLog($text."\n",$output_file);
+		my $mon_src_sniffer = $mon & $MON_SRC_SHARK ? 0 : 1;
+		my $mon_self_sniffed = $mon & $MON_SELF_SNIFFED ? 1 : 0;
+		if (!$mon_src_sniffer || !$mon_self_sniffed)
+		{
+			my $output_file = $mon_src_sniffer ?
+				"rns.log" : "shark.log";
+			writeLog($text."\n",$output_file);
+		}
 	}
 }
 
