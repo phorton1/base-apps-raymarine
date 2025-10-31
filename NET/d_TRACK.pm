@@ -24,7 +24,6 @@ use base qw(b_sock);
 
 
 my $dbg 		= 1;
-my $dbg_parse 	= 1;
 my $dbg_got 	= 0;		# for returned tracks (including Current Track)
 my $dbg_events 	= -1;
 my $dbg_mods 	= -1;
@@ -332,47 +331,50 @@ our %TRACK_PARSE_RULES = (
 
 	# Replies
 
-	$DIRECTION_RECV | $TRACK_REPLY_CONTEXT 		=>	[ 'success', 'is_point' ],		# header for get nth track point
-	$DIRECTION_RECV | $TRACK_REPLY_BUFFER 		=>	[ 'success' ],					# header for get 'mta' current track
-	$DIRECTION_RECV | $TRACK_REPLY_END 			=>	[ 'success' ],					# header for get 'full' current track
-	$DIRECTION_RECV	| $TRACK_REPLY_CURRENT		=>  [ 'success' ],					# reply to 0x04=SAVE
-	$DIRECTION_RECV | $TRACK_REPLY_TRACK 		=>	[ 'success' ],					# header for track replies
-	$DIRECTION_RECV | $TRACK_REPLY_MTA 			=>	[ 'success' ],					# header for mta replies
-	$DIRECTION_RECV	| $TRACK_REPLY_ERASED		=>  [ 'success' ],					# reply to 0x07=ERASE
-	$DIRECTION_RECV | $TRACK_REPLY_DICT 		=>	[ 'success', 'is_dict'],		# header for dictionary replies
-	$DIRECTION_RECV	| $TRACK_REPLY_STATE		=>  [ 'stopable',],					# reply to 0x0d Tracking state inquiry
-	$DIRECTION_RECV	| $TRACK_REPLY_NAMED		=>  [ 'success' ],					# confirms name set (in an event packet) with sequence number
-	$DIRECTION_RECV	| $TRACK_REPLY_RENAMED		=>  [ 'success' ],					# confirms name change (as RECV with RECV CHANGED)
+	$DIRECTION_RECV | $TRACK_REPLY_CONTEXT 		=>	[ 'seq','success', 'is_point' ],	# header for get nth track point
+	$DIRECTION_RECV | $TRACK_REPLY_BUFFER 		=>	[ 'seq','success' ],				# header for get 'mta' current track
+	$DIRECTION_RECV | $TRACK_REPLY_END 			=>	[ 'seq','success' ],				# header for get 'full' current track
+	$DIRECTION_RECV	| $TRACK_REPLY_CURRENT		=>  [ 'seq','success' ],				# reply to 0x04=SAVE
+	$DIRECTION_RECV | $TRACK_REPLY_TRACK 		=>	[ 'seq','success' ],				# header for track replies
+	$DIRECTION_RECV | $TRACK_REPLY_MTA 			=>	[ 'seq','success' ],				# header for mta replies
+	$DIRECTION_RECV	| $TRACK_REPLY_ERASED		=>  [ 'seq','success' ],				# reply to 0x07=ERASE
+	$DIRECTION_RECV | $TRACK_REPLY_DICT 		=>	[ 'seq','success', 'is_dict'],		# header for dictionary replies
+	$DIRECTION_RECV	| $TRACK_REPLY_STATE		=>  [ 'seq','stopable',],				# reply to 0x0d Tracking state inquiry
+	$DIRECTION_RECV	| $TRACK_REPLY_NAMED		=>  [ 'seq','success' ],				# confirms name set (in an event packet) with sequence number
+	$DIRECTION_RECV	| $TRACK_REPLY_RENAMED		=>  [ 'seq','success' ],				# confirms name change (as RECV with RECV CHANGED)
 
-	# events
-	$DIRECTION_RECV	| $TRACK_REPLY_CHANGED		=> 	[ 'no_seq', 'uuid','byte' ],
-	$DIRECTION_RECV	| $TRACK_REPLY_EVENT		=> 	[ 'no_seq', 'byte' ],
+	# events (no sequence numbers)
+
+	$DIRECTION_RECV	| $TRACK_REPLY_CHANGED		=> 	[ 'uuid','byte' ],					# no sequence number
+	$DIRECTION_RECV	| $TRACK_REPLY_EVENT		=> 	[ 'byte' ],							# no sequence number
+
 	# infos
-	$DIRECTION_INFO	| $TRACK_REPLY_CONTEXT  	=>	[ 'uuid','context_bits' ],		# uuid context for the reply; bits 01n
-	$DIRECTION_INFO	| $TRACK_REPLY_BUFFER		=> 	[ 'buffer' ],					# dictionary, MTA, or Track depending on state
-	$DIRECTION_INFO	| $TRACK_REPLY_END			=> 	[ 'track_uuid' ],				# actually carries mta_uuid, but sets is_track=1
-	$DIRECTION_INFO	| $TRACK_REPLY_RENAMED		=>  [ 'success' ],					# confirms name change (in an event packet) with sequence number
+
+	$DIRECTION_INFO	| $TRACK_REPLY_CONTEXT  	=>	[ 'seq','uuid','context_bits' ],	# uuid context for the reply; bits 01n
+	$DIRECTION_INFO	| $TRACK_REPLY_BUFFER		=> 	[ 'seq','buffer' ],					# dictionary, MTA, or Track depending on state
+	$DIRECTION_INFO	| $TRACK_REPLY_END			=> 	[ 'seq','track_uuid' ],				# actually carries mta_uuid, but sets is_track=1
+	$DIRECTION_INFO	| $TRACK_REPLY_RENAMED		=>  [ 'seq','success' ],				# confirms name change (in an event packet) with sequence number
 
 	# Requests
 
-	$DIRECTION_SEND | $TRACK_CMD_GET_NTH		=> 	[ 'point_number' ],
-	$DIRECTION_SEND | $TRACK_CMD_SET_NAME		=> 	[ 'name16' ],
-	$DIRECTION_SEND | $TRACK_CMD_GET_CUR2		=> 	[],
-	$DIRECTION_SEND | $TRACK_CMD_GET_CUR		=> 	[],
-	$DIRECTION_SEND | $TRACK_CMD_SAVE			=> 	[ 'no_seq', ],
-	$DIRECTION_SEND | $TRACK_CMD_GET_TRACK 		=> 	[ 'uuid', ],
-	$DIRECTION_SEND | $TRACK_CMD_GET_MTA		=> 	[ 'uuid', ],
-	$DIRECTION_SEND | $TRACK_CMD_ERASE			=> 	[ 'uuid', ],
-	$DIRECTION_SEND | $TRACK_CMD_RENAME			=> 	[ 'uuid', 'name16' ],
-	$DIRECTION_SEND | $TRACK_CMD_START			=> 	[ 'no_seq', ],
-	$DIRECTION_SEND | $TRACK_CMD_STOP			=> 	[ 'no_seq', ],
-	$DIRECTION_SEND | $TRACK_CMD_DISCARD		=> 	[ 'no_seq', ],
-	$DIRECTION_SEND | $TRACK_CMD_GET_DICT		=> 	[],
-	$DIRECTION_SEND | $TRACK_CMD_GET_STATE		=> 	[],
-    # $DIRECTION_SEND | $TRACK_CMD_USELESS_E	=> 	[],
-    # $DIRECTION_SEND | $TRACK_CMD_NOREPLY_F	=> 	[],
-	$DIRECTION_SEND | $TRACK_CMD_BUMP_NAME		=> 	[ 'name16', ],
-	# $DIRECTION_SEND | $TRACK_CMD_NO_REPLY_11	=>  [],
+	$DIRECTION_SEND | $TRACK_CMD_GET_NTH		=> 	[ 'seq','point_number' ],
+	$DIRECTION_SEND | $TRACK_CMD_SET_NAME		=> 	[ 'seq','name16' ],
+	$DIRECTION_SEND | $TRACK_CMD_GET_CUR2		=> 	[ 'seq' ],
+	$DIRECTION_SEND | $TRACK_CMD_GET_CUR		=> 	[ 'seq' ],
+	$DIRECTION_SEND | $TRACK_CMD_SAVE			=> 	[],									# no sequence number
+	$DIRECTION_SEND | $TRACK_CMD_GET_TRACK 		=> 	[ 'seq','uuid', ],
+	$DIRECTION_SEND | $TRACK_CMD_GET_MTA		=> 	[ 'seq','uuid', ],
+	$DIRECTION_SEND | $TRACK_CMD_ERASE			=> 	[ 'seq','uuid', ],
+	$DIRECTION_SEND | $TRACK_CMD_RENAME			=> 	[ 'seq','uuid', 'name16' ],
+	$DIRECTION_SEND | $TRACK_CMD_START			=> 	[],									# no sequence number
+	$DIRECTION_SEND | $TRACK_CMD_STOP			=> 	[],									# no sequence number
+	$DIRECTION_SEND | $TRACK_CMD_DISCARD		=> 	[],									# no sequence number
+	$DIRECTION_SEND | $TRACK_CMD_GET_DICT		=> 	[ 'seq' ],
+	$DIRECTION_SEND | $TRACK_CMD_GET_STATE		=> 	[ 'seq' ],
+    # $DIRECTION_SEND | $TRACK_CMD_USELESS_E	=> 	[ 'seq' ],
+    # $DIRECTION_SEND | $TRACK_CMD_NOREPLY_F	=> 	[ 'seq' ],
+	$DIRECTION_SEND | $TRACK_CMD_BUMP_NAME		=> 	[ 'seq','name16' ],
+	# $DIRECTION_SEND | $TRACK_CMD_NO_REPLY_11	=>  [ 'seq' ],
 
 
 );
@@ -421,20 +423,7 @@ sub createMsg
 sub sendRequest
 {
 	my ($this,$seq,$name,$request) = @_;
-
-	if (0)
-	{
-		my $rec = parseTRACKPacket(0,$request);
-		# my $text = "# sendRequest($seq) $name\n";
-		# $text .= $rec->{text};
-		# # 1=with_text, 0=is_reply		$text .= $rec->{text};
-		# setConsoleColor($OUT_COLOR) if $OUT_COLOR;
-		# print $text;
-		# setConsoleColor() if $OUT_COLOR;
-		# writeLog($text,'shark.log');
-	}
-
-	display($dbg,0,"sendRequest() calling b_sock::sendPacket()");
+	display($dbg+1,0,"sendRequest() calling b_sock::sendPacket()");
 	$this->sendPacket($request);
 	$this->{wait_seq} = $seq;
 	$this->{wait_name} = $name;

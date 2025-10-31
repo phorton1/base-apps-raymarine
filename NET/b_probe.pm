@@ -194,13 +194,16 @@ sub do_probe
 
 	my $save_ip = $this->{ip};
 	my $save_port = $this->{port};
-	my $save_raw_input  = $this->{show_raw_input};
-	my $save_raw_output = $this->{show_raw_output};
-	$this->{show_raw_input} = 1;
-	$this->{show_raw_output} = 1;
+	my $parser = $this->{parser};
+	my $mon_defs = $parser ? $parser->{mon_defs} : undef;
+	my $save_active = $mon_defs ? $mon_defs->{active} : undef;
+	$mon_defs->{active} = 1 if $mon_defs;
+		# turn on parser output
 
 	display(0,0,"PROBE($this->{name},$this->{proto},$ident,$command->{params}) with $num_steps steps");
+	display(1,1,"parser="._def($parser)." mon_defs="._def($mon_defs)." active="._def($save_active));
 
+	$this->{is_probe} = 1;
 	for (my $i=0; $i<$num_steps; $i++)
 	{
 		my $line = $$probe[$i];
@@ -259,19 +262,22 @@ sub do_probe
 			}
 
 			$text =~ s/\s//g;
-			my $data = pack('H*',$text);
-			my $len = length($data);
+			my $payload = pack('H*',$text);
+			my $len = length($payload);
 			display($dbg_probe,1,"$cmd($len) = $text");
 
-			if ($this->{proto} eq 'tcp' && $cmd eq 'MSG')
-			{
-				display($dbg_probe+1,2,"PROBE: send len($len)");
-				$this->sendPacket(pack('v',$len))
-			}
+			$payload = pack('v',$len).$payload
+				if $this->{proto} eq 'tcp' && $cmd eq 'MSG';
+
 			display($dbg_probe+1,2,"PROBE: send $text");
-			$this->{proto} eq 'udp' ?
-				sendUDPPacket("PROBE($ident)",$this->{ip},$this->{port},$data) :
-				$this->sendPacket($data);
+			if ($this->{proto} eq 'udp')
+			{
+				$this->sendUDP("PROBE($ident)",$payload);
+			}
+			else
+			{
+				$this->sendPacket($payload);
+			}
 		}
 
 		elsif ($line =~ /^WAIT\s*(.*)$/)
@@ -293,10 +299,10 @@ sub do_probe
 		}
 	}
 
+	$this->{is_probe} = 0;
 	$this->{ip} = $save_ip;
 	$this->{port} = $save_port;
-	$this->{show_raw_input}  = $save_raw_input;
-	$this->{show_raw_output} = $save_raw_output;
+	$mon_defs->{active} = $save_active if $mon_defs;
 	display(0,0,"PROBE($this->{name},$this->{proto},$ident,$command->{params}) FINISHED");
 }
 

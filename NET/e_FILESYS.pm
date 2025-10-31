@@ -287,7 +287,7 @@ sub parseMessage
 
 				my $msg = "packet($packet_num/$num_packets) offset($file_offset) cur_len($cur_len) bytes=$bytes";
 				display($dbg_fp+2,2,$msg);
-				printConsole($packet->{color},$pad.$msg) if $mon & $MON_PARSE;
+				printConsole($packet->{color},$pad."#    $msg",$mon) if $mon & $MON_PARSE;
 
 				if (!$packet->{is_sniffer})		# do 'real' file content management
 				{

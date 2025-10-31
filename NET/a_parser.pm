@@ -228,7 +228,7 @@ sub parsePiece
 	# So this base class uses the 'is_dict' state member, without
 	# knowing how it got there.
 {
-	my ($this,$packet,$piece,$data,$pdata) = @_;
+	my ($this,$packet,$piece,$part,$poffset) = @_;
 
 	my $pad = pad('',9);
 	my $mon = $packet->{mon} || 0;
@@ -237,9 +237,9 @@ sub parsePiece
 		if ($packet->{is_dict} &&
 			$packet->{is_reply})
 		{
-			$$pdata += 4;	# skip biglen
-			my $num = unpack('V',substr($data,$$pdata,4));
-			$$pdata += 4;
+			$$poffset += 4;	# skip biglen
+			my $num = unpack('V',substr($part,$$poffset,4));
+			$$poffset += 4;
 			return error("too many dict_uuids!!") if $num>1024;
 				# prevent runaway implementation bug endless loops
 
@@ -249,36 +249,45 @@ sub parsePiece
 			my $dict_uuids = $packet->{dict_uuids};
 			for (my $i=0; $i<$num; $i++)
 			{
-				my $uuid = unpack('H*',substr($data,$$pdata,8));
-				$$pdata += 8;
+				my $uuid = unpack('H*',substr($part,$$poffset,8));
+				$$poffset += 8;
 				push @$dict_uuids,$uuid;
 				printConsole($packet->{color},$pad."#         dict_uuid($i) = $uuid",$mon)
 					if $mon & $MON_DICT;
 			}
 		}
 	}
+	elsif ($piece eq 'seq')
+	{
+		my $seq_num = unpack('V',substr($part,$$poffset,4));
+		$$poffset += 4;
+		display($dbg_parse+3,1,"seq_num=$seq_num");
+		printConsole($packet->{color},$pad."#     seq_num = $seq_num",$mon)
+			if $mon & $MON_PARSE;	# note that is MON_PARSE, not MON_PIECE
+		$packet->{seq_num} ||= $seq_num;
+	}
 	elsif ($piece eq 'uuid')
 	{
-		my $uuid = unpack('H*',substr($data,$$pdata,8));
+		my $uuid = unpack('H*',substr($part,$$poffset,8));
 		$packet->{uuid} = $uuid;
-		$$pdata += 8;
+		$$poffset += 8;
 		printConsole($packet->{color},$pad."#     $piece = $uuid",$mon)
 			if $mon & $MON_PIECES;
 	}
 	elsif ($piece eq 'name16')
 	{
-		my $name = unpack('Z*',substr($data,$$pdata,17));
+		my $name = unpack('Z*',substr($part,$$poffset,17));
 		$packet->{name} = $name;
-		$$pdata += 17;
+		$$poffset += 17;
 		printConsole($packet->{color},$pad."#     name = $name",$mon)
 			if $mon & $MON_PIECES;
 	}
 	elsif ($piece eq 'success')
 	{
-		my $status = unpack('H*',substr($data,$$pdata,4));
+		my $status = unpack('H*',substr($part,$$poffset,4));
 		my $ok = $status eq $SUCCESS_SIG ? 1 : 0;
 		$packet->{success} = $ok;
-		$$pdata += 4;
+		$$poffset += 4;
 		printConsole($packet->{color},$pad."#     $piece = $ok",$mon)
 			if $mon & $MON_PIECES;
 	}
@@ -288,16 +297,16 @@ sub parsePiece
 
 	elsif ($piece =~ /byte|stopable/)		# one byte (flag on wpmgr events)
 	{
-		my $byte = unpack('C',substr($data,$$pdata++,1));
+		my $byte = unpack('C',substr($part,$$poffset++,1));
 		$packet->{$piece} = $byte;
 		printConsole($packet->{color},$pad."#     $piece = $byte",$mon)
 			if $mon & $MON_PIECES;
 	}
 	elsif ($piece eq 'bits')				# one word (flag on wpmgr changed events)
 	{
-		my $word = unpack('v',substr($data,$$pdata,2));
+		my $word = unpack('v',substr($part,$$poffset,2));
 		$packet->{$piece} = $word;
-		$$pdata += 2;
+		$$poffset += 2;
 		printConsole($packet->{color},$pad."#     $piece = $word",$mon)
 			if $mon & $MON_PIECES;
 	}
@@ -318,10 +327,10 @@ sub parsePiece
 
 	else
 	{
-		my $str = substr($data,$$pdata,4);
+		my $str = substr($part,$$poffset,4);
 		my $value = unpack('V',$str);
 		$packet->{$piece} = $value;
-		$$pdata += 4;
+		$$poffset += 4;
 
 		# I prefer to SEE non-counters in hex
 

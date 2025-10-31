@@ -65,7 +65,7 @@ sub createPane
 	my ($this,$id,$book,$data) = @_;
 	return error("No id in createPane()") if (!$id);
     $book ||= $this->{book};
-	display(0,0,"minimumFrame::createPane($id) book="._def($book)."  data="._def($data));
+	display(0,0,"w_frame::createPane($id) book="._def($book)."  data="._def($data));
 	return winRAYSYS->new($this,$book,$id,$data) if $id == $WIN_RAYSYS;
 	return winShark->new($this,$book,$id,$data) if $id == $WIN_SHARK;
 	return winSniffer->new($this,$book,$id,$data) if $id == $WIN_SNIFFER;

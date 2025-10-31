@@ -121,58 +121,60 @@ my $LST_DATABASE = $WHAT_DATABASE | $CMD_LIST;
 my $BUF_DATABASE = $WHAT_DATABASE | $CMD_BUFFER ;
 
 # This list includes every Request and Reply I have ever
-# seen between the E80 and RNS.  We only use some (most) of them.
+# seen between the E80 and RNS.  We use most of them.
+
 
 our %WPMGR_PARSE_RULES = (
 
-	# monadic
+	# SEND (request) messages
 
-	$DIRECTION_SEND	| $CMD_COUNT	=> [],		# returns NUMBER; can this count Routes & Groups?
-	$DIRECTION_SEND	| $CMD_EVERB	=> [],		# returns AVERB; only ever seen $WHAT_GROUP
-	$DIRECTION_SEND	| $CMD_CONTEXT  => [],		# both ways, establishes WHAT context;
+	$DIRECTION_SEND	| $CMD_COUNT	=> [ 'seq' ],		# returns NUMBER; can this count Routes & Groups?
+	$DIRECTION_SEND	| $CMD_EVERB	=> [ 'seq' ],		# unused by me; returns AVERB; only ever seen $WHAT_GROUP
+	$DIRECTION_SEND	| $CMD_CONTEXT  => [ 'seq' ],		# both ways, establishes WHAT context;
 
-	$DIRECTION_SEND	| $CTX_DATABASE => [],		# WHAT_DATABASE is a special case
-	$DIRECTION_SEND	| $LST_DATABASE => [],		# WHAT_DATABASE is a special case
-	$DIRECTION_SEND	| $BUF_DATABASE => [],		# WHAT_DATABASE is a special case
+	$DIRECTION_SEND	| $CTX_DATABASE => [ ],		# unused by me; monadic command (no sequence number) WHAT_DATABASE is a special case
+	$DIRECTION_SEND	| $LST_DATABASE => [ ],		# unused by me; monadic command (no sequence number) WHAT_DATABASE is a special case
+	$DIRECTION_SEND	| $BUF_DATABASE => [ ],		# unused by me; monadic command (no sequence number) WHAT_DATABASE is a special case
 
-	# single dword parameter
+	$DIRECTION_SEND	| $CMD_ITEM		=> [ 'seq','uuid'	],		# atomic command, returns DATA;
+	$DIRECTION_SEND	| $CMD_MODIFY 	=> [ 'seq','uuid'	],		# I send this with no bits to start create_item()
+	$DIRECTION_SEND	| $CMD_UUID		=> [ 'seq','uuid'	],		# REALLY seems to mean 'delete' on a send, and info on a recv
+	$DIRECTION_INFO	| $CMD_LIST		=> [ 'seq','uuid'	],		# 00000000 00000000 = send/receive for listing indexes
+	$DIRECTION_INFO	| $CMD_LIST		=> [ 'seq','uuid'	],		# received with uuid at end of DATA series
+	$DIRECTION_SEND	| $CMD_FIND		=> [ 'seq','name16' ],		# atomic command, returns UUID
+
+	$DIRECTION_SEND	| $CMD_EXIST	=> [ 'seq','magic','uuid' ],	# atomic command BUT required for modify_item()
+	$DIRECTION_SEND	| $CMD_DATA		=> [ 'seq','magic','uuid' ],	# I use this, after EXIST, for modify_item
+		# 07000000 	cccccccc cccf0100
+		# 0a000000 	dc82a921 f567e68e 	deleting a folder
+
+	# RECV (reply) messages
+
+	$DIRECTION_RECV	| $CMD_NUMBER	=> [ 'seq','db_count'	],		# count of used items (per WHAT?)
+	$DIRECTION_RECV	| $CTX_DATABASE	=> [ 'seq','db_version' ],		# unused by me; DATABASE is a specific non standard reply
+	$DIRECTION_RECV	| $CMD_AVERB	=> [ 'seq','amagic'	],			# unused by me; non standard, not understood reply
+
+	$DIRECTION_RECV	| $CMD_CONTEXT	=> [ 'seq','success' 	],  	# can establish WHAT context
+	$DIRECTION_RECV	| $CMD_LIST		=> [ 'seq','success'	],		# establishes WHAT context
+	$DIRECTION_RECV	| $CMD_DATA		=> [ 'seq','success'	],		# establishes WHAT context
+	$DIRECTION_RECV	| $CMD_ITEM		=> [ 'seq','success'	],		# reply to a successful delete (from sending UUID)
+	$DIRECTION_RECV	| $CMD_BUFFER	=> [ 'seq','success'	],		# a response to an EXIST uuid call to delete a folder (no actual buffer)
+	$DIRECTION_RECV	| $CMD_EXIST	=> [ 'seq','success'	],		# reply to a successful delete (from sending UUID)
+	$DIRECTION_RECV	| $CMD_UUID		=> [ 'seq','success','uuid' ],	# reply to FIND
+
+
+	# EVENT messages
 	# CMD_EVENT consists of a series of messages, starting with
 	# FIND CMD_EVENT(0)'s ending with WHAT CMD_EVENT(1)'s bracketing
 	# zero or more MODIFY messages
 
 	$DIRECTION_RECV	| $CMD_EVENT	=> [ 'evt_flag'  ],
-		# Does not have a sequence number, uhm,
-		# That dword is 0 or 1 inicating start, and end of an event series.
+		# Does not have a sequence number.
+		# The evt_flag dword is 0 or 1 inicating start, and end of an event series.
 		# Indicates, generrally that WHAT items/dictinoaries have changed.
 		# Brackets MODIFY messages with more detail about what changed.
 
-	$DIRECTION_RECV	| $CMD_NUMBER	=> [ 'db_count'	],		# count of used items (per WHAT?)
-	$DIRECTION_RECV	| $CTX_DATABASE	=> [ 'db_version' ],	# DATABASE is a specific non standard reply
-	$DIRECTION_RECV	| $CMD_AVERB	=> [ 'amagic'	],		# non standard, not understood reply
-
-	$DIRECTION_RECV	| $CMD_CONTEXT	=> [ 'success'  ],  	# can establish WHAT context
-	$DIRECTION_RECV	| $CMD_LIST		=> [ 'success'	],		# establishes WHAT context
-	$DIRECTION_RECV	| $CMD_DATA		=> [ 'success'	],		# establishes WHAT context
-	$DIRECTION_RECV	| $CMD_ITEM		=> [ 'success'	],		# reply to a successful delete (from sending UUID)
-	$DIRECTION_RECV	| $CMD_BUFFER	=> [ 'success'	],		# a response to an EXIST uuid call to delete a folder (no actual buffer)
-	$DIRECTION_RECV	| $CMD_EXIST	=> [ 'success'	],		# reply to a successful delete (from sending UUID)
-
-	# success & uuid
-
-	$DIRECTION_RECV	| $CMD_UUID		=> [ 'success',	'uuid' ],	# reply to FIND
-
-	# single parameter
-
-	$DIRECTION_SEND	| $CMD_ITEM		=> [ 'uuid'		],		# atomic command, returns DATA;
-	$DIRECTION_SEND	| $CMD_MODIFY 	=> [ 'uuid'		],		# I send this with no bits to start create_item()
-	$DIRECTION_SEND	| $CMD_UUID		=> [ 'uuid'		],		# REALLY seems to mean 'delete' on a send, and info on a recv
-	$DIRECTION_INFO	| $CMD_LIST		=> [ 'uuid'		],		# 00000000 00000000 = send/receive for listing indexes
-	$DIRECTION_INFO	| $CMD_LIST		=> [ 'uuid'		],		# received with uuid at end of DATA series
-	$DIRECTION_SEND	| $CMD_FIND		=> [ 'name16' 	],		# atomic command, returns UUID
-
-	# uuid and bits
-
-	$DIRECTION_RECV	| $CMD_MODIFY	=> [ 'uuid', 'mod_bits' ],
+	$DIRECTION_RECV	| $CMD_MODIFY	=> [ 'uuid','mod_bits' ],
 		# Does not have a sequence number.
 		# Received alone, or within EVENT series
 		# CMD_MODIFY (which doesn't have a sequence number) are out of band messages where bits
@@ -180,25 +182,18 @@ our %WPMGR_PARSE_RULES = (
 		#		1 = deleted
 		#		2 = changed
 
-	$DIRECTION_INFO	| $CMD_CONTEXT	=> [ 'uuid', 'context_bits' ],
+
+	# INFO messages (within requests/replies)
+
+	$DIRECTION_INFO	| $CMD_CONTEXT	=> [ 'seq','uuid','context_bits' ],
 		# 00000000 00000000 1n00000000	1n indicates DICTIONARY, n is 9,a,c
 		# zzzzzzzz zzzzzzzz 0n00000000	0n indicates ITEM		 n is 0,1,2,3
 		# zzzzzzzz zzzzzzzz 0300000000	I send for create_item() and modify_item()
-
-	# leading magic number and uuid
-
-	$DIRECTION_SEND	| $CMD_EXIST	=> [ 'magic', 'uuid' ],		# atomic command BUT required for modify_item()
-	$DIRECTION_SEND	| $CMD_DATA		=> [ 'magic', 'uuid' ],		# I use this, after EXIST, for modify_item
-		# 07000000 	cccccccc cccf0100
-		# 0a000000 	dc82a921 f567e68e 	deleting a folder
-
-	$DIRECTION_INFO 	| $CMD_BUFFER 	=> [ 'buffer' ],
+	$DIRECTION_INFO | $CMD_BUFFER 	=> [ 'seq','buffer' ],
 		# $CMD_BUFFER is handled specially
 		# bits(1n00000) = dict_buffer_data	on send, CONTEXT bits(0x1n) the buffer is some kind of allocation scheme
 		#									on recv, CONTEXT bits(0x1n) indicatss an INDEX (or dictionary if you prefer)
 		# bits(0n00000) = item buffer 		on send/recv bits(0x0n) indicates an ITEM buffer, uuid given previously in series
-
-
 
 );
 

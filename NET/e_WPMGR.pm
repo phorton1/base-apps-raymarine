@@ -149,26 +149,13 @@ sub parseMessage
 	printConsole($packet->{color},$pad."# $dir_name $cmd_name $what_name",$mon)
 		if $mon & $MON_PARSE;
 
-	my $offset = 4;	# skip cmd_word and sid
-	if (!$packet->{is_reply} || (
-		$C != $CMD_MODIFY &&
-		$C != $CMD_EVENT ))
-	{
-		my $seq_num = unpack('V',substr($part,$offset,4));
-		display($dbg_ewp+3,1,"seq_num=$seq_num");
-		printConsole($packet->{color},$pad."#     seq_num = $seq_num",$mon)
-			if $mon & $MON_PARSE;
-
-		$packet->{seq_num} ||= $seq_num;
-		$offset += 4;
-	}
-
 	# find rule, first by full command word, then by $dir | $cmd
 
 	my $rule = $WPMGR_PARSE_RULES{$cmd_word};
 	$rule = $WPMGR_PARSE_RULES{ $D | $C } if !$rule;
 	if ($rule)
 	{
+		my $offset = 4;	# skip cmd_word and sid
 		for my $piece (@$rule)
 		{
 			$this->parsePiece(

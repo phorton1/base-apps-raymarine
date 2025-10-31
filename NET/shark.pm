@@ -25,8 +25,10 @@ use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use Pub::WX::Resources;
 use Pub::WX::Main;
+
 use a_defs;
 use a_utils;
+use b_sock;
 use b_probe;
 
 use c_RAYSYS;
@@ -65,7 +67,7 @@ sub handleSerialCommand
 
 	if ($lpart eq 'wakeup')
 	{
-		wakeup_e80();
+		b_sock::wakeup_e80();
 	}
 
 

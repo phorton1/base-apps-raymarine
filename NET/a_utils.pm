@@ -9,7 +9,6 @@ use threads;
 use threads::shared;
 use POSIX qw(floor pow atan tan);
 use Time::HiRes qw(sleep);
-use IO::Socket::INET;
 use Wx qw(:everything);
 use Pub::Utils;
 use Pub::WX::AppConfig;
@@ -24,17 +23,12 @@ BEGIN
  	use Exporter qw( import );
 	our @EXPORT = qw(
 
-		$LOCAL_UDP_SOCKET
-
-		wakeup_e80
-
 		setConsoleColor
 		printConsole
 
 		clearLog
 		writeLog
 
-		sendUDPPacket
 		name16_hex
 		old_packRecord
 		old_unpackRecord
@@ -86,42 +80,6 @@ setStandardTempDir($appGroup);
 setStandardDataDir($appGroup);
 
 $ini_file = "$temp_dir/$appName.ini";
-
-
-
-# The global $UDP_SEND_SOCKET is opened
-# in the main thread at the outer perl
-# level so-as to be available from threads
-
-our $LOCAL_UDP_SOCKET = IO::Socket::INET->new(
-        LocalAddr => $LOCAL_IP,
-        LocalPort => $LOCAL_UDP_SEND_PORT,
-        Proto     => 'udp',
-        ReuseAddr => 1);
-$LOCAL_UDP_SOCKET ?
-	display(0,0,"LOCAL_UDP_SOCKET opened") :
-	error("Could not open UDP_SEND_SOCKET");
-
-
-sub wakeup_e80
-	# needed to open multicast RAYSYS sockeet on Windows.
-{
-	if (!$LOCAL_UDP_SOCKET)
-	{
-		error("wakeup_e80() fail because UDP_SEND_SOCKET is not open");
-		return;
-	}
-
-    for (my $i = 0; $i < 10; $i++)
-    {
-		display(0,1,"sending RAYDP_INIT_PACKET");
-        $LOCAL_UDP_SOCKET->send($RAYSYS_WAKEUP_PACKET, 0, $RAYSYS_ADDR);
-        sleep(0.001);
-    }
-
-	return 1;
-}
-
 
 
 
@@ -182,32 +140,6 @@ our $wx_color_medium_grey   = Wx::Colour->new(0xC0, 0xC0, 0xC0);
 # methods
 #---------------------------------
 
-my $dbg_udp_send = 1;
-
-sub sendUDPPacket
-{
-    my ($name, $dest_ip, $dest_port, $packet) = @_;
-    display($dbg_udp_send, 1, "sending $dest_ip:$dest_port $name packet: " . unpack('H*', $packet));
-
-    if (!$LOCAL_UDP_SOCKET)
-    {
-        error("LOCAL_UDP_SOCKET not open in sendUDPPacket");
-        return 0;
-    }
-
-    my $dest_addr = pack_sockaddr_in($dest_port, inet_aton($dest_ip));
-    my $sent = $LOCAL_UDP_SOCKET->send($packet, 0, $dest_addr);
-
-    if (!defined($sent))
-    {
-        error("send() failed for $dest_ip:$dest_port: $!");
-        return 0;
-    }
-
-    return 1;
-}
-
-
 sub name16_hex
 	# return hex representation of max16 name + null
 {
@@ -216,7 +148,6 @@ sub name16_hex
 	$name .= "\x00" if !$no_delim;
 	return unpack('H*',$name);
 }
-
 
 
 sub setConsoleColor

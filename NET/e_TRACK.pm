@@ -19,7 +19,8 @@ use b_records;
 use d_TRACK;
 use base qw(a_parser);
 
-my $dbg_tp = -2;
+my $dbg_tp = 0;
+my $dbg_evt = 0;
 
 
 sub newParser
@@ -47,7 +48,7 @@ sub parsePacket
 		is_event 	=> 0,
 		evt_mask	=> 0, });
 
-	display($dbg_tp,0,"e_TRACK::parsePacket() is_reply($packet->{is_reply})");
+	display($dbg_tp+1,0,"e_TRACK::parsePacket() is_reply($packet->{is_reply})");
 
 	my $rslt_packet = $this->SUPER::parsePacket($packet);
 		# returns the packet as confirmation there were no errors
@@ -89,22 +90,9 @@ sub parseMessage
 	my $rule = $TRACK_PARSE_RULES{ $cmd_word };
 	return error("NO RULE dir($dir)=$dir_name cmd($cmd)=$cmd_name") if !$rule;
 
-	# get the seq_num
-	
-	my $offset = 4;
-		# skip cmd_word and sid
-	if (@$rule && $$rule[0] ne 'no_seq')
-	{
-		my $seq = unpack('V',substr($part,$offset,4));
-		display($dbg_tp+2,2,"seq=$seq");
-		$offset += 4;
-		$packet->{seq_num} ||= $seq;
-		printConsole($packet->{color},$pad."#     seq_num = $seq",$mon)
-			if $mon & $MON_PARSE;
-	}
-
 	# parse the pieces
 
+	my $offset = 4;				# skip cmd_word and sid
 	for my $piece (@$rule)
 	{
 		next if $piece eq 'no_seq';
@@ -123,7 +111,7 @@ sub parseMessage
 		{
 			$packet->{is_event} = 1;
 			$packet->{evt_mask} |= $packet->{byte};
-			warning($dbg_tp-1,0,"TRACK EVENT($packet->{byte})");
+			warning($dbg_evt,0,"TRACK EVENT($packet->{byte})");
 			printConsole($packet->{color},$pad."#     TRACK_EVENT($packet->{byte})",$mon)
 				if $mon & $MON_PARSE;
 		}
@@ -147,7 +135,7 @@ sub parsePiece
 	# those that change the state of inter-message parsing
 	# or rely on previous messages (state).
 {
-	my ($this,$packet,$piece,$data,$pdata) = @_;
+	my ($this,$packet,$piece,$part,$poffset) = @_;
 
 	my $pad = pad('',9);
 	my $mon = $packet->{mon};
@@ -166,7 +154,7 @@ sub parsePiece
 		# 	particularly an mta and track record in a single packet
 		# So we create a merged {item} of any records encountered.
 
-		my $buffer = substr($data,$$pdata+4);
+		my $buffer = substr($part,$$poffset+4);
 		$packet->{item} ||= shared_clone({});
 		my $item = $packet->{item};
 		mergeHash($item,shared_clone(parseMTA($buffer))) 	if $buffer_type eq 'mta';
@@ -177,10 +165,10 @@ sub parsePiece
 
 	elsif ($piece eq 'track_uuid')
 	{
-		my $uuid = unpack('H*',substr($data,$$pdata,8));
+		my $uuid = unpack('H*',substr($part,$$poffset,8));
 		$packet->{track_uuid} = $uuid;
 		$packet->{is_track} = 1;
-		$$pdata += 8;
+		$$poffset += 8;
 
 		printConsole($packet->{color},$pad."#     track_uuid = $uuid; is_track=1",$mon)
 			if $mon & $MON_PIECES;
@@ -190,7 +178,7 @@ sub parsePiece
 
 	else
 	{
-		return $this->SUPER::parsePiece($packet,$piece,$data,$pdata)
+		return $this->SUPER::parsePiece($packet,$piece,$part,$poffset)
 	}
 
 	# return 1 to indicate no errors

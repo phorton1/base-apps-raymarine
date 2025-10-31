@@ -408,35 +408,35 @@ sub buildCommand
 {
 	my ($this,$cmd,$seq,$path,$offset,$size) = @_;
 
-	my $packet = pack('C',$cmd);
-	$packet .= pack('C',1); # DIRECTION_SEND
-	$packet .= pack('v',$FILESYS_SERVICE_ID);
-	$packet .= pack('V',$seq);
-	$packet .= pack('v',$FILESYS_PORT);
+	my $payload = pack('C',$cmd);
+	$payload .= pack('C',1); # DIRECTION_SEND
+	$payload .= pack('v',$FILESYS_SERVICE_ID);
+	$payload .= pack('V',$seq);
+	$payload .= pack('v',$FILESYS_PORT);
 
 	# The path is optional on some comannds.
 	# The path must be preceded by things on some commands.
 
 	if ($path)
 	{
-		$packet .= pack('H*','0000') if $cmd == $FILE_CMD_GET_SIZE;
+		$payload .= pack('H*','0000') if $cmd == $FILE_CMD_GET_SIZE;
 			# add a dword for GET_SIZE; no idea of its semantic
 
 		if ($cmd == $FILE_CMD_GET_FILE)
 		{
 			my $offset_packed = pack('V',$offset);
 			my $size_packed = pack('V',$size);
-			$packet .= $offset_packed.$size_packed ;
+			$payload .= $offset_packed.$size_packed ;
 		}
 
 		my $len = length($path) + 1;
-		$packet .= pack('v',$len);
-		$packet .= $path;
-		$packet .= chr(0);
+		$payload .= pack('v',$len);
+		$payload .= $path;
+		$payload .= chr(0);
 			# it is not clear if this terminating null is required
 			# but it does not hurt anything
 	}
-	return $packet;
+	return $payload;
 }
 
 
@@ -454,10 +454,8 @@ sub doOneIteration
 	# Build and Send the request packet
 	#-------------------------------
 	# The packet is sent directly to the registered service
-	# PRH TODO - modernize and handle sendUDPPacket failures
-	# in case command was interrupted by killAllJobs();
 
-	my $packet = $this->buildCommand($cmd,$seq,$path,$offset,$size);
+	my $payload = $this->buildCommand($cmd,$seq,$path,$offset,$size);
 	my $command_name = $FILE_CMD_NAME{$cmd};
 	
 	$this->{file_command} = $cmd;
@@ -465,12 +463,8 @@ sub doOneIteration
 	$this->{wait_name} = $command_name;
 	$this->{COMMAND_TIMEOUT} = $cmd == $FILE_CMD_GET_FILE ?
 		$LONG_TIMEOUT : $SHORT_TIMEOUT;
-	
-    sendUDPPacket(
-        "fileCommand($command_name)",
-		$this->{ip},
-        $this->{port},
-        $packet);
+		
+    $this->sendUDP("fileCommand($command_name)",$payload);
 
 
 	#---------------------------------------------------
@@ -514,7 +508,8 @@ sub handleCommand
 			# DIRECT ACCESS TO PARSER MEMBERS
 			
 			my $parser = $this->{parser};
-			return error("no parser in handleCommand") if !$parser;			$parser->{file_total} = $total;
+			return error("no parser in handleCommand") if !$parser;
+			$parser->{file_total} = $total;
 			$parser->{got_len} = 0;
 				# constant chosen after much trial and tribulation
 

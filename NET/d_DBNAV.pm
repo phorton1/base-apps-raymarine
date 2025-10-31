@@ -101,7 +101,6 @@ sub onIdle
 	# culls any variables who have outlived their TTL
 {
 	my ($this) = @_;
-	return;
 	lock($this);
 		# return if $this->{in_record};
 		# not while we are processing a record
@@ -337,7 +336,7 @@ sub decodeDepth
 {
 	my ($data) = @_;
 	my $depth_int = unpack("V",$data);
-	my $depth = roundTwo(($depth_int / 100) * $FEET_PER_METER);
+	my $depth = sprintf("%0.1f",($depth_int / 100) * $FEET_PER_METER);
 	return $depth;
 }
 
@@ -345,7 +344,7 @@ sub decodeHeading
 {
     my ($data) = @_;
     my $head_int = unpack("v", $data);
-    my $deg = roundTwo(($head_int / 10000) * (180 / $PI));
+    my $deg = sprintf("%0.1f",($head_int / 10000) * (180 / $PI));
     return $deg;
 }
 

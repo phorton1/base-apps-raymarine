@@ -162,6 +162,15 @@ sub sniffer_thread
 			my $dst_ip = $values{'ip.dst'};
 			my $proto  = $values{'tcp.len'} ? 'tcp' : 'udp';
 
+			# apparently the first line will often contain
+			# something recently written to STD_OUT, here we flag it
+			
+			if (!$src_ip)
+			{
+				warning(0,0,"Sniffer skipping: : $line");
+				next;
+			}
+
 			next if $ignore_ip_re && $src_ip =~ /$ignore_ip_re/;
 			next if $ignore_ip_re && $dst_ip =~ /$ignore_ip_re/;
 

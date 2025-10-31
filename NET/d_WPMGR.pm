@@ -170,20 +170,7 @@ sub createMsg
 sub sendRequest
 {
 	my ($this,$seq,$name,$request) = @_;
-
-	if ($this->{mon_parsed_out})
-	{
-		my $text = "# sendRequest($seq) $name\n";
-		my $rec = $this->parseWPMGRPacket($this->{mon_parsed_out},0,$this->{local_port},$request);
-		$text .= $rec->{text};
-		# 1=with_text, 0=is_reply		$text .= $rec->{text};
-
-		# setConsoleColor($OUT_COLOR) if $OUT_COLOR;
-		# print $text;
-		# setConsoleColor() if $OUT_COLOR;
-		# writeLog($text,'shark.log');
-	}
-
+	display($dbg+1,0,"sendRequest() calling b_sock::sendPacket()");
 	$this->sendPacket($request);
 	$this->{wait_seq} = $seq;
 	$this->{wait_name} = $name;

@@ -181,7 +181,7 @@ for my $port (keys %SERVICE_PORT_DEFS)
 
 # My current hardwired monitoring preferences, per implemented service
 
-my $SHARK_MON_FILESYS	= $MON_ALL;
+my $SHARK_MON_FILESYS	= $MON_HEADER | $MON_RAW | $MON_PARSE | $MON_PIECES;
 my $SHARK_MON_DBNAV		= $MON_ALL;
 my $SHARK_MON_TRACK 	= $MON_ALL;
 my $SHARK_MON_WAYPOINT 	= $MON_ALL;
@@ -189,20 +189,23 @@ my $SHARK_MON_ROUTE 	= $MON_ALL;
 my $SHARK_MON_GROUP 	= $MON_ALL;
 
 mergeHash($SHARK_DEFAULTS{$SPORT_FILESYS},{
+	# active		=> 1,
 	mon_in			=> $SHARK_MON_FILESYS,
 	mon_out 		=> $SHARK_MON_FILESYS,
 	in_color		=> $UTILS_COLOR_BROWN,
 	out_color		=> $UTILS_COLOR_LIGHT_MAGENTA, });
 mergeHash($SHARK_DEFAULTS{$SPORT_DBNAV},{
+	# active		=> 1,
 	mon_in			=> $SHARK_MON_DBNAV,
 	mon_out 		=> $SHARK_MON_DBNAV,
 	in_color		=> $UTILS_COLOR_LIGHT_GREEN,
 	out_color		=> $UTILS_COLOR_LIGHT_MAGENTA, });
 mergeHash($SHARK_DEFAULTS{$SPORT_TRACK},{
+	# active		=> 1,
 	mon_in			=> $SHARK_MON_TRACK,
 	mon_out 		=> $SHARK_MON_TRACK,
-	in_color		=> $UTILS_COLOR_LIGHT_CYAN,
-	out_color		=> $UTILS_COLOR_LIGHT_BLUE, });
+	in_color		=> $UTILS_COLOR_LIGHT_BLUE,
+	out_color		=> $UTILS_COLOR_LIGHT_CYAN, });
 
 # WPMGR has arrays of mon/colors and MOVES
 # them to the scalars based on WHAT is being
@@ -216,9 +219,9 @@ mergeHash($SHARK_DEFAULTS{$SPORT_WPMGR},{
 		$SHARK_MON_GROUP,
 	]),
 	mon_outs => shared_clone([
-		$MON_CMD,	# $SHARK_MON_WAYPOINT,
-		$MON_CMD,	# $SHARK_MON_ROUTE,
-		0,#$MON_CMD,	# $SHARK_MON_GROUP,
+		$SHARK_MON_WAYPOINT,   # $MON_CMD,
+		$SHARK_MON_ROUTE,      # $MON_CMD,
+		$SHARK_MON_GROUP,      # $MON_CMD,
 	]),
 	in_colors => shared_clone([
 		$UTILS_COLOR_BROWN,
@@ -274,7 +277,7 @@ for my $port (keys %SERVICE_PORT_DEFS)
 
 }
 
-my $SNIFF_MON_FILESYS	= $MON_HEADER | $MON_RAW | $MON_PARSE;
+my $SNIFF_MON_FILESYS	= $MON_HEADER | $MON_RAW | $MON_PARSE | $MON_PIECES;
 my $SNIFF_MON_DBNAV		= $MON_ALL;
 my $SNIFF_MON_TRACK 	= $MON_ALL;
 my $SNIFF_MON_WAYPOINT 	= $MON_ALL;

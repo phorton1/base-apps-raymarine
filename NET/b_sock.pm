@@ -145,6 +145,95 @@ our $SHUTDOWN_DONE		= 3;		# socket has been closed,
 
 our @SHUTDOWN_NAME = qw(NONE START SENT DONE);
 
+
+#------------------------------------------------------
+# global single instance $LOCAL_UDP_SOCKET
+#------------------------------------------------------
+# The global $UDP_SEND_SOCKET is opened
+# in the main thread at the outer perl
+# level so-as to be available from threads
+# PRH TODO - modernize and handle sendUDP failures
+# in case command was interrupted by killAllJobs();
+
+
+my $LOCAL_UDP_SOCKET = IO::Socket::INET->new(
+        LocalAddr => $LOCAL_IP,
+        LocalPort => $LOCAL_UDP_SEND_PORT,
+        Proto     => 'udp',
+        ReuseAddr => 1);
+$LOCAL_UDP_SOCKET ?
+	display(0,0,"LOCAL_UDP_SOCKET opened") :
+	error("Could not open UDP_SEND_SOCKET");
+
+
+
+sub wakeup_e80
+	# needed to open multicast RAYSYS sockeet on Windows.
+{
+	if (!$LOCAL_UDP_SOCKET)
+	{
+		error("wakeup_e80() fail because UDP_SEND_SOCKET is not open");
+		return;
+	}
+    for (my $i = 0; $i < 10; $i++)
+    {
+		display(0,1,"sending RAYDP_INIT_PACKET");
+        $LOCAL_UDP_SOCKET->send($RAYSYS_WAKEUP_PACKET, 0, $RAYSYS_ADDR);
+        sleep(0.001);
+    }
+
+	return 1;
+}
+
+
+my $dbg_udp_send = 1;
+
+
+
+sub sendUDP
+{
+	my ($this,$name,$payload) = @_;
+	my $dest_ip = $this->{ip};
+	my $dest_port = $this->{port};
+    display($dbg_udp_send, 1, "sending $dest_ip:$dest_port $name packet: " . unpack('H*', $payload));
+
+	if (1)
+	{
+		if ($this->{is_probe})
+		{
+			my $text ="$this->{name} --> $dest_ip:$dest_port $name\n".
+				parse_dwords('    ',$payload,1);
+			printConsole($UTILS_COLOR_WHITE,$text)
+		}
+		else
+		{
+			my $packet = $this->make_packet(0,$payload);
+			$this->{parser}->doParse($packet);
+		}
+	}
+
+    if (!$LOCAL_UDP_SOCKET)
+    {
+        error("LOCAL_UDP_SOCKET not open in sendUDPPacket");
+        return 0;
+    }
+
+    my $dest_addr = pack_sockaddr_in($dest_port, inet_aton($dest_ip));
+    my $sent = $LOCAL_UDP_SOCKET->send($payload, 0, $dest_addr);
+
+    if (!defined($sent))
+    {
+        error("send() failed for $dest_ip:$dest_port: $!");
+        return 0;
+    }
+
+    return 1;
+}
+
+
+
+
+
 #------------------------------------------------------
 # monitor definitions high priority
 #------------------------------------------------------
@@ -201,17 +290,6 @@ sub init
     $this->{command_queue}      = shared_clone([]);
     $this->{replies}            = shared_clone([]);
 
-	# {DELAY_START}
-	# {EXIT_ON_CLOSE}
-	# {show_raw_input}
-	# {show_raw_output}
-	# {show_parsed_input}
-	# {show_parsed_output}
-	# {in_color}
-	# {out_color}
-	# {local_port} - optional
-	# {local_ip} - optional but not recommended
-
 	my $parser_class = $this->{parser_class} || 'a_parser';
 	$this->{parser} = $parser_class->newParser($this->{mon_defs}) if !$this->{parser};
 
@@ -266,12 +344,6 @@ sub destroy
 		local
 
 		EXIT_ON_CLOSE
-		show_raw_input
-		show_raw_output
-		show_parsed_input
-		show_parsed_output
-		in_color
-		out_color
 
 		wait_seq
 		wait_name
@@ -336,6 +408,9 @@ sub connect
 
 
 
+#----------------------------------
+# virtual overrides
+#----------------------------------
 
 sub handleCommand
 {
@@ -356,14 +431,12 @@ sub onStartSocketThread
 	my ($this) = @_;
 }
 
-
 sub onConnect
 	# called upon a connection
 	# allows d_WPMGR and d_TRACK to queue populate commands
 {
 	my ($this) = @_;
 }
-
 
 sub onIdle
 	# called from commandThread when no commands in queue
@@ -462,7 +535,33 @@ sub waitReply
 #======================================================================================
 # sockThread
 #======================================================================================
-use Devel::Peek;
+
+sub make_packet
+{
+	my ($this,$is_reply,$payload) = @_;
+	my $packet = shared_clone({
+		is_reply 	=> $is_reply,
+		is_sniffer	=> 0,
+		is_shark	=> 1,
+		client_name => "$this->{name}(shark)",
+		server_name => "$this->{name}($this->{device_id})",
+
+		proto		=> $this->{proto},
+
+		src_ip		=> $this->{local_ip},
+		src_port	=> $this->{local_port},
+		dst_ip		=> $this->{ip},
+		dst_port	=> $this->{port},
+
+		client_ip	=> $this->{local_ip},
+		client_port	=> $this->{local_port},
+		server_ip	=> $this->{ip},
+		server_port => $this->{port},
+
+		payload 	=> $payload,
+	});
+	return $packet;
+}
 
 
 sub _shutdown_socket
@@ -620,12 +719,13 @@ sub sockThread
 		{
 			if ($sel->can_write() && @{$this->{out_queue}})
 			{
-				my $packet = shift @{$this->{out_queue}};
-				# showRawPacket(0,$this,$packet,1) if $this->{mon_raw_out};
+				my $payload = shift @{$this->{out_queue}};
+				my $packet = $this->make_packet(0,$payload);
+				$this->{parser}->doParse($packet);
 
 				my $rslt = $this->{proto} eq 'mcast' ?
-					$sock->mcast_send($packet, "$this->{ip}:$this->{port}") :
-					$sock->send($packet);
+					$sock->mcast_send($payload, "$this->{ip}:$this->{port}") :
+					$sock->send($payload);
 				if (!defined($rslt))
 				{
 					error("Could not write to $this->{remote}: $!");
@@ -680,51 +780,24 @@ sub sockThread
 					{
 						my $client_buffer = $this->{buffer};
 						$this->{buffer} = '';
-						# showRawPacket(0,$this,$client_buffer,0) if $this->{mon_raw_in};
 
-						# hook for probes to not call derived handle packet
-
-						if ($this->{probe_wait})
+						my $packet = $this->make_packet(1,$client_buffer);
+						my $reply =	$this->{parser}->doParse($packet);
+						display($dbg_thread+1,0,"sockThread got parsePacket reply="._def($reply))
+							if $this->{name} ne 'RAYSYS';
+						if ($this->{is_probe})
 						{
-							display(0,3,"probe WAIT completed");
 							$this->{probe_wait} = 0;
 						}
 						else
 						{
-							my $packet = shared_clone({
-								is_reply 	=> 1,
-								is_sniffer	=> 0,
-								is_shark	=> 1,
-								client_name => "$this->{name}(shark)",
-								server_name => "$this->{name}($this->{device_id})",
-
-								proto		=> $this->{proto},
-
-								src_ip		=> $this->{local_ip},
-								src_port	=> $this->{local_port},
-								dst_ip		=> $this->{ip},
-								dst_port	=> $this->{port},
-
-								client_ip	=> $this->{local_ip},
-								client_port	=> $this->{local_port},
-								server_ip	=> $this->{ip},
-								server_port => $this->{port},
-
-								payload 	=> $client_buffer,
-								});
-							my $reply =	$this->{parser}->doParse($packet);
-
-							# derived classes that handle events (WPMGR, TRACK) should
-							# define handleEvent methods on reply packets, and return
-							# the packet, or undef if it is completely handled.
-
 							$reply = $this->handleEvent($reply);
-
-
-							display($dbg_thread+1,0,"sockThread got parsePacket reply="._def($reply))
-								if $this->{name} ne 'RAYSYS';
+								# derived classes that handle events (WPMGR, TRACK) should
+								# define handleEvent methods on reply packets, and return
+								# the packet, or undef if it is completely handled.
 							push @{$this->{replies}},$reply if $reply;
 						}
+
 					}
 				}	# got a buffer
 
@@ -764,7 +837,7 @@ sub sockThread
 sub commandThread
 {
 	my ($this) = @_;
-	display($dbg_cmd,0,"b_sock commandThread($this->{name}) started");
+	display($dbg_thread,0,"b_sock commandThread($this->{name}) started");
 	if ($this->{DELAY_START})
 	{
 		display($dbg_thread,1,"DELAYING b_sock commandThread for $this->{DELAY_START} seconds");
@@ -807,7 +880,7 @@ sub commandThread
 			sleep(0.01);
 		}
 	}
-	warning($dbg_cmd,0,"b_sock commandThread($this->{name}) exiting");
+	warning($dbg_thread,0,"b_sock commandThread($this->{name}) exiting");
 }
 
 
