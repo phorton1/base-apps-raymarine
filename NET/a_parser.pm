@@ -105,7 +105,7 @@ sub parsePacket
 		if ($packet->{is_shark} && !($mon & $MON_SNIFF_SELF))
 		{
 			display($dbg_parse+2,1,"a_parser::parsePacket() abandoning sniffer packet to/from self");
-			return;
+			return undef;
 		}
 
 		# don't parse sniffer packets if no mon bits are set
@@ -113,7 +113,7 @@ sub parsePacket
 		if (!$mon)
 		{
 			display($dbg_parse+2,1,"a_parser::parsePacket() abandoning sniffer packet with no mon bits");
-			return;
+			return undef;
 		}
 	}
 
@@ -122,15 +122,14 @@ sub parsePacket
 	
 	if ($mon & $MON_HEADER)
 	{
-		printConsole($packet->{color},
+		printConsole(0,$mon,$color,
 			$packet->{server_name}.
 			($packet->{is_reply} ? ' --> ' : ' <-- ').
 			$packet->{client_name}."  ".
 			"proto($packet->{proto}) ".
 			"len($packet_len)    ".
 			"# $packet->{src_ip}:$packet->{src_port} --> $packet->{dst_ip}:$packet->{dst_port}   ".
-			"is_sniffer($packet->{is_sniffer})",
-			$mon);
+			"is_sniffer($packet->{is_sniffer})");
 		# print parse_dwords(' debug ',$packet->{payload},1);
 	}
 	
@@ -144,19 +143,23 @@ sub parsePacket
 			my $len_bytes = substr($payload,$offset,2);
 			my $len = unpack('v',$len_bytes);
 			my $part = substr($payload,$offset+2,$len);
-			my $hdr = pad('',4).unpack('H*',$len_bytes).' ';
-			$packet = $this->parseMessage($packet,$len,$part,$hdr);
+			$packet = $this->parseMessage($packet,$len,$part);
 			$offset += $len + 2;
 		}
 	}
 	else
 	{
-		my $hdr = pad('',8);
-		$packet = $this->parseMessage($packet,length($payload),$payload,$hdr);
+		$packet = $this->parseMessage($packet,length($payload),$payload);
 	}
 
-	# Return the completely constructed packet.
-	# This will be weirdly diffrent in FILESYS
+	if ($packet)
+	{
+		my $exclude_re = 'payload';
+		$exclude_re .= '|points'	# Track points
+			if !($packet->{mon} & $MON_DUMP_DETAILS);
+		display_record(0,0,"final packet($packet->{name})",$packet,$exclude_re)
+			if $packet->{mon} & $MON_DUMP_RECORD;
+	}
 
 	return $packet;
 }
@@ -168,17 +171,18 @@ sub parseMessage
 	# and then handle the message as they see fit. This is where a failure
 	# to match a service_id *would* be caught. TODO
 {
-	my ($this,$packet,$len,$part,$hdr) = @_;
+	my ($this,$packet,$len,$part) = @_;
 	my $cmd_bytes 	= substr($part,0,2);
 	my $sid_bytes 	= substr($part,2,2);
 	my $cmd_word 	= unpack('v',$cmd_bytes);
 	my $cmd_hex 	= unpack('H*',$cmd_bytes);
 	my $sid 		= unpack('v',$sid_bytes);
 	my $sid_hex 	= unpack('H*',$sid_bytes);
-	my $mon 		= $packet->{mon} || 0;
+	my $mon 		= $packet->{mon};
+	my $color		= $packet->{color};
 	
 	display($dbg_parse+2,0,"a_parser::parseMessage($this->{name}) ".
-			sprintf("len($len) hdr($hdr) cmd_word($cmd_hex) sid($sid) mon(%04x)",$mon));
+			sprintf("len($len) cmd_word($cmd_hex) sid($sid) mon(%04x)",$mon));
 
 	# there cases with sniffer packets being misasligned, where
 	# sniffer is started in the middle of a multi-packet tcp buffer,
@@ -192,20 +196,22 @@ sub parseMessage
 	if ($sid != $this->{sid})
 	{
 		my $msg = "a_parser::parseMessage($this->{name}) BAD_SID($sid) != expected($this->{sid}) ".
-			"is_sniffer($packet->{is_sniffer}) is shark($packet->{is_shark}) len($len) cmd_word($cmd_hex) hdr($hdr)\n".
+			"is_sniffer($packet->{is_sniffer}) is shark($packet->{is_shark}) len($len) cmd_word($cmd_hex)\n".
 			parse_dwords('BAD SID:  ',$packet->{payload},1);
 		error($msg);
-		printConsole($UTILS_COLOR_RED,$msg,$mon);
+		printConsole(1,$mon,$UTILS_COLOR_RED,$msg);
 		return undef;
 	}
 
 
 	if ($mon & $MON_RAW)
 	{
-		$hdr .= "$cmd_hex $sid_hex ";
+		my $hdr = pad('',4).($packet->{proto} eq 'tcp' ?
+			unpack('H*',pack('v',$len)) : pad('',4));
+		$hdr .= " $cmd_hex $sid_hex ";
 		my $text = parse_dwords($hdr,substr($part,4),$mon & $MON_MULTI);
 		$text =~ s/\n$//s;	# get rid of last trailing word from parse_words or change semantic of printConsole
-		printConsole($packet->{color},$text,$mon);
+		printConsole(0,$mon,$color,$text);
 	}
 
 	return $packet;
@@ -229,9 +235,9 @@ sub parsePiece
 	# knowing how it got there.
 {
 	my ($this,$packet,$piece,$part,$poffset) = @_;
-
-	my $pad = pad('',9);
-	my $mon = $packet->{mon} || 0;
+	my $mon = $packet->{mon};
+	my $color = $packet->{color};
+	
 	if ($piece eq 'buffer')
 	{
 		if ($packet->{is_dict} &&
@@ -243,7 +249,7 @@ sub parsePiece
 			return error("too many dict_uuids!!") if $num>1024;
 				# prevent runaway implementation bug endless loops
 
-			printConsole($packet->{color},$pad."#     dictionary($num)",$mon)
+			printConsole(2,$mon,$color,"dictionary($num)")
 				if $mon & $MON_PIECES;
 			$packet->{dict_uuids} ||= shared_clone([]);
 			my $dict_uuids = $packet->{dict_uuids};
@@ -252,7 +258,7 @@ sub parsePiece
 				my $uuid = unpack('H*',substr($part,$$poffset,8));
 				$$poffset += 8;
 				push @$dict_uuids,$uuid;
-				printConsole($packet->{color},$pad."#         dict_uuid($i) = $uuid",$mon)
+				printConsole(3,$mon,$color,"dict_uuid($i) = $uuid")
 					if $mon & $MON_DICT;
 			}
 		}
@@ -262,7 +268,7 @@ sub parsePiece
 		my $seq_num = unpack('V',substr($part,$$poffset,4));
 		$$poffset += 4;
 		display($dbg_parse+3,1,"seq_num=$seq_num");
-		printConsole($packet->{color},$pad."#     seq_num = $seq_num",$mon)
+		printConsole(2,$mon,$color,"seq_num = $seq_num")
 			if $mon & $MON_PARSE;	# note that is MON_PARSE, not MON_PIECE
 		$packet->{seq_num} ||= $seq_num;
 	}
@@ -271,7 +277,7 @@ sub parsePiece
 		my $uuid = unpack('H*',substr($part,$$poffset,8));
 		$packet->{uuid} = $uuid;
 		$$poffset += 8;
-		printConsole($packet->{color},$pad."#     $piece = $uuid",$mon)
+		printConsole(2,$mon,$color,"$piece = $uuid")
 			if $mon & $MON_PIECES;
 	}
 	elsif ($piece eq 'name16')
@@ -279,7 +285,7 @@ sub parsePiece
 		my $name = unpack('Z*',substr($part,$$poffset,17));
 		$packet->{name} = $name;
 		$$poffset += 17;
-		printConsole($packet->{color},$pad."#     name = $name",$mon)
+		printConsole(2,$mon,$color,"name = $name")
 			if $mon & $MON_PIECES;
 	}
 	elsif ($piece eq 'success')
@@ -288,7 +294,7 @@ sub parsePiece
 		my $ok = $status eq $SUCCESS_SIG ? 1 : 0;
 		$packet->{success} = $ok;
 		$$poffset += 4;
-		printConsole($packet->{color},$pad."#     $piece = $ok",$mon)
+		printConsole(2,$mon,$color,"$piece = $ok")
 			if $mon & $MON_PIECES;
 	}
 
@@ -299,7 +305,7 @@ sub parsePiece
 	{
 		my $byte = unpack('C',substr($part,$$poffset++,1));
 		$packet->{$piece} = $byte;
-		printConsole($packet->{color},$pad."#     $piece = $byte",$mon)
+		printConsole(2,$mon,$color,"$piece = $byte")
 			if $mon & $MON_PIECES;
 	}
 	elsif ($piece eq 'bits')				# one word (flag on wpmgr changed events)
@@ -307,7 +313,7 @@ sub parsePiece
 		my $word = unpack('v',substr($part,$$poffset,2));
 		$packet->{$piece} = $word;
 		$$poffset += 2;
-		printConsole($packet->{color},$pad."#     $piece = $word",$mon)
+		printConsole(2,$mon,$color,"$piece = $word")
 			if $mon & $MON_PIECES;
 	}
 	elsif ($piece =~ /is_dict|is_point/)	# generic boolean value
@@ -317,7 +323,7 @@ sub parsePiece
 		# there is no special handling here
 		display($dbg_parse + 1,1,"$piece = 1");
 		$packet->{$piece} = 1;
-		printConsole($packet->{color},$pad."#     $piece = 1",$mon)
+		printConsole(2,$mon,$color,"$piece = 1")
 			if $mon & $MON_PIECES;
 	}
 
@@ -338,7 +344,7 @@ sub parsePiece
 		$show_value = sprintf("0x%02x",$value)
 			if $piece !~ /db_count|db_version|evt_flag/;
 
-		printConsole($packet->{color},$pad."#     $piece = $show_value",$mon)
+		printConsole(2,$mon,$color,"$piece = $show_value")
 			if $mon & $MON_PIECES;
 	}
 

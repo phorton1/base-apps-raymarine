@@ -38,25 +38,15 @@ sub parsePacket
 	# calls base class to do all the work.
 {
 	my ($this,$packet) = @_;
-
-	# the packet namespace is crowded and it is crucial
-	# that no base class names are overwritten by derived classes
-
+		# the packet namespace is crowded and it is crucial
+		# that no base class names are overwritten by derived classes
 	mergeHash($packet,{
 		is_dict 	=> 0,
 		is_point	=> 0,
 		is_event 	=> 0,
 		evt_mask	=> 0, });
-
 	display($dbg_tp+1,0,"e_TRACK::parsePacket() is_reply($packet->{is_reply})");
-
-	my $rslt_packet = $this->SUPER::parsePacket($packet);
-		# returns the packet as confirmation there were no errors
-
-	display_record(0,0,"final packet($packet->{name})",$packet,'payload|points')
-		if $packet->{mon} & $MON_DUMP_RECORD;
-
-	return $rslt_packet;
+	return $this->SUPER::parsePacket($packet);
 }
 
 
@@ -67,9 +57,9 @@ sub parseMessage
 	# across messages, knowing what messages have sequence numbers,
 	# and checking twice for rules,
 {
-	my ($this,$packet,$len,$part,$hdr) = @_;
-	display($dbg_tp+2,0,"e_TRACK::parseMessage($len) hdr($hdr)");
-	return undef if !$this->SUPER::parseMessage($packet,$len,$part,$hdr);
+	my ($this,$packet,$len,$part) = @_;
+	display($dbg_tp+2,0,"e_TRACK::parseMessage($len)");
+	return undef if !$this->SUPER::parseMessage($packet,$len,$part);
 
 	my $cmd_word = unpack('v',substr($part,0,2));
 	my $cmd = $cmd_word & 0xff;
@@ -80,9 +70,8 @@ sub parseMessage
 	my $dir_name = $DIRECTION_NAME{$dir};
 	display($dbg_tp+2,1,"e_TRACK::parseMessage() dir($dir)=$dir_name cmd($cmd)=$cmd_name");;
 
-	my $pad = pad('',9);
 	my $mon = $packet->{mon};
-	printConsole($packet->{color},$pad."# $dir_name $cmd_name",$mon)
+	printConsole(1,$mon,$packet->{color},"$dir_name $cmd_name")
 		if $mon & $MON_PARSE;
 
 	# get the rule
@@ -112,7 +101,7 @@ sub parseMessage
 			$packet->{is_event} = 1;
 			$packet->{evt_mask} |= $packet->{byte};
 			warning($dbg_evt,0,"TRACK EVENT($packet->{byte})");
-			printConsole($packet->{color},$pad."#     TRACK_EVENT($packet->{byte})",$mon)
+			printConsole(2,$mon,$packet->{color},"TRACK_EVENT($packet->{byte})")
 				if $mon & $MON_PARSE;
 		}
 		elsif ($cmd == $TRACK_REPLY_CHANGED)
@@ -136,9 +125,8 @@ sub parsePiece
 	# or rely on previous messages (state).
 {
 	my ($this,$packet,$piece,$part,$poffset) = @_;
-
-	my $pad = pad('',9);
 	my $mon = $packet->{mon};
+	my $color = $packet->{color};
 
 	if ($piece eq 'buffer' && !$packet->{is_dict})
 	{
@@ -146,23 +134,22 @@ sub parsePiece
 			$packet->{is_track} ? 'track' :
 			$packet->{is_point} ? 'point' : 'mta';
 
-		printConsole($packet->{color},$pad."#     buffer piece($buffer_type)",$mon)
+		printConsole(2,$mon,$color,"buffer piece($buffer_type)")
 			if $mon & $MON_PIECES;
 
-		# skip biglen
+		# +4 == skip biglen
 		# Track messages may return more than one buffer per packet,
 		# 	particularly an mta and track record in a single packet
 		# So we create a merged {item} of any records encountered.
 
+		my $color = $packet->{color};
 		my $buffer = substr($part,$$poffset+4);
 		$packet->{item} ||= shared_clone({});
 		my $item = $packet->{item};
-		mergeHash($item,shared_clone(parseMTA($buffer))) 	if $buffer_type eq 'mta';
-		mergeHash($item,shared_clone(parseTrack($buffer))) 	if $buffer_type eq 'track';
-		mergeHash($item,shared_clone(parsePoint($buffer))) 	if $buffer_type eq 'point';
+		mergeHash($item,parseMTA($buffer,$mon,$color)) 	 if $buffer_type eq 'mta';
+		mergeHash($item,parseTrack($buffer,$mon,$color)) if $buffer_type eq 'track';
+		mergeHash($item,parsePoint($buffer,$mon,$color)) if $buffer_type eq 'point';
 	}
-
-
 	elsif ($piece eq 'track_uuid')
 	{
 		my $uuid = unpack('H*',substr($part,$$poffset,8));
@@ -170,7 +157,7 @@ sub parsePiece
 		$packet->{is_track} = 1;
 		$$poffset += 8;
 
-		printConsole($packet->{color},$pad."#     track_uuid = $uuid; is_track=1",$mon)
+		printConsole(2,$mon,$color,"track_uuid = $uuid; is_track=1")
 			if $mon & $MON_PIECES;
 	}
 

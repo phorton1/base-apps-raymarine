@@ -279,16 +279,21 @@ sub parsePacket
 sub parseMessage
 	# Displays the previously parsed text if there is any
 {
-	my ($this,$packet,$len,$part,$hdr) = @_;
+	my ($this,$packet,$len,$part) = @_;
 	my $mon = $packet->{mon};
+	my $color = $packet->{color};
 	display($dbg_dp+1,0,sprintf("e_DBNAV::parseMessage($len) mon(%04x)",$mon));
-	return undef if !$this->SUPER::parseMessage($packet,$len,$part,$hdr);
+	return undef if !$this->SUPER::parseMessage($packet,$len,$part);
 
 	my $text = $packet->{text};
 	if ($text && ($mon & $MON_PARSE))
 	{
-		$text = "    # DBNAV len($len) num_fields($packet->{num_fields})\n".$text;
-		printConsole($packet->{color},$text,$mon);
+		printConsole(1,$mon,$color,"DBNAV len($len) num_fields($packet->{num_fields})");
+		for my $line (split(/\n/,$text))
+		{
+			next if !$line;
+			printConsole(2,$mon,$color,$line);
+		}
 	}
 
 	return $packet;
@@ -650,9 +655,9 @@ sub decode_field
 		my $subtype_hex= sprintf("%02x",$subtype);
 		my $record_type_hex = sprintf("%02x",$record_type);
 
-		return "        # ".
+		return 
 			pad("field($field_num)",10).
-			pad("offset($save_offset)=$some_offset",16).
+			pad("offset($save_offset)=$some_offset",17).
 			pad("type($type_hex)",9).
 			pad("len($len)",9).
 			pad("subtype($subtype_hex)",12).

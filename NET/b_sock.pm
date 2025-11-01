@@ -201,9 +201,8 @@ sub sendUDP
 	{
 		if ($this->{is_probe})
 		{
-			my $text ="$this->{name} --> $dest_ip:$dest_port $name\n".
-				parse_dwords('    ',$payload,1);
-			printConsole($UTILS_COLOR_WHITE,$text)
+			printConsole(0,0,$UTILS_COLOR_WHITE,"$this->{name} --> $dest_ip:$dest_port $name");
+			printConsole(0,0,parse_dwords(pad('',13),$payload,1));
 		}
 		else
 		{
@@ -487,7 +486,7 @@ sub waitReply
 	my $wait_name = $this->{wait_name};
 	my $start = time();
 
-	display($dbg_wait,0,"$name waitReply($seq) $wait_name");
+	display($dbg_wait+1,0,"$name waitReply($seq) $wait_name");
 
 	while ($this->{connected} &&
 		   $this->{running} &&
@@ -499,8 +498,8 @@ sub waitReply
 		{
 			my $reply = shift @$replies;
 			$dbg_wait >= 0 ?
-				display($dbg_wait,1,"$this->{name} waitReply got seq($reply->{seq_num})") :
-				display_hash($dbg_wait,1,"$this->{name} waitReply got seq($reply->{seq_num})",$reply,'payload');
+				display($dbg_wait+1,1,"$this->{name} waitReply got seq($reply->{seq_num})") :
+				display_hash($dbg_wait+1,1,"$this->{name} waitReply got seq($reply->{seq_num})",$reply,'payload');
 
 			if ($reply->{seq_num} == $seq)
 			{

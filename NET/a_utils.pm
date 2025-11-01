@@ -30,8 +30,8 @@ BEGIN
 		writeLog
 
 		name16_hex
-		old_packRecord
-		old_unpackRecord
+		packRecord
+		unpackRecord
 		
 		degreeMinutes
 		northEastToLatLon
@@ -58,9 +58,12 @@ BEGIN
 		$wx_color_lime
 		$wx_color_light_grey
 		$wx_color_medium_grey
-
     );
 }
+
+
+
+
 
 
 #--------------------------------
@@ -166,8 +169,14 @@ sub printConsole
 	# print to the console and/or to the logfile
 	# DONT write self-mons to the sniffer logfile
 {
-	my ($color,$text,$mon) = @_;
+	my ($level,$mon,$color,$text) = @_;
 	$mon ||= 0;
+
+	if ($level)
+	{
+		my $hdr = pad('',9).'# '.pad('',($level-1)*4);
+		$text = $hdr.$text;
+	}
 	
 	if (!($mon & $MON_LOG_ONLY))
 	{
@@ -337,7 +346,7 @@ sub parse_dwords
 		$byte_num = $offset % $BYTES_PER_LINE;
 		if ($offset && !$byte_num)
 		{
-			$full_packet .= $left_side.'# '.$right_side;
+			$full_packet .= $left_side.' # '.$right_side;
 			$full_packet .= ' >>>' if !$multi;
 			$full_packet .= "\n";
 			$left_side = '';
@@ -359,7 +368,7 @@ sub parse_dwords
 	}
 	if ($left_side)
 	{
-		$full_packet .= pad($left_side,$LEFT_SIZE).'# '.$right_side."\n";
+		$full_packet .= pad($left_side,$LEFT_SIZE).' # '.$right_side."\n";
 	}
 	return $full_packet;
 }
@@ -378,23 +387,26 @@ my $PACK_SIZE	= 1;	# the size (for moving to the next piece of buffer
 my $PACK_TYPE	= 2;	# the perl pack/unpack type
 
 
-sub old_unpackRecord
+sub unpackRecord
 	# All fields are packed/unpacked into the reccord so that
 	# 	the operations are symetrical and no information is lost
 	# $level is merely used to adjust what things show in debugging
 {
-	my ($dbg,				# debug level passed in by client
-		$level,				# detail level (for debugging only) passed in by client
-		$name,				# a name given to the record for debugging only,
+	my ($mon,				# monitoring bits  passed in by client
+		$color,				# color passed in by client
+		$name,				# a name given to the record
 		$field_specs,		# REQUIRED the field specs that define the record
 		$buffer,			# REQUIRED raw data being unpacked
 		$rec_offset,		# REQUIRED offset into the buffer to parse at
 		$rec_size) = @_;	# the record size, if defined, will show the raw data bytes at $dbg+1
 	
-	display($dbg,0,"old_unpackRecord($name) offset($rec_offset) rec_size("._def($rec_size).")");
+
+	printConsole(3,$mon,$color,"unpackRecord($name) offset($rec_offset) rec_size("._def($rec_size).")")
+		if $mon & $MON_PACK;
 
 	my $data = substr($buffer,$rec_offset,$rec_size) if defined($rec_size);
-	display($dbg+1,1,"data=".unpack('H*',$data));
+	printConsole(4,$mon,$color,"data=".unpack('H*',$data))
+		if $mon & $MON_PACK_UNKNOWN;
 
 	my $offset = 0;
 	my $rec = shared_clone({});
@@ -409,23 +421,28 @@ sub old_unpackRecord
 		my $hex  = unpack('H*',$raw);
 		my $val  = unpack($type,$raw);
 
+		my $showit =
+			$detail == 2 ? $mon & $MON_PACK_UNKNOWN :
+			$detail == 1 ? $mon & $MON_PACK_CONTROL :
+			$mon & $MON_PACK;
+
 		$rec->{$field} = defined($val) ? $val : 0;
-		display($dbg,1,"offset($offset) ".pad($field,20)."($hex)= '$rec->{$field}'")
-			if $level >= $detail;
+		printConsole(4,$mon,$color,pad("offset($offset)",11).' '.pad($field,12).' '.pad("($hex)",12)." = '$rec->{$field}'")
+			if $showit;
 		$offset += $size;
 	}
 	return $rec;
 }
 
 
-sub old_packRecord
+sub packRecord
 	# builds the record WITHOUT the big_len field
 {
-	my ($dbg,$level,$name,$rec,$field_specs) = @_;
+	my ($mon,$color,$name,$rec,$field_specs) = @_;
 	$rec ||= {};
 
-	display_hash($dbg+1,0,"old_packRecord($name)",$rec) if $dbg==0;
-	display($dbg+1,0,"old_packRecord($name)");
+	printConsole(3,$mon,$color,"packRecord($name)")
+		if $mon & $MON_PACK;
 
 	my $data = '';
 	my $offset = 0;
@@ -442,13 +459,23 @@ sub old_packRecord
 		my $packed .= pack($type,$val);
 		$data .= $packed;
 
-		display($dbg+1,1,"offset($offset) ".pad($field,20)."(".unpack('H*',$packed).")= '$val'")
-			if $level >= $detail;
+		my $showit =
+			$detail == 2 ? $mon & $MON_PACK_UNKNOWN :
+			$detail == 1 ? $mon & $MON_PACK_CONTROL :
+			$mon & $MON_PACK;
+
+		$rec->{$field} = defined($val) ? $val : 0;
+		printConsole(4,$mon,$color,pad("offset($offset)",11).' '.pad($field,12).' '.pad("(".unpack('H*',$packed).")",12)." = '$val'")
+			if $showit;
 
 		$offset += $size;
 	}
 
-	display($dbg,1,"data=".unpack('H*',$data));
+	if ($mon & $MON_PACK_UNKNOWN)
+	{
+		printConsole(4,$mon,$color,"data=".unpack('H*',$data));
+	}
+
 	return $data;
 }
 

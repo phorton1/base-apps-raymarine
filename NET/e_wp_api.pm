@@ -11,9 +11,12 @@ use Time::HiRes qw(sleep time);
 use Time::Local;
 use Pub::Utils;
 use a_defs;
+use a_mon;
 use a_utils;
 use e_wp_defs;
 
+my $TEMP_COLOR = $UTILS_COLOR_CYAN;
+my $TEMP_MON = $MON_REC | $MON_REC_DETAILS | $MON_PACK | $MON_PACK_CONTROL | $MON_PACK_UNKNOWN;
 
 
 my $STD_WP_UUID	   = 'aaaaaaaaaaaa{int}';
@@ -51,7 +54,7 @@ sub std_uuid
 sub emptyGroup
 {
 	my ($name) = @_;
-	my $buffer = buildWPGroup({ name => $name });
+	my $buffer = buildGroup({ name => $name },$TEMP_MON,$TEMP_COLOR);
 	my $ret_hex = unpack('H*',$buffer);
 	return $ret_hex;
 }
@@ -65,9 +68,7 @@ sub emptyRoute
 	my ($name,$bits) = @_;
 	$bits = 0 if !defined($bits);
 	my $name_len = length($name);
-
-	
-	my $buffer = buildWPRoute({
+	my $buffer = buildRoute({
 
 		name => $name,
 		bits => $bits,
@@ -80,7 +81,7 @@ sub emptyRoute
 		u5   => 456,	# gets overwritten by e80 to 'b8975601'
 		u8   => 789,	# gets overwritten by e80 to 7cb7 (0xb78c)
 
-	});
+	},$TEMP_MON,$TEMP_COLOR);
 	my $ret_hex = unpack('H*',$buffer);
 	return $ret_hex;
 }
@@ -128,7 +129,7 @@ sub createWaypoint
 		# to the Menu-System Settings-Date and Time-Offset that might be entered.
 		# So, for now, I send them as local times for clarity in debugging.
 
-	my $buffer = buildWPWaypoint({
+	my $buffer = buildWaypoint({
 		name => $name,
 		comment => "wpComment$wp_num",
 		lat => int($$lat_lon[0] * $SCALE_LATLON),
@@ -138,7 +139,8 @@ sub createWaypoint
 		sym => 2,
 		depth => 10 * $FEET_PER_METER * 10,
 		date => int($now / $SECS_PER_DAY),
-		time => int($now % $SECS_PER_DAY), });
+		time => int($now % $SECS_PER_DAY), },
+		$TEMP_MON,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
 	return $this->queueWPMGRCommand($API_NEW_ITEM,$WHAT_WAYPOINT,$name,$uuid,$data);
 }
@@ -244,7 +246,7 @@ sub setWaypointGroup
 		$group->{uuids} = shared_clone(\@unshared_uuids);
 	}
 
-	my $buffer = buildWPGroup($group);
+	my $buffer = buildGroup($group,$TEMP_MON,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
 	return $this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_GROUP,$group_name,$group_uuid,$data);
 
@@ -319,7 +321,7 @@ sub routeWaypoint
 	{
 		push @uuids,$wp_uuid;
 		push @points,shared_clone({});
-			# buildWPRoute will populate the point implicitly, with zero values
+			# buildRoute will populate the point implicitly, with zero values
 			# since the record does not contain any fields.
 			# The E80 will then fill in the fields, but we need to get the modified route after the change.
 			# For some reason, I'm not getting a MOD event for this change.
@@ -342,7 +344,7 @@ sub routeWaypoint
 
 	# display_record(0,0,"new route",$route);
 
-	my $buffer = buildWPRoute($route);
+	my $buffer = buildRoute($route,$TEMP_MON,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
 	return $this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,$data);
 
@@ -378,7 +380,7 @@ sub showItem
 	return error("Could not find $what($name)") if !$found;
 	
 	my $rec = $hash->{$found};
-	my $text = WPRecordToText($rec,uc($what),2,2,undef,$this);
+	my $text = wpmgrRecordToText($rec,uc($what),2,2,undef,$this);
 		# indent = 2
 		# detail_level = 2;
 		# undef = index

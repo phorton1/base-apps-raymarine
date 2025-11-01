@@ -53,16 +53,14 @@ sub clearError
 }
 
 
-
-sub fileReplyError
-	# ... in an error, we return a 'reply' with success=0 and the correct seq_num
+sub fileError
 {
-    my ($this,$cmd,$seq,$err) = @_;
-	my $cmd_name = $FILE_CMD_NAME{$cmd};
-	my $file_error = "cmd($cmd=$cmd_name) path($this->{file_path}): $err";
-	$this->{file_error} = $file_error;
-	error($file_error);
+	my ($this,$mon,$color,$seq,$msg) = @_;
+	$this->{file_error} = $msg;
+	error($msg);
 	return shared_clone({
+		mon => $mon,
+		color => $color,
 		seq_num => $seq,
 		success => 0 });
 }
@@ -89,7 +87,7 @@ sub parsePacket
 
 sub parseMessage
 {
-	my ($this,$packet,$len,$part,$hdr) = @_;
+	my ($this,$packet,$len,$part) = @_;
 
 	my ($cmd_word,$sid,$seq) = unpack('vvV',substr($part,0,8));
 	my $cmd = $cmd_word & 0xff;
@@ -101,11 +99,11 @@ sub parseMessage
 	my $dir_name = $DIRECTION_NAME{$dir};
 	display($dbg_fp+2,1,"e_FILESYS::parseMessage dir($dir)=$dir_name seq($seq) cmd($cmd)=$cmd_name");;
 
-	$this->SUPER::parseMessage($packet,$len,$part,$hdr);
+	$this->SUPER::parseMessage($packet,$len,$part);
 
-	my $pad = pad('',13);
 	my $mon = $packet->{mon};
-	printConsole($packet->{color},$pad."# $dir_name $cmd_name cmd($cmd) seq($seq)",$mon)
+	my $color = $packet->{color};
+	printConsole(1,$mon,$color,"$dir_name $cmd_name cmd($cmd) seq($seq)")
 		if $mon & $MON_PARSE;
 
 	# Requests and replies have completely different layouts
@@ -117,7 +115,8 @@ sub parseMessage
 		my $port_hex = unpack('H*',$port_str);
 		$offset += 2;
 
-		my $text = $pad."#    port($port_hex)=$port";
+		printConsole(2,$mon,$color,"port($port_hex)=$port")
+			if $mon & $MON_PARSE;
 
 		# virtually all commands have a path
 
@@ -129,7 +128,8 @@ sub parseMessage
 			{
 				my $uw = unpack('H*',substr($part,$offset,2));
 				$offset += 2;
-				$text .= "\n$pad#    unknown_word($uw)";
+				printConsole(2,$mon,$color,"unknown_word($uw)")
+					if $mon & $MON_PARSE;
 			}
 			elsif ($cmd == $FILE_CMD_GET_FILE)
 			{
@@ -141,17 +141,18 @@ sub parseMessage
 				my $foff = unpack('V',$foff_str);
 				my $fsize = unpack('V',$fsize_str);
 
-				$text .= "\n$pad#    offset($foff_hex)=$foff  size($fsize_hex)=$fsize";
+				printConsole(2,$mon,$color,"offset($foff_hex)=$foff  size($fsize_hex)=$fsize")
+					if $mon & $MON_PARSE;
 			}
+
 			my $name_len = unpack('v',substr($part,$offset,2));
 			$offset += 2;
 			my $path = unpack('A*',substr($part,$offset,$name_len));
 			$offset += $name_len;
-			$text .= "\n$pad#    len($name_len) path = '$path'";
-		}
 
-		printConsole($packet->{color},$text,$mon)
-			if $mon & $MON_PARSE;
+			printConsole(2,$mon,$color,"len($name_len) path = '$path'")
+				if $mon & $MON_PARSE;
+		}
 
 		return $packet;
 	}
@@ -178,7 +179,6 @@ sub parseMessage
 	# be '00000400', the success pattern
 
 	my $success = 0;
-
 	if ($cmd == $FILE_CMD_CARD_ID)
 	{
 		my ($u1,$u2,$len) = unpack('vH8v',substr($part,$offset,8));
@@ -191,9 +191,9 @@ sub parseMessage
 
 		# display_bytes(0,0,"id",$id);
 
-		printConsole($packet->{color},$pad.
-			sprintf("#    u1(0x%04x=$u1) u2($u2) u3(0x%04x=$u3) u4(%02x) len($len) CARD_ID = '$id'",$u1,$u3,$u4),
-			$mon) if $mon & $MON_PARSE;
+		printConsole(2,$mon,$color,
+			sprintf("u1(0x%04x=$u1) u2($u2) u3(0x%04x=$u3) u4(%02x) len($len) CARD_ID = '$id'",$u1,$u3,$u4))
+			if $mon & $MON_PARSE;
 
 		$this->{file_content} = $id;
 		$success = $packet->{success} = 1;
@@ -205,7 +205,7 @@ sub parseMessage
 		$offset += 4;
 		$packet->{success} = $success;
 
-		printConsole($packet->{color},$pad."#    success = $success ".($success?'':" code($code)"),$mon)
+		printConsole(2,$mon,$color,"success = $success ".($success?'':" code($code)"))
 			if $mon & $MON_PARSE;
 
 		if ($success)
@@ -214,7 +214,7 @@ sub parseMessage
 				$cmd == $FILE_CMD_GET_SIZE2)
 			{
 				my $size = unpack('V',substr($part,$offset));
-				printConsole($packet->{color},$pad."# SIZE = $size",$mon)
+				printConsole(2,$mon,$color,"SIZE = $size")
 					if $mon & $MON_PARSE;
 				$this->{file_content} = $size;
 			}
@@ -238,7 +238,8 @@ sub parseMessage
 				my ($u1,$num_entries) = unpack('H8v',substr($part,$offset,6));
 				$offset += 6;
 
-				my $text = $pad."# DIR LISTING entries($num_entries) unknown($u1)\n";
+				printConsole(2,$mon,$color,"DIR LISTING entries($num_entries) unknown($u1)")
+					if $mon & $MON_PARSE;
 				$this->{file_content} = '';
 				for (my $i=0; $i<$num_entries; $i++)
 				{
@@ -252,14 +253,12 @@ sub parseMessage
 					$name =~ s/\x00//g;								# remove traling null from '.' directory
 					$name =~ s/\.//g if $attr & $FAT_VOLUME_ID;		# remove erroneous . in middle of my volume name
 
-					$text .= $pad."#    ".d_FILESYS::dbgFatStr($attr).pad("len($length)",8).$name."\n";
+					printConsole(3,$mon,$color,d_FILESYS::dbgFatStr($attr).pad("len($length)",8).$name)
+						if $mon & $MON_PARSE;
 
 					$this->{file_content} .= "\n" if $this->{file_content};
 					$this->{file_content} .= "$attr\t$name";
 				}
-
-				printConsole($packet->{color},$text,$mon)
-					if $mon & $MON_PARSE;
 			}
 
 			# GET_FILE only sets $success=1 on the last packet
@@ -287,7 +286,7 @@ sub parseMessage
 
 				my $msg = "packet($packet_num/$num_packets) offset($file_offset) cur_len($cur_len) bytes=$bytes";
 				display($dbg_fp+2,2,$msg);
-				printConsole($packet->{color},$pad."#    $msg",$mon) if $mon & $MON_PARSE;
+				printConsole(2,$mon,$color,$msg) if $mon & $MON_PARSE;
 
 				if (!$packet->{is_sniffer})		# do 'real' file content management
 				{
@@ -297,9 +296,10 @@ sub parseMessage
 					if ($cur_len != $expected_len)
 					{
 						my $expected = $cur_len / 1024;
-						return $this->fileReplyError($cmd,$seq,"Unexpected length($cur_len) != expected($expected_len) = ".
-							"$file_offset + (1024*$packet_num=".(1024*$packet_num).")");
-						# return $this->fileRequestError($seq,"Unexpected packet_num($packet_num) expected($expected)");
+						my $msg = "cmd($cmd=$cmd_name) path($this->{file_path}): ".
+							"Unexpected length($cur_len) != expected($expected_len) = ".
+							"$file_offset + (1024*$packet_num=".(1024*$packet_num).")";;
+						return $this->fileError($mon,$color,$seq,$msg);
 					}
 					else
 					{
@@ -321,18 +321,28 @@ sub parseMessage
 						{
 							if ($this->{got_len} >= $total_len)
 							{
-								display($dbg_fp,2,"FILE($this->{file_path}) COMPLETED!!");
+								my $msg = "FILE($this->{file_path}) COMPLETED!!";
+								display($dbg_fp,2,$msg);
+								printConsole(2,$mon,$color,$msg) if $mon & $MON_PARSE;
 								$success = 1;
 							}
 							else
 							{
-								display($dbg_fp,2,"FILE($this->{file_path}) GOT $this->{got_len}/$total_len bytes!!");
+								my $msg = "FILE($this->{file_path}) GOT $this->{got_len}/$total_len bytes";
+								display($dbg_fp,2,$msg);
+								printConsole(2,$mon,$color,$msg) if $mon & $MON_PARSE;
 							}
 						}
 					}	# got the next expected buffer
 				}	# 'real' content management
 			}	# $FILE_CMD_GET_FILE
 		}	# success
+		else
+		{
+			my $msg = "cmd($cmd=$cmd_name) path($this->{file_path}) failed: code=$code";
+			return $this->fileError($mon,$color,$seq,$msg);
+		}
+
 	}	# !$FILE_CMD_CARD_ID
 
 	#---------------------------------------------
@@ -343,6 +353,8 @@ sub parseMessage
 	{
 		display($dbg_fp+2,0,"FILESYS parseMessage() returning success packet");
 		return shared_clone({
+			mon => $mon,
+			color => $color,
 			seq_num => $seq,
 			success => $success });
 	}

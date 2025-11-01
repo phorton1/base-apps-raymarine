@@ -11,6 +11,7 @@
 #
 #	MTA
 #	Track
+#	Point
 
 package b_records;
 use strict;
@@ -19,23 +20,23 @@ use threads;
 use threads::shared;
 use Pub::Utils;
 use a_defs;
+use a_mon;
 use a_utils;
+
+
+my $BUILD_CHECK_GROUP = 1;
+my $BUILD_CHECK_ROUTE = 1;
+my $BUILD_CHECK_WP 	  = 1;
+my $BUILD_CHECK_MTA   = 1;
+my $BUILD_CHECK_TRACK = 1;
+my $BUILD_CHECK_POINT = 1;
 
 
 my $dbg_wp		= 1;
 my $dbg_route	= 1;
-my $dbg_group	= 1;
-my $dbg_mta		= 1;
-my $dbg_track	= 1;
-my $dbg_point	= 1;
-
-
-my $WP_DETAIL_LEVEL		= 0;
-my $ROUTE_DETAIL_LEVEL	= 2;
-my $GROUP_DETAIL_LEVEL	= 2;
-my $MTA_DETAIL_LEVEL	= 2;
-my $TRACK_DETAIL_LEVEL	= 2;
-my $POINT_DETAIL_LEVEL	= 2;
+# my $dbg_mta		= 1;
+# my $dbg_track	= 1;
+# my $dbg_point	= 1;
 
 
 BEGIN
@@ -43,16 +44,15 @@ BEGIN
  	use Exporter qw( import );
     our @EXPORT = qw(
 
-		parseWPMGRRecord
-		WPRecordToText
+		wpmgrRecordToText
 
-		parseWPWaypoint
-		parseWPRoute
-		parseWPGroup
+		parseWaypoint
+		parseRoute
+		parseGroup
 		
-		buildWPWaypoint
-		buildWPRoute
-		buildWPGroup
+		buildWaypoint
+		buildRoute
+		buildGroup
 
 		parseTrack
 		parseMTA
@@ -139,18 +139,8 @@ my $ROUTE_PT_SPECS = [
 
 
 
-sub parseWPMGRRecord
-{
-	my ($kind,$buffer) = @_;
-	return parseWPWaypoint($buffer) if $kind eq 'WAYPOINT';
-	return parseWPRoute($buffer) if $kind eq 'ROUTE';
-	return parseWPGroup($buffer) if $kind eq 'GROUP';
-}
-
-
-
 #--------------------------------------------------------------
-# WPRecordToText
+# wpmgrRecordToText
 #--------------------------------------------------------------
 # The outputXXX() methods are denormalized from decodeXXX() methods because
 # we are using the record  containing properly unpacked (native) values, and,
@@ -242,7 +232,7 @@ sub outputTime
 }
 
 
-sub WPRecordToText
+sub wpmgrRecordToText
 {
 	my ($rec,$kind,$indent,$detail_level,$index,$wpmgr) = @_;
 	my $pad = pad('',$indent);
@@ -322,7 +312,7 @@ sub WPRecordToText
 		my $num = 0;
 		for my $point (@$points)
 		{
-			$text .= WPRecordToText($point,'POINT',$indent+1,$detail_level,$num);
+			$text .= wpmgrRecordToText($point,'POINT',$indent+1,$detail_level,$num);
 			$num++;
 		}
 	}
@@ -337,7 +327,7 @@ sub WPRecordToText
 # WPGroups
 #------------------------------------
 
-sub parseWPGroup
+sub parseGroup
 	# The message itself starts with
 	#		len	 command  seqnum
     #       5e00 01020f00 0f000000
@@ -354,23 +344,24 @@ sub parseWPGroup
 	#                aaaaaaaa aaaaaaaa
 	#				 bbbbbbbb bbbbbbbb
 	#
-	# The data itself (starting at 0b0000000)
-	#	word? name length, name_len
-	#   I'm gonna go with byte(name_len) and byte(cmt_len)
-	#   word number of uuids
-	#   followed by the name
-	#   followed by a list of uuids
-	# Where the first uuid is the self_uuid of the folder
-	# and the subsequent ones are the waypoints.
+	# The data itself (starting at 0b0000000) is
+	#	byte(name_len)
+	#	byte(cmt_len)
+	#	word(num_uuids)
+	#   name
+	#	comment if any
+	#   [uuids]
 {
-	my ($buffer) = @_;
+	my ($buffer,$mon,$color) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_group,0,"parseWPGroup len($buf_len)");
+
+	printConsole(2,$mon,$color,"parseGroup len($buf_len)")
+		if $mon & $MON_REC;
 
 	my $offset = 0;
-	my $rec = old_unpackRecord(
-		$dbg_group+1,
-		$GROUP_DETAIL_LEVEL,
+	my $rec = unpackRecord(
+		$mon,
+		$color,
 		'group_hdr',
 		$GROUP_REC_SPECS,
 		$buffer,
@@ -383,8 +374,11 @@ sub parseWPGroup
 	my $comment = $rec->{cmt_len} ? substr($buffer,$offset,$rec->{cmt_len}) : '';
 	$offset += $rec->{cmt_len};
 
-	display($dbg_group,1,"name    = $name");
-	display($dbg_group,1,"comment = $comment") if $comment;
+	if ($mon & $MON_REC)
+	{
+		printConsole(3,$mon,$color,"name    = $name");
+		printConsole(3,$mon,$color,"comment = $comment") if $comment;
+	}
 
 	$rec->{name} = $name;
 	$rec->{comment} = $comment;
@@ -393,19 +387,20 @@ sub parseWPGroup
 	for (my $i=0; $i<$rec->{num_uuids}; $i++)
 	{
 		my $uuid = unpack('H*',substr($buffer,$offset,8));
-		display($dbg_group,1,"uuid($i) = $uuid");
+		printConsole(3,$mon,$color,"uuid($i) = $uuid")
+			if $mon & $MON_REC;
 		push @$uuids,$uuid;
 		$offset += 8;
 	}
 
-	display_hash($dbg_group+1,1,"group($name)",$rec);
+	# display_hash($dbg_group+1,1,"group($name)",$rec);
 	return $rec;
 }
 
 
-sub buildWPGroup
+sub buildGroup
 {
-	my ($rec) = @_;
+	my ($rec,$mon,$color) = @_;
 	my $name = $rec->{name} || '';
 	my $comment = $rec->{comment} || '';
 	my $uuids = $rec->{uuids} || shared_clone([]);
@@ -415,10 +410,12 @@ sub buildWPGroup
 	$rec->{uuids} = $uuids;
 	$rec->{num_uuids} = @$uuids;
 
-	display($dbg_group,0,"buildWPGroup($rec->{name} num_uuids($rec->{num_uuids})");
-	my $buffer = old_packRecord(
-		$dbg_group+1,
-		$GROUP_DETAIL_LEVEL,
+	printConsole(2,$mon,$color,"buildGroup($name,$comment) num_uuids($rec->{num_uuids})")
+		if $mon & $MON_REC;
+
+	my $buffer = packRecord(
+		$mon,
+		$color,
 		'group',
 		$rec,
 		$GROUP_REC_SPECS);
@@ -429,11 +426,15 @@ sub buildWPGroup
 	for my $uuid (@$uuids)
 	{
 		$buffer .= pack('H*',$uuid);
-		display($dbg_group,1,"uuid = $uuid");
+		printConsole(3,$mon,$color,"uuid($num) = $uuid")
+			if $mon & $MON_REC;
+		$num++;
 	}
 
+	# parse check and THEN add biglen
+	
+	parseGroup($buffer,$mon,$color) if $BUILD_CHECK_GROUP;
 	$buffer = pack('V',length($buffer)).$buffer;
-	parseWPGroup($buffer) if $dbg_group < 0;	# debug check
 	return $buffer;
 }
 
@@ -443,7 +444,7 @@ sub buildWPGroup
 # WPRoutes
 #------------------------------------
 
-sub parseWPRoute
+sub parseRoute
 	# The message itself starts with
 	#		len	 command  seqnum
     #       5e00 01020f00 0f000000
@@ -462,14 +463,16 @@ sub parseWPRoute
 	# 	like 'self_uuid' but are not consistently
 	# 	created by RNS or E80 as I would expect.
 {
-	my ($buffer) = @_;
+	my ($buffer,$mon,$color) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_route,0,"parseWPRoute len($buf_len)");
+
+	printConsole(2,$mon,$color,"parseRoute len($buf_len)")
+		if $mon & $MON_REC;
 
 	my $offset = 0;
-	my $rec = old_unpackRecord(
-		$dbg_route+1,
-		$ROUTE_DETAIL_LEVEL,
+	my $rec = unpackRecord(
+		$mon,
+		$color,
 		'route_hdr1',
 		$ROUTE_HDR1_SPECS,
 		$buffer,
@@ -488,8 +491,11 @@ sub parseWPRoute
 	my $comment = $rec->{cmt_len} ? substr($buffer,$offset,$rec->{cmt_len}) : '';
 	$offset += $rec->{cmt_len};
 
-	display($dbg_route,1,"name    = $name");
-	display($dbg_route,1,"comment = $comment") if $comment;
+	if ($mon & $MON_REC)
+	{
+		printConsole(3,$mon,$color,"name    = $name");
+		printConsole(3,$mon,$color,"comment = $comment") if $comment;
+	}
 
 	$rec->{name} = $name;
 	$rec->{comment} = $comment;
@@ -499,14 +505,15 @@ sub parseWPRoute
 	for (my $i=0; $i<$rec->{num_wpts}; $i++)
 	{
 		my $uuid = unpack('H*',substr($buffer,$offset,8));
-		display($dbg_route,2,"uuid($i) = $uuid");
+		printConsole(3,$mon,$color,"uuid($i) = $uuid")
+			if $mon & $MON_REC;
 		push @$uuids,$uuid;
 		$offset += 8;
 	}
 
-	my $hdr2 = old_unpackRecord(
-		$dbg_route+1,
-		$ROUTE_DETAIL_LEVEL,
+	my $hdr2 = unpackRecord(
+		$mon,
+		$color,
 		'hdr2',
 		$ROUTE_HDR2_SPECS,
 		$buffer,
@@ -517,30 +524,40 @@ sub parseWPRoute
 	
 	for (my $i=0; $i<$rec->{num_wpts}; $i++)
 	{
-		my $pt = old_unpackRecord(
-			$dbg_route+1,
-			$ROUTE_DETAIL_LEVEL,
+		my $pt = unpackRecord(
+			$mon,
+			$color,
 			'point',
 			$ROUTE_PT_SPECS,
 			$buffer,
 			$offset,
 			$ROUTE_PT_SIZE);
+
+		printConsole(3,$mon,$color,sprintf("point($i) = heading(%0.1f) leg(%0.1f) total(%0.1f)",
+			$pt->{bearing},
+			$pt->{legLength},
+			$pt->{totLength}) )
+			if $mon & $MON_REC_DETAILS;
+
 		push @$points,$pt;
 		$offset += $ROUTE_PT_SIZE;
 	}
 
-	display_hash($dbg_route,1,"route($name)",$rec);
+	# display_hash($dbg_route,1,"route($name)",$rec);
 	return $rec;
 }
 
 
-sub buildWPRoute
+sub buildRoute
 {
-	my ($rec) = @_;
+	my ($rec,$mon,$color) = @_;
 	my $name = $rec->{name} || '';
 	my $comment = $rec->{comment} || '';
 	my $uuids = $rec->{uuids} || shared_clone([]);
 	my $points = $rec->{points} || shared_clone([]);
+
+	printConsole(2,$mon,$color,"buildRoute($name,$comment) num_uuids(".scalar(@$uuids).") num_points(".scalar(@$points).")")
+		if $mon & $MON_REC;
 
 	$rec->{name_len} = length($name);
 	$rec->{cmt_len} = length($comment);
@@ -548,10 +565,9 @@ sub buildWPRoute
 	$rec->{points} = $points;
 	my $num_wpts = $rec->{num_wpts} = @$uuids;
 
-	display($dbg_route,0,"buildWPRoute($rec->{name}");
-	my $buffer = old_packRecord(
-		$dbg_route+1,
-		$ROUTE_DETAIL_LEVEL,
+	my $buffer = packRecord(
+		$mon,
+		$color,
 		'route_hdr1',
 		$rec,
 		$ROUTE_HDR1_SPECS);
@@ -561,30 +577,38 @@ sub buildWPRoute
 	for (my $i=0; $i<$num_wpts; $i++)
 	{
 		my $uuid = $$uuids[$i] || '0000000000000000';
-		display($dbg_route+1,1,"uuid($i) = $uuid");
+		printConsole(3,$mon,$color,"uuid($i) = $uuid")
+			if $mon & $MON_REC;
 		$buffer .= pack('H*',$uuid);
 	}
 
-	$buffer .= old_packRecord(
-		$dbg_route+1,
-		$ROUTE_DETAIL_LEVEL,
+	$buffer .= packRecord(
+		$mon,
+		$color,
 		'route_hdr2',
 		$rec,
 		$ROUTE_HDR2_SPECS);
 
 	for (my $i=0; $i<$num_wpts; $i++)
 	{
-		my $point = $$points[$i];
-		$buffer .= old_packRecord(
-			$dbg_route+1,
-			$ROUTE_DETAIL_LEVEL,
+		my $pt = $$points[$i];
+
+		printConsole(3,$mon,$color,sprintf("point($i) = heading(%0.1f) leg(%0.1f) total(%0.1f)",
+			$pt->{bearing},
+			$pt->{legLength},
+			$pt->{totalLength}) )
+			if $mon & $MON_REC_DETAILS;
+
+		$buffer .= packRecord(
+			$mon,
+			$color,
 			"route_pt($i)",
-			$point,
+			$pt,
 			$ROUTE_PT_SPECS);
 	}
 
+	parseGroup($buffer,$mon,$color) if $BUILD_CHECK_ROUTE;
 	$buffer = pack('V',length($buffer)).$buffer;
-	parseWPRoute($buffer) if $dbg_route < 0;	# debug check
 	return $buffer;
 }
 
@@ -594,7 +618,7 @@ sub buildWPRoute
 # WPWaypoints
 #------------------------------------
 
-sub parseWPWaypoint
+sub parseWaypoint
 	# The WAYPOINT message itself starts with
 	#       len  command  seqnum
 	# 		5b00 01020f00 43000000
@@ -612,19 +636,22 @@ sub parseWPWaypoint
 	# and they, at least the ones for Routes, are not rigourously
 	# maintained by the E80 or RNS.
 {
-	my ($buffer) = @_;
+	my ($buffer,$mon,$color) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_wp,0,"parseWPWaypoint len($buf_len)");
+	display($dbg_wp,0,"parseWaypoint len($buf_len)");
 	if ($buf_len < $WP_REC_SIZE)
 	{
 		warning($dbg_wp,1,"buffer($buf_len) is less than WP_REC_SIZE($WP_REC_SIZE) in length");
 		return undef;
 	}
 
+	printConsole(2,$mon,$color,"parseWaypoint len($buf_len)")
+		if $mon & $MON_REC;
+
 	my $offset = 0;
-	my $rec = old_unpackRecord(
-		$dbg_wp+1,
-		$WP_DETAIL_LEVEL,
+	my $rec = unpackRecord(
+		$mon,
+		$color,
 		'waypoint',
 		$WP_REC_SPECS,
 		$buffer,
@@ -637,8 +664,11 @@ sub parseWPWaypoint
 	my $comment = $rec->{cmt_len} ? substr($buffer,$offset,$rec->{cmt_len}) : '';
 	$offset += $rec->{cmt_len};
 
-	display($dbg_wp,1,"name    = $name");
-	display($dbg_wp,1,"comment = $comment") if $comment;
+	if ($mon & $MON_REC)
+	{
+		printConsole(3,$mon,$color,"name    = $name");
+		printConsole(3,$mon,$color,"comment = $comment") if $comment;
+	}
 
 	$rec->{name} = $name;
 	$rec->{comment} = $comment;
@@ -648,7 +678,8 @@ sub parseWPWaypoint
 	while ($offset <= $buf_len-8)
 	{
 		my $uuid = unpack('H*',substr($buffer,$offset,8));
-		display($dbg_wp+1,1,"uuid($num) = $uuid");
+		printConsole(3,$mon,$color,"uuid($num) = $uuid")
+			if $mon & $MON_REC;
 		push @$uuids,$uuid;
 		$offset += 8;
 		$num++;
@@ -659,18 +690,21 @@ sub parseWPWaypoint
 }
 
 
-sub buildWPWaypoint
+
+sub buildWaypoint
 {
-	my ($rec) = @_;
+	my ($rec,$mon,$color) = @_;
 	my $name = $rec->{name} || '';
 	my $comment = $rec->{comment} || '';
 	$rec->{name_len} = length($name);
 	$rec->{cmt_len} = length($comment);
 	
-	display($dbg_wp,0,"buildWPWaypoint($rec->{name}");
-	my $buffer = old_packRecord(
-		$dbg_wp+1,
-		$WP_DETAIL_LEVEL,
+	printConsole(2,$mon,$color,"buildWaypoint($name,$comment)")
+		if $mon & $MON_REC;
+
+	my $buffer = packRecord(
+		$mon,
+		$color,
 		'waypoint',
 		$rec,
 		$WP_REC_SPECS);
@@ -681,21 +715,22 @@ sub buildWPWaypoint
 	my $uuids = $rec->{uuids};
 	for my $uuid (@$uuids)
 	{
-		display($dbg_wp+1,1,"uuid($num) = $uuid");
+		printConsole(3,$mon,$color,"uuid($num) = $uuid")
+			if $mon & $MON_REC;
 		$buffer .= pack('H*',$uuid);
 		$num++;
 	}
 
+	parseGroup($buffer,$mon,$color) if $BUILD_CHECK_WP;
 	$buffer = pack('V',length($buffer)).$buffer;
-	parseWPWaypoint($buffer) if $dbg_wp<0;	# debug check
 	return $buffer;
 }
 
 
-#-------------------------------------------------
-# trackMTA
-#-------------------------------------------------
 
+#-------------------------------------------------
+# Track parsing
+#-------------------------------------------------
 
 my $MTA_REC_SIZE = 57;
 my $MTA_REC_SPECS = [
@@ -725,40 +760,6 @@ my $TRACK_HEADER_SPECS = [
 	b			=> [ 0,		2,		'v',	 ],	 # 6	int16_t cnt;
 ];
 
-
-
-# Current track with one point doesn't line up these
-# 0102130011000000160000000000000001000000 060000eae5f805eaf2f805ea01f9
-#
-#	0102 1300 11000000 16000000 	cmd, func, seq, big_len
-#	00000000 0100 0000				a, cnt, b
-#
-#	060000ea						not a good north (-369098746 = -29.701 south)
-#	e5f805ea						not a good east  (-368707355 = -30.904693 west)
-#	f2f8							not a good tempr
-#	05ea							not a good depth
-#	01f9							not even a good unknown 'c'
-
-# 060000eae5f805eaf2f805ea01f9
-#
-# It looks to me, and particularly in larger unsaved tracks, that this
-# is broken up differently
-#
-#	0600 00eae5f8 05eaf2f8 05ea01f9
-
-# a bigger example
-
-# 0102 1300 14000000 32000000 00000000 03000000
-# 0600 00eae5f8 05eaf2f8 05ea01f9 05ea9fff 05ea1bf9 05ea3ff9 05eaded8 05ea0000 a0e3150f 07ee0d10
-#
-#	I wonder if they could be two uin16 deltas
-
-
-
-
-
-
-
 my $TRACK_PT_SIZE = 14;
 my $TRACK_PT_SPECS = [
 	north		=> [ 0,		4,		'l',	],	#  0	int32_t north 		// prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
@@ -769,16 +770,18 @@ my $TRACK_PT_SPECS = [
 ];
 
 
-
 sub parseMTA
 {
-	my ($buffer) = @_;
+	my ($buffer,$mon,$color) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_mta,0,"parseMTA len($buf_len)");
+
+	printConsole(2,$mon,$color,"parseMTA len($buf_len)")
+		if $mon & $MON_REC;
+
 	my $offset = 0;
-	my $rec = old_unpackRecord(
-		$dbg_mta+1,
-		$MTA_DETAIL_LEVEL,
+	my $rec = unpackRecord(
+		$mon,
+		$color,
 		'mta',
 		$MTA_REC_SPECS,
 		$buffer,
@@ -792,13 +795,16 @@ sub parseMTA
 	$rec->{lat_end} = $coords->{lat};
 	$rec->{lon_end} = $coords->{lon};
 
-	my $deg_lat_start = degreeMinutes($rec->{lat_start});
-	my $deg_lon_start = degreeMinutes($rec->{lon_start});
-	my $deg_lat_end = degreeMinutes($rec->{lat_end});
-	my $deg_lon_end = degreeMinutes($rec->{lon_end});
+	if ($mon & $MON_REC)
+	{
+		my $deg_lat_start = degreeMinutes($rec->{lat_start});
+		my $deg_lon_start = degreeMinutes($rec->{lon_start});
+		my $deg_lat_end = degreeMinutes($rec->{lat_end});
+		my $deg_lon_end = degreeMinutes($rec->{lon_end});
 
-	display($dbg_mta,-1,"start($deg_lat_start,$deg_lon_start)",0,$UTILS_COLOR_WHITE);
-	display($dbg_mta,-1,"  end($deg_lat_end,$deg_lon_end)",0,$UTILS_COLOR_WHITE);
+		printConsole(3,$mon,$color,"start($deg_lat_start,$deg_lon_start)");
+		printConsole(3,$mon,$color,"end  ($deg_lat_end,$deg_lon_end)");
+	}
 
 	# I think the unknown k1_1 variable may be one for a saved, regular track
 	# and 0 for an unsaved, in-process track, and that their point layouts are
@@ -811,24 +817,24 @@ sub parseMTA
 	# u1 is also a bit suspicious,
 	#	239 = not recording yet
 
-	display($dbg_mta,1,"found MTA($rec->{name}) with $rec->{cnt1} points");
-	display_hash($dbg_mta,1,"parsetMTA($rec->{name}) returning",$rec);
+	# display($dbg_mta,1,"found MTA($rec->{name}) with $rec->{cnt1} points");
+	# display_hash($dbg_mta,1,"parsetMTA($rec->{name}) returning",$rec);
 	return $rec;
 }
 
 
 sub parseTrack
 {
-	my ($buffer) = @_;
+	my ($buffer,$mon,$color) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_track,0,"parseTrack len($buf_len)");
 
-	# there's some garbage in the front
+	printConsole(2,$mon,$color,"parseTrack len($buf_len)")
+		if $mon & $MON_REC;
 
 	my $offset = 0;
-	my $rec = old_unpackRecord(
-		$dbg_track+1,
-		$TRACK_DETAIL_LEVEL,
+	my $rec = unpackRecord(
+		$mon,
+		$color,
 		'track_hdr',
 		$TRACK_HEADER_SPECS,
 		$buffer,
@@ -836,29 +842,29 @@ sub parseTrack
 		$TRACK_HDR_SIZE);
 	$offset += $TRACK_HDR_SIZE;
 
-	display($dbg_track,1,"found $rec->{cnt} track points");
-
 	# to identify weird record from GET_TRACK of Current Track's uuid
 	# if (0 && $old_rec->{k1_1} == 0)
 
 	my $points = $rec->{points} = shared_clone([]);
 	for (my $i=0; $i<$rec->{cnt}; $i++)
 	{
-		my $pt = old_unpackRecord(
-			$dbg_track+1,
-			$TRACK_DETAIL_LEVEL,
+		my $pt = unpackRecord(
+			$mon,
+			$color,
 			'track_point',
 			$TRACK_PT_SPECS,
 			$buffer,
 			$offset,
 			$TRACK_PT_SIZE);
+
 		my $coords = northEastToLatLon($pt->{north},$pt->{east});
 		$pt->{lat} = $coords->{lat};
 		$pt->{lon} = $coords->{lon};
 
-		display($dbg_track,-1,sprintf("point($i) lat(%s) lon(%s)",
+		printConsole(3,$mon,$color,sprintf("point($i) lat(%s) lon(%s)",
 			degreeMinutes($pt->{lat}),
-			degreeMinutes($pt->{lon}) ),0,$UTILS_COLOR_WHITE);
+			degreeMinutes($pt->{lon}) ))
+			if $mon & $MON_REC_DETAILS;
 
 		push @$points,$pt;
 		$offset += $TRACK_PT_SIZE;
@@ -871,16 +877,17 @@ sub parseTrack
 
 sub parsePoint
 {
-	my ($buffer) = @_;
+	my ($buffer,$mon,$color) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_point,0,"parsePoint len($buf_len)=".unpack('H*',$buffer));
+
+	printConsole(2,$mon,$color,"parsePoint len($buf_len)")
+		if $mon & $MON_REC;
 
 	my $offset = 2;
 		# skip garbage word efef
-
-	my $pt = old_unpackRecord(
-		$dbg_point+1,
-		$POINT_DETAIL_LEVEL,
+	my $pt = unpackRecord(
+		$mon,
+		$color,
 		'track_point',
 		$TRACK_PT_SPECS,
 		$buffer,
@@ -890,9 +897,10 @@ sub parsePoint
 	$pt->{lat} = $coords->{lat};
 	$pt->{lon} = $coords->{lon};
 
-	display($dbg_point,-1,sprintf("lat(%s) lon(%s)",
+	printConsole(3,$mon,$color,sprintf("lat(%s) lon(%s)",
 		degreeMinutes($pt->{lat}),
-		degreeMinutes($pt->{lon}) ),0,$UTILS_COLOR_WHITE);
+		degreeMinutes($pt->{lon}) ))
+		if $mon & $MON_REC;
 
 	return $pt;
 }

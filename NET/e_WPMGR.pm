@@ -36,17 +36,18 @@ sub applyMonDefs
 	my ($this,$packet) = @_;
 	display($dbg_ewp+1,0,"e_WPMGR::applyMonDefs()");
 
-	$this->setContext($packet,substr($packet->{payload},2,2));
-		# the entire payload includes the leading length word
-	my $what = $packet->{what};
-	$packet->{name} = $NAV_WHAT{$what};
+	# skip the 0th message word(length)
+	my $cmd_word = unpack('v',substr($packet->{payload},2,2));
+	my $W = $cmd_word & 0xf0;
+
+	$packet->{name} = $NAV_WHAT{$W};
 	
 	my $is_reply = $packet->{is_reply};
 	my $mon_defs = $this->{mon_defs};
 
 	my $idx =
-		$what == $WHAT_GROUP ? $MON_WHAT_GROUP :
-		$what == $WHAT_ROUTE ? $MON_WHAT_ROUTE :
+		$W == $WHAT_GROUP ? $MON_WHAT_GROUP :
+		$W == $WHAT_ROUTE ? $MON_WHAT_ROUTE :
 		$MON_WHAT_WAYPOINT;
 
 	if ($mon_defs->{active})
@@ -71,24 +72,6 @@ sub applyMonDefs
 
 
 
-sub setContext
-	# WPMGR packets must maintain the $what context
-	# 	appropriately between messages.
-	# This method sets {what} if it is non-zero within
-	#	the command word, or on SEND/RECIVE (!INFO) direction
-	#	nibble within the command word.
-{
-	my ($this,$packet,$part) = @_;
-	my $cmd_word = unpack('v',$part);
-	my $D = $cmd_word & 0xf00;
-	my $W = $cmd_word & 0xf0;
-	$packet->{cmd_word} = $cmd_word;
-	$packet->{what} = $W if $W || $D != $DIRECTION_INFO;
-	$packet->{what} ||= 0;
-	my $what = $packet->{what};
-	display($dbg_ewp+1,0,sprintf("e_WPMGR::setContext() cmd_word(%04x) what($what}=$NAV_WHAT{$what}",$cmd_word));
-}
-
 
 
 
@@ -98,24 +81,15 @@ sub parsePacket
 	# colors to use, and applying them to the packet
 {
 	my ($this,$packet) = @_;
-
-	# the packet namespace is crowded and it is crucial
-	# that no base class names are overwritten by derived classes
-
+		# the packet namespace is crowded and it is crucial
+		# that no base class names are overwritten by derived classes
 	mergeHash($packet,{
 		is_dict 	=> 0,
 		seq_num 	=> 0,
 		is_event 	=> 0,
 		uuid		=> '' });
-
 	display($dbg_ewp+1,0,"e_WPMGR::parsePacket()");
-
-	my $rslt = $this->SUPER::parsePacket($packet);
-
-	display_record(0,0,"final packet($packet->{name})",$packet,'payload') if
-		$packet->{mon} & $MON_DUMP_RECORD;
-
-	return $rslt;
+	return $this->SUPER::parsePacket($packet);
 }
 
 
@@ -126,28 +100,31 @@ sub parseMessage
 	# across messages, knowing what messages have sequence numbers,
 	# and checking twice for rules,
 {
-	my ($this,$packet,$len,$part,$hdr) = @_;
-	display($dbg_ewp+2,0,"e_WPMGR::parseMessage($len) hdr($hdr)");
-	return undef if !$this->SUPER::parseMessage($packet,$len,$part,$hdr);
+	my ($this,$packet,$len,$part) = @_;
+	display($dbg_ewp+2,0,"e_WPMGR::parseMessage($len)");
+	return undef if !$this->SUPER::parseMessage($packet,$len,$part);
 
-	$this->setContext($packet,$part);
-		# parts do not include the leading length word
-
-	my $what = $packet->{what};
-	my $cmd_word = $packet->{cmd_word};
-	display($dbg_ewp+2,1,sprintf("e_WPMGR::parseMessage() cmd_word(%04x) context what($what)=".$NAV_WHAT{$what},$cmd_word));
-
+	my $cmd_word = unpack('v',$part);
 	my $D = $cmd_word & 0xf00;
 	my $W = $cmd_word & 0xf0;
 	my $C = $cmd_word & 0xf;
+
 	my $dir_name = $DIRECTION_NAME{$D};
 	my $what_name = $NAV_WHAT{$W};
 	my $cmd_name = $NAV_COMMAND{$C};
 
-	my $pad = pad('',9);
 	my $mon = $packet->{mon};
-	printConsole($packet->{color},$pad."# $dir_name $cmd_name $what_name",$mon)
+	my $color = $packet->{color};
+	printConsole(1,$mon,$color,"$dir_name $cmd_name $what_name")
 		if $mon & $MON_PARSE;
+
+	if ($W || !defined($packet->{what}) || $D != $DIRECTION_INFO)
+	{
+		if (!defined($packet->{what}) || $packet->{what} != $W)
+		{
+			$packet->{what} = $W;
+		}
+	}
 
 	# find rule, first by full command word, then by $dir | $cmd
 
@@ -183,23 +160,24 @@ sub parsePiece
 	# or rely on previous messages (state).
 {
 	my ($this,$packet,$piece,$part,$poffset) = @_;
-
-	my $pad = pad('',9);
 	my $mon = $packet->{mon};
+	my $color = $packet->{color};
 
 	if ($piece eq 'buffer' && !$packet->{is_dict})
 	{
 		# Parse WPMGR specific buffers into records
-		my $what_name = $NAV_WHAT{$packet->{what}};
+		my $item;
+		my $what = $packet->{what};
+		my $buffer = substr($part,$$poffset);
 
-		printConsole($packet->{color},$pad."#     buffer piece($what_name)",$mon)
+		printConsole(2,$mon,$color,"buffer piece($NAV_WHAT{$what})")
 			if $mon & $MON_PIECES;
 
-		my $detail_level = 0;
-		my $item = parseWPMGRRecord($what_name,substr($part,$$poffset));
-		# $text = WPRecordToText($item,$show_what,$indent,$detail_level)
-		# 	if $with_text;
-		$packet->{item} = $item;
+		$item = parseWaypoint($buffer,$mon,$color) if $what == $WHAT_WAYPOINT;
+		$item = parseRoute($buffer,$mon,$color)    if $what == $WHAT_ROUTE;
+		$item = parseGroup($buffer,$mon,$color)    if $what == $WHAT_GROUP;
+
+		$packet->{item} = shared_clone($item);
 	}
 	elsif ($piece eq 'context_bits')
 	{
@@ -211,14 +189,14 @@ sub parsePiece
 		my $value = unpack('V',$str);
 		$$poffset += 4;
 
-		printConsole($packet->{color},$pad.sprintf("#     context_bits = 0x%04x",$value),$mon)
+		printConsole(2,$mon,$color,sprintf("context_bits = 0x%04x",$value))
 			if $mon & $MON_PIECES;
 
 		if ($value & 0x10)
 		{
 			$packet->{is_dict} = 1;
 			$packet->{dict_uuids} = shared_clone([]);
-			printConsole($packet->{color},$pad."#         is_dict = 1",$mon)
+			printConsole(2,$mon,$color,"is_dict = 1")
 				if $mon & $MON_PIECES;
 		}
 	}
@@ -231,7 +209,7 @@ sub parsePiece
 		my $value = unpack('V',$str);
 		$$poffset += 4;
 
-		printConsole($packet->{color},$pad.sprintf("#     evt_flag(%04x) is_event=1",$value),$mon)
+		printConsole(2,$mon,$color,sprintf("evt_flag(%04x) is_event=1",$value))
 			if $mon & $MON_PIECES;
 
 		$packet->{is_event} = 1;
@@ -254,7 +232,7 @@ sub parsePiece
 		my $value = unpack('V',$str);
 		$$poffset += 4;
 
-		printConsole($packet->{color},$pad.sprintf("#     mod_bits(%04x)",$value),$mon)
+		printConsole(2,$mon,$color,sprintf("mod_bits(%04x)",$value))
 			if $mon & $MON_PIECES;
 
 		my $what = $packet->{what};
