@@ -341,7 +341,7 @@ sub parsePiece
 		# I prefer to SEE non-counters in hex
 
 		my $show_value = $value;
-		$show_value = sprintf("0x%02x",$value)
+		$show_value = sprintf("0x%02x",$value)	# ." = (".unpack('H*',$str).")"
 			if $piece !~ /db_count|db_version|evt_flag/;
 
 		printConsole(2,$mon,$color,"$piece = $show_value")

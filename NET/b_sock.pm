@@ -117,7 +117,7 @@ my $dbg_mon 	= 0;		# monitor bits
 my $dbg_api 	= 1;
 my $dbg_thread  = 0;
 my $dbg_cmd  	= 1;
-my $dbg_wait 	= 0;
+my $dbg_wait 	= 1;
 
 my $DESTROY_TIMEOUT				= 3;
 my $DEFAULT_CONNECT_TIMEOUT 	= 2;
@@ -497,25 +497,32 @@ sub waitReply
 		if (@$replies)
 		{
 			my $reply = shift @$replies;
-			$dbg_wait >= 0 ?
-				display($dbg_wait+1,1,"$this->{name} waitReply got seq($reply->{seq_num})") :
-				display_hash($dbg_wait+1,1,"$this->{name} waitReply got seq($reply->{seq_num})",$reply,'payload');
-
-			if ($reply->{seq_num} == $seq)
+			if ($reply)
 			{
-				if ($expect_success)
-				{
-					my $got_success = $reply->{success} ? 1 : -1;
-					if ($got_success != $expect_success)
-					{
-						error("$name waitReply($seq,$wait_name) expected success($expect_success) but got($got_success)");
-						# display_hash($dbg,1,"offending reply",$reply);
-						return 0;
-					}
-				}
+				$dbg_wait >= 0 ?
+					display($dbg_wait+1,1,"$this->{name} waitReply got seq($reply->{seq_num})") :
+					display_hash($dbg_wait+1,1,"$this->{name} waitReply got seq($reply->{seq_num})",$reply,'payload');
 
-				display($dbg_wait,1,"$name waitReply($seq,$wait_name) returning OK reply");
-				return $reply;
+				if ($reply->{seq_num} == $seq)
+				{
+					if ($expect_success)
+					{
+						my $got_success = $reply->{success} ? 1 : -1;
+						if ($got_success != $expect_success)
+						{
+							error("$name waitReply($seq,$wait_name) expected success($expect_success) but got($got_success)");
+							# display_hash($dbg,1,"offending reply",$reply);
+							return 0;
+						}
+					}
+
+					display($dbg_wait,1,"$name waitReply($seq,$wait_name) returning OK reply");
+					return $reply;
+				}
+			}
+			else
+			{
+				warning($dbg_wait,"$this->{name} empty reply in waitReply: "._def($reply));
 			}
 		}
 		if (time() > $start + $this->{COMMAND_TIMEOUT})

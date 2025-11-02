@@ -1,0 +1,17 @@
+PROBE time
+
+    INC_SEQ
+
+	MSG		0001 {sid} 12000000             # CMD_UUID(00) {fid}
+	MSG		0401 {sid} {seq}  12000000      # CMD_NAME(04) {seq} {fid}
+
+	WAIT
+
+
+#   Database(E80_1) <-- RNS(59678)  proto(tcp) len(10)    # 10.0.241.200:59678 --> 10.0.241.54:2050   is_sniffer(1)
+#       0800 0001 1000 12000000                                                                 # ....
+#   Database(E80_1) <-- RNS(59678)  proto(tcp) len(14)    # 10.0.241.200:59678 --> 10.0.241.54:2050   is_sniffer(1)
+#       0c00 0401 1000 b5000000 12000000                                                        # ........
+#   Database(E80_1) --> RNS(59678)  proto(tcp) len(50)    # 10.0.241.54:2050 --> 10.0.241.200:59678   is_sniffer(1)
+#       3000 0200 1000 b5000000 12000000 00000000 efefefef efefefef efefefef efefefef efefefef  # ................................
+#                      efefefef efefefef efefefef                                               # ............

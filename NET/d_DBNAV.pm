@@ -1,9 +1,10 @@
 #---------------------------------------
 # d_DBNAV.pm
 #---------------------------------------
-# A mcast listener that endeavors to decode Database records.
+# A mcast listener that endeavors to decode mcast DB records.
 # These records are transmitted rapidly once the E80 has a fix
-# and a heading, with lots of data while moving/autopilot, etc
+# and a heading, with lots of data while moving/autopilot, etc,
+# and are setup for broadcast in d_DB.pm
 
 package d_DBNAV;
 use strict;
@@ -18,37 +19,6 @@ use base qw(b_sock);
 
 my $dbg_nav = 0;
 
-
-BEGIN
-{
- 	use Exporter qw( import );
-	our @EXPORT = qw(
-
-		$RECORD_DEFAULT
-		$RECORD_SHIP
-		$RECORD_WIND
-		$RECORD_WATER
-		%RECORD_TYPE_NAME
-
-		%DECODERS
-	);
-}
-
-# this hash gives presumed names to the 'record types' within a packet,
-# which are identified with 0x8000 in the type word.  They demarcate
-# the packet into different semantic sections.
-
-our $RECORD_DEFAULT = 0xff;
-our $RECORD_SHIP 	= 0x07;
-our $RECORD_WIND 	= 0x0a;
-our $RECORD_WATER 	= 0x05;
-
-our %RECORD_TYPE_NAME = (
-	$RECORD_DEFAULT => 'default',
-	$RECORD_SHIP	=> 'ship',
-	$RECORD_WIND	=> 'wind',
-	$RECORD_WATER	=> 'water',
-);
 
 
 #-----------------------------------
@@ -107,22 +77,17 @@ sub onIdle
 
 	my $field_values = $this->getFieldValues();
 	my $now = time();
-	for my $key (keys %$field_values)
+	for my $fid (sort {$a <=> $b} keys %$field_values)
 	{
-		my $field_value = $field_values->{$key};
+		my $field_value = $field_values->{$fid};
 		my $time = $field_value->{time};
 		my $ttl = $field_value->{ttl};
 		if ($now > $time + $ttl)
 		{
-			my $type_hex = sprintf("%02x",$field_value->{type});
-			my $subtype_hex = sprintf("%02x",$field_value->{subtype});
-			my $rectype_hex = sprintf("%02x",$field_value->{record_type});
-			my $instance = $field_value->{instance};
 			my $name = $field_value->{name};
 			my $value = $field_value->{value};
-			warning($dbg_nav,0,"Culling type($type_hex) subtype($subtype_hex) rec($rectype_hex) inst($instance) $name = $value");
-
-			delete $field_values->{$key};
+			warning($dbg_nav,0,sprintf("Culling fid(%02x) $name = $value",$fid));
+			delete $field_values->{$fid};
 		}
 	}
 }
@@ -134,15 +99,6 @@ sub onIdle
 #-------------------------------------------
 
 
-sub cmpValues
-{
-	my ($field_values,$key_a,$key_b) = @_;
-	my $field_a = $field_values->{$key_a};
-	my $field_b = $field_values->{$key_b};
-	my $cmp = $field_a->{record_type} <=> $field_b->{record_type};
-	return $cmp if $cmp;
-	return $field_a->{name} cmp $field_b->{name};
-}
 
 sub showValues
 {
@@ -151,9 +107,9 @@ sub showValues
 	
 	my $text = "-------------------------------- DBNAV field_values ------------------------------------\n";
 
-	for my $key (sort {cmpValues($field_values,$a,$b)} keys %$field_values)
+	for my $fid (sort {$a <=> $b} keys %$field_values)
 	{
-		my $field_value = $field_values->{$key};
+		my $field_value = $field_values->{$fid};
 
 		my $ttl = $field_value->{ttl};
 		my $type_hex = sprintf("%02x",$field_value->{type});
@@ -167,6 +123,7 @@ sub showValues
 			# not ready to deal with this
 
 		$text .=
+			sprintf("fid(%02x) ",$fid).
 			pad("ttl($ttl)",8).
 			pad("type($type_hex)",9).
 			pad("subtype($subtype_hex)",12).
@@ -198,12 +155,13 @@ use Pub::Utils;
 use a_defs;
 use a_mon;
 use a_utils;
+use d_DB;
 use base qw(a_parser);
 
 
 my $dbg_dp = 0;
 
-our $ONLY_CHANGED_FIELD_VALUES = 1;
+our $ONLY_CHANGED_FIELD_VALUES = 0;
 
 
 
@@ -213,17 +171,7 @@ sub newParser
 	display($dbg_dp,0,"e_DBNAV::newParser($mon_defs->{name})");
 	my $this = $class->SUPER::newParser($mon_defs);
 	bless $this,$class;
-
 	$this->{field_values}		= shared_clone({});
-	$this->{instance_counters} 	= shared_clone({});
-		# a count, by the 'record' a field is found in,
-		# of the number of instances of this field 'type',
-		# to allow for semantically distinguishing multiple
-		# fields of the same 'type' and 'subtype'
-		# It is cleared at the top of each packet, and built as-you-go
-	$this->{seen_records}		= shared_clone({});
-	$this->{record_type} 		= 0;
-
 	return $this;
 }
 
@@ -258,9 +206,17 @@ sub parsePacket
 
 	my $text = '';
 	my $offset = 8;
-	for (my $i=0; $i<$num_fields; $i++)
+	my $MIN_RECORD_SIZE = 12;		# and that's with a 0 length data field
+	for (my $i=0; $i<$num_fields && $offset < $payload_len-$MIN_RECORD_SIZE;  $i++)
 	{
 		$text .= $this->decode_field($i,$payload,\$offset,$is_sniffer);
+	}
+
+	if ($offset != $payload_len)
+	{
+		error("parsing DBNAV packet cmd($cmd_word) num_fields($num_fields) offset($offset) payload_len($payload_len):\n".
+			  parse_dwords('    ',$payload,1));
+		
 	}
 
 	if ($text || $is_sniffer || !$ONLY_CHANGED_FIELD_VALUES)
@@ -384,6 +340,21 @@ sub decodeMetersPerSec
 }
 
 
+sub decodeDistanceMeters
+	# distance in meters
+{
+	my ($data) = @_;
+	my $meters = unpack('V',$data);
+	return sprintf("%0.2f",$meters / $METERS_PER_NM);
+}
+
+sub decodeDistanceCentiMeters
+	# distance in centimeters
+{
+	my ($data) = @_;
+	my $meters = unpack('V',$data);
+	return sprintf("%0.3f",$meters / (100 * $METERS_PER_NM));
+}
 
 
 sub decodeCoord
@@ -411,7 +382,8 @@ sub decodeNorthEast
 }
 
 
-sub decodeName16
+sub decodeStringNul
+	# actuall null terminated string
 {
 	my ($data) = @_;
 	return unpack('Z*',$data);
@@ -439,42 +411,21 @@ sub decodeSubRecord
 }
 
 
-#------------------------------------------
-# decode_field
-#------------------------------------------
-#	type	len			field			preceded by
-#	2a00	0200		HEAD(DEV)		4700 0000
-#	2a00	0200		HEAD(ABS)		1a00 0000												undifferentated
-#	0100	0200		SOG				0400 0000
-#	0400	0400		TIME			1200 0000
-#	0300	0200		DATE			1300 0000
-#	3c00	0800		LATLON			4400 0000
-#	0e00	0400		DEPTH			0900 0000
-#
-# The 0th speed given appears to be SOG (no record prefix)
-#
-# The WINDSPEEDS given appear to be TRUE then RELATIVE
-# 	within 'record type' 80a8, which has a value of '3c00';
-#
-# type(0x51) is a big record, of 256, with a ttl of 31
-
-
-
-# This hash defines the storage type of field_values in the packet.
-# A number of the field's semantics must be determined by looking at
-# the subtype, record_type, and/or instance within the 'record'
 
 our %DECODERS = (
-	0x00 => { name => 'WINDSPEED',	fxn => \&decodeDeciMetersPerSec,  },
-	0x01 => { name => 'SPEED',		fxn => \&decodeCentiMetersPerSec,  },
-	0x04 => { name => 'TIME',		fxn => \&decodeTime,      },
-	0x03 => { name => 'DATE',		fxn => \&decodeDate,      },
-	0x0e => { name => 'DEPTH',		fxn => \&decodeDepth,     },
-	0x2a => { name => 'HEAD',		fxn => \&decodeHeading,   },
-	0x3c => { name => 'LATLON',		fxn => \&decodeLatLon,    },
-	0x5a => { name => 'SUBRECORD',	fxn => \&decodeSubRecord, },
-	0x73 => { name => 'NORTHEAST',	fxn => \&decodeNorthEast, },
-	0xaf => { name => 'STRING',		fxn => \&decodeName16	  }
+	'date',      			=> \&decodeDate,
+	'time',      			=> \&decodeTime,
+	'depth',	  			=> \&decodeDepth,
+	'heading',   			=> \&decodeHeading,
+	'centiMetersPerSec'		=> \&decodeCentiMetersPerSec,
+	'deciMetersPerSec',		=> \&decodeDeciMetersPerSec,
+	'metersPerSec',    		=> \&decodeMetersPerSec,
+	'latLon',    			=> \&decodeLatLon,
+	'northEast', 			=> \&decodeNorthEast,
+	'stringNul',   			=> \&decodeStringNul,
+	'subRecord',   			=> \&decodeSubRecord,
+	'distanceMeters',		=> \&decodeDistanceMeters,
+	'distanceCentiMeters',	=> \&decodeDistanceCentiMeters,
 );
 
 
@@ -487,148 +438,105 @@ sub decode_field
 
 	# Extract the serial field_value data
 	# type, len, subtype, and ttl
+	# some packets have some extra bytes, perhaps identifying a record the fields belong to?
 
-	my ($some_offset,$type,$len) = unpack('Vvv',substr($payload,$$poffset,8));
+	my ($fid,$type,$len) = unpack('Vvv',substr($payload,$$poffset,8));
 	$$poffset += 8;
-
 	my $data = substr($payload,$$poffset,$len);
 	$$poffset += $len;
-
-	my ($subtype,$ttl,$zero) = unpack('CCv',substr($payload,$$poffset,4));
+	my ($subtype,$ttl,$extra_len) = unpack('CCv',substr($payload,$$poffset,4));
 	$$poffset += 4;
+	my $extra_hex = $extra_len ? unpack('H*',substr($payload,$$poffset,$extra_len)) : '';
+	$$poffset += $extra_len;
 
-	error("unexpected value for zero($zero)") if $zero != 0;
+	# Update and possibly short return on found values
 
-	
-	# Get the storage type decoder and
-	# Set the running record type
-
-	my $decoder = $DECODERS{$type};
-	my $decoder_name = $decoder ? $decoder->{name} : 'UNKNOWN';
-
-	my $is_record = 0;
-	if ($type & 0x8000)
-	{
-		$is_record = 1;
-		$type &= ~0x8000;
-		my $record_type = $subtype; #.$data_hex;
-		$this->{record_type} = $record_type;
-	}
-	$this->{record_type} ||= $RECORD_SHIP;
-		# empirically derived default record type = ship's info
-
-
-	# Group field_values I consider to only take on one value, regardless
-	# of subtype or record_type, under record_type(ff) and subtype(ff)
-
-	my $record_type = $this->{record_type};
-	if ($decoder_name =~ /^(DATE|TIME|DEPTH|LATLON|NORTHEAST|SUBRECORD)$/)
-	{
-		$record_type = $RECORD_DEFAULT;
-		$subtype = 0xff;
-	}
-
-
-	# Get the instance of this field_value storage type
-	# within the given record_type; the position is used
-	# to decipher fields_values (i.e. HEAD) that appear more
-	# than once in a 'record'
-
-	my $instance_counters = $this->{instance_counters};
-	$instance_counters->{$record_type} ||= shared_clone({});
-	my $instances = $instance_counters->{$record_type};
-
-	my $instance_key = "$type";	#.$subtype";
-	$instances->{$instance_key} = defined($instances->{$instance_key}) ? ++$instances->{$instance_key} :  0;
-	my $instance = $instances->{$instance_key};
-
-	# See if the stored field_value (data) has changed.
-	# if not, assign the possibly changed ttl and return.
-
-	my $field_values = $is_record ? $this->{seen_records} : $this->{field_values};
-	my $key = "$type.$subtype.$record_type.$instance";
-	my $found = $field_values->{$key};
-
+	my $is_new = 1;
+	my $field_values = $this->{field_values};
+	my $found = $field_values->{$fid};
 	if ($found)
 	{
+		$is_new = 0;
 		$found->{ttl} = $ttl;
 		$found->{time} = time();
-		return '' if
-			$found->{data} eq $data &&
-			$ONLY_CHANGED_FIELD_VALUES;
+		my $old_data = $found->{data};
 		$found->{data} = $data;
-	}
 
+		return '' if $ONLY_CHANGED_FIELD_VALUES &&
+			$old_data eq $data;
+	}
 
 	# Use the found field_value, or create a new instance
 
-	my $field_value = $found || shared_clone({
-		time		=> time(),
-		ttl			=> $ttl,
-		type 		=> $type,
-		subtype 	=> $subtype,
-		is_record	=> $is_record,
-		record_type => $record_type,
-		instance 	=> $instance,
-		data 		=> $data, });
-	$field_values->{$key} = $field_value;
+	my $field_def = $DB_FIELDS{$fid};
+	my $name = $field_def ? $field_def->{name} : sprintf("UNKNOWN(%02x)",$fid);
+	$name = 'SUBRECORD' if $fid == 0x76;
+
+	if (!$found)
+	{
+		$found = shared_clone({
+			fid			=> $fid,
+			name		=> $name,
+			time		=> time(),
+			ttl			=> $ttl,
+			type 		=> $type,
+			subtype 	=> $subtype,
+			extra		=> $extra_hex,
+			data 		=> $data, });
+		$field_values->{$fid} = $found;
+	}
 
 
-	# DECODE THE STORAGE VALUE
+	# DECODE THE RAW STORAGE VALUE
 
 	my $data_hex = unpack('H*',$data);
-	my $fxn = $decoder ? $decoder->{fxn} : 0;
+
+	my $decoder_type = $field_def ? $field_def->{type} : '';
+	my $fxn = $DECODERS{$decoder_type};
 	my $value = $fxn ? &{$fxn}($data) : $data_hex;
-	$field_value->{value} = $value;
-	
 
-	# CHARACTERIZE KNOWN VALUES INTO field names
-	# very messed up and complicated heuristic
+	# add other information
 
-	my $type_hex = sprintf("%02x",$type);
-	my $name = "unknown_$type_hex";
-
-	my $record_type_name = $RECORD_TYPE_NAME{$record_type} || "unknown($record_type)";
-	$name = " ------$record_type_name---------"
-		if $is_record;
-
-	$name = lc($decoder_name)
-		if $decoder_name =~ /^(TIME|DATE|DEPTH|LATLON|NORTHEAST|SUBRECORD)$/;
-
-	if ($record_type == $RECORD_SHIP)
+	if ($name =~ /WIND_ANGLE/i)		# winds are given true bearing relative to the bow
 	{
-		# seatalk, subtype(09), rec 07, inst(0) by itself is 'heading'
-		
-		$name = 'sog'
-			if $decoder_name eq 'SPEED';
+		my $show = $value;		# the entire rebuilt mess
+		my $true = '';			# convert to actual absolute true bearing (coming from)
+		my $ground = '';		# convert to magnetic bow relaltive true to match E80
+		my $head_fid = 0x17;
+		my $head_rec = $field_values->{$head_fid};
+		if ($head_rec)
+		{
+			my $head = $head_rec->{value};
+			$true = ($value + $head) % 360;
+			$true = " ".sprintf("%0.1f",$true)."T";
+				# this now corresponds to the Absolute True wind direction, which
+				# is not shown anywhere on the E80 except for the arrow.
 
-		my $postfix =
-			$subtype == 0x0e ? 'Mag' :		# proper NMEA0183 mag (instance 0)
-			$subtype == 0x05 ? 'True' :		# proper NMEA0183 true (instance 1)
-			$subtype == 0x0f ? 'True' :		# proper Seatlk true (instance 0)
-			'Mag';							# subtype(0x09) = proper Seatalk mag (instance 1)
-		$name = "cog$postfix" if $decoder_name eq 'HEAD';
-	}
-	elsif ($record_type == $RECORD_WIND)
-	{
-		my $prefix =
-			$subtype == 0x09 ? 'app' :		# proper NMEA0183 apparent
-			$subtype == 0x0a ? 'true' :		# proper NMEA0183 true,
-			$instance == 1   ? 'true' :		# subtype(05) discernable by instance only
-			'app';
-		$name = $prefix."WindSpeed" if $decoder_name eq 'WINDSPEED';
-		$name = $prefix."WindAngle" if $decoder_name eq 'HEAD';
-	}
-	elsif ($record_type == $RECORD_WATER)
-	{
-		$name = ($instance == 1 ? 'waterSpeedAbs' : 'waterSpeedRel')
-			if $decoder_name eq 'SPEED';
-		$name = ($subtype == 0x0e ? 'waterAngleMag' : 'waterAngleTrue')
-			if $decoder_name eq 'HEAD';
+			my $head_mag_fid = 0x47;
+			my $head_mag_rec = $field_values->{$head_mag_fid};
+			if ($head_mag_rec)
+			{
+				my $mag = $head_mag_rec->{value};
+				$ground = (360 + $value + $mag - $head) % 360;
+				$ground = " ".$ground."G";
+					# The E80 shows "Ground Wind" as Magnetic, and still relative
+					# to the bow, which I calculate here for a sanity check
+			}
+
+		}
+		if ($value > 180)
+		{
+			$show .= " = ".sprintf("%0.1f",360 - $value)."P";
+		}
+		else
+		{
+			$show  .= " = ".$value."S";
+		}
+		$show .= $true.$ground;
+		$value = $show;
 	}
 
-	$field_value->{name} = $name;
-	
+	$found->{value} = $value;
 
 	#------------------------------------------------
 	# $return_it == return $text
@@ -639,34 +547,31 @@ sub decode_field
 	# at the moment (subrecord)
 
 	my $return_it = 1;
-	$return_it = 0 if
-		$found &&
-		!$is_sniffer && (
-			$decoder_name eq 'TIME' ||
-			$decoder_name eq 'LATLON' ||
-			$decoder_name eq 'NORTHEAST' );
-	$return_it = 0 if !$is_sniffer && $decoder_name eq 'SUBRECORD';
+	#	$return_it = 0 if
+	#		!$is_new &&
+	#		!$is_sniffer && (
+	#			$name eq 'TIME' ||
+	#			$name =~ 'LATLON' ||
+	#			$name eq 'NORTHEAST' );
+	#	$return_it = 0 if !$is_sniffer && $name eq 'SUBRECORD';
 
 	# Show the new/changed value in the console
 	# by returning text
 
 	if ($return_it)
 	{
-		my $subtype_hex= sprintf("%02x",$subtype);
-		my $record_type_hex = sprintf("%02x",$record_type);
-
 		return 
-			pad("field($field_num)",10).
-			pad("offset($save_offset)=$some_offset",17).
-			pad("type($type_hex)",9).
-			pad("len($len)",9).
-			pad("subtype($subtype_hex)",12).
+			pad($field_num,2).':'.
+			pad($save_offset,3).' '.
+			sprintf("fid(%02x)",$fid)." ".
+			sprintf("type(%04x:%02x) ",$type,$subtype).
 			pad("ttl($ttl)",8).
-			pad("rec($record_type_hex)",10).
-			pad("inst($instance)",8).
+			pad("len($len)",9).
 			pad($name,14).
 			"= ".
-			$value.
+			pad($value,24).
+			($fxn ? "'$data_hex'" : '').
+			($extra_hex ? "  extra=$extra_hex" : '').
 			"\n";
 	}
 

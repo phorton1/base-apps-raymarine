@@ -27,6 +27,8 @@ our $WITH_TRACK 		= 1;
 our $WITH_WPMGR 		= 1;
 our $WITH_FILESYS 		= 1;
 our $WITH_DBNAV 		= 1;
+our $WITH_DB			= 1;
+
 
 our $AUTO_START_IMPLEMENTED_SERVICES = 1;
 	# RAYSYS will automatically start service_ports marked as 'implemented'.
@@ -50,6 +52,7 @@ BEGIN
 		$WITH_WPMGR
 		$WITH_FILESYS
 		$WITH_DBNAV
+		$WITH_DB
 		$AUTO_START_IMPLEMENTED_SERVICES
 	
 		$LOCAL_IP
@@ -64,7 +67,7 @@ BEGIN
         $SPORT_WPMGR
         $SPORT_TRACK
         $SPORT_DBNAV
-		$SPORT_DATABASE
+		$SPORT_DB
 
 		%DEVICE_TYPE
 		%KNOWN_DEVICES
@@ -77,6 +80,7 @@ BEGIN
 		$DIRECTION_RECV
 		$DIRECTION_SEND
 		$DIRECTION_INFO
+		$DIRECTION_EVENT
 		%DIRECTION_NAME
 
 		$RNS_FILESYS_PORT
@@ -141,7 +145,7 @@ our $SPORT_FILESYS 	= 2049;
 our $SPORT_WPMGR 	= 2052;
 our $SPORT_TRACK 	= 2053;
 our $SPORT_DBNAV 	= 2562;
-our $SPORT_DATABASE = 2050;
+our $SPORT_DB 		= 2050;
 
 
 our $LOCAL_UDP_PORT_BASE		= 9000;
@@ -178,11 +182,13 @@ our $RAYSYS_WAKEUP_PACKET = 'ABCDEFGHIJKLMNOP',
 our $DIRECTION_RECV		= 0x000;
 our $DIRECTION_SEND		= 0x100;
 our $DIRECTION_INFO		= 0x200;
+our $DIRECTION_EVENT 	= 0x500;	# added for e_DB.pm
 
 our %DIRECTION_NAME = (
 	$DIRECTION_RECV => 'recv',
 	$DIRECTION_SEND => 'send',
 	$DIRECTION_INFO => 'info',
+	$DIRECTION_EVENT => 'event',
 );
 
 
@@ -294,7 +300,7 @@ our %KNOWN_SERVER_IPS = (
 #	-------------------------------------------------------------------------
 #	Radar					UDP 	Radar		1			extensively documented in docs/reference/RMRadar_pi-master.zip
 #	Fishfinder				UDP 	sonar
-#	Database		TCP				Database	16			probed with playback script enough to get events
+#	Database		TCP				DB			16			probed with playback script enough to get events
 #	   Database     		MCAST	DBNAV		16			previously E80NAV/NAVSTAT, have decoded many mcast packets;
 #   Waypoint		TCP				WPMGR		15			can read/write WRGs; get waypoints while TB AP engaged
 #   Track			TCP				Track		19			when E80 Track is on, I get short event packets as track points presumably added
@@ -325,7 +331,7 @@ our %KNOWN_SERVICES = (
 		5	=> 'FILESYS',
 		7	=> 'Navig',
 		15	=> 'WPMGR',
-		16	=> 'Database',
+		16	=> 'DB',
 		19	=> 'TRACK',
 		27	=> 'Alarm' );
 
@@ -406,7 +412,7 @@ our %SERVICE_PORT_DEFS  = (
 
 	2048 => { sid => 35,	name => 'func35_u',	proto=>'udp',	},	# shows on bareE80
 	2049 => { sid => 5,		name => 'FILESYS',	proto=>'udp',	},	# shows on bareE80;	addl added by E80#2
-	2050 => { sid => 16,	name => 'Database',	proto=>'tcp',	},	# shows on bareE80
+	2050 => { sid => 16,	name => 'DB',		proto=>'tcp',	},	# shows on bareE80
 	2051 => { sid => 16,	name => 'data_udp',	proto=>'udp',	},	# shows on bareE80
 	2052 => { sid => 15,	name => 'WPMGR',	proto=>'tcp',	},	# shows on bareE80
 	2053 => { sid => 19,	name => 'TRACK',	proto=>'tcp',	},	# shows on bareE80
@@ -454,7 +460,11 @@ mergeHash($SERVICE_PORT_DEFS{$SPORT_DBNAV},{
 	implemented 	=> $WITH_DBNAV,
 	auto_connect 	=> 1,
 	auto_populate 	=> 1 });
-
+mergeHash($SERVICE_PORT_DEFS{$SPORT_DB},{
+	parser_class	=> 'e_DB',
+	implemented 	=> $WITH_DB,
+	auto_connect 	=> 1,
+	auto_populate 	=> 1 });
 
 
 

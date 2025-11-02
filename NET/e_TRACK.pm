@@ -84,7 +84,6 @@ sub parseMessage
 	my $offset = 4;				# skip cmd_word and sid
 	for my $piece (@$rule)
 	{
-		next if $piece eq 'no_seq';
 		$this->parsePiece(
 			$packet,
 			$piece,

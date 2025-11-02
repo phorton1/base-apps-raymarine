@@ -12,7 +12,6 @@ use Pub::Utils;
 use a_defs;
 
 
-
 BEGIN
 {
  	use Exporter qw( import );
@@ -181,31 +180,49 @@ my $SHARK_MON_WAYPOINT 	= $MON_ALL;
 my $SHARK_MON_ROUTE 	= $MON_ALL;
 my $SHARK_MON_GROUP 	= $MON_ALL;
 
+my $ACTIVE_TRACK 		= 0;
+my $ACTIVE_WPMGR 		= 0;
+my $ACTIVE_FILESYS 		= 0;
+my $ACTIVE_DBNAV 		= 0;
+my $ACTIVE_DB 			= 0;
+	# defaults for SHARK_DEFAULT {active} to turn
+	# monitoring on at startup vs only via UI later
+
+
+
 mergeHash($SHARK_DEFAULTS{$SPORT_FILESYS},{
-	active		=> 1,
+	active			=> $ACTIVE_FILESYS,
 	mon_in			=> $SHARK_MON_FILESYS,
 	mon_out 		=> $SHARK_MON_FILESYS,
 	in_color		=> $UTILS_COLOR_BROWN,
 	out_color		=> $UTILS_COLOR_LIGHT_MAGENTA, });
 mergeHash($SHARK_DEFAULTS{$SPORT_DBNAV},{
-	active		=> 1,
+	active			=> $ACTIVE_DBNAV,
 	mon_in			=> $SHARK_MON_DBNAV,
 	mon_out 		=> $SHARK_MON_DBNAV,
 	in_color		=> $UTILS_COLOR_LIGHT_GREEN,
 	out_color		=> $UTILS_COLOR_LIGHT_MAGENTA, });
 mergeHash($SHARK_DEFAULTS{$SPORT_TRACK},{
-	active		=> 1,
+	active			=> $ACTIVE_TRACK,
 	mon_in			=> $SHARK_MON_TRACK,
 	mon_out 		=> $SHARK_MON_TRACK,
 	in_color		=> $UTILS_COLOR_LIGHT_BLUE,
 	out_color		=> $UTILS_COLOR_LIGHT_CYAN, });
+mergeHash($SHARK_DEFAULTS{$SPORT_DB},{
+	active			=> $ACTIVE_DB,
+	mon_in			=> $MON_ALL,
+	mon_out 		=> $MON_ALL,
+	in_color		=> $UTILS_COLOR_LIGHT_GREEN,
+	out_color		=> $UTILS_COLOR_LIGHT_BLUE, });
+
+
 
 # WPMGR has arrays of mon/colors and MOVES
 # them to the scalars based on WHAT is being
 # talked about.  The order is WAYPOINT, ROUTE, GROUP
 
 mergeHash($SHARK_DEFAULTS{$SPORT_WPMGR},{
-	active => 1,
+	active => $ACTIVE_WPMGR,
 	mon_ins => shared_clone([
 		$SHARK_MON_WAYPOINT,
 		$SHARK_MON_ROUTE,
@@ -243,6 +260,7 @@ if (0)
 	applyMonBits(1,\%SHARK_DEFAULTS,$SPORT_DBNAV,$MON_SNIFF_SELF);
 	applyMonBits(1,\%SHARK_DEFAULTS,$SPORT_TRACK,$MON_SNIFF_SELF);
 	applyMonBits(1,\%SHARK_DEFAULTS,$SPORT_WPMGR,$MON_SNIFF_SELF);
+	applyMonBits(1,\%SHARK_DEFAULTS,$SPORT_DB,$MON_SNIFF_SELF);
 }
 
 
@@ -313,10 +331,8 @@ mergeHash($SNIFFER_DEFAULTS{$SPORT_WPMGR},{
 		$UTILS_COLOR_CYAN,
 		$UTILS_COLOR_CYAN, ]),
 });
-
-# exploratory services
-
-mergeHash($SNIFFER_DEFAULTS{$SPORT_DATABASE},{
+mergeHash($SNIFFER_DEFAULTS{$SPORT_DB},{
+	parser_class	=> 'e_DB',
 	mon_in			=> $MON_ALL,
 	mon_out 		=> $MON_ALL,
 	in_color		=> $UTILS_COLOR_LIGHT_GREEN,

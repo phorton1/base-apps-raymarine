@@ -32,6 +32,7 @@ use b_sock;
 use b_probe;
 
 use c_RAYSYS;
+use d_DB;
 use d_TRACK;
 use d_WPMGR;
 use d_FILESYS;
@@ -71,7 +72,6 @@ sub handleSerialCommand
 	}
 
 
-
 	# HTTP server
 
 	elsif ($lpart eq 'db')
@@ -86,6 +86,17 @@ sub handleSerialCommand
 		print "\n------------------------------------------------------\n";
 		print "$kml\n";
 	}
+
+	# Database
+
+	elsif ($lpart eq 'fids')
+	{
+		my $db = $raysys->findImplementedService('DB');
+		my $db_parser = $db ? $db->{parser} : 0;
+		display(0,0,"db="._def($db)." db_parser="._def($db_parser));
+		$db_parser->showFids() if $db_parser;
+	}
+
 
 	# DBNAV
 
@@ -172,12 +183,12 @@ sub handleSerialCommand
 
 	# LOGFILES
 
-	elsif ($lpart eq 'c')
+	elsif ($lpart eq 's')
 	{
 		display(0,0,"Clear Shark Log File");
 		clearLog("shark.log");
 	}
-	elsif ($lpart eq 'd')
+	elsif ($lpart eq 'r')
 	{
 		display(0,0,"Clear RNS Log File");
 		clearLog("rns.log");
@@ -219,6 +230,7 @@ sub handleSerialCommand
 		$name = 'TRACK' 	if $name eq 't';
 		$name = 'WPMGR' 	if $name eq 'w';
 		$name = 'FILESYS'	if $name eq 'f';
+		$name = 'DB'		if $name eq 'd';
 
 		my $service_port =
 			$raysys->findImplementedService($name,1) ||
