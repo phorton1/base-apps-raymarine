@@ -15,7 +15,7 @@ use Pub::Utils;
 
 our $WITH_SERIAL		= 1;
 our $WITH_RAYSYS		= 1;
-our $WITH_HTTP_SERVER	= 0;
+our $WITH_HTTP_SERVER	= 1;
 our $WITH_SNIFFER 		= 1;
 our $WITH_TCP_SCANNER	= 0;
 our $WITH_UDP_SCANNER	= 0;	# sniffer must be disabled for udp_scanner
@@ -109,6 +109,8 @@ BEGIN
 		$FEET_PER_METER
 		$SECS_PER_DAY
 		$KNOTS_TO_METERS_PER_SEC
+		$PSI_TO_MILLIBARS
+		$GALLONS_TO_LITRES
 
 		$E80_1_IP
         $E80_2_IP
@@ -215,8 +217,10 @@ our $PI_OVER_2 		= $PI / 2;
 our $SECS_PER_DAY 	= 86400;
 our $SCALE_LATLON 	= 1e7;
 our $METERS_PER_NM 	= 1852;
-our $FEET_PER_METER = 3.28084;
+our $FEET_PER_METER	= 3.28084;
 our $KNOTS_TO_METERS_PER_SEC = 0.5144;
+our $PSI_TO_MILLIBARS	= 68.9476;
+our $GALLONS_TO_LITRES 	= 3.78541;
 
 
 #--------------------------------------------------

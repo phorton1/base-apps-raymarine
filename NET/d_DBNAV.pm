@@ -390,6 +390,62 @@ sub decodeStringNul
 }
 
 
+sub decodeWordOver100
+	# divide a word by 100 and return it with 2 decimal places
+{
+	my ($data) = @_;
+	return sprintf("%0.2f",unpack('v',$data) / 100);
+}
+
+sub decodeIntWordOver4
+	# divide a word by 4 and return it as an int
+{
+	my ($data) = @_;
+	return int(unpack('v',$data) / 4);
+}
+
+sub decodeWordOver250
+	# divide a word by 100 and return it with 2 decimal places
+{
+	my ($data) = @_;
+	return sprintf("%0.2f",unpack('v',$data) / 250);
+}
+
+
+sub decodeMillibarsToPSI
+	# convert word millibars to PSI with one decimal place
+{
+	my ($data) = @_;
+	my $mbars = unpack('v',$data);
+	return sprintf("%0.1f",$mbars / $PSI_TO_MILLIBARS);
+}
+
+sub decodeKelvinOver10
+	# convert 1/10s of kelvin to Farenheight with 1 decimal palce
+{
+	my ($data) = @_;
+	my $kelvin = unpack('v',$data) / 10;
+	return sprintf("%0.1f",($kelvin - 273.15) * 9/5 + 32);
+}
+sub decodeKelvinOver100
+	# convert 1/100s of kelvin to Farenheight with 1 decimal palce
+{
+	my ($data) = @_;
+	my $kelvin = unpack('v',$data) / 100;
+	return sprintf("%0.1f",($kelvin - 273.15) * 9/5 + 32);
+}
+sub decodeDeciLitresToGallons
+{
+	my ($data) = @_;
+	my $litres = unpack('v',$data) / 10;
+	return sprintf("%0.2f",$litres / $GALLONS_TO_LITRES);
+}
+
+
+
+
+
+
 sub decodeSubRecord
 {
 	my ($data,$subtype,$header_len) = @_;
@@ -426,8 +482,14 @@ our %DECODERS = (
 	'subRecord',   			=> \&decodeSubRecord,
 	'distanceMeters',		=> \&decodeDistanceMeters,
 	'distanceCentiMeters',	=> \&decodeDistanceCentiMeters,
+	'wordOver100',			=> \&decodeWordOver100,
+	'intWordOver4',			=> \&decodeIntWordOver4,
+	'millibarsToPSI',		=> \&decodeMillibarsToPSI,
+	'kelvinOver10'			=> \&decodeKelvinOver10,
+	'kelvinOver100'			=> \&decodeKelvinOver100,
+	'deciLitresToGallons',  => \&decodeDeciLitresToGallons,
+	'wordOver250',			=> \&decodeWordOver250,
 );
-
 
 
 
@@ -497,7 +559,8 @@ sub decode_field
 
 	# add other information
 
-	if ($name =~ /WIND_ANGLE/i)		# winds are given true bearing relative to the bow
+	if ($fid == $DB_FIELD_WIND_ANGLE_APP ||		# winds are given true bearing relative to the bow
+		$fid == $DB_FIELD_WIND_ANGLE_TRUE)
 	{
 		my $show = $value;		# the entire rebuilt mess
 		my $true = '';			# convert to actual absolute true bearing (coming from)

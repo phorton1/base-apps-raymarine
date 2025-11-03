@@ -52,6 +52,54 @@ BEGIN
 		%DB_PARSE_RULES
 		%DB_FIELDS
 
+		$DB_FIELD_SPEED
+		$DB_FIELD_SOG
+		$DB_FIELD_LOG_TOTAL
+		$DB_FIELD_LOG_TRIP
+		$DB_FIELD_DEPTH
+		$DB_FIELD_TIME
+		$DB_FIELD_DATE
+		$DB_FIELD_HEADING
+		$DB_FIELD_SET
+		$DB_FIELD_DRIFT
+		$DB_FIELD_COG
+		$DB_FIELD_HEAD_MAYBE
+		$DB_FIELD_ENG_OIL_PRESS1
+		$DB_FIELD_ENG_OIL_TEMP1
+		$DB_FIELD_ENG_COOL_TEMP1
+		$DB_FIELD_ENG_ALT_VOLT1
+		$DB_FIELD_ENG_FUEL_RATE
+		$DB_FIELD_ENG_RPM1
+		$DB_FIELD_FUEL_LEVEL2
+		$DB_FIELD_LATLON
+		$DB_FIELD_HEADING_MAG
+		$DB_FIELD_HEADING_MAG2
+		$DB_FIELD_WIND_SPEED_APP
+		$DB_FIELD_WIND_ANGLE_APP
+		$DB_FIELD_WIND_SPEED_TRUE
+		$DB_FIELD_WIND_ANGLE_TRUE
+		$DB_FIELD_WIND_SPEED_GND
+		$DB_FIELD_WIND_ANGLE_GND
+		$DB_FIELD_WP_HEADING
+		$DB_FIELD_WP_HEADING_MAG
+		$DB_FIELD_WP_DISTANCE
+		$DB_FIELD_NORTHEAST
+		$DB_FIELD_LATLON2
+		$DB_FIELD_TIME2
+		$DB_FIELD_DATE2
+		$DB_FIELD_HEAD2
+		$DB_FIELD_HEAD3
+		$DB_FIELD_HEAD4
+		$DB_FIELD_HEAD5
+		$DB_FIELD_AVG_SPEED
+		$DB_FIELD_AVG_DEPTH
+		$DB_FIELD_WP_LATLON
+		$DB_FIELD_WP_NORTHEAST
+		$DB_FIELD_WP_NAME
+		$DB_FIELD_TIME3
+		$DB_FIELD_TIME4
+		$DB_FIELD_TOTAL_FUEL
+		$DB_FIELD_FUEL_CAPACITY2
 	);
 }
 
@@ -115,46 +163,65 @@ our %DB_PARSE_RULES = (
 );
 
 
-my $DB_FIELD_SPEED 				= 0x03;		# thru water
-my $DB_FIELD_SOG				= 0x04;
-my $DB_FIELD_LOG_TOTAL			= 0x07;
-my $DB_FIELD_LOG_TRIP			= 0x08;
-my $DB_FIELD_DEPTH				= 0x09;
-my $DB_FIELD_TIME				= 0x12;
-my $DB_FIELD_DATE 				= 0x13;
-my $DB_FIELD_HEADING 			= 0x17;
-my $DB_FIELD_SET 				= 0x18;
-my $DB_FIELD_DRIFT 				= 0x19;
-my $DB_FIELD_COG 				= 0x1a;
-my $DB_FIELD_HEAD_MAYBE 		= 0x1c;		# just a guess
-my $DB_FIELD_LATLON				= 0x44;
-my $DB_FIELD_HEADING_MAG		= 0x47;
-my $DB_FIELD_HEADING_MAG2		= 0x48;
-my $DB_FIELD_WIND_SPEED_APP		= 0x58;
-my $DB_FIELD_WIND_ANGLE_APP		= 0x59;		# 360 relative to bow heading
-my $DB_FIELD_WIND_SPEED_TRUE	= 0x5a;
-my $DB_FIELD_WIND_ANGLE_TRUE	= 0x5b;		# 360 relative to bow heading
-my $DB_FIELD_WIND_SPEED_GND		= 0x5c;
-my $DB_FIELD_WIND_ANGLE_GND		= 0x5d;		# 360 relative to bow heading
-my $DB_FIELD_WP_HEADING			= 0x66;
-my $DB_FIELD_WP_HEADING_MAG		= 0x67;
-my $DB_FIELD_WP_DISTANCE		= 0x6a;		# only to two decimal places (60 feet)
-my $DB_FIELD_NORTHEAST			= 0x93;
-my $DB_FIELD_LATLON2			= 0x99;
-my $DB_FIELD_TIME2				= 0x9c;
-my $DB_FIELD_DATE2 				= 0xaa;
-my $DB_FIELD_HEAD2 				= 0xba;
-my $DB_FIELD_HEAD3 				= 0xbb;
-my $DB_FIELD_HEAD4 				= 0xbc;
-my $DB_FIELD_HEAD5 				= 0xbd;
-my $DB_FIELD_AVG_SPEED 			= 0xbe;
-my $DB_FIELD_AVG_DEPTH			= 0xbf;
-my $DB_FIELD_WP_LATLON			= 0xc4;
-my $DB_FIELD_WP_NORTHEAST		= 0xc5;
-my $DB_FIELD_WP_NAME			= 0xd8;
-my $DB_FIELD_TIME3				= 0xdf;
-my $DB_FIELD_TIME4				= 0xee;
+our $DB_FIELD_SPEED 			= 0x03;		# thru water
+our $DB_FIELD_SOG				= 0x04;
+our $DB_FIELD_LOG_TOTAL			= 0x07;
+our $DB_FIELD_LOG_TRIP			= 0x08;
+our $DB_FIELD_DEPTH				= 0x09;
+our $DB_FIELD_TIME				= 0x12;
+our $DB_FIELD_DATE 				= 0x13;
+our $DB_FIELD_HEADING 			= 0x17;
+our $DB_FIELD_SET 				= 0x18;
+our $DB_FIELD_DRIFT 			= 0x19;
+our $DB_FIELD_COG 				= 0x1a;
+our $DB_FIELD_HEAD_MAYBE 		= 0x1c;		# just a guess
+our $DB_FIELD_ENG_OIL_PRESS1	= 0x21;		# psi
+our $DB_FIELD_ENG_OIL_TEMP1		= 0x22;		# farenheight
+our $DB_FIELD_ENG_COOL_TEMP1	= 0x24;		# farenheight
+our $DB_FIELD_ENG_ALT_VOLT1		= 0x25;
+our $DB_FIELD_ENG_FUEL_RATE		= 0x26;		# gph
+our $DB_FIELD_ENG_RPM1			= 0x30;		# rpms
+our $DB_FIELD_FUEL_LEVEL2		= 0x32;		# 0..100 percent; weirdly stored as *250
+our $DB_FIELD_LATLON			= 0x44;
+our $DB_FIELD_HEADING_MAG		= 0x47;
+our $DB_FIELD_HEADING_MAG2		= 0x48;
+our $DB_FIELD_WIND_SPEED_APP	= 0x58;
+our $DB_FIELD_WIND_ANGLE_APP	= 0x59;		# 360 relative to bow heading
+our $DB_FIELD_WIND_SPEED_TRUE	= 0x5a;
+our $DB_FIELD_WIND_ANGLE_TRUE	= 0x5b;		# 360 relative to bow heading
+our $DB_FIELD_WIND_SPEED_GND	= 0x5c;
+our $DB_FIELD_WIND_ANGLE_GND	= 0x5d;		# note that the E80 shows MAG despite the "T" it shows
+our $DB_FIELD_WP_HEADING		= 0x66;
+our $DB_FIELD_WP_HEADING_MAG	= 0x67;
+our $DB_FIELD_WP_DISTANCE		= 0x6a;		# only to two decimal places (60 feet)
+our $DB_FIELD_NORTHEAST			= 0x93;
+our $DB_FIELD_LATLON2			= 0x99;
+our $DB_FIELD_TIME2				= 0x9c;
+our $DB_FIELD_DATE2 			= 0xaa;
+our $DB_FIELD_HEAD2 			= 0xba;
+our $DB_FIELD_HEAD3 			= 0xbb;
+our $DB_FIELD_HEAD4 			= 0xbc;
+our $DB_FIELD_HEAD5 			= 0xbd;
+our $DB_FIELD_AVG_SPEED 		= 0xbe;
+our $DB_FIELD_AVG_DEPTH			= 0xbf;
+our $DB_FIELD_WP_LATLON			= 0xc4;
+our $DB_FIELD_WP_NORTHEAST		= 0xc5;
+our $DB_FIELD_WP_NAME			= 0xd8;
+our $DB_FIELD_TIME3				= 0xdf;
+our $DB_FIELD_TIME4				= 0xee;
+our $DB_FIELD_TOTAL_FUEL		= 0xfa;		# gallons
+our $DB_FIELD_FUEL_CAPACITY2	= 0xff;		# gallons
 
+# This deserves a comment.  The fuel math is just plain weird.
+# Given two tanks with a level 0..100 and a capacity in gallons, litres whatever,
+# - they give level2 (scaled by 250) as 0..100 in the engine section
+# - they give the total fuel remaining as (capacity1 * level1 + capacity2 * level2) in the summary section
+# - the give the capacity of tank2 in the total section, as the final FID
+# Its asymetric, sparse, and you would have to solve a pair of equations in two variables
+# 	to figure out tank1's level and capacity, though tank1 is arguably the 'main' fuel tank
+# 	on the boat.
+# Furthermore, just so you know, they DONT follow the NMEA2000 spec for sending the levels
+# 	to the E80, which states they *should* be scaled by 250 on input, 
 
 
 
@@ -172,6 +239,13 @@ our %DB_FIELDS = (
 	$DB_FIELD_DRIFT 			=> { name => 'DRIFT',			type => 'centiMetersPerSec',   },   # 0x19
 	$DB_FIELD_COG 				=> { name => 'COG',				type => 'heading',   },             # 0x1a
 	$DB_FIELD_HEAD_MAYBE		=> { name => 'HEAD_MAYBE',		type => 'heading',   },             # 0x1c
+	$DB_FIELD_ENG_OIL_PRESS1	=> { name => 'ENG_OIL_PRESS1',	type => 'millibarsToPSI', },		# 0x21
+	$DB_FIELD_ENG_OIL_TEMP1		=> { name => 'ENG_OIL_TEMP1',	type => 'kelvinOver10', },			# 0x22
+	$DB_FIELD_ENG_COOL_TEMP1	=> { name => 'ENG_COOL_TEMP1',	type => 'kelvinOver100', },			# 0x24
+	$DB_FIELD_ENG_ALT_VOLT1		=> { name => 'ENG_ALT_VOLT1',   type => 'wordOver100',},			# 0x25
+	$DB_FIELD_ENG_FUEL_RATE     => { name => 'ENG_FUEL_RATE',   type => 'deciLitresToGallons',},	# 0x26
+	$DB_FIELD_ENG_RPM1			=> { name => 'ENG_RPM1',   		type => 'intWordOver4',},			# 0x30
+	$DB_FIELD_FUEL_LEVEL2		=> { name => 'FUEL_LEVEL2',		type => 'wordOver250',},			# 0x32
 	$DB_FIELD_LATLON			=> { name => 'LATLON',			type => 'latLon',    },             # 0x44
 	$DB_FIELD_HEADING_MAG		=> { name => 'HEADING_MAG',		type => 'heading',   },             # 0x47
 	$DB_FIELD_HEADING_MAG2		=> { name => 'HEADING_MAG2',	type => 'heading',   },             # 0x48
@@ -199,8 +273,8 @@ our %DB_FIELDS = (
 	$DB_FIELD_WP_NAME			=> { name => 'WP_NAME',			type => 'stringNul', },				# 0xd8
 	$DB_FIELD_TIME3				=> { name => 'TIME3',			type => 'time',      },             # 0xdf
 	$DB_FIELD_TIME4				=> { name => 'TIME4',			type => 'time',      },             # 0xee
-
-
+	$DB_FIELD_TOTAL_FUEL		=> { name => 'TOTAL_FUEL',		type => 'deciLitresToGallons',},	# 0xfa
+	$DB_FIELD_FUEL_CAPACITY2    => { name => 'FUEL_CAPACITY2',	type => 'deciLitresToGallons',},	# 0xff
 
 );
 
