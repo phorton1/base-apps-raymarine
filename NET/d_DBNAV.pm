@@ -276,12 +276,10 @@ sub decodeDate
 	return "$year-$mon-$mday";
 }
 
-sub decodeTime
-	# time encoded as 1/10000's of a second
+
+sub showTime
 {
-	my ($data) = @_;
-	my $time_int = unpack("V",$data);
-	my $sec = int($time_int/10000);
+	my ($sec) = @_;
 	my $min = int($sec/60);
 	my $hour = int($min/60);
 	$sec = $sec % 60;
@@ -291,6 +289,22 @@ sub decodeTime
 	$sec = pad2($sec);
 	return "$hour:$min:$sec";
 }
+
+sub decodeTime
+	# time encoded as 1/10000's of a second
+{
+	my ($data) = @_;
+	my $secs = int(unpack("V",$data) / 10000);
+	return showTime($secs);
+}
+
+sub decodeSeconds
+{
+	my ($data) = @_;
+	my $secs = unpack("V",$data);
+	return showTime($secs);
+}
+
 
 sub decodeDepth
 	# depth encoded as centimeters
@@ -440,7 +454,12 @@ sub decodeDeciLitresToGallons
 	my $litres = unpack('v',$data) / 10;
 	return sprintf("%0.2f",$litres / $GALLONS_TO_LITRES);
 }
-
+sub decodeString
+{
+	my ($data) = @_;
+	return unpack('A*',$data);
+		# A* trims trailing spaces, a* doesnt
+}
 
 
 
@@ -469,26 +488,28 @@ sub decodeSubRecord
 
 
 our %DECODERS = (
-	'date',      			=> \&decodeDate,
-	'time',      			=> \&decodeTime,
-	'depth',	  			=> \&decodeDepth,
-	'heading',   			=> \&decodeHeading,
+	'date'      			=> \&decodeDate,
+	'time'      			=> \&decodeTime,
+	'seconds'				=> \&decodeSeconds,
+	'depth' 	  			=> \&decodeDepth,
+	'heading'    			=> \&decodeHeading,
 	'centiMetersPerSec'		=> \&decodeCentiMetersPerSec,
-	'deciMetersPerSec',		=> \&decodeDeciMetersPerSec,
-	'metersPerSec',    		=> \&decodeMetersPerSec,
-	'latLon',    			=> \&decodeLatLon,
-	'northEast', 			=> \&decodeNorthEast,
-	'stringNul',   			=> \&decodeStringNul,
-	'subRecord',   			=> \&decodeSubRecord,
-	'distanceMeters',		=> \&decodeDistanceMeters,
-	'distanceCentiMeters',	=> \&decodeDistanceCentiMeters,
-	'wordOver100',			=> \&decodeWordOver100,
-	'intWordOver4',			=> \&decodeIntWordOver4,
-	'millibarsToPSI',		=> \&decodeMillibarsToPSI,
+	'deciMetersPerSec'		=> \&decodeDeciMetersPerSec,
+	'metersPerSec'    		=> \&decodeMetersPerSec,
+	'latLon'    			=> \&decodeLatLon,
+	'northEast' 			=> \&decodeNorthEast,
+	'stringNul'   			=> \&decodeStringNul,
+	'subRecord'   			=> \&decodeSubRecord,
+	'distanceMeters'		=> \&decodeDistanceMeters,
+	'distanceCentiMeters'	=> \&decodeDistanceCentiMeters,
+	'wordOver100'			=> \&decodeWordOver100,
+	'intWordOver4'			=> \&decodeIntWordOver4,
+	'millibarsToPSI'		=> \&decodeMillibarsToPSI,
 	'kelvinOver10'			=> \&decodeKelvinOver10,
 	'kelvinOver100'			=> \&decodeKelvinOver100,
-	'deciLitresToGallons',  => \&decodeDeciLitresToGallons,
-	'wordOver250',			=> \&decodeWordOver250,
+	'deciLitresToGallons'   => \&decodeDeciLitresToGallons,
+	'wordOver250'			=> \&decodeWordOver250,
+	'string'			    => \&decodeString,
 );
 
 
@@ -546,6 +567,8 @@ sub decode_field
 			extra		=> $extra_hex,
 			data 		=> $data, });
 		$field_values->{$fid} = $found;
+
+		$self_db->{exists}->{$fid} = 1 if $self_db;
 	}
 
 

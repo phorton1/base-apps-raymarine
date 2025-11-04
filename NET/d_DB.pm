@@ -32,11 +32,19 @@ use base qw(b_sock);
 my $dbg = 0;
 
 
+my $INIT_NONE = 0;
+my $INIT_KNOWN = 1;
+my $INIT_ALL = 2;
+
+my $HOW_INIT = $INIT_ALL;
+
 
 BEGIN
 {
  	use Exporter qw( import );
 	our @EXPORT = qw(
+
+		$self_db
 
 		$DB_SERVICE_ID
 
@@ -71,6 +79,7 @@ BEGIN
 		$DB_FIELD_ENG_FUEL_RATE
 		$DB_FIELD_ENG_RPM1
 		$DB_FIELD_FUEL_LEVEL2
+		$DB_FIELD_WP_TIME_2000
 		$DB_FIELD_LATLON
 		$DB_FIELD_HEADING_MAG
 		$DB_FIELD_HEADING_MAG2
@@ -82,6 +91,7 @@ BEGIN
 		$DB_FIELD_WIND_ANGLE_GND
 		$DB_FIELD_WP_HEADING
 		$DB_FIELD_WP_HEADING_MAG
+		$DB_FIELD_WP_ID
 		$DB_FIELD_WP_DISTANCE
 		$DB_FIELD_NORTHEAST
 		$DB_FIELD_LATLON2
@@ -95,6 +105,8 @@ BEGIN
 		$DB_FIELD_AVG_DEPTH
 		$DB_FIELD_WP_LATLON
 		$DB_FIELD_WP_NORTHEAST
+		$DB_FIELD_WP_LEG_DIST
+		$DB_FIELD_WP_TIME
 		$DB_FIELD_WP_NAME
 		$DB_FIELD_TIME3
 		$DB_FIELD_TIME4
@@ -103,6 +115,7 @@ BEGIN
 	);
 }
 
+our $self_db:shared;
 
 
 our $DB_SERVICE_ID = 16;
@@ -182,6 +195,7 @@ our $DB_FIELD_ENG_ALT_VOLT1		= 0x25;
 our $DB_FIELD_ENG_FUEL_RATE		= 0x26;		# gph
 our $DB_FIELD_ENG_RPM1			= 0x30;		# rpms
 our $DB_FIELD_FUEL_LEVEL2		= 0x32;		# 0..100 percent; weirdly stored as *250
+our $DB_FIELD_WP_TIME_2000		= 0x34;		# seconds, from NMEA2000
 our $DB_FIELD_LATLON			= 0x44;
 our $DB_FIELD_HEADING_MAG		= 0x47;
 our $DB_FIELD_HEADING_MAG2		= 0x48;
@@ -193,6 +207,7 @@ our $DB_FIELD_WIND_SPEED_GND	= 0x5c;
 our $DB_FIELD_WIND_ANGLE_GND	= 0x5d;		# note that the E80 shows MAG despite the "T" it shows
 our $DB_FIELD_WP_HEADING		= 0x66;
 our $DB_FIELD_WP_HEADING_MAG	= 0x67;
+our $DB_FIELD_WP_ID				= 0x69;
 our $DB_FIELD_WP_DISTANCE		= 0x6a;		# only to two decimal places (60 feet)
 our $DB_FIELD_NORTHEAST			= 0x93;
 our $DB_FIELD_LATLON2			= 0x99;
@@ -206,6 +221,9 @@ our $DB_FIELD_AVG_SPEED 		= 0xbe;
 our $DB_FIELD_AVG_DEPTH			= 0xbf;
 our $DB_FIELD_WP_LATLON			= 0xc4;
 our $DB_FIELD_WP_NORTHEAST		= 0xc5;
+our $DB_FIELD_WP_LEG_DIST		= 0xcf;
+our $DB_FIELD_WP_TIME			= 0xd0;		# seconds
+
 our $DB_FIELD_WP_NAME			= 0xd8;
 our $DB_FIELD_TIME3				= 0xdf;
 our $DB_FIELD_TIME4				= 0xee;
@@ -246,6 +264,7 @@ our %DB_FIELDS = (
 	$DB_FIELD_ENG_FUEL_RATE     => { name => 'ENG_FUEL_RATE',   type => 'deciLitresToGallons',},	# 0x26
 	$DB_FIELD_ENG_RPM1			=> { name => 'ENG_RPM1',   		type => 'intWordOver4',},			# 0x30
 	$DB_FIELD_FUEL_LEVEL2		=> { name => 'FUEL_LEVEL2',		type => 'wordOver250',},			# 0x32
+	$DB_FIELD_WP_TIME_2000		=> { name => 'WP_TIME_2000',	type => 'seconds',      },          # 0x34
 	$DB_FIELD_LATLON			=> { name => 'LATLON',			type => 'latLon',    },             # 0x44
 	$DB_FIELD_HEADING_MAG		=> { name => 'HEADING_MAG',		type => 'heading',   },             # 0x47
 	$DB_FIELD_HEADING_MAG2		=> { name => 'HEADING_MAG2',	type => 'heading',   },             # 0x48
@@ -258,9 +277,10 @@ our %DB_FIELDS = (
 	$DB_FIELD_WP_HEADING		=> { name => 'WP_HEADING',		type => 'heading', 	 },				# 0x66
 	$DB_FIELD_WP_HEADING_MAG	=> { name => 'WP_HEADING_MAG',	type => 'heading', 	 },				# 0x67
 	$DB_FIELD_WP_DISTANCE		=> { name => 'WP_DISTANCE',		type => 'distanceMeters', },		# 0x6a
+	$DB_FIELD_WP_ID				=> { name => 'WP_ID',			type => 'string',	 },				# 0x69
 	$DB_FIELD_NORTHEAST			=> { name => 'NORTHEAST',		type => 'northEast', },             # 0x93
 	$DB_FIELD_LATLON2			=> { name => 'LATLON2',			type => 'latLon',    },             # 0x99
-	$DB_FIELD_TIME2				=> { name => 'TIME3',			type => 'time',  	 },      		# 0x9c
+	$DB_FIELD_TIME2				=> { name => 'TIME2',			type => 'time',  	 },      		# 0x9c
 	$DB_FIELD_DATE2				=> { name => 'DATE2',			type => 'date',      },             # 0xaa
 	$DB_FIELD_HEAD2 			=> { name => 'HEAD2',			type => 'heading',   },             # 0xba
 	$DB_FIELD_HEAD3 			=> { name => 'HEAD3',			type => 'heading',   },             # 0xbb
@@ -270,6 +290,8 @@ our %DB_FIELDS = (
 	$DB_FIELD_AVG_DEPTH			=> { name => 'AVG_DEPTH',		type => 'depth',     },             # 0xbf
 	$DB_FIELD_WP_LATLON			=> { name => 'WP_LATLON',		type => 'latLon',    },             # 0xc4
 	$DB_FIELD_WP_NORTHEAST		=> { name => 'WP_NORTHEAST',	type => 'northEast', },             # 0xc5
+	$DB_FIELD_WP_LEG_DIST		=> { name => 'WP_LEG_DIST?',	type => 'time', },		# 0xcf
+	$DB_FIELD_WP_TIME			=> { name => 'WP_TIME',			type => 'seconds',      },          # 0xd0
 	$DB_FIELD_WP_NAME			=> { name => 'WP_NAME',			type => 'stringNul', },				# 0xd8
 	$DB_FIELD_TIME3				=> { name => 'TIME3',			type => 'time',      },             # 0xdf
 	$DB_FIELD_TIME4				=> { name => 'TIME4',			type => 'time',      },             # 0xee
@@ -289,6 +311,9 @@ sub init
 	display($dbg,0,"d_DB init($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
 	$this->SUPER::init();
 	$this->{local_ip} = $LOCAL_IP;
+	$this->{inited} = 0;
+	$this->{exists} = shared_clone({});
+	$self_db = $this;
 	return $this;
 }
 
@@ -299,107 +324,86 @@ sub destroy
 	my ($this) = @_;
 	display($dbg,0,"d_DB destroy($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
 	$this->SUPER::destroy();
+	$self_db = undef;
+
     delete @$this{qw()};
 	return $this;
+}
+
+
+sub uiInit
+{
+	my ($this) = @_;
+	display($dbg,0,"d_DB uiInit()");
+	$this->{exists} = shared_clone({});
+	$this->{inited} = 0;
 }
 
 
 sub onConnect
 {
 	my ($this) = @_;
-	if (1 && $this->{auto_populate})
-	{
-		my $command = shared_clone({
-			name => 'populate' });
-		push @{$this->{command_queue}},$command;
-	}
+	#	if (1 && $this->{auto_populate})
+	#	{
+	#		my $command = shared_clone({
+	#			name => 'populate' });
+	#		push @{$this->{command_queue}},$command;
+	#	}
 }
 
 
 
-sub handleCommand
+sub onIdle
 {
-	my ($this,$command) = @_;
-	display($dbg,0,"$this->{name} handleCommand(command->{name}) started");
+	my ($this) = @_;
+	display($dbg+2,0,"$this->{name} onIdle()");
 
-	my %done;
-	my @keys = (0x02 .. 0xff);	# sort {$a <=> $b} keys %DB_FIELDS;
-	my $stage = 0;
-	
-	while ($stage < 1)
+	if (!$this->{inited})
 	{
-		display($dbg,1,"doing stage($stage)");
+		if ($HOW_INIT == $INIT_NONE)
+		{
+			warning($dbg,0,"INIT_NONE");
+			$this->{inited} = 1;
+			return;
+		}
+
+		my @fids = $HOW_INIT == $INIT_KNOWN ?
+			(sort {$a <=> $b} keys %DB_FIELDS) :
+			(0x02 .. 0xff);
+
+		my $any = 0;
+		my $exists = $this->{exists};
 		
-		my $cmd1;
-		my $cmd2;
-		if ($stage & 1)
+		for my $fid (@fids)
 		{
-			$cmd1 = $DB_CMD_UUID;
-			$cmd2 = $DB_CMD_NAME;
-		}
-		else
-		{
-			$cmd1 = $DB_CMD_FIELD;
-			$cmd2 = $DB_CMD_QUERY;
-		}
+			next if $exists->{$fid};
+			$any++;
 
-		for my $fid (@keys)
-		{
-			my $done = $done{$fid};
-			next if $done;
-
-			my $send_fid = $fid;
-			if ($stage >= 4)
-			{
-				$send_fid |= 0x03000000;
-			}
-			elsif ($stage >= 2)
-			{
-				$send_fid |= 0x01010000;
-			}
-
-
-			my $seq = $this->{next_seqnum}++;
-			my $name = $DB_FIELDS{$fid}->{name} || sprintf("UNKNOWN(%02x)",$fid);
-			my $cmd_name = $DB_CMD_NAME{$cmd2};
-
-			display($dbg+1,2,"stage($stage) $cmd_name-$name");
-
-			$this->{wait_seq} = $seq;
-			$this->{wait_name} = "$stage-$cmd_name-$name";
-
-			# sleep(0.01);
+			my $fid_name = $DB_FIELDS{$fid}->{name} || sprintf("UNKNOWN(%02x)",$fid);
+			display($dbg+1,0,"CMD_UUID: $fid_name");
 			$this->sendDBCommand(
 				$DIRECTION_SEND,
-				$cmd1,
-				$send_fid);
+				$DB_CMD_UUID,
+				$fid);
 
-			if (1)
+			if (0)
 			{
-				# sleep(0.01);
+				my $seq = $this->{next_seqnum}++;
+				$this->{wait_seq} = $seq;
+				$this->{wait_name} = "CMD_NAME: $fid_name";
 				$this->sendDBCommand(
 					$DIRECTION_SEND,
-					$cmd2,
-					$send_fid,
+					$DB_CMD_NAME,
+					$fid,
 					$seq);
-
 				my $reply = $this->waitReply(0);
-				if (!$reply)
-				{
-					# sleep(0.5);
-					next;
-				}
-				display($dbg+1,3,"got reply success="._def($reply->{success}));
-				$done{$fid} = 1 if
-					$reply->{success} &&
-					($reply->{uuid} || $reply->{def_buffer});
 			}
+
+			$exists->{$fid} = 1;
 		}
 
-		display($dbg,2,"stage($stage) finished");
-		$stage++;
+		$this->{inited} = 1 if !$any;
 	}
-	display($dbg,2,"$this->{name} handleCommand() finished");
 }
 
 

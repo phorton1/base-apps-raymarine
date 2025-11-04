@@ -87,8 +87,14 @@ sub handleSerialCommand
 		print "$kml\n";
 	}
 
-	# Database
+	# DB
 
+	elsif ($lpart eq 'i')
+	{
+		my $db = $raysys->findImplementedService('DB');
+		display(0,0,"db="._def($db));
+		$db->uiInit() if $db;
+	}
 	elsif ($lpart eq 'fids')
 	{
 		my $db = $raysys->findImplementedService('DB');
