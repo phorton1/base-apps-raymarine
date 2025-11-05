@@ -82,12 +82,16 @@ sub onCommand
 	if ($id == $WIN_RAYSYS ||
 		$id == $WIN_SHARK ||
 		$id == $WIN_SNIFFER ||
-		$id == $WIN_FILESYS ||
-		$id == $WIN_DBNAV)
+		$id == $WIN_FILESYS)
 	{
     	my $pane = $this->findPane($id);
 		display(0,0,"$appName onCommand($id) pane="._def($pane));
     	$this->createPane($id) if !$pane;
+	}
+	elsif ($id == $WIN_DBNAV)	# multiple instances allowed
+	{
+		display(0,0,"$appName onCommand($id) creating multi instance window");
+    	$this->createPane($id);
 	}
 }
 

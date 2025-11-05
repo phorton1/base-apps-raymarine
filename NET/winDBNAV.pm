@@ -55,6 +55,8 @@ my $columns = [
 
 
 
+my $instance = 1;
+
 my $font_fixed = Wx::Font->new(11,wxFONTFAMILY_MODERN,wxFONTSTYLE_NORMAL,wxFONTWEIGHT_BOLD);
 
 
@@ -63,7 +65,7 @@ sub new
 	my ($class,$frame,$book,$id,$data) = @_;
 	my $this = $class->SUPER::new($book,$id);
 	display(0,0,"winDBNAV::new() called");
-	$this->MyWindow($frame,$book,$id,'DBNAV',$data);
+	$this->MyWindow($frame,$book,$id,"DBNAV($instance)",$data,$instance++);
 
 	$this->{list_ctrl} = x_listCtrl->new($this,$TOP_MARGIN,$columns);
 
@@ -76,7 +78,7 @@ sub new
 sub onActivate
 {
 	my ($this) = @_;
-	$this->{list_ctrl}->onSize();
+	$this->{list_ctrl}->onSize() if $this->{list_ctrl};
 }
 
 

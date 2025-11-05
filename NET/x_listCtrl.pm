@@ -121,11 +121,12 @@ sub onMouseDown
     my $x = $event->GetX();
     my $y = $event->GetY();
 
-    my $line_height = $this->{LINE_HEIGHT};
-    my $header_y = int(($this->{scroll_y} + 0.1) * $line_height);
+	display($dbg+2,0,"onMouseDown($x,$y)");
 
+    my $line_height = $this->{LINE_HEIGHT};
     # Only respond to clicks within header row
-    return unless $y >= $header_y && $y <= $header_y + $line_height;
+	# in abs coordinates
+    return unless $y <= $line_height * $HEADER_SIZE;
 
     my $char_width = $this->{CHAR_WIDTH};
     my $cols = $this->{columns};
