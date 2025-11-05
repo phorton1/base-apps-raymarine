@@ -328,7 +328,7 @@ sub decodeCentiMetersPerSec
 	# speed encoded as centimeters per second
 {
 	my ($data) = @_;
-	my $int = unpack("v",$data);
+	my $int = unpack("s",$data);	# was 'v'
 	my $speed = sprintf("%0.1f",$int / (100 * $KNOTS_TO_METERS_PER_SEC));
 	return $speed;
 }
@@ -338,17 +338,17 @@ sub decodeDeciMetersPerSec
 	# speed encoded as meters per second
 {
 	my ($data) = @_;
-	my $int = unpack("v",$data);
+	my $int = unpack("s",$data);	# was 'v'
 	my $speed = sprintf("%0.1f",$int / (10 * $KNOTS_TO_METERS_PER_SEC));
 	return $speed;
 }
 
 
 sub decodeMetersPerSec
-	# speed encoded as meters per second
+	# speed encoded as SIGNED meters per second
 {
 	my ($data) = @_;
-	my $int = unpack("v",$data);
+	my $int = unpack("s",$data);	# was 'v'
 	my $speed = sprintf("%0.1f",$int / $KNOTS_TO_METERS_PER_SEC);
 	return $speed;
 }
@@ -360,6 +360,13 @@ sub decodeDistanceMeters
 	my ($data) = @_;
 	my $meters = unpack('V',$data);
 	return sprintf("%0.2f",$meters / $METERS_PER_NM);
+}
+sub decodeDistanceDeciMeters
+	# word distance in deciimeters
+{
+	my ($data) = @_;
+	my $meters = unpack('v',$data);
+	return sprintf("%0.3f",$meters / (10 * $METERS_PER_NM));
 }
 
 sub decodeDistanceCentiMeters
@@ -396,12 +403,6 @@ sub decodeNorthEast
 }
 
 
-sub decodeStringNul
-	# actuall null terminated string
-{
-	my ($data) = @_;
-	return unpack('Z*',$data);
-}
 
 
 sub decodeWordOver100
@@ -454,11 +455,31 @@ sub decodeDeciLitresToGallons
 	my $litres = unpack('v',$data) / 10;
 	return sprintf("%0.2f",$litres / $GALLONS_TO_LITRES);
 }
-sub decodeString
+
+
+
+sub decodeString15
+	# possibly null terminated string
+	# strip bad chars and trailing spaces
 {
 	my ($data) = @_;
-	return unpack('A*',$data);
+	my $string = unpack('Z15',$data);
+	$string =~ s/[^\x20-\x7E]//;
+	$string =~ s/\s+$//;
+	return $string;
+}
+
+
+sub decodeString
+	# return a string if it's all printable
+	# a hex string otherwise
+{
+	my ($data) = @_;
+	my $string = unpack('A*',$data);
 		# A* trims trailing spaces, a* doesnt
+	$string = unpack('H*',$data)
+		if $string =~ /[^\x20-\x7E]/;
+	return $string;
 }
 
 
@@ -498,9 +519,11 @@ our %DECODERS = (
 	'metersPerSec'    		=> \&decodeMetersPerSec,
 	'latLon'    			=> \&decodeLatLon,
 	'northEast' 			=> \&decodeNorthEast,
-	'stringNul'   			=> \&decodeStringNul,
+	'string'			    => \&decodeString,
+	'string15'   			=> \&decodeString15,
 	'subRecord'   			=> \&decodeSubRecord,
 	'distanceMeters'		=> \&decodeDistanceMeters,
+	'distanceDeciMeters'	=> \&decodeDistanceDeciMeters,
 	'distanceCentiMeters'	=> \&decodeDistanceCentiMeters,
 	'wordOver100'			=> \&decodeWordOver100,
 	'intWordOver4'			=> \&decodeIntWordOver4,
@@ -509,7 +532,7 @@ our %DECODERS = (
 	'kelvinOver100'			=> \&decodeKelvinOver100,
 	'deciLitresToGallons'   => \&decodeDeciLitresToGallons,
 	'wordOver250'			=> \&decodeWordOver250,
-	'string'			    => \&decodeString,
+
 );
 
 

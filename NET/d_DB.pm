@@ -60,70 +60,22 @@ BEGIN
 		%DB_PARSE_RULES
 		%DB_FIELDS
 
-		$DB_FIELD_SPEED
-		$DB_FIELD_SOG
-		$DB_FIELD_LOG_TOTAL
-		$DB_FIELD_LOG_TRIP
-		$DB_FIELD_DEPTH
-		$DB_FIELD_TIME
-		$DB_FIELD_DATE
-		$DB_FIELD_HEADING
-		$DB_FIELD_SET
-		$DB_FIELD_DRIFT
-		$DB_FIELD_COG
-		$DB_FIELD_HEAD_MAYBE
-		$DB_FIELD_ENG_OIL_PRESS1
-		$DB_FIELD_ENG_OIL_TEMP1
-		$DB_FIELD_ENG_COOL_TEMP1
-		$DB_FIELD_ENG_ALT_VOLT1
-		$DB_FIELD_ENG_FUEL_RATE
-		$DB_FIELD_ENG_RPM1
-		$DB_FIELD_FUEL_LEVEL2
-		$DB_FIELD_WP_TIME_2000
-		$DB_FIELD_LATLON
-		$DB_FIELD_HEADING_MAG
-		$DB_FIELD_HEADING_MAG2
-		$DB_FIELD_WIND_SPEED_APP
 		$DB_FIELD_WIND_ANGLE_APP
-		$DB_FIELD_WIND_SPEED_TRUE
 		$DB_FIELD_WIND_ANGLE_TRUE
-		$DB_FIELD_WIND_SPEED_GND
-		$DB_FIELD_WIND_ANGLE_GND
-		$DB_FIELD_WP_HEADING
-		$DB_FIELD_WP_HEADING_MAG
-		$DB_FIELD_WP_ID
-		$DB_FIELD_WP_DISTANCE
-		$DB_FIELD_NORTHEAST
-		$DB_FIELD_LATLON2
-		$DB_FIELD_TIME2
-		$DB_FIELD_DATE2
-		$DB_FIELD_HEAD2
-		$DB_FIELD_HEAD3
-		$DB_FIELD_HEAD4
-		$DB_FIELD_HEAD5
-		$DB_FIELD_AVG_SPEED
-		$DB_FIELD_AVG_DEPTH
-		$DB_FIELD_WP_LATLON
-		$DB_FIELD_WP_NORTHEAST
-		$DB_FIELD_WP_LEG_DIST
-		$DB_FIELD_WP_TIME
-		$DB_FIELD_WP_NAME
-		$DB_FIELD_TIME3
-		$DB_FIELD_TIME4
-		$DB_FIELD_TOTAL_FUEL
-		$DB_FIELD_FUEL_CAPACITY2
 	);
 }
 
 our $self_db:shared;
 
 
+#------------------------------------------
+# main definitions
+#------------------------------------------
+
 our $DB_SERVICE_ID = 16;
 	# 16 == 0x10 == '1000' in streams
 
-
 our $SUCCESS2_SIG = '04000000';
-
 										# Reply			Request (command)
 our $DB_CMD_UUID   		= 0x00;		#
 our $DB_CMD_DEF			= 0x01;		#
@@ -141,7 +93,6 @@ our %DB_CMD_NAME = (
 	$DB_CMD_NAME	 => 'NAME',
 	$DB_CMD_QUERY	 => 'QUERY',
 );
-
 
 
 our %DB_PARSE_RULES = (
@@ -176,59 +127,15 @@ our %DB_PARSE_RULES = (
 );
 
 
-our $DB_FIELD_SPEED 			= 0x03;		# thru water
-our $DB_FIELD_SOG				= 0x04;
-our $DB_FIELD_LOG_TOTAL			= 0x07;
-our $DB_FIELD_LOG_TRIP			= 0x08;
-our $DB_FIELD_DEPTH				= 0x09;
-our $DB_FIELD_TIME				= 0x12;
-our $DB_FIELD_DATE 				= 0x13;
-our $DB_FIELD_HEADING 			= 0x17;
-our $DB_FIELD_SET 				= 0x18;
-our $DB_FIELD_DRIFT 			= 0x19;
-our $DB_FIELD_COG 				= 0x1a;
-our $DB_FIELD_HEAD_MAYBE 		= 0x1c;		# just a guess
-our $DB_FIELD_ENG_OIL_PRESS1	= 0x21;		# psi
-our $DB_FIELD_ENG_OIL_TEMP1		= 0x22;		# farenheight
-our $DB_FIELD_ENG_COOL_TEMP1	= 0x24;		# farenheight
-our $DB_FIELD_ENG_ALT_VOLT1		= 0x25;
-our $DB_FIELD_ENG_FUEL_RATE		= 0x26;		# gph
-our $DB_FIELD_ENG_RPM1			= 0x30;		# rpms
-our $DB_FIELD_FUEL_LEVEL2		= 0x32;		# 0..100 percent; weirdly stored as *250
-our $DB_FIELD_WP_TIME_2000		= 0x34;		# seconds, from NMEA2000
-our $DB_FIELD_LATLON			= 0x44;
-our $DB_FIELD_HEADING_MAG		= 0x47;
-our $DB_FIELD_HEADING_MAG2		= 0x48;
-our $DB_FIELD_WIND_SPEED_APP	= 0x58;
-our $DB_FIELD_WIND_ANGLE_APP	= 0x59;		# 360 relative to bow heading
-our $DB_FIELD_WIND_SPEED_TRUE	= 0x5a;
-our $DB_FIELD_WIND_ANGLE_TRUE	= 0x5b;		# 360 relative to bow heading
-our $DB_FIELD_WIND_SPEED_GND	= 0x5c;
-our $DB_FIELD_WIND_ANGLE_GND	= 0x5d;		# note that the E80 shows MAG despite the "T" it shows
-our $DB_FIELD_WP_HEADING		= 0x66;
-our $DB_FIELD_WP_HEADING_MAG	= 0x67;
-our $DB_FIELD_WP_ID				= 0x69;
-our $DB_FIELD_WP_DISTANCE		= 0x6a;		# only to two decimal places (60 feet)
-our $DB_FIELD_NORTHEAST			= 0x93;
-our $DB_FIELD_LATLON2			= 0x99;
-our $DB_FIELD_TIME2				= 0x9c;
-our $DB_FIELD_DATE2 			= 0xaa;
-our $DB_FIELD_HEAD2 			= 0xba;
-our $DB_FIELD_HEAD3 			= 0xbb;
-our $DB_FIELD_HEAD4 			= 0xbc;
-our $DB_FIELD_HEAD5 			= 0xbd;
-our $DB_FIELD_AVG_SPEED 		= 0xbe;
-our $DB_FIELD_AVG_DEPTH			= 0xbf;
-our $DB_FIELD_WP_LATLON			= 0xc4;
-our $DB_FIELD_WP_NORTHEAST		= 0xc5;
-our $DB_FIELD_WP_LEG_DIST		= 0xcf;
-our $DB_FIELD_WP_TIME			= 0xd0;		# seconds
 
-our $DB_FIELD_WP_NAME			= 0xd8;
-our $DB_FIELD_TIME3				= 0xdf;
-our $DB_FIELD_TIME4				= 0xee;
-our $DB_FIELD_TOTAL_FUEL		= 0xfa;		# gallons
-our $DB_FIELD_FUEL_CAPACITY2	= 0xff;		# gallons
+
+#--------------------------------------------------------------
+# FID mapping
+#--------------------------------------------------------------
+# FIDs used by DB_NAV
+
+our $DB_FIELD_WIND_ANGLE_APP	= 0x59;		# 360 relative to bow heading
+our $DB_FIELD_WIND_ANGLE_TRUE	= 0x5b;		# 360 relative to bow heading
 
 # This deserves a comment.  The fuel math is just plain weird.
 # Given two tanks with a level 0..100 and a capacity in gallons, litres whatever,
@@ -241,69 +148,78 @@ our $DB_FIELD_FUEL_CAPACITY2	= 0xff;		# gallons
 # Furthermore, just so you know, they DONT follow the NMEA2000 spec for sending the levels
 # 	to the E80, which states they *should* be scaled by 250 on input, 
 
-
-
 our %DB_FIELDS = (
 
-	$DB_FIELD_SPEED 			=> { name => 'SPEED', 			type => 'centiMetersPerSec', },		# 0x03
-	$DB_FIELD_SOG				=> { name => 'SOG', 			type => 'centiMetersPerSec', },     # 0x04
-	$DB_FIELD_LOG_TOTAL			=> { name => 'LOG_TOTAL',		type => 'distanceMeters', },		# 0x07
-	$DB_FIELD_LOG_TRIP			=> { name => 'LOG_TRIP',		type => 'distanceMeters', },		# 0x08
-	$DB_FIELD_DEPTH				=> { name => 'DEPTH',			type => 'depth',     },             # 0x09
-	$DB_FIELD_TIME				=> { name => 'TIME',			type => 'time',      },             # 0x12
-	$DB_FIELD_DATE 				=> { name => 'DATE',			type => 'date',      },             # 0x13
-	$DB_FIELD_HEADING 			=> { name => 'HEADING',			type => 'heading',   },             # 0x17
-	$DB_FIELD_SET 				=> { name => 'SET',				type => 'heading',   },             # 0x18
-	$DB_FIELD_DRIFT 			=> { name => 'DRIFT',			type => 'centiMetersPerSec',   },   # 0x19
-	$DB_FIELD_COG 				=> { name => 'COG',				type => 'heading',   },             # 0x1a
-	$DB_FIELD_HEAD_MAYBE		=> { name => 'HEAD_MAYBE',		type => 'heading',   },             # 0x1c
-	$DB_FIELD_ENG_OIL_PRESS1	=> { name => 'ENG_OIL_PRESS1',	type => 'millibarsToPSI', },		# 0x21
-	$DB_FIELD_ENG_OIL_TEMP1		=> { name => 'ENG_OIL_TEMP1',	type => 'kelvinOver10', },			# 0x22
-	$DB_FIELD_ENG_COOL_TEMP1	=> { name => 'ENG_COOL_TEMP1',	type => 'kelvinOver100', },			# 0x24
-	$DB_FIELD_ENG_ALT_VOLT1		=> { name => 'ENG_ALT_VOLT1',   type => 'wordOver100',},			# 0x25
-	$DB_FIELD_ENG_FUEL_RATE     => { name => 'ENG_FUEL_RATE',   type => 'deciLitresToGallons',},	# 0x26
-	$DB_FIELD_ENG_RPM1			=> { name => 'ENG_RPM1',   		type => 'intWordOver4',},			# 0x30
-	$DB_FIELD_FUEL_LEVEL2		=> { name => 'FUEL_LEVEL2',		type => 'wordOver250',},			# 0x32
-	$DB_FIELD_WP_TIME_2000		=> { name => 'WP_TIME_2000',	type => 'seconds',      },          # 0x34
-	$DB_FIELD_LATLON			=> { name => 'LATLON',			type => 'latLon',    },             # 0x44
-	$DB_FIELD_HEADING_MAG		=> { name => 'HEADING_MAG',		type => 'heading',   },             # 0x47
-	$DB_FIELD_HEADING_MAG2		=> { name => 'HEADING_MAG2',	type => 'heading',   },             # 0x48
-	$DB_FIELD_WIND_SPEED_APP	=> { name => 'WIND_SPEED_APP', 	type => 'deciMetersPerSec', },		# 0x58
-	$DB_FIELD_WIND_ANGLE_APP	=> { name => 'WIND_ANGLE_APP',	type => 'heading',   },             # 0x59
-	$DB_FIELD_WIND_SPEED_TRUE	=> { name => 'WIND_SPEED_TRUE', type => 'deciMetersPerSec', },		# 0x5a
-	$DB_FIELD_WIND_ANGLE_TRUE	=> { name => 'WIND_ANGLE_TRUE',	type => 'heading',   },             # 0x5b
-	$DB_FIELD_WIND_SPEED_GND	=> { name => 'WIND_SPEED_GND', 	type => 'deciMetersPerSec', },		# 0x5c
-	$DB_FIELD_WIND_ANGLE_GND	=> { name => 'WIND_ANGLE_GND',	type => 'heading',   },             # 0x5d
-	$DB_FIELD_WP_HEADING		=> { name => 'WP_HEADING',		type => 'heading', 	 },				# 0x66
-	$DB_FIELD_WP_HEADING_MAG	=> { name => 'WP_HEADING_MAG',	type => 'heading', 	 },				# 0x67
-	$DB_FIELD_WP_DISTANCE		=> { name => 'WP_DISTANCE',		type => 'distanceMeters', },		# 0x6a
-	$DB_FIELD_WP_ID				=> { name => 'WP_ID',			type => 'string',	 },				# 0x69
-	$DB_FIELD_NORTHEAST			=> { name => 'NORTHEAST',		type => 'northEast', },             # 0x93
-	$DB_FIELD_LATLON2			=> { name => 'LATLON2',			type => 'latLon',    },             # 0x99
-	$DB_FIELD_TIME2				=> { name => 'TIME2',			type => 'time',  	 },      		# 0x9c
-	$DB_FIELD_DATE2				=> { name => 'DATE2',			type => 'date',      },             # 0xaa
-	$DB_FIELD_HEAD2 			=> { name => 'HEAD2',			type => 'heading',   },             # 0xba
-	$DB_FIELD_HEAD3 			=> { name => 'HEAD3',			type => 'heading',   },             # 0xbb
-	$DB_FIELD_HEAD4 			=> { name => 'HEAD4',			type => 'heading',   },             # 0xbc
-	$DB_FIELD_HEAD5 			=> { name => 'HEAD5_MAG',		type => 'heading',   },             # 0xbd
-	$DB_FIELD_AVG_SPEED			=> { name => 'AVG_SPEED', 		type => 'centiMetersPerSec', },		# 0xbe
-	$DB_FIELD_AVG_DEPTH			=> { name => 'AVG_DEPTH',		type => 'depth',     },             # 0xbf
-	$DB_FIELD_WP_LATLON			=> { name => 'WP_LATLON',		type => 'latLon',    },             # 0xc4
-	$DB_FIELD_WP_NORTHEAST		=> { name => 'WP_NORTHEAST',	type => 'northEast', },             # 0xc5
-	$DB_FIELD_WP_LEG_DIST		=> { name => 'WP_LEG_DIST?',	type => 'time', },		# 0xcf
-	$DB_FIELD_WP_TIME			=> { name => 'WP_TIME',			type => 'seconds',      },          # 0xd0
-	$DB_FIELD_WP_NAME			=> { name => 'WP_NAME',			type => 'stringNul', },				# 0xd8
-	$DB_FIELD_TIME3				=> { name => 'TIME3',			type => 'time',      },             # 0xdf
-	$DB_FIELD_TIME4				=> { name => 'TIME4',			type => 'time',      },             # 0xee
-	$DB_FIELD_TOTAL_FUEL		=> { name => 'TOTAL_FUEL',		type => 'deciLitresToGallons',},	# 0xfa
-	$DB_FIELD_FUEL_CAPACITY2    => { name => 'FUEL_CAPACITY2',	type => 'deciLitresToGallons',},	# 0xff
+	0x03	=> { name => 'SPEED', 			type => 'centiMetersPerSec', },		# thru water
+	0x04	=> { name => 'SOG', 			type => 'centiMetersPerSec', },     #
+	0x07	=> { name => 'LOG_TOTAL',		type => 'distanceMeters', },		#
+	0x08	=> { name => 'LOG_TRIP',		type => 'distanceMeters', },		#
+	0x09	=> { name => 'DEPTH',			type => 'depth',     },             #
+	0x12	=> { name => 'TIME',			type => 'time',      },             #
+	0x13	=> { name => 'DATE',			type => 'date',      },             #
+	0x17	=> { name => 'HEADING',			type => 'heading',   },             #
+	0x18	=> { name => 'SET',				type => 'heading',   },             #
+	0x19	=> { name => 'DRIFT',			type => 'centiMetersPerSec', },   	#
+	0x1a	=> { name => 'COG',				type => 'heading',   },             #
+	0x1c	=> { name => 'HEAD_MAYBE',		type => 'heading',   },             # just a guess
+	0x21	=> { name => 'ENG_OIL_PRESS1',	type => 'millibarsToPSI', },		# psi
+	0x22	=> { name => 'ENG_OIL_TEMP1',	type => 'kelvinOver10', },			# farenheight
+	0x24	=> { name => 'ENG_COOL_TEMP1',	type => 'kelvinOver100', },			# farenheight
+	0x25	=> { name => 'ENG_ALT_VOLT1',   type => 'wordOver100',},			#
+	0x26	=> { name => 'ENG_FUEL_RATE',   type => 'deciLitresToGallons',},	# gph
+	0x30	=> { name => 'ENG_RPM1',   		type => 'intWordOver4',},			# rpms
+	0x32	=> { name => 'FUEL_LEVEL2',		type => 'wordOver250',},			# 0..100 percent; weirdly stored as *250
+	0x34	=> { name => 'XTE',				type => 'distanceCentiMeters', },   # centimeters, was $DB_FIELD_WP_TIME_2000 from NMEA2000
+	0x44	=> { name => 'LATLON',			type => 'latLon',    },             #
+	0x47	=> { name => 'HEADING_MAG',		type => 'heading',   },             #
+	0x48	=> { name => 'HEADING_MAG2',	type => 'heading',   },             #
+	0x49	=> { name => 'SET_MAG',			type => 'heading',   },             #
+	0x55	=> { name => 'VMG_WIND', 		type => 'centiMetersPerSec', },     #
+	0x58	=> { name => 'WIND_SPEED_APP', 	type => 'deciMetersPerSec', },		#
+	0x59	=> { name => 'WIND_ANGLE_APP',	type => 'heading',   },             # 360 relative to bow heading
+	0x5a	=> { name => 'WIND_SPEED_TRUE', type => 'deciMetersPerSec', },		# 360 relative to bow heading
+	0x5b	=> { name => 'WIND_ANGLE_TRUE',	type => 'heading',   },             #
+	0x5c	=> { name => 'WIND_SPEED_GND', 	type => 'deciMetersPerSec', },		#
+	0x5d	=> { name => 'WIND_ANGLE_GND',	type => 'heading',   },             # note that the E80 shows MAG despite the "T" it shows
+	0x66	=> { name => 'WP_HEADING',		type => 'heading', 	 },				#
+	0x67	=> { name => 'WP_HEADING_MAG',	type => 'heading', 	 },				#
+	0x6a	=> { name => 'WP_DISTANCE',		type => 'distanceMeters', },		#
+	0x69	=> { name => 'WP_ID',			type => 'string',	 },				# only to two decimal places (60 feet)
+	0x93	=> { name => 'NORTHEAST',		type => 'northEast', },             #
+	0x70	=> { name => 'WP_HEADING2',		type => 'heading', 	 },				#
+	0x7f	=> { name => 'VMG_WIND', 		type => 'centiMetersPerSec', },     #
+	0x99	=> { name => 'LATLON2',			type => 'latLon',    },             #
+	0x9c	=> { name => 'TIME2',			type => 'time',  	 },      		#
+	0xaa	=> { name => 'DATE2',			type => 'date',      },             #
+	0xb6	=> { name => 'VMG_WPT', 		type => 'centiMetersPerSec', },     #
+	0xba	=> { name => 'HEAD2',			type => 'heading',   },             #
+	0xbb	=> { name => 'HEAD3',			type => 'heading',   },             #
+	0xbc	=> { name => 'HEAD4',			type => 'heading',   },             #
+	0xbd	=> { name => 'HEAD5_MAG',		type => 'heading',   },             #
+	0xbe	=> { name => 'SPEED_AVG', 		type => 'centiMetersPerSec', },		#
+	0xbf	=> { name => 'DEPTH_AVG',		type => 'depth',     },             #
+	0xc1	=> { name => 'COG2',			type => 'heading',   },             #
+	0xc3	=> { name => 'WP_HEADING3',		type => 'heading', 	 },				#
+	0xc4	=> { name => 'WP_LATLON',		type => 'latLon',    },             #
+	0xc5	=> { name => 'WP_NORTHEAST',	type => 'northEast', },             #
+	0xcf	=> { name => 'WP_LEG_DIST?',	type => 'distanceMeters', },		#
+	0xd0	=> { name => 'WP_TIME',			type => 'seconds',      },          # seconds
+	0xd8	=> { name => 'WP_NAME',			type => 'string15',  },				# might be null terminated; remove empty spaces
+	0xdf	=> { name => 'TIME3',			type => 'time',      },             #
+	0xee	=> { name => 'TIME4',			type => 'time',      },             #
+	0xef	=> { name => 'DATE2',			type => 'date',      },             #
+	0xf2	=> { name => 'SET_AVG',			type => 'heading',   },             #
+	0xf3	=> { name => 'SET_MAG_AVG',		type => 'heading',   },             #
+	0xfa	=> { name => 'TOTAL_FUEL',		type => 'deciLitresToGallons',},	# gallons
+	0xff	=> { name => 'FUEL_CAPACITY2',	type => 'deciLitresToGallons',},	# gallons
 
 );
 
 
 
-
-
+#---------------------------------------------------
+# implementation
+#---------------------------------------------------
 
 sub init
 {
@@ -316,7 +232,6 @@ sub init
 	$self_db = $this;
 	return $this;
 }
-
 
 
 sub destroy
