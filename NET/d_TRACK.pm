@@ -352,7 +352,7 @@ our %TRACK_PARSE_RULES = (
 
 	$DIRECTION_INFO	| $TRACK_REPLY_CONTEXT  	=>	[ 'seq','uuid','context_bits' ],	# uuid context for the reply; bits 01n
 	$DIRECTION_INFO	| $TRACK_REPLY_BUFFER		=> 	[ 'seq','buffer' ],					# dictionary, MTA, or Track depending on state
-	$DIRECTION_INFO	| $TRACK_REPLY_END			=> 	[ 'seq','track_uuid' ],				# actually carries mta_uuid, but sets is_track=1
+	$DIRECTION_INFO	| $TRACK_REPLY_END			=> 	[ 'seq','track_uuid' ],				# sets is_track=1 and regular uuid
 	$DIRECTION_INFO	| $TRACK_REPLY_RENAMED		=>  [ 'seq','success' ],				# confirms name change (in an event packet) with sequence number
 
 	# Requests
@@ -484,12 +484,17 @@ sub get_tracks
 
 			if ($reply)
 			{
-				my $uuid = $reply->{uuid};
+				my $mta_uuid = $reply->{mta_uuid};
 				my $item = $reply->{item};
 				my $tracks = $this->{tracks};
-				$tracks->{$uuid} = $item;
+				$tracks->{$mta_uuid} = $item;
 				$item->{version} = $this->incVersion();
-				$this->{current_track_uuid} = $uuid;
+				$this->{current_track_uuid} = $mta_uuid;
+					# only time that d_TRACK uses the uuid from the parsed record
+					# is for the current track.  Otherwise it 'knows' what uuid it
+					# is dealing with (from the dictionary)
+
+				warning($dbg_got,0,"got Current Track($mta_uuid) = '$item->{name}'");
 			}
 		}
 	}
@@ -545,8 +550,8 @@ sub get_track
 	my $reply = $this->waitReply(1);
 	return 0 if !$reply;
 
+	# NOTE that we KNOW the uuid of the item we are getting
 
-	# my $uuid = $reply->{uuid};
 	my $item = $reply->{item};
 	my $tracks = $this->{tracks};
 	$tracks->{$uuid} = $item;
@@ -680,15 +685,15 @@ sub do_general
 
 	if ($returns_current_track)
 	{
-		my $ct_uuid = $reply->{uuid};
+		my $mta_uuid = $reply->{mta_uuid};
 		my $item 	= $reply->{item};
 		my $tracks = $this->{tracks};
 
-		warning($dbg_got,0,"got Current Track($ct_uuid) = '$item->{name}'");
+		warning($dbg_got,0,"received Current Track($mta_uuid) = '$item->{name}'");
 	
-		$tracks->{$ct_uuid} = $item;
+		$tracks->{$mta_uuid} = $item;
 		$item->{version} = $this->incVersion();
-		$this->{current_track_uuid} = $ct_uuid;
+		$this->{current_track_uuid} = $mta_uuid;
 	}
 
 	return 1;

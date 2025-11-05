@@ -51,10 +51,25 @@ sub std_uuid
 	return $template;
 }
 
+
+sub findUUIDByName
+{
+	my ($this,$what_name,$name) = @_;
+	my $hash = $this->{$what_name.'s'};
+	for my $uuid (keys %$hash)
+	{
+		return $uuid if $hash->{$uuid}->{name} eq $name;
+	}
+	error("Could not find $what_name($name)");
+	return undef;
+}
+
+
+
 sub emptyGroup
 {
 	my ($name) = @_;
-	my $buffer = buildGroup({ name => $name },$TEMP_MON,$TEMP_COLOR);
+	my $buffer = buildGroup(0,{ name => $name },$TEMP_MON,$TEMP_COLOR);
 	my $ret_hex = unpack('H*',$buffer);
 	return $ret_hex;
 }
@@ -68,7 +83,7 @@ sub emptyRoute
 	my ($name,$bits) = @_;
 	$bits = 0 if !defined($bits);
 	my $name_len = length($name);
-	my $buffer = buildRoute({
+	my $buffer = buildRoute(0,{
 
 		name => $name,
 		bits => $bits,
@@ -129,7 +144,7 @@ sub createWaypoint
 		# to the Menu-System Settings-Date and Time-Offset that might be entered.
 		# So, for now, I send them as local times for clarity in debugging.
 
-	my $buffer = buildWaypoint({
+	my $buffer = buildWaypoint(0,{
 		name => $name,
 		comment => "wpComment$wp_num",
 		lat => int($$lat_lon[0] * $SCALE_LATLON),
@@ -147,10 +162,10 @@ sub createWaypoint
 
 sub deleteWaypoint
 {
-	my ($this,$wp_num) = @_;
-	$this->showCommand("deleteWaypoint($wp_num)");
-	my $uuid = std_uuid($STD_WP_UUID,$wp_num);
-	my $name = "testWaypoint$wp_num";
+	my ($this,$name) = @_;
+	$this->showCommand("deleteWaypoint($name)");
+	my $uuid = $this->findUUIDByName('waypoint',$name);
+	return if !$uuid;
 	return $this->queueWPMGRCommand($API_DEL_ITEM,$WHAT_WAYPOINT,$name,$uuid,0);
 }
 
@@ -168,10 +183,10 @@ sub createGroup
 
 sub deleteGroup
 {
-	my ($this,$group_num) = @_;
-	$this->showCommand("deleteGroup($group_num)");
-	my $uuid = std_uuid($STD_GROUP_UUID,$group_num);
-	my $name = "testGroup$group_num";
+	my ($this,$name) = @_;
+	$this->showCommand("deleteGroup($name)");
+	my $uuid = $this->findUUIDByName('group',$name);
+	return if !$uuid;
 	return $this->queueWPMGRCommand($API_DEL_ITEM,$WHAT_GROUP,$name,$uuid,0);
 }
 
@@ -246,7 +261,7 @@ sub setWaypointGroup
 		$group->{uuids} = shared_clone(\@unshared_uuids);
 	}
 
-	my $buffer = buildGroup($group,$TEMP_MON,$TEMP_COLOR);
+	my $buffer = buildGroup(0,$group,$TEMP_MON,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
 	return $this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_GROUP,$group_name,$group_uuid,$data);
 
@@ -268,10 +283,10 @@ sub createRoute
 
 sub deleteRoute
 {
-	my ($this,$route_num) = @_;
-	$this->showCommand("deleteRoute($route_num)");
-	my $uuid = std_uuid($STD_ROUTE_UUID,$route_num);
-	my $name = "testRoute$route_num";
+	my ($this,$name) = @_;
+	$this->showCommand("deleteRoute($name)");
+	my $uuid = $this->findUUIDByName('route',$name);
+	return if !$uuid;
 	return $this->queueWPMGRCommand($API_DEL_ITEM,$WHAT_ROUTE,$name,$uuid,0);
 }
 
@@ -344,7 +359,7 @@ sub routeWaypoint
 
 	# display_record(0,0,"new route",$route);
 
-	my $buffer = buildRoute($route,$TEMP_MON,$TEMP_COLOR);
+	my $buffer = buildRoute(0,$route,$TEMP_MON,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
 	return $this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,$data);
 

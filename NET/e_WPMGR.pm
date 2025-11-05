@@ -173,9 +173,9 @@ sub parsePiece
 		printConsole(2,$mon,$color,"buffer piece($NAV_WHAT{$what})")
 			if $mon & $MON_PIECES;
 
-		$item = parseWaypoint($buffer,$mon,$color) if $what == $WHAT_WAYPOINT;
-		$item = parseRoute($buffer,$mon,$color)    if $what == $WHAT_ROUTE;
-		$item = parseGroup($buffer,$mon,$color)    if $what == $WHAT_GROUP;
+		$item = parseWaypoint(0,$buffer,$mon,$color) if $what == $WHAT_WAYPOINT;
+		$item = parseRoute(0,$buffer,$mon,$color)    if $what == $WHAT_ROUTE;
+		$item = parseGroup(0,$buffer,$mon,$color)    if $what == $WHAT_GROUP;
 
 		$packet->{item} = shared_clone($item);
 	}

@@ -46,7 +46,8 @@ sub parsePacket
 		is_event 	=> 0,
 		evt_mask	=> 0, });
 	display($dbg_tp+1,0,"e_TRACK::parsePacket() is_reply($packet->{is_reply})");
-	return $this->SUPER::parsePacket($packet);
+	$packet = $this->SUPER::parsePacket($packet);
+	return $packet;
 }
 
 
@@ -130,10 +131,12 @@ sub parsePiece
 	if ($piece eq 'buffer' && !$packet->{is_dict})
 	{
 		my $buffer_type =
-			$packet->{is_track} ? 'track' :
+			$packet->{is_track} ? 'trk' :
 			$packet->{is_point} ? 'point' : 'mta';
+		my $uuid_field = $buffer_type.'_uuid';
+		$packet->{$uuid_field} = $packet->{uuid};
 
-		printConsole(2,$mon,$color,"buffer piece($buffer_type)")
+		printConsole(2,$mon,$color,"buffer piece($buffer_type) $uuid_field = $packet->{$uuid_field}")
 			if $mon & $MON_PIECES;
 
 		# +4 == skip biglen
@@ -146,18 +149,22 @@ sub parsePiece
 		$packet->{item} ||= shared_clone({});
 		my $item = $packet->{item};
 		mergeHash($item,parseMTA($buffer,$mon,$color)) 	 if $buffer_type eq 'mta';
-		mergeHash($item,parseTrack($buffer,$mon,$color)) if $buffer_type eq 'track';
+		mergeHash($item,parseTRK($buffer,$mon,$color)) if $buffer_type eq 'trk';
 		mergeHash($item,parsePoint($buffer,$mon,$color)) if $buffer_type eq 'point';
 	}
 	elsif ($piece eq 'track_uuid')
 	{
 		my $uuid = unpack('H*',substr($part,$$poffset,8));
-		$packet->{track_uuid} = $uuid;
+		$packet->{uuid} = $uuid;
 		$packet->{is_track} = 1;
 		$$poffset += 8;
 
-		printConsole(2,$mon,$color,"track_uuid = $uuid; is_track=1")
-			if $mon & $MON_PIECES;
+		if ($mon & $MON_PIECES)
+		{
+			printConsole(2,$mon,$color,"is_track=1");
+			printConsole(2,$mon,$color,"uuid = $uuid");
+		}
+
 	}
 
 	# Call the base class to handle many common piece types

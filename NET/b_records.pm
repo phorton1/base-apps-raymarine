@@ -54,7 +54,7 @@ BEGIN
 		buildRoute
 		buildGroup
 
-		parseTrack
+		parseTRK
 		parseMTA
 		parsePoint
 
@@ -64,61 +64,57 @@ BEGIN
 
 
 
-my $WP_REC_SIZE = 52;
+my $WP_REC_SIZE = 48;
 my $WP_REC_SPECS = [
 	#              	detail	size	unpack
-	big_len	    => [ 1,		4,		'V',	],	   #  0   uint32_t len				// length of data buffer
-	lat			=> [ 0,		4,		'l',	],	   #  4	  int32_t lat;				// 1E7 lat
-	lon			=> [ 0,		4,		'l',	],	   #  8   int32_t lon;				// 1E7 lon
-	north  		=> [ 0,		4,		'l',    ],     #  12  int32_t north				// prescaled ellipsoid Mercator northing and easting
-	east   		=> [ 0,		4,		'l',    ],     #  16  int32_t east;
-	k1_0x12     => [ 2,		12,		'H24',  ],     #  20  char d[12];         		// 12x \0
-	sym         => [ 0,		1,		'C',    ],     #  32  char sym;           		// probably symbol
-	temp        => [ 0,		2,		'S',    ],     #  33  uint16_t tempr;     		// temperature in Kelvin * 100
-	depth       => [ 0,		4,		'l',    ],     #  35  int32_t depth;      		// depth in cm
-	time        => [ 0,		4,		'L',    ],     #  39  uint32_t timeofday;  		// time of day in seconds
-	date        => [ 0,		2,		'S',    ],     #  43  uint16_t date;       		// days since 1.1.1970
-	k2_0        => [ 2,		1,		'C',    ],     #  45  char i;             		// unknown, always 0
-	name_len    => [ 1,		1,		'C',    ],     #  46  char name_len;      		// length of name array
-	cmt_len     => [ 1,		1,		'C',    ],     #  47  char cmt_len;       		// length of comment
-	k3_0     	=> [ 2,		4,		'L',    ],     #  48  int32_t j;                  // unknown, always 0
+	lat			=> [ 0,		4,		'l',	],	   #  0   int32_t lat;				// 1E7 lat
+	lon			=> [ 0,		4,		'l',	],	   #  4   int32_t lon;				// 1E7 lon
+	north  		=> [ 0,		4,		'l',    ],     #  8   int32_t north				// prescaled ellipsoid Mercator northing and easting
+	east   		=> [ 0,		4,		'l',    ],     #  12  int32_t east;
+	k1_0x12     => [ 2,		12,		'H24',  ],     #  16  char d[12];         		// 12x \0
+	sym         => [ 0,		1,		'C',    ],     #  28  char sym;           		// probably symbol
+	temp        => [ 0,		2,		'S',    ],     #  29  uint16_t tempr;     		// temperature in Kelvin * 100
+	depth       => [ 0,		4,		'l',    ],     #  31  int32_t depth;      		// depth in cm
+	time        => [ 0,		4,		'L',    ],     #  35  uint32_t timeofday;  		// time of day in seconds
+	date        => [ 0,		2,		'S',    ],     #  39  uint16_t date;       		// days since 1.1.1970
+	k2_0        => [ 2,		1,		'C',    ],     #  41  char i;             		// unknown, always 0
+	name_len    => [ 1,		1,		'C',    ],     #  42  char name_len;      		// length of name array
+	cmt_len     => [ 1,		1,		'C',    ],     #  43  char cmt_len;       		// length of comment
+	k3_0     	=> [ 2,		4,		'L',    ],     #  44  int32_t j;                // unknown, always 0
 ];
 
 
-my $GROUP_REC_SIZE = 8;
+my $GROUP_REC_SIZE = 4;
 my $GROUP_REC_SPECS = [
-	big_len	    => [ 1,	4,	'V',	],		# 0		uint32_t;
-	name_len	=> [ 1,	1,	'C',	],		# 6		uint8_t;
-	cmt_len 	=> [ 1,	1,	'C',	],		# 7		uint8_t;
-	num_uuids   => [ 0,	2,	'v',	],		# 8		uint16_t;
+	name_len	=> [ 1,	1,	'C',	],		# 0		uint8_t;
+	cmt_len 	=> [ 1,	1,	'C',	],		# 1		uint8_t;
+	num_uuids   => [ 0,	2,	'v',	],		# 2		uint16_t;
 ];
 
 
 
-my $ROUTE_HDR1_SIZE = 12;
+my $ROUTE_HDR1_SIZE = 8;
 my $ROUTE_HDR1_SPECS = [
-	big_len	    => [ 1,	4,	'V',	],		# 0		uint32_t;
-	u1_0		=> [ 2,	2,	'H4',	],		# 4		uint16_t;
-	name_len	=> [ 1,	1,	'C',	],		# 6		uint8_t;
-	cmt_len 	=> [ 1,	1,	'C',	],		# 7		uint8_t;
-	num_wpts    => [ 0,	2,	'v',	],		# 8		uint16_t;
-	bits		=> [ 2,	1,	'H2',   ],		# 10	uint8_t;   1=temporary; 2=don't transfer to RNS
-	color		=> [ 0, 1,	'C',	],		# 11	uint8_t color index
+	u1_0		=> [ 2,	2,	'H4',	],		# 0		uint16_t;
+	name_len	=> [ 1,	1,	'C',	],		# 2		uint8_t;
+	cmt_len 	=> [ 1,	1,	'C',	],		# 3		uint8_t;
+	num_wpts    => [ 0,	2,	'v',	],		# 4		uint16_t;
+	bits		=> [ 2,	1,	'H2',   ],		# 6		uint8_t;   1=temporary; 2=don't transfer to RNS
+	color		=> [ 0, 1,	'C',	],		# 7		uint8_t color index
 ];
 
 my $ROUTE_HDR2_SIZE = 46;
 my $ROUTE_HDR2_SPECS = [
-	lat_start	=> [ 0,	4,	'l',	],		# 0
-	lon_start	=> [ 0,	4,	'l',	],		# 4
-	lat_end		=> [ 0,	4,	'l',	],		# 8
-	lon_end 	=> [ 0,	4,	'l',	],		# 12
-	distance	=> [ 2,	4,	'V', 	],		# 16 = uint32_t distance in meters
-
-	u2_0200		=> [ 2,	4,	'H8',	],		# 20 = 02000000 number?
-	u3			=> [ 2,	4,	'H8',	],		# 24 = b8975601 data? end marker?
-	u4_self		=> [ 1,	8,	'H16',	],		# 28 = self uuid dc82990f f567e68e
-	u5_self		=> [ 1,	8,	'H16',	],		# 36 = self uuid dc82990f f567e68e
-	u6		    => [ 2,	2,	'H4',   ],		# 44 = unknown
+	lat_start	=> [ 0,	4,	'l',	],		# 0		int32_t lat0;
+	lon_start	=> [ 0,	4,	'l',	],		# 4     int32_t lon0;
+	lat_end		=> [ 0,	4,	'l',	],		# 8     int32_t lat1;
+	lon_end 	=> [ 0,	4,	'l',	],		# 12    int32_t lon1;
+	distance	=> [ 2,	4,	'V', 	],		# 16	uint32_t distance in meters
+	u2_0200		=> [ 2,	4,	'H8',	],		# 20	02000000 number?
+	u3			=> [ 2,	4,	'H8',	],		# 24	b8975601 data? end marker?
+	u4_self		=> [ 1,	8,	'H16',	],		# 28	self uuid dc82990f f567e68e
+	u5_self		=> [ 1,	8,	'H16',	],		# 36	self uuid dc82990f f567e68e
+	u6		    => [ 2,	2,	'H4',   ],		# 44	unknown
 ];		# 34 = e039 - 0x39e = 926
 
 
@@ -129,7 +125,6 @@ my $ROUTE_HDR2_SPECS = [
 # to parseFSH)
 
 my $ROUTE_PT_SIZE = 10;
-
 my $ROUTE_PT_SPECS = [
 	bearing		=> [ 0,	2,	'v',   ],		# 0		uint16_t;
 	legLength	=> [ 1,	4,	'V',   ],		# 2		uint32_t;
@@ -324,7 +319,7 @@ sub wpmgrRecordToText
 
 
 #------------------------------------
-# WPGroups
+# Groups
 #------------------------------------
 
 sub parseGroup
@@ -332,8 +327,10 @@ sub parseGroup
 	#		len	 command  seqnum
     #       5e00 01020f00 0f000000
 	# after which the buffer starts with a dword(big_len) for the number
-	# of bytes which follow the dword(len), which will always be
-	# length($buffer)-4
+	# 	of bytes which follow the dword(len), which will always be
+	# 	length($buffer)-4, and which is not returned by parsing
+	#
+	#       big_len  data
     #       17000000 0b000100 74657374 466f6c64 657239				................testFolder9
 	#				 dc829918 f567e68e
 	#		1f000000 0b000200 74657374 466f6c64 657239				................testFolder9
@@ -352,13 +349,22 @@ sub parseGroup
 	#	comment if any
 	#   [uuids]
 {
-	my ($buffer,$mon,$color) = @_;
+	my ($fsh,$buffer,$mon,$color) = @_;
 	my $buf_len = length($buffer);
 
-	printConsole(2,$mon,$color,"parseGroup len($buf_len)")
+	printConsole(2,$mon,$color,"parseGroup($fsh) len($buf_len)")
 		if $mon & $MON_REC;
 
 	my $offset = 0;
+	my $big_len = 0;
+	if (!$fsh)
+	{
+		$big_len = unpack('V',$buffer);
+		$offset += 4;
+		printConsole(3,$mon,$color,"big_len = $big_len")
+			if $mon & $MON_REC;
+	}
+
 	my $rec = unpackRecord(
 		$mon,
 		$color,
@@ -400,7 +406,7 @@ sub parseGroup
 
 sub buildGroup
 {
-	my ($rec,$mon,$color) = @_;
+	my ($fsh,$rec,$mon,$color) = @_;
 	my $name = $rec->{name} || '';
 	my $comment = $rec->{comment} || '';
 	my $uuids = $rec->{uuids} || shared_clone([]);
@@ -410,7 +416,7 @@ sub buildGroup
 	$rec->{uuids} = $uuids;
 	$rec->{num_uuids} = @$uuids;
 
-	printConsole(2,$mon,$color,"buildGroup($name,$comment) num_uuids($rec->{num_uuids})")
+	printConsole(2,$mon,$color,"buildGroup($fsh) $name commant($comment) num_uuids($rec->{num_uuids})")
 		if $mon & $MON_REC;
 
 	my $buffer = packRecord(
@@ -431,17 +437,26 @@ sub buildGroup
 		$num++;
 	}
 
-	# parse check and THEN add biglen
+	# add big_len if !$fsh
+
+	if (!$fsh)
+	{
+		my $big_len = length($buffer);
+		$buffer = pack('V',$big_len).$buffer;
+		printConsole(3,$mon,$color,"big_len = $big_len")
+			if $mon & $MON_REC;
+	}
 	
-	parseGroup($buffer,$mon,$color) if $BUILD_CHECK_GROUP;
-	$buffer = pack('V',length($buffer)).$buffer;
+	# parse check
+
+	parseGroup($fsh,$buffer,$mon,$color) if $BUILD_CHECK_GROUP;
 	return $buffer;
 }
 
 
 
 #------------------------------------
-# WPRoutes
+# Routes
 #------------------------------------
 
 sub parseRoute
@@ -450,7 +465,7 @@ sub parseRoute
     #       5e00 01020f00 0f000000
 	# after which the buffer starts with a dword(big_len) for the number
 	# of bytes which follow the dword(len), which will always be
-	# length($buffer)-4
+	# length($buffer)-4, and not returned by parsing
 	#		52000000 00000a00 01000005 74657374 526f7574 6531aaaa   				  .........testRoute1..
     #       aaaaaaaa aaaa9e44 9005ecdb face9e44 9005ecdb face0000 00000200 0000b897   .......D.......D................
     #       5601dc82 990ff567 e68edc82 990ff567 e68ee039 00000000 00000000 0000       V......g.......g...9..........
@@ -463,13 +478,22 @@ sub parseRoute
 	# 	like 'self_uuid' but are not consistently
 	# 	created by RNS or E80 as I would expect.
 {
-	my ($buffer,$mon,$color) = @_;
+	my ($fsh,$buffer,$mon,$color) = @_;
 	my $buf_len = length($buffer);
 
-	printConsole(2,$mon,$color,"parseRoute len($buf_len)")
+	printConsole(2,$mon,$color,"parseRoute($fsh) len($buf_len)")
 		if $mon & $MON_REC;
 
 	my $offset = 0;
+	my $big_len = 0;
+	if (!$fsh)
+	{
+		$big_len = unpack('V',$buffer);
+		$offset += 4;
+		printConsole(3,$mon,$color,"big_len = $big_len")
+			if $mon & $MON_REC;
+	}
+
 	my $rec = unpackRecord(
 		$mon,
 		$color,
@@ -550,7 +574,7 @@ sub parseRoute
 
 sub buildRoute
 {
-	my ($rec,$mon,$color) = @_;
+	my ($fsh,$rec,$mon,$color) = @_;
 	my $name = $rec->{name} || '';
 	my $comment = $rec->{comment} || '';
 	my $uuids = $rec->{uuids} || shared_clone([]);
@@ -607,15 +631,26 @@ sub buildRoute
 			$ROUTE_PT_SPECS);
 	}
 
-	parseGroup($buffer,$mon,$color) if $BUILD_CHECK_ROUTE;
-	$buffer = pack('V',length($buffer)).$buffer;
+	# add big_len if !$fsh
+
+	if (!$fsh)
+	{
+		my $big_len = length($buffer);
+		$buffer = pack('V',$big_len).$buffer;
+		printConsole(3,$mon,$color,"big_len = $big_len")
+			if $mon & $MON_REC;
+	}
+
+	# parse check
+
+	parseRoute($fsh,$buffer,$mon,$color) if $BUILD_CHECK_ROUTE;
 	return $buffer;
 }
 
 
 
 #------------------------------------
-# WPWaypoints
+# Waypoints
 #------------------------------------
 
 sub parseWaypoint
@@ -623,32 +658,38 @@ sub parseWaypoint
 	#       len  command  seqnum
 	# 		5b00 01020f00 43000000
 	# after which the buffer starts with a dword(big_len) for the number
-	# of bytes which follow the dword(len), which will always be
-	# length($buffer)-4, followed by the length(52) waypoint data record,
+	# 	of bytes which follow the dword(len), which will always be
+	# 	length($buffer)-4, and which is generally not returned by parsing
+	# followed by the length(48) waypoint data record,
 	# followed by zero or more uuids.
 	#		4f000000 9e449005 ecdbface c16a9f06 ad4a84c5 00000000   				  ...D.......j...J......
 	#      	00000000 00000000 02010030 010000ef dc000088 4f000d0a 01000000 74657374   ...........0........O.......test
 	#      	57617970 6f696e74 31777043 6f6d6d65 6e7431dc 82990ff5 67e68e              Waypoint1wpComment1.....g..
 	# The general idea appears to be that the waypoint will keep
-	# the uuid of the parent Group if it is in a Group, and/or a
-	# list of the uuids of the Routes it is in, if it is in Routes.
-	# In practice I don't believe these uuids are used for anything,
-	# and they, at least the ones for Routes, are not rigourously
-	# maintained by the E80 or RNS.
+	# 	the uuid of the parent Group if it is in a Group, and/or a
+	# 	list of the uuids of the Routes it is in, if it is in Routes.
 {
-	my ($buffer,$mon,$color) = @_;
+	my ($fsh,$buffer,$mon,$color) = @_;
 	my $buf_len = length($buffer);
-	display($dbg_wp,0,"parseWaypoint len($buf_len)");
+	display($dbg_wp,0,"parseWaypoint($fsh) len($buf_len)");
 	if ($buf_len < $WP_REC_SIZE)
 	{
 		warning($dbg_wp,1,"buffer($buf_len) is less than WP_REC_SIZE($WP_REC_SIZE) in length");
 		return undef;
 	}
-
 	printConsole(2,$mon,$color,"parseWaypoint len($buf_len)")
 		if $mon & $MON_REC;
 
 	my $offset = 0;
+	my $big_len = 0;
+	if (!$fsh)
+	{
+		$big_len = unpack('V',$buffer);
+		$offset += 4;
+		printConsole(3,$mon,$color,"big_len = $big_len")
+			if $mon & $MON_REC;
+	}
+
 	my $rec = unpackRecord(
 		$mon,
 		$color,
@@ -693,7 +734,7 @@ sub parseWaypoint
 
 sub buildWaypoint
 {
-	my ($rec,$mon,$color) = @_;
+	my ($fsh,$rec,$mon,$color) = @_;
 	my $name = $rec->{name} || '';
 	my $comment = $rec->{comment} || '';
 	$rec->{name_len} = length($name);
@@ -721,8 +762,19 @@ sub buildWaypoint
 		$num++;
 	}
 
-	parseGroup($buffer,$mon,$color) if $BUILD_CHECK_WP;
-	$buffer = pack('V',length($buffer)).$buffer;
+	# add big_len if !$fsh
+
+	if (!$fsh)
+	{
+		my $big_len = length($buffer);
+		$buffer = pack('V',$big_len).$buffer;
+		printConsole(3,$mon,$color,"big_len = $big_len")
+			if $mon & $MON_REC;
+	}
+
+	# readback check
+
+	parseWaypoint($fsh,$buffer,$mon,$color) if $BUILD_CHECK_WP;
 	return $buffer;
 }
 
@@ -823,12 +875,12 @@ sub parseMTA
 }
 
 
-sub parseTrack
+sub parseTRK
 {
 	my ($buffer,$mon,$color) = @_;
 	my $buf_len = length($buffer);
 
-	printConsole(2,$mon,$color,"parseTrack len($buf_len)")
+	printConsole(2,$mon,$color,"parseTRK len($buf_len)")
 		if $mon & $MON_REC;
 
 	my $offset = 0;

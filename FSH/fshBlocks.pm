@@ -78,10 +78,9 @@ BEGIN
     );
 }
 
-my $WPT_HEADER_LEN = 8 + 40;
-	# prh modified after discovery they ALWAYS
-	# come with 1E7 lat/lons before the common waypoint
-	# defined in the code I borrowed
+my $WPT_HEADER_LEN = 48;
+	# Without "big_len" field that one finds in RAYSYS memory images
+	# of Waypoint records.
 
 
 # parsed blocks
@@ -276,21 +275,20 @@ sub decodeCommonWaypoint
 	# offsets shown are from borrowed schema; actual are +8
 
     my $field_specs = [             # typedef struct fsh_wpt_data; total length 40 bytes + name_len + cmt_len
-		lat			=> 'l',			#   -8								// 1E7 lat
-		lon			=> 'l',			#   -4
-        north  		=> 'l',         #   0   int32_t north
-        east   		=> 'l',         #   4   int32_t east; 				// prescaled ellipsoid Mercator northing and easting
-        k1_0x12     => 'A12',       #   8   char d[12];         		// 12x \0
-        sym         => 'C',         #   20  char sym;           		// probably symbol
-        temp        => 'S',         #   21  uint16_t tempr;     		// temperature in Kelvin * 100
-        depth       => 'l',         #   23  int32_t depth;      		// depth in cm
-                                    #   ######### fsh_timestamp_t ts; 	// timestamp (incorrect in borrowed code)
-        time        => 'L',         #   27  uint32_t timeofday;  		// time of day in seconds
-        date        => 'S',         #   31  uint16_t date;       		// days since 1.1.1970
-        k2_0        => 'C',         #   33  char i;             		// unknown, always 0
-		name_len    => 'C',         #   34  char name_len;      		// length of name array
-        cmt_len     => 'C',         #   35  char cmt_len;       		// length of comment
-        k3_0     	=> 'L',         #   36  int32_t j;                  // unknown, always 0
+		lat			=> 'l',			#   0								// 1E7 lat
+		lon			=> 'l',			#   4
+        north  		=> 'l',         #   8   int32_t north
+        east   		=> 'l',         #   12   int32_t east; 				// prescaled ellipsoid Mercator northing and easting
+        k1_0x12     => 'A12',       #   16   char d[12];         		// 12x \0
+        sym         => 'C',         #   28  char sym;           		// probably symbol
+        temp        => 'S',         #   29  uint16_t tempr;     		// temperature in Kelvin * 100
+        depth       => 'l',         #   31  int32_t depth;      		// depth in cm
+        time        => 'L',         #   35  uint32_t timeofday;  		// time of day in seconds
+        date        => 'S',         #   39  uint16_t date;       		// days since 1.1.1970
+        k2_0        => 'C',         #   41  char i;             		// unknown, always 0
+		name_len    => 'C',         #   42  char name_len;      		// length of name array
+        cmt_len     => 'C',         #   43  char cmt_len;       		// length of comment
+        k3_0     	=> 'L',         #   44  int32_t j;                  // unknown, always 0
 	];
 
     # follows are name_len bytes of name string and cmt_len bytes of comment text
@@ -330,13 +328,6 @@ sub decodeCommonWaypoint
 
 
 sub decodeWPT   # BLK_WPT
-	# // length 8 bytes  + sizeof common wpt_data_t
-	# typedef struct fsh_wpt01
-	# {
-	#    int32_t lat;			# 1e7 fixed format
-	#    int32_t lon;			# 1e7 fixed format
-	#    fsh_wpt_data_t wpd;
-	# }
 {
     my ($blk_num,$block) = @_;
     my $guid = $block->{guid};
@@ -388,44 +379,43 @@ sub decodeRTE   # BLK_RTE
 	# the number can truly be negative.  This record starts AFTER
 	# the big_len in NAVQRY ethernet ROUTE BUFFER messages.
 
-    my $hdr1_specs = [				# struct fsh_route21_header;  8 bytes
-        u1_0		=> 'H4',		#   int16_t a;        	// unknown, always 0
-		name_len	=> 'C',			#   char name_len;    	// length of name of route
-		cmt_len		=> 'C',			#   char cmt_len;     	// length of comment
-		guid_cnt	=> 'v',			#   int16_t guid_cnt; 	// number of guids following this header
-		bits		=> 'H2',		#   uint8_t b;       	// unknown, 1=temporary; 2=don't transfer to RNS?
-		color		=> 'C',			#   uint8_t color;		// NEWLY DISCOVERED: color index (red, yellow, green, blue, purple, black)
-	];								# }
+    my $hdr1_specs = [
+        u1_0		=> 'H4',		# 0	 int16_t a;        	// unknown, always 0
+		name_len	=> 'C',			# 2	 char name_len;    	// length of name of route
+		cmt_len		=> 'C',			# 3	 char cmt_len;     	// length of comment
+		guid_cnt	=> 'v',			# 4	 int16_t guid_cnt; 	// number of guids following this header
+		bits		=> 'H2',		# 6	 uint8_t b;       	// unknown, 1=temporary; 2=don't transfer to RNS?
+		color		=> 'C',			# 7	 uint8_t color;		// NEWLY DISCOVERED: color index (red, yellow, green, blue, purple, black)
+	];
 
-    my $hdr2_specs = [				# struct fsh_hdr2;   46 bytes
-        lat_start	=> 'l',			#	0  int32_t lat0;
-		lon_start	=> 'l',         #	4  int32_t lon0;  		// lat/lon of first waypoint
-		lat_end		=> 'l',         #	8  int32_t lat1;
-		lon_end		=> 'l',         #	12 int32_t lon1;  		// lat/lon of last waypoint
-		distance	=> 'V',         #	16 uint32_t distance;	// PRH NEWLY DISCOVERED: distance of route in meters
-
-		u2_0200	    => 'H8',		# 20 = 02000000 number?
-        u3		    => 'H8',        # 24 = b8975601 data? end marker?
-        u4_self	    => 'H16',       # 28 = self uuid dc82990f f567e68e
-        u5_self	    => 'H16',       # 36 = self uuid dc82990f f567e68e
-        u6		    => 'H4',        # 44 = unknown
+    my $hdr2_specs = [
+        lat_start	=> 'l',			# 0   int32_t lat0;
+		lon_start	=> 'l',         # 4   int32_t lon0;  		// lat/lon of first waypoint
+		lat_end		=> 'l',         # 8   int32_t lat1;
+		lon_end		=> 'l',         # 12  int32_t lon1;  		// lat/lon of last waypoint
+		distance	=> 'V',         # 16  uint32_t distance;	// PRH NEWLY DISCOVERED: distance of route in meters
+		u2_0200	    => 'H8',		# 20  02000000 number?
+        u3		    => 'H8',        # 24  b8975601 data? end marker?
+        u4_self	    => 'H16',       # 28  self uuid dc82990f f567e68e
+        u5_self	    => 'H16',       # 36  self uuid dc82990f f567e68e
+        u6		    => 'H4',        # 44  unknown
 	];
 
 	# parseFSH had these points entirely wrong.
 	# I believe I have discovered their true structure
 	# This whole structure is PRH NEWLY DISCOVERED
 
-	my $fsh_pt_specs = [			# struct fsh_pt; 10 bytes
-		bearing		=> 'v',			#	int16_t bearing;			// radians × 10,000 - bearing from previous waypoint; converted to degrees
-		legLength	=> 'V',			#	uint32_t leg_length;        // meters - from previous waypoint;
-		totLength	=> 'V',			#	uint32_t tot_length;        // meters - cumulative for route;
-	];								# }
+	my $fsh_pt_specs = [
+		bearing		=> 'v',			# 0	 int16_t bearing;			// radians × 10,000 - bearing from previous waypoint; converted to degrees
+		legLength	=> 'V',			# 2	 uint32_t leg_length;        // meters - from previous waypoint;
+		totLength	=> 'V',			# 4	 uint32_t tot_length;        // meters - cumulative for route;
+	];
 
 
-	my $hdr3_specs = [				# struct fsh_hdr3; 4 bytes
-		wpt_cnt		=> 'S',			# 	int16_t wpt_cnt;  	// number of waypoints
-		k3_0		=> 'S',			#	int16_t a;        	// always 0
-	];								# }
+	my $hdr3_specs = [
+		wpt_cnt		=> 'S',			# 0	int16_t wpt_cnt;  	// number of waypoints
+		k3_0		=> 'S',			# 2	int16_t a;        	// always 0
+	];
 
 
 	# HEADER 1
@@ -556,13 +546,6 @@ sub decodeGRP   # BLK_GRP
 		display($dbg_grp+1,2,"guid[$i]=".guidToStr($guid));
 		push @wp_guids,$guid;
 	}
-
-	# now included in common waypoint
-	# typedef struct fsh_wpt
-	# {
-	# 	int32_t lat, lon;   //!< latitude/longitude * 1E7
-	# 	fsh_wpt_data_t wpd;
-	# }
 
 	for (my $i=0; $i<$guid_cnt; $i++)
 	{

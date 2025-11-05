@@ -37,6 +37,7 @@ use base qw(b_sock);
 
 my $dbg = 0;
 my $dbg_got = 0;
+my $dbg_mods = 0;
 
 
 
@@ -302,9 +303,9 @@ sub create_item
 
 	$seq = $this->{next_seqnum}++;
 	$request =
-		createMsg($seq,$DIRECTION_SEND,$CMD_MODIFY,	$what,	$uuid).
+		createMsg($seq,$DIRECTION_SEND,$CMD_MODIFY,		$what,	$uuid).
 		createMsg($seq,$DIRECTION_INFO,$CMD_CONTEXT,	0,		$uuid.'03000000').	#.'00000000').
-		createMsg($seq,$DIRECTION_INFO,$CMD_BUFFER,	0,		$data).
+		createMsg($seq,$DIRECTION_INFO,$CMD_BUFFER,		0,		$data).
 		createMsg($seq,$DIRECTION_INFO,$CMD_LIST,		0,		'00000000 00000000'); # $uuid);
 
 	return 0 if !$this->sendRequest($seq,"$name $what_name",$request);
@@ -341,10 +342,13 @@ sub modify_item
 	$request =
 		createMsg($seq,$DIRECTION_SEND,$CMD_DATA,		$what,	'07000000'.$uuid).	# '15000000'.$uuid);
 		createMsg($seq,$DIRECTION_INFO,$CMD_CONTEXT,	0,		$uuid.'00000000').	#.'03000000').
-		createMsg($seq,$DIRECTION_INFO,$CMD_BUFFER,	0,		$data).
+		createMsg($seq,$DIRECTION_INFO,$CMD_BUFFER,		0,		$data).
 		createMsg($seq,$DIRECTION_INFO,$CMD_LIST,		0,		$uuid);
 	return 0 if !$this->sendRequest($seq,"modify $what_name",$request);
 	return 0 if !$this->waitReply(1);
+		# This reply is ignored BUT it contains the EVENTS telling us to
+		# get the modified item(s), and since it's not handled as an Event,
+		# the [mods] are ignored.
 	return 1;
 }
 
@@ -425,6 +429,62 @@ sub onConnect
 		if $this->{auto_populate};
 }
 
+
+
+
+sub handleEvent
+	# handles any Events or Mods that the packet might have,
+	# DOES NOT RETURN UNDEF because a 'mod-only' response is
+	# the proper reply to a modify_item call.
+{
+	my ($this,$packet) = @_;
+	my $mods = $packet->{mods};
+	return $packet if
+		!$mods ||
+		!$WITH_MOD_PROCESSING ||
+		$packet->{item};
+
+	warning($dbg_mods+1,1,"found ".scalar(@$mods)." mods");
+	my $evt_mask = $packet->{evt_mask} || 0;
+	for my $mod (@$mods)
+	{
+		my $hash_name = lc($NAV_WHAT{$mod->{what}}).'s';
+		warning($dbg_mods+1,2,sprintf(
+			"MOD(%02x=%s) uuid(%s) bits(%02x) evt_mask(%08x)",
+			$mod->{what},
+			$hash_name,
+			$mod->{uuid},
+			$mod->{bits},
+			$evt_mask));
+
+		# delete it, or ..
+
+		if ($mod->{bits} == 1)
+		{
+			my $hash = $this->{$hash_name};
+			my $exists = $hash->{$mod->{uuid}};
+			if ($exists)
+			{
+				warning($dbg_mods,2,"deleting $hash_name($mod->{uuid}) $exists->{name}");
+				delete $hash->{$mod->{uuid}};
+				$this->incVersion();
+			}
+		}
+		else	# enque a GET_ITEM command for th emod
+		{
+			warning($dbg_mods,0,"enquing mod($mod->{what}) uuid($mod->{uuid})");
+			$this->queueWPMGRCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef);
+		}
+
+	}	# for each mod
+
+	return $packet;
+		# packets with mods && no {item} will go to
+		# the reply queue.  They are needed for modify_item
+		# but may stack up for those silly waypoint events
+		# that happen continuously while underway.
+
+}	# handleEvent()
 
 
 

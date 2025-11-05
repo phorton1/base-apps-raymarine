@@ -149,6 +149,10 @@ sub handleSerialCommand
 			$wpmgr->createWaypoint($num) 	if $lpart eq 'create' && $what eq 'wp';
 			$wpmgr->createRoute($num,@rest) if $lpart eq 'create' && $what eq 'route';
 			$wpmgr->createGroup($num) 	 	if $lpart eq 'create' && $what eq 'group';
+
+			# delete commans now take name; in other words, $num is really $name
+			# for the shark 'delete' command
+			
 			$wpmgr->deleteWaypoint($num) 	if $lpart eq 'delete' && $what eq 'wp';
 			$wpmgr->deleteRoute($num) 	 	if $lpart eq 'delete' && $what eq 'route';
 			$wpmgr->deleteGroup($num) 	 	if $lpart eq 'delete' && $what eq 'group';
