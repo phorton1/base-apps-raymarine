@@ -22,8 +22,8 @@ BEGIN
 	);
 }
 
-my $kml = kml_header();
-my $indent_level = 1;
+my $kml;
+my $indent_level;
 
 sub inc_level { $indent_level++; }
 sub dec_level { $indent_level--; $indent_level=0 if $indent_level<0; }
@@ -161,7 +161,8 @@ sub genPlacemark
 sub genWaypoints
 	# from BLK_WPT's
 {
-	my $wpts = getWaypoints();
+	my ($fsh_file) = @_;
+	my $wpts = $fsh_file->getWaypoints();
 	display(0,0,"generating ".scalar(@$wpts)." waypoints");
 	if (@$wpts)
 	{
@@ -255,7 +256,8 @@ sub genTrack
 
 sub genTracks
 {
-	my $tracks = getTracks();
+	my ($fsh_file) = @_;
+	my $tracks = $fsh_file-getTracks();
 	display(0,0,"generating ".scalar(@$tracks)." tracks");
 	if (@$tracks)
 	{
@@ -319,7 +321,8 @@ sub genRoute
 
 sub genRoutes
 {
-	my $routes = getRoutes();
+	my ($fsh_file) = @_;
+	my $routes = $fsh_file->getRoutes();
 	display(0,0,"generating ".scalar(@$routes)." routes");
 	if (@$routes)
 	{
@@ -359,7 +362,8 @@ sub genGroup
 
 sub genGroups
 {
-	my $groups = getGroups();
+	my ($fsh_file) = @_;
+	my $groups = $fsh_file->getGroups();
 	display(0,0,"generating ".scalar(@$groups)." groups");
 	if (@$groups)
 	{
@@ -380,13 +384,15 @@ sub genGroups
 
 sub generateKML
 {
-	my ($all_blocks,$ofilename) = @_;
+	my ($fsh_file,$ofilename) = @_;
+	$kml = kml_header();
+	$indent_level = 1;
 	display(0,0,"generateKML($ofilename) ...");
 	addLine(0,"<name>$ofilename</name>");
-	genGroups();
-	genRoutes();
-	genWaypoints();
-	genTracks();
+	genGroups($fsh_file);
+	genRoutes($fsh_file);
+	genWaypoints($fsh_file);
+	genTracks($fsh_file);
 	$kml .= kml_footer();
 	printVarToFile(1,$ofilename,$kml,1);
 }

@@ -19,7 +19,7 @@
 #
 # A proper implementation would parse all the BLK_TRK blocks first,
 # and then allow for the MTAs to reference possible multiple BLK_TRACKS
-# by guid as the data structure implies.
+# by uuid as the data structure implies.
 
 # GRUMBLE - The E80 appears to use the archive to keep a history
 # of things INSIDE the ARCHIVE.FSH file.  As I save the SAME route
@@ -42,7 +42,7 @@
 # the ARCHIVE.FSH on the E80, the E80 KNOWS, on a fresh boot that it's 'EMPTY'.
 # Jeez. 
 
-package apps::raymarine::FSH::fshBlocks;
+package apps::raymarine::FSH::fshFile;		# continued
 use strict;
 use warnings;
 use POSIX qw(floor pow atan);
@@ -52,118 +52,109 @@ use Pub::Utils;
 use apps::raymarine::FSH::fshUtils;
 
 
-my $dbg_trk = 0;
-my $dbg_mta = 0;
+my $dbg_block = 0;
+my $dbg_trk = -1;
+my $dbg_mta = -1;
 my $dbg_wpt = 0;
-my $dbg_rte = 0;
-my $dbg_grp = 0;
+my $dbg_rte = 1;
+my $dbg_grp = 1;
+
+my $dbg_wblock = -1;
+my $dbg_wtrk = -1;
+my $dbg_wmta = -1;
+my $dbg_wwpt = -1;
+my $dbg_wrte = -1;
+my $dbg_wgrp = -1;
+
 
 
 my $LL_SCALE_FACTOR = 1e7;
 my $PI = 3.14159265358979323846;
 our $METERS_PER_NM 	= 1852;
 
-
-BEGIN
-{
- 	use Exporter qw( import );
-	our @EXPORT = qw (
-
-        processBlocks
-        getTracks
-        getWaypoints
-		getRoutes
-		getGroups
-
-    );
-}
-
-my $WPT_HEADER_LEN = 48;
-	# Without "big_len" field that one finds in RAYSYS memory images
-	# of Waypoint records.
-
-
 # parsed blocks
 
-my $track_points = {};  # BLK_TRK are parsed into arrays of points by guid
-my $tracks = [];        # BLK_MTA track meta info records ARE the 'tracks'
-    # E80 BLK_MTA's always come after their BLK_TRKS, so we can do
-    # everything in a single loop through all blocks.  For each BLK_MTA
-    # we find the track_points based on the MTA's 1st (only) sub-guid,
-    # and set the {points} member on the "track" record from that.
-my $waypoints = [];          # BLK_WPT recs from the inner common_waypoint
-    # with {guid} and {inner_guid} members added to by the block
-my $routes = [];		# BLK_RTE very complicated data structures,
-	# but each record has, at least, a NAME, possible COMMENT, and
-	# an array of {wpts}
-my $groups = [];
-	# groups have a name element and a {wpts} array
-	# the waypoints have a {int_lat, and int_lon} members
-	# which are the actual values * 1E7, as opposed to the
-	# mercator projectsion lat/lon from northEastToLatLon()
+#	my $track_points = {};  # BLK_TRK are parsed into arrays of points by uuid
+#	my $tracks = [];        # BLK_MTA track meta info records ARE the 'tracks'
+#	    # E80 BLK_MTA's always come after their BLK_TRKS, so we can do
+#	    # everything in a single loop through all blocks.  For each BLK_MTA
+#	    # we find the track_points based on the MTA's 1st (only) sub-uuid,
+#	    # and set the {points} member on the "track" record from that.
+#	my $waypoints = [];          # BLK_WPT recs from the inner common_waypoint
+#	    # with {uuid} and {inner_uuid} members added to by the block
+#	my $routes = [];		# BLK_RTE very complicated data structures,
+#		# but each record has, at least, a NAME, possible COMMENT, and
+#		# an array of {wpts}
+#	my $groups = [];
+#		# groups have a name element and a {wpts} array
+#		# the waypoints have a {int_lat, and int_lon} members
+#		# which are the actual values * 1E7, as opposed to the
+#		# mercator projectsion lat/lon from northEastToLatLon()
 
 
-sub getTracks			{ return $tracks; }
-sub getWaypoints()		{ return $waypoints; }
-sub getRoutes()			{ return $routes; }
-sub getGroups()			{ return $groups; }
+sub getTracks			{ my ($this) = @_; return $this->{tracks}; }
+sub getWaypoints()		{ my ($this) = @_; return $this->{waypoints}; }
+sub getRoutes()			{ my ($this) = @_; return $this->{routes}; }
+sub getGroups()			{ my ($this) = @_; return $this->{groups}; }
 
-
-my $ACTIVE_BLOCKS_ONLY = 1;
-
-sub processBlocks
-{
-    my ($all_blocks) = @_;
-    display(0,0,"processing blocks ...");
-
-    my $blk_num = 0;
-    for my $block (@$all_blocks)
-    {
-        return if !decodeBlock($blk_num,$block);
-		$blk_num++;
-    }
-
-    return 1;
-}
 
 
 
 sub decodeBlock
     # dispatcher based on block type
 {
-    my ($blk_num,$block) = @_;
+    my ($this,$block) = @_;
     my $type = $block->{type};
-	return 1 if $ACTIVE_BLOCKS_ONLY && !$block->{active};
-    # display(0,0,"decodeBlock($blk_num] ".blockTypeToStr($type)."(".guidToStr($block->{guid}).")");
-    return 0 if $type == $FSH_BLK_TRK && !decodeTRK($blk_num,$block);
-    return 0 if $type == $FSH_BLK_MTA && !decodeMTA($blk_num,$block);
-    return 0 if $type == $FSH_BLK_WPT && !decodeWPT($blk_num,$block);
-    return 0 if $type == $FSH_BLK_RTE && !decodeRTE($blk_num,$block);
-    return 0 if $type == $FSH_BLK_GRP && !decodeGRP($blk_num,$block);
+
+    display($dbg_block+1,0,"decodeBlock[$block->{num}] ".blockTypeToStr($type)."(".uuidToStr($block->{uuid}).")");
+    return 0 if $type == $FSH_BLK_TRK && !$this->decodeTRK($block);
+    return 0 if $type == $FSH_BLK_MTA && !$this->decodeMTA($block);
+    return 0 if $type == $FSH_BLK_WPT && !$this->decodeWPT($block);
+    return 0 if $type == $FSH_BLK_RTE && !$this->decodeRTE($block);
+    return 0 if $type == $FSH_BLK_GRP && !$this->decodeGRP($block);
     return 1;
 }
 
 
+sub createBlock
+{
+	my ($this,$uuid_str,$type,$bytes) = @_;
+	my $uuid = strToUuid($uuid_str);
+	my $show_type = blockTypeToStr($type);
+	my $len = length($bytes);
+	my $num = @{$this->{blocks}};
 
-sub decodeTRK     # parse a BLK_TRK into array of points in track_points
+	display(0,0,"createBlock($show_type) num($num) uuid($uuid_str) len($len)");
+	push @{$this->{blocks}}, {
+		num		=> $num,
+		active 	=> 1,
+		uuid 	=> $uuid,
+		type 	=> $type,
+		bytes 	=> $bytes, };
+}
+
+
+#---------------------------------------------
+# TRK
+#---------------------------------------------
+
+my $TRACK_HEADER_SIZE = 8;
+my $TRACK_POINT_SIZE = 14;
+
+
+sub decodeTRK     # parse into array of points in track_points
 	# Odd that nothing on a track has a date-time ...
 {
-    my ($blk_num,$block) = @_;
-    my $guid = $block->{guid};
-    display($dbg_trk,0,"decodeTRK[$blk_num] ".guidToStr($guid));
-
-	my $TRACK_HEADER_SIZE = 8;
-	my $TRACK_POINT_SIZE = 14;
+    my ($this,$block) = @_;
+    my $uuid = $block->{uuid};
+    display($dbg_block,0,"decodeTRK[$block->{num}] ".uuidToStr($uuid));
 
 	my $offset = 0;
 	my $bytes = $block->{bytes};
 	my ($a,$point_count,$b) = unpack('lss',substr($bytes,$offset,$TRACK_HEADER_SIZE));
-		# typedef struct fsh_track_header
-		# {
 		# 	int32_t a;        // unknown, always 0
 		# 	int16_t cnt;      // number of track points
 		# 	int16_t b;        // unknown, always 0
-		# }
 	$offset += $TRACK_HEADER_SIZE;
 	display($dbg_trk,1,"point_count($point_count)  ($a,$b)");
 
@@ -173,13 +164,10 @@ sub decodeTRK     # parse a BLK_TRK into array of points in track_points
 		my $point_str = substr($bytes,$offset,$TRACK_POINT_SIZE);
 		$offset += $TRACK_POINT_SIZE;
 		my ($north,$east,$temp,$depth,$c) = unpack('llSss',$point_str);
-			# typedef struct fsh_track_point
-			# {
 			# 	int32_t north, east; // prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
 			# 	uint16_t tempr;      // temperature in Kelvin * 100
 			# 	int16_t depth;       // depth in cm
 			# 	int16_t c;           // unknown, always 0
-			# }
         my $coords = northEastToLatLon($north,$east);
 
         my $point = {
@@ -192,73 +180,247 @@ sub decodeTRK     # parse a BLK_TRK into array of points in track_points
         push @$points,$point;
 	}
 
-    $track_points->{$guid} = $points;
+    $this->{track_points}->{$uuid} = $points;
     return 1;
 
 }	# decodeTRK()
 
 
 
-sub decodeMTA  # parse a BLK_MTA
+sub encodeTRK
+{
+    my ($this,$rec) = @_;
+		# trk_uuid	REQUIRED
+		# points	REQUIRED
+
+	my $points = $rec->{points};
+	my $num_points = @$points;
+	display($dbg_wblock,0,"encodeTRK() trk_uuid=$rec->{trk_uuid} num_points=$num_points");
+
+	my $bytes = pack('lss',0,$num_points,0);
+		# 	int32_t a;        // unknown, always 0
+		# 	int16_t cnt;      // number of track points
+		# 	int16_t b;        // unknown, always 0
+
+	for (my $i=0; $i<$num_points; $i++)
+	{
+		my $point = $$points[$i];
+		my $coords = latLonToNorthEast($point->{lat},$point->{lon});
+		$bytes .= pack('llSss',$coords->{north},$coords->{east},0,$point->{depth},0);
+			# 	int32_t north, east; // prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
+			# 	uint16_t tempr;      // temperature in Kelvin * 100
+			# 	int16_t depth;       // depth in cm
+			# 	int16_t c;           // unknown, always 0
+	}
+
+	$this->createBlock($rec->{trk_uuid},$FSH_BLK_TRK,$bytes);
+    return 1;
+
+}	# encodeTRK()
+
+
+
+
+
+#---------------------------------------------
+# MTA
+#---------------------------------------------
+
+my $MTA_HEADER_SIZE = 58;
+my $MTA_FIELD_SPECS = [             # typedef struct fsh_track_meta     // total length 58 + uuid_cnt * 8 bytes
+	k1_1         => 'c',        #   0     char a;                   // always 0x01
+	cnt          => 's',        #   1     int16_t cnt;              // number of track points
+	_cnt         => 's',        #   3     int16_t _cnt;             // same as cnt
+	k2_0         => 's',        #   5     int16_t b;                // unknown, always 0
+	length       => 'l',        #   7     int32_t length;           // approx. track length in m
+	north_start  => 'l',        #   11    int32_t north_start;      // Northing of first track point
+	east_start   => 'l',        #   15    int32_t east_start;       // Easting of first track point
+	temp_start   => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
+	depth_start  => 'l',        #   21    int32_t depth_start;      // depth of first track point
+	north_end    => 'l',        #   25    int32_t north_end;        // Northing of last track point
+	east_end     => 'l',        #   29    int32_t east_end;         // Easting of last track point
+	temp_end     => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
+	depth_end    => 'l',        #   35    int32_t depth_end;        // depth of last track point
+	color        => 'c',        #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
+	name         => 'Z16',      #   40    char name[16];            // name of track, string not terminated
+	u1           => 'C',        #   56    char j;                   // unknown, never 0 in my files, always 0 according to parsefsh
+	uuid_cnt     => 'c',        #   57    uint8_t uuid_cnt;         // nr of uuids following this header (always 1 in my files)
+];
+
+
+sub decodeMTA
 	# In my E80 ARCHIVE.FSH's, 'j' is never 0, and it looks the name is
 	# actually be 16 bytes, with junk after a null terminator.  All of my MTAs
-	# have exactly one guid which is always the guid of the previous BLK_TRK.
+	# have exactly one uuid which is always the uuid of the previous BLK_TRK.
 {
-    my ($blk_num,$block) = @_;
-    my $guid = $block->{guid};
-    my $dbg_str = "[$blk_num] ".guidToStr($guid);
-    display($dbg_mta,0,"decodeMTA$dbg_str");
+    my ($this,$block) = @_;
+    my $uuid = $block->{uuid};
+    my $dbg_str = "[$block->{num}]] ".uuidToStr($uuid);
+    display($dbg_block,0,"decodeMTA$dbg_str");
 
 	my $bytes = $block->{bytes};
 	display_bytes($dbg_mta+1,1,"bytes",$bytes);
 
 	# Note that Z16 removes trailing nulls and garbage from strings
 	# And once again, no date-time on a track!!
-
-	my $MTA_HEADER_SIZE = 58;
-    my $field_specs = [             # typedef struct fsh_track_meta     // total length 58 + guid_cnt * 8 bytes
-        k1_1         => 'c',        #   0     char a;                   // always 0x01
-        cnt          => 's',        #   1     int16_t cnt;              // number of track points
-        _cnt         => 's',        #   3     int16_t _cnt;             // same as cnt
-        k2_0         => 's',        #   5     int16_t b;                // unknown, always 0
-        length       => 'l',        #   7     int32_t length;           // approx. track length in m
-        north_start  => 'l',        #   11    int32_t north_start;      // Northing of first track point
-        east_start   => 'l',        #   15    int32_t east_start;       // Easting of first track point
-        temp_start   => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
-        depth_start  => 'l',        #   21    int32_t depth_start;      // depth of first track point
-        north_end    => 'l',        #   25    int32_t north_end;        // Northing of last track point
-        east_end     => 'l',        #   29    int32_t east_end;         // Easting of last track point
-        temp_end     => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
-        depth_end    => 'l',        #   35    int32_t depth_end;        // depth of last track point
-        color        => 'c',        #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
-        name         => 'Z16',      #   40    char name[16];            // name of track, string not terminated
-        u1           => 'C',        #   56    char j;                   // unknown, never 0 in my files, always 0 according to parsefsh
-		guid_cnt     => 'c',        #   57    uint8_t guid_cnt;         // nr of guids following this header (always 1 in my files)
-	];
-
-    # guid_cnt is always exactly 1 for E80 ARCHIVE.FSH's
+    # uuid_cnt is always exactly 1 for E80 ARCHIVE.FSH's
     
-	my $rec = unpackRecord($dbg_mta+1,$field_specs,$bytes);
-    return error("MTA$dbg_str has $rec->{guid_cnt} track guid's!")
-        if $rec->{guid_cnt} != 1;
+	my $rec = unpackRecord($dbg_mta+1,$MTA_FIELD_SPECS,$bytes);
+    return error("MTA$dbg_str has $rec->{uuid_cnt} track uuid's!")
+        if $rec->{uuid_cnt} != 1;
 
+	$rec->{mta_uuid} = $uuid;
 
 	my $offset = $MTA_HEADER_SIZE;
-    my $track_guid = unpack('A8',substr($bytes,$offset,$GUID_SIZE));
-    my $track_guid_str = guidToStr($track_guid);
+    my $track_uuid = unpack('A8',substr($bytes,$offset,$UUID_SIZE));
+    my $track_uuid_str = uuidToStr($track_uuid);
 
-    display($dbg_mta,1,"track name($rec->{name}) guid = $track_guid_str");
+    display($dbg_mta,1,"track name($rec->{name}) uuid = $track_uuid_str");
+	$rec->{trk_uuid} =$track_uuid_str;
 
-    my $points = $track_points->{$track_guid};
-    return error("Could not find track_points($track_guid_str) on MTA$dbg_str")
+    my $points = $this->{track_points}->{$track_uuid};
+    return error("Could not find track_points($track_uuid_str) on MTA$dbg_str")
         if !$points;
 
+	# decodeMTA actually creates the entire fshFile->{track}
+
     $rec->{points} = $points;
-    push @$tracks,$rec;
+    push @{$this->{tracks}},$rec;
     return 1;
 
 }	# decodeMTA()
 
+
+
+
+
+
+sub encodeMTA  # create an MTA
+{
+    my ($this,$rec) = @_;
+		# name			REQUIRED
+		# mta_uuid		REQUIRED
+		# trk_uuid		REQUIRED
+		# color			default(0)
+		# points		REQUIRED
+		# length		default(0) track length in meters
+		
+
+		# k1_1         => 'c',        #   0     char a;                   // always 0x01
+		# cnt          => 's',        #   1     int16_t cnt;              // number of track points
+		# _cnt         => 's',        #   3     int16_t _cnt;             // same as cnt
+		# k2_0         => 's',        #   5     int16_t b;                // unknown, always 0
+		# length       => 'l',        #   7     int32_t length;           // approx. track length in m
+		# north_start  => 'l',        #   11    int32_t north_start;      // Northing of first track point
+		# east_start   => 'l',        #   15    int32_t east_start;       // Easting of first track point
+		# temp_start   => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
+		# depth_start  => 'l',        #   21    int32_t depth_start;      // depth of first track point
+		# north_end    => 'l',        #   25    int32_t north_end;        // Northing of last track point
+		# east_end     => 'l',        #   29    int32_t east_end;         // Easting of last track point
+		# temp_end     => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
+		# depth_end    => 'l',        #   35    int32_t depth_end;        // depth of last track point
+		# color        => 'c',        #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
+		# name         => 'Z16',      #   40    char name[16];            // name of track, string not terminated
+		# u1           => 'C',        #   56    char j;                   // unknown, never 0 in my files, always 0 according to parsefsh
+		# uuid_cnt     => 'c',        #   57    uint8_t uuid_cnt;         // nr of uuids following this header (always 1 in my files)
+
+	my $points = $rec->{points};
+	my $num_points = @$points;
+	display($dbg_wblock,0,"encodeMTA($rec->{name}) mta=$rec->{mta_uuid} trk=$rec->{trk_uuid} num_points=$num_points");
+
+	$rec->{color} ||= 0;
+	$rec->{length} ||= 0;
+
+	# zero points = zeros for stuff below
+	# one point  = same start and end
+	# two+ points = different start and end
+
+	my $north_start = 0;
+	my $east_start 	= 0;
+	my $depth_start	= 0;
+	my $north_end  	= 0;
+	my $east_end   	= 0;
+	my $depth_end  	= 0;
+	if ($num_points)
+	{
+		my $pt1 = $$points[0];
+		my $pt2 = $$points[$num_points-1];
+		my $coords = latLonToNorthEast($pt1->{lat},$pt1->{lon});
+		$north_start = $coords->{north};
+		$east_start = $coords->{east};
+		$depth_start = $pt1->{depth};
+		$coords = latLonToNorthEast($pt2->{lat},$pt2->{lon});
+		$north_end = $coords->{north};
+		$east_end = $coords->{east};
+		$depth_end = $pt1->{depth};
+	}
+
+	my $name = $rec->{name};
+	my $name_len = length($name);
+	if ($name_len > 16)
+	{
+		$name = substr($name,0,16);
+	}
+	elsif ($name_len < 16)
+	{
+		$name .= ' ' x (16-$name_len);
+	}
+
+	my $mta_rec = {
+		k1_1         => 0x01,			# => 'c',        #   0     char a;                   // always 0x01
+		cnt          => $num_points,	# => 's',        #   1     int16_t cnt;              // number of track points
+		_cnt         => $num_points,	# => 's',        #   3     int16_t _cnt;             // same as cnt
+		k2_0         => 0,				# => 's',        #   5     int16_t b;                // unknown, always 0
+		length       => 10000,	# test value	$rec->{length},	# => 'l',        #   7     int32_t length;           // approx. track length in m
+		north_start  => $north_start,	# => 'l',        #   11    int32_t north_start;      // Northing of first track point
+		east_start   => $east_start,	# => 'l',        #   15    int32_t east_start;       // Easting of first track point
+		temp_start   => 0,				# => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
+		depth_start  => $depth_start,	# => 'l',        #   21    int32_t depth_start;      // depth of first track point
+		north_end    => $north_end,		# => 'l',        #   25    int32_t north_end;        // Northing of last track point
+		east_end     => $east_end,		# => 'l',        #   29    int32_t east_end;         // Easting of last track point
+		temp_end     => 0,				# => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
+		depth_end    => $depth_end,		# => 'l',        #   35    int32_t depth_end;        // depth of last track point
+		color        => $rec->{color},	# => 'c',        #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
+		name         => $name,			# => 'Z16',      #   40    char name[16];            // name of track, string not terminated
+		u1           => 204,	# 204 for mtas in my ARCHIVE.FSH			# => 'C',        #   56    char j;                   // unknown, never 0 in my files, always 0 according to parsefsh
+		uuid_cnt     => 1,				# => 'c',        #   57    uint8_t uuid_cnt;         // nr of uuids following this header (always 1 in my files)
+	};
+
+
+	my $bytes = packRecord($dbg_wmta+1,$MTA_FIELD_SPECS,$mta_rec);
+	$bytes .= strToUuid($rec->{trk_uuid});
+
+	# encodeMTA adds the BLK_MTA to the fshFile but
+	# does not add the BLK_TRK which must precede it.
+
+	$this->createBlock($rec->{mta_uuid},$FSH_BLK_MTA,$bytes);
+	return 1;
+
+}	# encodMTA()
+
+
+
+#--------------------------------------------
+# commonWaypoint
+#--------------------------------------------
+
+my $WPT_HEADER_SIZE = 48;
+my $WPT_FIELD_SPECS = [             # typedef struct fsh_wpt_data; total length 40 bytes + name_len + cmt_len
+	lat			=> 'l',			#   0								// 1E7 lat
+	lon			=> 'l',			#   4
+	north  		=> 'l',         #   8   int32_t north
+	east   		=> 'l',         #   12   int32_t east; 				// prescaled ellipsoid Mercator northing and easting
+	k1_0x12     => 'A12',       #   16   char d[12];         		// 12x \0
+	sym         => 'C',         #   28  char sym;           		// probably symbol
+	temp        => 'S',         #   29  uint16_t tempr;     		// temperature in Kelvin * 100
+	depth       => 'l',         #   31  int32_t depth;      		// depth in cm
+	time        => 'L',         #   35  uint32_t timeofday;  		// time of day in seconds
+	date        => 'S',         #   39  uint16_t date;       		// days since 1.1.1970
+	k2_0        => 'C',         #   41  char i;             		// unknown, always 0
+	name_len    => 'C',         #   42  char name_len;      		// length of name array
+	cmt_len     => 'C',         #   43  char cmt_len;       		// length of comment
+	k3_0     	=> 'L',         #   44  int32_t j;                  // unknown, always 0
+];
 
 
 sub decodeCommonWaypoint
@@ -268,37 +430,21 @@ sub decodeCommonWaypoint
 	# a more accurate 1e7 lat and lon.  It is better than the
 	# northing/easting and mercator projection math.
 {
-	my ($dbg,$bytes,$offset,$guid) = @_;
-	my $wpt_header = substr($bytes,$offset,$WPT_HEADER_LEN);
+	my ($dbg,$bytes,$offset,$uuid) = @_;
+	my $wpt_header = substr($bytes,$offset,$WPT_HEADER_SIZE);
 	display_bytes($dbg+3,1,"wpt_header",$wpt_header);
 
 	# offsets shown are from borrowed schema; actual are +8
 
-    my $field_specs = [             # typedef struct fsh_wpt_data; total length 40 bytes + name_len + cmt_len
-		lat			=> 'l',			#   0								// 1E7 lat
-		lon			=> 'l',			#   4
-        north  		=> 'l',         #   8   int32_t north
-        east   		=> 'l',         #   12   int32_t east; 				// prescaled ellipsoid Mercator northing and easting
-        k1_0x12     => 'A12',       #   16   char d[12];         		// 12x \0
-        sym         => 'C',         #   28  char sym;           		// probably symbol
-        temp        => 'S',         #   29  uint16_t tempr;     		// temperature in Kelvin * 100
-        depth       => 'l',         #   31  int32_t depth;      		// depth in cm
-        time        => 'L',         #   35  uint32_t timeofday;  		// time of day in seconds
-        date        => 'S',         #   39  uint16_t date;       		// days since 1.1.1970
-        k2_0        => 'C',         #   41  char i;             		// unknown, always 0
-		name_len    => 'C',         #   42  char name_len;      		// length of name array
-        cmt_len     => 'C',         #   43  char cmt_len;       		// length of comment
-        k3_0     	=> 'L',         #   44  int32_t j;                  // unknown, always 0
-	];
 
     # follows are name_len bytes of name string and cmt_len bytes of comment text
 
-	my $rec = unpackRecord($dbg+2,$field_specs,$wpt_header);
+	my $rec = unpackRecord($dbg+2,$WPT_FIELD_SPECS,$wpt_header);
 	$rec->{lat} /= $LL_SCALE_FACTOR;
 	$rec->{lon} /= $LL_SCALE_FACTOR;
 
-	$offset += $WPT_HEADER_LEN;
-	$rec->{guid} = guidToStr($guid);
+	$offset += $WPT_HEADER_SIZE;
+	$rec->{uuid} = uuidToStr($uuid);
 
 	my $name = $rec->{name_len} ? substr($bytes,$offset,$rec->{name_len}) : '';
 	$offset += $rec->{name_len};
@@ -316,7 +462,7 @@ sub decodeCommonWaypoint
 	my $show_lon = degreesWithMinutes('lon',$rec->{lon});
 	my $show_time = fshDateTimeToStr($rec->{date},$rec->{time});
 
-	display($dbg,1,"WP(".guidToStr($guid).")      ".$show_time."         ".$name);
+	display($dbg,1,"WP(".uuidToStr($uuid).")      ".$show_time."         ".$name);
 	display($dbg,2,pad("lat($rec->{lat})=$show_lat",26)." lon($rec->{lon})=$show_lon");
 	display($dbg,2,"COMMENT='$comment'") if $comment;
 
@@ -327,32 +473,90 @@ sub decodeCommonWaypoint
 
 
 
-sub decodeWPT   # BLK_WPT
+#------------------------------------
+# WPT
+#------------------------------------
+
+sub decodeWPT
 {
-    my ($blk_num,$block) = @_;
-    my $guid = $block->{guid};
-    display($dbg_wpt,0,"decodeWPT[$blk_num]");
+    my ($this,$block) = @_;
+    my $uuid = $block->{uuid};
+    display($dbg_block,0,"decodeWPT[$block->{num}]]");
 
 	my $bytes = $block->{bytes};
 	display_bytes($dbg_wpt+2,1,"bytes",$bytes);
-	my $wpt = decodeCommonWaypoint($dbg_wpt,$bytes,0,$guid);
-    push @$waypoints,$wpt;
+	my $wpt = decodeCommonWaypoint($dbg_wpt,$bytes,0,$uuid);
+    push @{$this->{waypoints}},$wpt;
     return 1;
 
 }	# decodeWPT()
 
 
 
-sub decodeRTE   # BLK_RTE
+#------------------------------------
+# RTE
+#------------------------------------
+# I don't know why he uses int16_t for enumerations
+# I generally use 'C','S', and 'L', prefering unsigned unless
+# the number can truly be negative.  This record starts AFTER
+# the big_len in NAVQRY ethernet ROUTE BUFFER messages.
+
+my $RTE_HDR1_SIZE = 8;
+my $RTE_HDR2_SIZE = 46;
+my $RTE_PT_SIZE = 10;
+my $RTE_HDR3_SIZE = 4;
+
+
+my $RTE_HDR1_SPECS = [
+	u1_0		=> 'H4',		# 0	 int16_t a;        	// unknown, always 0
+	name_len	=> 'C',			# 2	 char name_len;    	// length of name of route
+	cmt_len		=> 'C',			# 3	 char cmt_len;     	// length of comment
+	uuid_cnt	=> 'v',			# 4	 int16_t uuid_cnt; 	// number of uuids following this header
+	bits		=> 'H2',		# 6	 uint8_t b;       	// unknown, 1=temporary; 2=don't transfer to RNS?
+	color		=> 'C',			# 7	 uint8_t color;		// NEWLY DISCOVERED: color index (red, yellow, green, blue, purple, black)
+];
+
+my $RTE_HDR2_SPECS = [
+	lat_start	=> 'l',			# 0   int32_t lat0;
+	lon_start	=> 'l',         # 4   int32_t lon0;  		// lat/lon of first waypoint
+	lat_end		=> 'l',         # 8   int32_t lat1;
+	lon_end		=> 'l',         # 12  int32_t lon1;  		// lat/lon of last waypoint
+	distance	=> 'V',         # 16  uint32_t distance;	// PRH NEWLY DISCOVERED: distance of route in meters
+	u2_0200	    => 'H8',		# 20  02000000 number?
+	u3		    => 'H8',        # 24  b8975601 data? end marker?
+	u4_self	    => 'H16',       # 28  self uuid dc82990f f567e68e
+	u5_self	    => 'H16',       # 36  self uuid dc82990f f567e68e
+	u6		    => 'H4',        # 44  unknown
+];
+
+# parseFSH had these points entirely wrong.
+# I believe I have discovered their true structure
+# This whole structure is PRH NEWLY DISCOVERED
+
+my $RTE_PT_SPECS = [
+	bearing		=> 'v',			# 0	 int16_t bearing;			// radians × 10,000 - bearing from previous waypoint; converted to degrees
+	legLength	=> 'V',			# 2	 uint32_t leg_length;        // meters - from previous waypoint;
+	totLength	=> 'V',			# 4	 uint32_t tot_length;        // meters - cumulative for route;
+];
+
+
+my $RTE_HR3_SPECS = [
+	wpt_cnt		=> 'S',			# 0	int16_t wpt_cnt;  	// number of waypoints
+	k3_0		=> 'S',			# 2	int16_t a;        	// always 0
+];
+
+
+
+sub decodeRTE
 	# From https://wiki.openstreetmap.org/wiki/ARCHIVE.FSH
 	# This complicated block appears to be made up of
 	# 	- an fsh_route21_header,
-	#   - guid_cnt guids
+	#   - uuid_cnt uuids
 	#   - an fsh_hdr2,
-	#   - an array of guid_cnt 10 byte fsh_pt's
+	#   - an array of uuid_cnt 10 byte fsh_pt's
 	#   - an fsh_hdr3
-	#   - an array of common waypoints, each preceded by TWO guids
-	# This code is a glom and the TWO guids approach was determined
+	#   - an array of common waypoints, each preceded by TWO uuids
+	# This code is a glom and the TWO uuids approach was determined
 	# 	semi-empirically and from notes on the above page, where it
 	# 	appears that the common waypoints are bracketed by three different
 	# 	wrappers depending on what kind of block they are in
@@ -360,69 +564,20 @@ sub decodeRTE   # BLK_RTE
 	#	zeros, and that most of this stuff is 'unknown', and for us,
 	#   unused.
 	# But to CONSTRUCT one of these we would have to know exactly
-	# WTF is going on, including the relationship of all these guids!
+	# WTF is going on, including the relationship of all these uuids!
 {
-    my ($blk_num,$block) = @_;
-    my $guid = $block->{guid};
-    display($dbg_rte,0,"decodeRTE[$blk_num] ".guidToStr($guid));
+    my ($this,$block) = @_;
+    my $uuid = $block->{uuid};
+    display($dbg_block,0,"decodeRTE[$block->{num}]] ".uuidToStr($uuid));
 
 	my $bytes = $block->{bytes};
 	display_bytes($dbg_rte+2,1,"bytes",$bytes);
 
-	my $HEADER1_SIZE = 8;
-	my $HEADER2_SIZE = 46;	 
-	my $FSH_PT_SIZE = 10;
-	my $HEADER3_SIZE = 4;
-
-	# I don't know why he uses int16_t for enumerations
-	# I generally use 'C','S', and 'L', prefering unsigned unless
-	# the number can truly be negative.  This record starts AFTER
-	# the big_len in NAVQRY ethernet ROUTE BUFFER messages.
-
-    my $hdr1_specs = [
-        u1_0		=> 'H4',		# 0	 int16_t a;        	// unknown, always 0
-		name_len	=> 'C',			# 2	 char name_len;    	// length of name of route
-		cmt_len		=> 'C',			# 3	 char cmt_len;     	// length of comment
-		guid_cnt	=> 'v',			# 4	 int16_t guid_cnt; 	// number of guids following this header
-		bits		=> 'H2',		# 6	 uint8_t b;       	// unknown, 1=temporary; 2=don't transfer to RNS?
-		color		=> 'C',			# 7	 uint8_t color;		// NEWLY DISCOVERED: color index (red, yellow, green, blue, purple, black)
-	];
-
-    my $hdr2_specs = [
-        lat_start	=> 'l',			# 0   int32_t lat0;
-		lon_start	=> 'l',         # 4   int32_t lon0;  		// lat/lon of first waypoint
-		lat_end		=> 'l',         # 8   int32_t lat1;
-		lon_end		=> 'l',         # 12  int32_t lon1;  		// lat/lon of last waypoint
-		distance	=> 'V',         # 16  uint32_t distance;	// PRH NEWLY DISCOVERED: distance of route in meters
-		u2_0200	    => 'H8',		# 20  02000000 number?
-        u3		    => 'H8',        # 24  b8975601 data? end marker?
-        u4_self	    => 'H16',       # 28  self uuid dc82990f f567e68e
-        u5_self	    => 'H16',       # 36  self uuid dc82990f f567e68e
-        u6		    => 'H4',        # 44  unknown
-	];
-
-	# parseFSH had these points entirely wrong.
-	# I believe I have discovered their true structure
-	# This whole structure is PRH NEWLY DISCOVERED
-
-	my $fsh_pt_specs = [
-		bearing		=> 'v',			# 0	 int16_t bearing;			// radians × 10,000 - bearing from previous waypoint; converted to degrees
-		legLength	=> 'V',			# 2	 uint32_t leg_length;        // meters - from previous waypoint;
-		totLength	=> 'V',			# 4	 uint32_t tot_length;        // meters - cumulative for route;
-	];
-
-
-	my $hdr3_specs = [
-		wpt_cnt		=> 'S',			# 0	int16_t wpt_cnt;  	// number of waypoints
-		k3_0		=> 'S',			# 2	int16_t a;        	// always 0
-	];
-
-
 	# HEADER 1
 
 	my $offset = 0;
-	my $hdr1 = unpackRecord($dbg_rte+1,$hdr1_specs,substr($bytes,$offset,$HEADER1_SIZE));
-	$offset += $HEADER1_SIZE;
+	my $hdr1 = unpackRecord($dbg_rte+1,$RTE_HDR1_SPECS,substr($bytes,$offset,$RTE_HDR1_SIZE));
+	$offset += $RTE_HDR1_SIZE;
 	my $name = $hdr1->{name_len} ? substr($bytes,$offset,$hdr1->{name_len}) : '';
 	$offset += $hdr1->{name_len};
 	my $comment = $hdr1->{cmt_len} ? substr($bytes,$offset,$hdr1->{cmt_len}) : '';
@@ -436,36 +591,36 @@ sub decodeRTE   # BLK_RTE
 	$hdr1->{wpts} = [];
 	$hdr1->{pts} = [];
 
-	# we can skip this list of guids, because they
+	# we can skip this list of uuids, because they
 	# precede each common waypoint ...
-	#	for (my $i=0; $i<$hdr1->{guid_cnt}; $i++)
+	#	for (my $i=0; $i<$hdr1->{uuid_cnt}; $i++)
 	#	{
-	#		my $guid = unpack('H*',substr($bytes,$offset,$GUID_SIZE));
-	#		warning(0,1,"skipping inner_guid($guid)");
-	#		$offset += $GUID_SIZE;
+	#		my $uuid = unpack('H*',substr($bytes,$offset,$UUID_SIZE));
+	#		warning(0,1,"skipping inner_uuid($uuid)");
+	#		$offset += $UUID_SIZE;
 	#	}
 
-	$offset += $GUID_SIZE * $hdr1->{guid_cnt};
+	$offset += $UUID_SIZE * $hdr1->{uuid_cnt};
 
 	# HEADER2
 
 	display($dbg_rte+1,1,"HEADER2");
-	my $hdr2 = unpackRecord($dbg_rte+1,$hdr2_specs,substr($bytes,$offset,$HEADER2_SIZE));
+	my $hdr2 = unpackRecord($dbg_rte+1,$RTE_HDR2_SPECS,substr($bytes,$offset,$RTE_HDR2_SIZE));
 	$hdr2->{lat_start} /= $LL_SCALE_FACTOR;
 	$hdr2->{lon_start} /= $LL_SCALE_FACTOR;
 	$hdr2->{lat_end}   /= $LL_SCALE_FACTOR;
 	$hdr2->{lon_end}   /= $LL_SCALE_FACTOR;
 	mergeHash($hdr1,$hdr2);
-	$offset += $HEADER2_SIZE;
+	$offset += $RTE_HDR2_SIZE;
 
 	# POINTS
 	# can probably also be skipped because they contain no information
 	# not in the common waypoint record
 	
-	for (my $i=0; $i<$hdr1->{guid_cnt}; $i++)
+	for (my $i=0; $i<$hdr1->{uuid_cnt}; $i++)
 	{
 		display($dbg_rte+2,1,"POINT($i)");
-		my $pt = unpackRecord($dbg_rte+2,$fsh_pt_specs,substr($bytes,$offset,$FSH_PT_SIZE));
+		my $pt = unpackRecord($dbg_rte+2,$RTE_PT_SPECS,substr($bytes,$offset,$RTE_PT_SIZE));
 		$pt->{bearing} =  roundTwo(($pt->{bearing} / 10000) * (180 / $PI));
 
 		display($dbg_rte,2,sprintf("PT($i) bearing=$pt->{bearing} leg(%d)=%0.3f tot(%d)=%0.3f",
@@ -474,60 +629,62 @@ sub decodeRTE   # BLK_RTE
 			$pt->{totLength},
 			$pt->{totLength} / $METERS_PER_NM ));
 
-		$offset += $FSH_PT_SIZE;
+		$offset += $RTE_PT_SIZE;
 		push @{$hdr1->{pts}},$pt;
 	}
 
 	# HEADER3
 
 	display($dbg_rte+1,1,"HEADER3");
-	my $hdr3 = unpackRecord($dbg_rte+1,$hdr3_specs,substr($bytes,$offset,$HEADER3_SIZE));
+	my $hdr3 = unpackRecord($dbg_rte+1,$RTE_HR3_SPECS,substr($bytes,$offset,$RTE_HDR3_SIZE));
 	mergeHash($hdr1,$hdr3);
-	$offset += $HEADER3_SIZE;
+	$offset += $RTE_HDR3_SIZE;
 
 	# common waypoints
-	# each BLK_RTE common waypoint is, itself, preceded by TWO guids
+	# each BLK_RTE common waypoint is, itself, preceded by TWO uuids
 	
-	for (my $i=0; $i<$hdr1->{guid_cnt}; $i++)
+	for (my $i=0; $i<$hdr1->{uuid_cnt}; $i++)
 	{
-		my $wpt_guid = substr($bytes,$offset,$GUID_SIZE);
-		$offset += $GUID_SIZE;
-		my $wpt = decodeCommonWaypoint($dbg_rte,$bytes,$offset,$wpt_guid);
-		$offset += $WPT_HEADER_LEN + $wpt->{name_len} + $wpt->{cmt_len};
+		my $wpt_uuid = substr($bytes,$offset,$UUID_SIZE);
+		$offset += $UUID_SIZE;
+		my $wpt = decodeCommonWaypoint($dbg_rte,$bytes,$offset,$wpt_uuid);
+		$offset += $WPT_HEADER_SIZE + $wpt->{name_len} + $wpt->{cmt_len};
 		push @{$hdr1->{wpts}},$wpt;
 	}
 
-	push @$routes,$hdr1;
+	push @{$this->{routes}},$hdr1;
 	display_hash($dbg_rte,1,"Route Record",$hdr1);
 	
 }	# decodeRTE()
 
 
+#------------------------------------
+# GRP
+#------------------------------------
 
-sub decodeGRP   # BLK_GRP
+my $GRP_HEADER_LEN = 4;
+
+sub decodeGRP
 {
-    my ($blk_num,$block) = @_;
-    my $guid = $block->{guid};
-    display($dbg_grp,0,"decodeGRP[$blk_num] ".guidToStr($guid));
+    my ($this,$block) = @_;
+    my $uuid = $block->{uuid};
+    display($dbg_grp,0,"decodeGRP[$block->{num}] ".uuidToStr($uuid));
 
 	my $bytes = $block->{bytes};
 	display_bytes($dbg_grp+1,1,"bytes",$bytes);
 
 	# group header is 4 bytes, followed by name_len bytes,
-	# followed by guid_cnt waypoint guids, followed by "fsh_wpt" which are
+	# followed by uuid_cnt waypoint uuids, followed by "fsh_wpt" which are
 	# 2 int32_t's for actual integer lat/lon * 1E7, followed by
 	# the common waypoint.  Once again I use S for uint16_t's for
-	# the name_len and guid_cnt.
+	# the name_len and uuid_cnt.
 
 	my $offset = 0;
-	my $GRP_HEADER_LEN = 4;
-	my ($name_len,$guid_cnt) = unpack('SS',substr($bytes,$offset,$GRP_HEADER_LEN));
-		# typedef struct fsh_group22_header
-		# {
+
+	my ($name_len,$uuid_cnt) = unpack('SS',substr($bytes,$offset,$GRP_HEADER_LEN));
 		# 	int16_t name_len; // length of name of route
-		# 	int16_t guid_cnt; // number of GUIDs in the list following this header
+		# 	int16_t uuid_cnt; // number of UUIDs in the list following this header
 		# 	char name[];      // unterminated name string of length name_len
-		# }
 	$offset += $GRP_HEADER_LEN;
 
 	my $name = substr($bytes,$offset,$name_len);
@@ -538,23 +695,23 @@ sub decodeGRP   # BLK_GRP
 		name => $name,
 		wpts => [] };
 
-	my @wp_guids;
-	for (my $i=0; $i<$guid_cnt; $i++)
+	my @wp_uuids;
+	for (my $i=0; $i<$uuid_cnt; $i++)
 	{
-		my $guid = substr($bytes,$offset,$GUID_SIZE);
-		$offset += $GUID_SIZE;
-		display($dbg_grp+1,2,"guid[$i]=".guidToStr($guid));
-		push @wp_guids,$guid;
+		my $uuid = substr($bytes,$offset,$UUID_SIZE);
+		$offset += $UUID_SIZE;
+		display($dbg_grp+1,2,"uuid[$i]=".uuidToStr($uuid));
+		push @wp_uuids,$uuid;
 	}
 
-	for (my $i=0; $i<$guid_cnt; $i++)
+	for (my $i=0; $i<$uuid_cnt; $i++)
 	{
-		my $wpt = decodeCommonWaypoint($dbg_grp,$bytes,$offset,$wp_guids[$i]);
-		$offset += $WPT_HEADER_LEN + $wpt->{name_len} + $wpt->{cmt_len};
+		my $wpt = decodeCommonWaypoint($dbg_grp,$bytes,$offset,$wp_uuids[$i]);
+		$offset += $WPT_HEADER_SIZE + $wpt->{name_len} + $wpt->{cmt_len};
 		push @{$grp->{wpts}},$wpt;
 	}
 
-	push @$groups,$grp;
+	push @{$this->{groups}},$grp;
 
 }	# decodeGRP()
 

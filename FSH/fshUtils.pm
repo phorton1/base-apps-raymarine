@@ -21,7 +21,8 @@ our $FSH_BLK_RTE = 0x0021;
 our $FSH_BLK_GRP = 0x0022;
 our $FSH_BLK_ILL = 0xffff;  # Invalid block type
 
-our $GUID_SIZE = 8;
+our $UUID_SIZE = 8;
+
 
 
 BEGIN
@@ -38,16 +39,26 @@ BEGIN
         $FSH_BLK_GRP
         $FSH_BLK_ILL
 
-		$GUID_SIZE
+		$UUID_SIZE
 
         blockTypeToStr
-        guidToStr
-        unpackRecord
-        degreesWithMinutes
-        northEastToLatLon
+        uuidToStr
+		strToUuid
+
+		unpackRecord
+		packRecord
+
 		fshDateTimeToStr
+        northEastToLatLon
+		latLonToNorthEast
+
+		degreesWithMinutes
+
     );
 }
+
+my $FSH_LAT_SCALE = 107.1709342;
+my $LONG_SCALE = 0x7fffffff;  # 2147483647
 
 
 
@@ -60,25 +71,32 @@ sub blockTypeToStr
     return "BLK_RTE" if ($type == $FSH_BLK_RTE);
     return "BLK_GRP" if ($type == $FSH_BLK_GRP);
     return "BLK_ILL" if ($type == $FSH_BLK_ILL);
-    my $msg = "UNKNOWN BLOCK TYPE ".sprintf("0x%04X",$type);
-    error($msg);
-    return $msg;
+	return undef;
 }
 
 
-sub guidToStr
+sub uuidToStr
 {
-    my ($guid) = @_;
-    my $guid_str = length($guid) ? '' : "empty_guid";
-    for (my $i=0; $i<8 && $i<length($guid); $i++)
+    my ($uuid) = @_;
+    $uuid ||= '';
+	my $uuid_str = '';
+    for (my $i=0; $i<$UUID_SIZE; $i++)
     {
-        my $byte = ord(substr($guid,$i,1));
-        $guid_str .= sprintf("%02X",$byte);
-        $guid_str .= "-" if ($i<7) && ($i & 1);
+		my $char = $i < length($uuid) ? substr($uuid,$i,1) : 0;
+        my $byte = ord($char);
+        $uuid_str .= sprintf("%02X",$byte);
+        $uuid_str .= "-" if ($i<7) && ($i & 1);
     }
-    return $guid_str;
+    return $uuid_str;
 }
 
+sub strToUuid
+{
+    my ($uuid_str) = @_;
+	$uuid_str ||= '';
+	$uuid_str =~ s/-//g;
+	return pack('H16',$uuid_str);
+}
 
 
 sub fshDateTimeToStr
@@ -96,6 +114,7 @@ sub fshDateTimeToStr
 
 
 sub unpackRecord
+	# DIFFERENT IN SHARK
 	# https://www.perlmonks.org/?node_id=224666
     # A utility to unpack a bunch of fields into a record.
     # Accepts an array where even number elements are field names
@@ -126,8 +145,37 @@ sub unpackRecord
 }
 
 
+sub packRecord
+	# DIFFERENT IN SHARK
+	# https://www.perlmonks.org/?node_id=224666
+    # A utility to unpack a bunch of fields into a record.
+    # Accepts an array where even number elements are field names
+    #   and odd number elements are the unpack types and a perl
+    #   string of bytes and returns a record with the unpacked fields
+{
+	my ($dbg,$field_specs,$rec) = @_;
+        # caller passes in $dbg level
+	my $num_specs = scalar(@$field_specs) / 2;
+
+	my $data = '';
+	for (my $i=0; $i<$num_specs; $i++)
+	{
+		my $field = $field_specs->[$i * 2];
+		my $spec = $field_specs->[$i * 2 + 1];
+		my $value = $rec->{$field};
+		display($dbg,1,pad($field,20)."= '"._def($value)."'");
+		$value = 0 if !defined($value);
+		$data .= pack($spec,$value);
+	}
+	return $data;
+}
+
+
+
+
 
 sub northEastToLatLon
+	# DENORMALIZED IN SHARK
     # Convert mercator north,east coords to lat/lon.
     # From blackbox.ai, based on https://wiki.openstreetmap.org/wiki/ARCHIVE.FSH
     # In my first 'fishfarm' test case, I expected 5.263N minutes but got 5.261N
@@ -138,14 +186,6 @@ sub northEastToLatLon
 {
     my ($north, $east) = @_;
 
-    my $FSH_LAT_SCALE = 107.1709342;
-        # Northing in FSH is prescaled by this (empirically determined)
-        # Original comment said "probably 107.1710725 is more accurate, not sure"
-        # but that makes mine worse, not better.
-    # my $FSH_LAT_SCALE = 107.1705000;
-        # experimental value gave me 5.263 for fishfarm
-
-    my $LONG_SCALE = 0x7fffffff;  # 2147483647
     my $M_PI = 3.14159265358979323846;
     my $M_PI_2 = $M_PI / 2;
 
@@ -187,6 +227,7 @@ sub northEastToLatLon
 
 
 sub latLonToNorthEast
+	# DENORMALIZED IN SHARK
 {
     my ($latitude, $longitude) = @_;
 
@@ -203,7 +244,7 @@ sub latLonToNorthEast
 	my $n = sprintf("%.6f", $north);
 	my $e = sprintf("%.6f", $east);
 
-	display(0,0,"latLonToNorthEast($latitude,$longitude) = $n,$e");
+	display(1,0,"latLonToNorthEast($latitude,$longitude) = $n,$e");
 
     return {
         north => $n,
@@ -214,6 +255,7 @@ sub latLonToNorthEast
 
 
 sub degreesWithMinutes
+	# DENORMALIZED IN SHARK
     # utility to show degrees like the E80,
     # in degrees and decimal minutes.
 {

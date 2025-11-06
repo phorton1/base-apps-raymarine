@@ -65,6 +65,8 @@ else
 	warning(0,0,"using default input file = $ifilename")
 }
 
+# specify any extension except GPX or KML to not write a file
+
 if ($ofilename)
 {
 	display(0,0,"output file = $ofilename");
@@ -75,14 +77,13 @@ else
 	warning(0,0,"using default output file = $ofilename")
 }
 
-my $all_blocks = fshFileToBlocks($ifilename);
+my $fsh_file = apps::raymarine::FSH::fshFile->new($ifilename);
 
-# specify any extension except GPX or KML to not write a file
-
-if ($all_blocks && processBlocks($all_blocks))
+if ($fsh_file)
 {
-	generateGPX($all_blocks,$ofilename) if $ofilename =~ /\.gpx$/i;
-	generateKML($all_blocks,$ofilename) if $ofilename =~ /\.kml$/i;
+	generateGPX($fsh_file,$ofilename) if $ofilename =~ /\.gpx$/i;
+	generateKML($fsh_file,$ofilename) if $ofilename =~ /\.kml$/i;
+	$fsh_file->write($ofilename) if $ofilename =~ /\.fsh/i;
 }
 
 

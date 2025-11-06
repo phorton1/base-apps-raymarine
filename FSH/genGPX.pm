@@ -22,7 +22,7 @@ BEGIN
 	);
 }
 
-my $gpx = gpx_header();
+my $gpx;
 my $gpx_level = 1;
 
 sub inc_gpx_level { $gpx_level++; }
@@ -77,7 +77,8 @@ sub genWaypoint
 sub genWaypoints
 	# from BLK_WPT's
 {
-	my $wpts = getWaypoints();
+	my ($fsh_file) = @_;
+	my $wpts = $fsh_file->getWaypoints();
 	display(0,0,"generating ".scalar(@$wpts)." waypoints");
 	for my $wpt (@$wpts)
 	{
@@ -139,7 +140,8 @@ sub genTrack
 
 sub genTracks
 {
-	my $tracks = getTracks();
+	my ($fsh_file) = @_;
+	my $tracks = $fsh_file->getTracks();
 	display(0,0,"generating ".scalar(@$tracks)." tracks");
 	for my $track (@$tracks)
 	{
@@ -173,7 +175,8 @@ sub genRoute
 
 sub genRoutes
 {
-	my $routes = getRoutes();
+	my ($fsh_file) = @_;
+	my $routes = $fsh_file->getRoutes();
 	display(0,0,"generating ".scalar(@$routes)." routes");
 	for my $route (@$routes)
 	{
@@ -205,7 +208,8 @@ sub genGroup
 
 sub genGroups
 {
-	my $groups = getGroups();
+	my ($fsh_file) = @_;
+	my $groups = $fsh_file->getGroups();
 	display(0,0,"generating ".scalar(@$groups)." groups");
 	for my $group (@$groups)
 	{
@@ -217,12 +221,13 @@ sub genGroups
 
 sub generateGPX
 {
-	my ($all_blocks,$ofilename) = @_;
+	my ($fsh_file,$ofilename) = @_;
 	display(0,0,"generateGPX($ofilename) ...");
-	genGroups();
-	genRoutes();
-	genWaypoints();
-	genTracks();
+	$gpx = gpx_header();
+	genGroups($fsh_file);
+	genRoutes($fsh_file);
+	genWaypoints($fsh_file);
+	genTracks($fsh_file);
 	$gpx .= gpx_footer();
 	printVarToFile(1,$ofilename,$gpx,1);
 }
