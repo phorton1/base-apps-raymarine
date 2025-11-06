@@ -1,11 +1,33 @@
 #-----------------------------------------
 # kmlToFSH.pm
 #-----------------------------------------
-# An experiment to see if I can create an FSH file that can
-# be read by RayTech RNS and/or the E80.
+# Conventions
 #
-# Takes a kml file containing a single folder with a limited
-# number of Placemarks, and tries to create a Track from it.
+# KML files parsed by this program shall consist of a <Document> element,
+# within which there are three primary named <Folders>, GROUPS, ROUTES.
+# and TRACKS (case insenstive). Groups and Routes consist of sub-folders
+# within which exist Waypoints.
+#
+# The Tracks folder contains one <Placemark> element for each Track.
+#
+#	<Name>
+#		The name of the track, truncated to 15 characters for Raymarine.
+#   <LineString><coordinates>
+#		A series of whitespace delimited triplets consisting of
+#		lon,lat,depth, although historically the depth has not
+#		been consistently recorded and is likely not meaningful
+#	<ExtendedData>
+#	  <Data name="mta_uuid"><value>dddd-dddd-dddd-0001</value></Data>
+#	  <Data name="trk_uuid"><value>dddd-dddd-ddde-0001</value></Data>
+#	  <Data name="line_color"><value>1</value></Data>
+#	</ExtendedData>
+#
+#	Specifies the MTA and TRK uuids that will be put in the FSH file,
+#   	linking them together. along with attributes of the MTA,
+#		at this time, the Raymarine color constant for the line
+#		(which should maatch the GE styling I have previously created
+#       but which temporarily doesn't)
+
 
 
 package apps::raymarine::FSH::kmlToFSH;
@@ -14,6 +36,9 @@ use warnings;
 use XML::Simple;
 use Data::Dumper;
 use Pub::Utils;
+use apps::raymarine::FSH::fshUtils;
+use apps::raymarine::FSH::fshBlocks;
+use apps::raymarine::FSH::fshFile;
 
 $Data::Dumper::Indent = 1;
 $Data::Dumper::Sortkeys = 1;
@@ -22,11 +47,7 @@ my $xmlsimple = XML::Simple->new(
 	KeyAttr => [],						# don't convert arrays with 'id' members to hashes by id
 	ForceArray => [						# identifiers that we want to always be arrayed
 		'Placemark',
-		'item',
-		'res',
-		'upnp:albumArtURI',
-		'upnp:artist',
-		'desc',
+		'Data',
 	],
 	SuppressEmpty => '',				# empty elements will return ''
 );
@@ -193,17 +214,96 @@ sub indent
 
 
 #-------------------------------------------------
-# getnFSH
+# kml utilities
 #-------------------------------------------------
 
-sub genFSH
+
+sub extractData
 {
-	my ($filename,$wpts) = @_;
-	my $num_wpts = @$wpts;
-	display(0,0,"generating($filename) with $num_wpts waypoints ...");
+	my ($ele,$required) = @_;
+	my $data = {};
+	if ($ele && $ele->{Data})
+	{
+		for my $value_pair (@{$ele->{Data}})
+		{
+			$data->{$value_pair->{name}} = $value_pair->{value};
+		}
+		for my $req (@$required)
+		{
+			if (!defined($data->{$req}))
+			{
+				warning(0,0,"missing required Data($req)");
+				$data->{$req} = '';
+			}
+		}
+	}
+	else
+	{
+		error("missing or empty ExtendedData element");
+	}
+	return $data;
 }
 
 
+
+sub extractPoints
+{
+	my ($line_string) = @_;
+	my $points = [];
+	if ($line_string && $line_string->{coordinates})
+	{
+		my $string = $line_string->{coordinates};
+		$string =~ s/^\s+|\s+$//g;
+		for my $part (split(/\s+/,$string))
+		{
+			my ($lon,$lat,$depth) = split(/,/,$part);
+			push @$points,{
+				lat => $lat,
+				lon => $lon,
+				depth => $depth};
+		}
+		warning(0,0,"empty LineString coordinates") if !@$points;
+	}
+	else
+	{
+		error("missing or empty LineString element");
+	}
+	return $points;
+}
+
+
+
+#-------------------------------------------------
+# tracks
+#-------------------------------------------------
+
+sub processTrack
+{
+	my ($fsh_file, $mark) = @_;
+
+	my $name = $mark->{name};
+	my $data = extractData($mark->{ExtendedData});
+	my $points = extractPoints($mark->{LineString},[qw(mta_uuid trk_uuid color)]);
+
+	display(0,1,"found Track $name with ".scalar(@$points)." points");
+	display(0,2,"mta_uuid   = $data->{mta_uuid}");
+	display(0,2,"trk_uuid   = $data->{trk_uuid}");
+	display(0,2,"line_color = $data->{line_color}");
+
+	return 0 if !$fsh_file->encodeTRK({
+		trk_uuid => $data->{trk_uuid},
+		points	=> $points, });
+	return 0 if !$fsh_file->encodeMTA({
+		name		=> $name,
+		mta_uuid	=> $data->{mta_uuid},
+		trk_uuid	=> $data->{trk_uuid},
+		color		=> $data->{line_color},
+		points		=> $points,
+		length		=> 0, });
+
+	return 1;
+
+}
 
 
 #-------------------------------------------------
@@ -211,35 +311,35 @@ sub genFSH
 #-------------------------------------------------
 
 
-my $ifilename = "PopaWpts.kml";
-my $ofilename = "/Archive/TEST_ARCHIVE.FSH";
+my $ifilename = "/junk/tracks.kml";
+my $ofilename = "/junk/tracks.fsh";
 
-my $wpts = [];
+
 my $kml = parseKML($ifilename);
 if ($kml)
 {
+	my $fsh_file = apps::raymarine::FSH::fshFile->new();
 	my $folder = $kml->{Document}->{Folder};
 	if ($folder)
 	{
 		display(0,0,"found folder($folder->{name})");
-		my $num = 0;
-		my $marks = $folder->{Placemark};	# Arrayed by xml setup
-		for my $mark (@$marks)
+		if ($folder->{name} =~ /Tracks/i)
 		{
-			my $name = $mark->{name};
-			my ($lon,$lat) = split(/,/,$mark->{Point}->{coordinates});
-			my $ts = $mark->{TimeStamp}->{when};
-			$lat = sprintf("%.6f",$lat);
-			$lon = sprintf("%.6f",$lon);
-			display(0,1,"mark($name) $lat,$lon  ts=$ts");
-			push @$wpts, {
-				name => $name,
-				lat  => $lat,
-				lon  => $lon };
+			display(0,1,"Processing Tracks folder");
+			my $num = 0;
+			my $marks = $folder->{Placemark};	# Arrayed by xml setup
+			for my $mark (@$marks)
+			{
+				exit 0 if !processTrack($fsh_file,$mark);
+			}
 		}
-		genFSH($ofilename,$wpts);
+	}
+	if (@{$fsh_file->{blocks}})
+	{
+		$fsh_file->write($ofilename);
 	}
 }
+
 
 
 
