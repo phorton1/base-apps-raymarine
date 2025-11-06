@@ -42,6 +42,8 @@ use e_WPMGR;
 use e_TRACK;
 use e_FILESYS;
 
+use fshWriter;
+
 use e_wp_api;
 use h_server;
 use s_serial;
@@ -248,6 +250,13 @@ sub handleSerialCommand
 		return error("service $name("._def($service_port).") doesn't exist or is not connected")
 			if !$service_port || !$service_port->{connected};
 		$service_port->doProbe($params);
+	}
+
+	# fshWriter
+
+	elsif ($lpart eq 'write')
+	{
+		fshWriter::write();
 	}
 
 }   #   handleCommand()
