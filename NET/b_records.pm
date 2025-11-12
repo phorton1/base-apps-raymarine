@@ -894,6 +894,9 @@ sub parseTRK
 		$TRACK_HDR_SIZE);
 	$offset += $TRACK_HDR_SIZE;
 
+	$mon = 0 if !($mon & $MON_PACK_SUBRECORDS);
+		# dont show track points unpacked (there can be 1000's of them)
+
 	# to identify weird record from GET_TRACK of Current Track's uuid
 	# if (0 && $old_rec->{k1_1} == 0)
 

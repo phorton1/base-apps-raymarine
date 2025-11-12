@@ -677,6 +677,13 @@ sub showThings
 	{
 		my $thing = $hash->{$uuid};
 		print "    $uuid ".$thing->{name}."\n";
+		if ($what eq 'tracks')
+		{
+			my $points = $thing->{points};
+			my $num_points = $points ? @$points : 0;
+			my $cnt = $thing->{cnt1} || 0;
+			print "        num_points($num_points)  expected($cnt)\n";
+		}
 	}
 }
 

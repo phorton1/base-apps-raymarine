@@ -26,6 +26,7 @@ BEGIN
 		$MON_PACK
 		$MON_PACK_CONTROL
 		$MON_PACK_UNKNOWN
+		$MON_PACK_SUBRECORDS
 		$MON_REC
 		$MON_REC_DETAILS
 		$MON_ALL
@@ -119,6 +120,7 @@ our $MON_DICT				= 0x0040;			# show the uuids in parsed dictionariees
 our $MON_PACK				= 0x0100;			# monitoring of packing/unpacking main fields, i.e. name, latlon, etc
 our $MON_PACK_CONTROL		= 0x0200;			# monitoring of packing/unpacking control fields, i.e. name_len, num_wpts, etc
 our $MON_PACK_UNKNOWN		= 0x0400;			# monitoring of packing/unpacking unknown fields, i.e. u1, u3_200, etc
+our $MON_PACK_SUBRECORDS	= 0x0800;			# monitor packing/unpacking subrecords, mostly Track Points which can be huge
 
 our $MON_REC				= 0x1000;			# show finished records
 our $MON_REC_DETAILS		= 0x2000;			# show finished records' subfields (i.e. Route and Track points)
@@ -175,7 +177,12 @@ for my $port (keys %SERVICE_PORT_DEFS)
 
 my $SHARK_MON_FILESYS	= $MON_HEADER | $MON_RAW | $MON_PARSE | $MON_PIECES;
 my $SHARK_MON_DBNAV		= $MON_ALL;
-my $SHARK_MON_TRACK 	= $MON_ALL;
+my $SHARK_MON_TRACK 	= $MON_HEADER | $MON_RAW | $MON_MULTI | $MON_PARSE | $MON_PIECES |
+	$MON_PACK		|
+    $MON_PACK_CONTROL |
+    $MON_PACK_UNKNOWN;
+
+
 my $SHARK_MON_WAYPOINT 	= $MON_ALL;
 my $SHARK_MON_ROUTE 	= $MON_ALL;
 my $SHARK_MON_GROUP 	= $MON_ALL;

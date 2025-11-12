@@ -156,9 +156,11 @@ sub trackUICommand
 
 sub queueTRACKCommand
 {
-	my ($this,$api_command,$uuid,$extra) = @_;
+	my ($this,$api_command,$uuid,$extra,$gen_error) = @_;
 	$uuid ||= '';
 	$extra ||= '';
+	$gen_error ||= '';
+	
 	display_hash($dbg+2,0,"queueTRACKCommand($this)",$this);
 
 	return error("No 'this' in queueTRACKCommand") if !$this;
@@ -169,7 +171,7 @@ sub queueTRACKCommand
 
 	if (1)
 	{
-		my $msg = "# queueTRACKCommand($api_command=$cmd_name) uuid($uuid) extra($extra)\n";
+		my $msg = "# queueTRACKCommand($api_command=$cmd_name) uuid($uuid) extra($extra) gen_error($gen_error)\n";
 		print $msg;
 		# writeLog($msg,"shark.log");
 	}
@@ -187,7 +189,8 @@ sub queueTRACKCommand
 		api_command => $api_command,
 		name => $API_COMMAND_NAME{$api_command} || 'HUH236?',
 		uuid => $uuid,
-		extra => $extra });
+		extra => $extra,
+		gen_error => $gen_error, });
 	push @{$this->{command_queue}},$command;
 	return 1;
 }
@@ -513,7 +516,8 @@ sub get_tracks
 	my $num = 0;
 	for my $uuid (@$uuids)
 	{
-		$this->queueTRACKCommand($API_GET_TRACK,$uuid,"get_track($uuid) from dict($num)");
+		$this->queueTRACKCommand($API_GET_TRACK,$uuid,"get_track($uuid) from dict($num)");	# ,$num==3);
+			# dont call waitReply on $num==3 to test out of band handling in bsock
 		$num++;
 	}
 
@@ -547,6 +551,9 @@ sub get_track
 		print "-----------------------------------------------------------------\n";
 	}
 
+	return 1 if $command->{gen_error};
+		# test out of band bsock message handling
+	
 	my $reply = $this->waitReply(1);
 	return 0 if !$reply;
 

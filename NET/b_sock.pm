@@ -231,26 +231,6 @@ sub sendUDP
 
 
 
-
-
-#------------------------------------------------------
-# monitor definitions high priority
-#------------------------------------------------------
-
-sub setMonDefs
-{
-	my ($this,$packet) = @_;
-	my $is_reply = $packet->{is_reply};
-	my $mon = $is_reply ? $this->{mon_out} : $this->{mon_in};
-	my $color = $is_reply ? $this->{out_color} : $this->{in_color};
-	my $name = "p_$this->{name}";
-	display($dbg_mon,0,sprintf("b_sock::setMonDefs($name) mon(%04x) color($color)",$mon));
-	$packet->{name} = $name;
-	$packet->{mon} = $mon;
-	$packet->{color} = $color;
-}
-
-
 #-----------------------------
 # init, destroy, start, and stop
 #-----------------------------
@@ -505,6 +485,11 @@ sub waitReply
 
 				if ($reply->{seq_num} == $seq)
 				{
+					# clear the wait vars for testing for out of band messages in sockThread
+
+					$this->{wait_seq} = 0;
+					$this->{wait_name} = '';
+
 					if ($expect_success)
 					{
 						my $got_success = $reply->{success} ? 1 : -1;
@@ -528,11 +513,15 @@ sub waitReply
 		if (time() > $start + $this->{COMMAND_TIMEOUT})
 		{
 			error("$name Command($seq,$wait_name) timed out");
+			$this->{wait_seq} = 0;
+			$this->{wait_name} = '';
 			return '';
 		}
 		sleep(0.01);
 	}
 
+	$this->{wait_seq} = 0;
+	$this->{wait_name} = '';
 	return error("waitReply($seq) died");
 }
 
@@ -791,12 +780,23 @@ sub sockThread
 						my $reply =	$this->{parser}->doParse($packet);
 						display($dbg_thread+1,0,"sockThread got parsePacket reply="._def($reply))
 							if $this->{name} ne 'RAYSYS';
+
 						if ($this->{is_probe})
 						{
 							$this->{probe_wait} = 0;
 						}
-						else
+						elsif ($reply)
 						{
+							if ($reply->{seq_num})	# it's not an 'eventish' kind of thing
+							{
+								if ($reply->{seq_num} != $this->{wait_seq})
+								{
+									error("continuing $this->{name} with OUT OF BAND SEQUENCED REPLY seq_num($reply->{seq_num}) expected($this->{wait_seq})\n".
+										  ($reply->{uuid}?"    out of band uuid($reply->{uuid})":'').
+										  ($reply->{item}?" name($reply->{item}->{name})":'') );
+								}
+							}
+
 							$reply = $this->handleEvent($reply);
 								# derived classes that handle events (WPMGR, TRACK) should
 								# define handleEvent methods on reply packets, and return

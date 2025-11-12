@@ -47,6 +47,22 @@ sub parsePacket
 		evt_mask	=> 0, });
 	display($dbg_tp+1,0,"e_TRACK::parsePacket() is_reply($packet->{is_reply})");
 	$packet = $this->SUPER::parsePacket($packet);
+
+	my $item = $packet ? $packet->{item} : undef;
+	if ($item)
+	{
+		my $cnt1 = $item->{cnt1};
+		if (defined($cnt1))		# expected number of points
+		{
+			my $points = $item->{points};
+			my $num_points = $points ? @$points : 0;
+			if ($num_points != $cnt1)
+			{
+				error("track($packet->{uuid}) $item->{name} bad number points($num_points) != expected($cnt1)");
+				return undef;
+			}
+		}
+	}
 	return $packet;
 }
 
@@ -149,7 +165,22 @@ sub parsePiece
 		$packet->{item} ||= shared_clone({});
 		my $item = $packet->{item};
 		mergeHash($item,parseMTA($buffer,$mon,$color)) 	 if $buffer_type eq 'mta';
-		mergeHash($item,parseTRK($buffer,$mon,$color)) if $buffer_type eq 'trk';
+
+		# there may be more than one TRK per Track, so here we DONT merge hash,
+		# but specifically ADD the points from the parse to the $item;
+
+		if ($buffer_type eq 'trk')
+		{
+			my $rec = parseTRK($buffer,$mon,$color);
+			if ($item->{points})
+			{
+				push @{$item->{points}},@{$rec->{points}};
+			}
+			else
+			{
+				$item->{points} = $rec->{points};
+			}
+		}
 		mergeHash($item,parsePoint($buffer,$mon,$color)) if $buffer_type eq 'point';
 	}
 	elsif ($piece eq 'track_uuid')

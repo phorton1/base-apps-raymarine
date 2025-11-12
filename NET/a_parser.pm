@@ -3,9 +3,42 @@
 #---------------------------------------------
 # base class of parse trees, known by b_sock and sniffer
 # 	which are it's 'parents'
-# Upon each packet, the parser must FIRST get the monitoring
-# 	preferences from the parent via a call to setMonDefs.
-# $def_port is no longer used ?!?
+# Upon each new request/reply, the parser must FIRST call
+#	applyMonPrefs() to setup the monitoring for the packet.
+#   For the base class that is done simply using the ctor mon_prefs
+#   and the $is_reply direction to get the appropriate ones.
+#   More complicated classes (i.e. WPMGR) implement their own
+#   	applyMonDefs routine
+#
+# FRAMING
+#
+# Big issues with 'Framing' TCP stream into logical message groups that
+# constitute a 'semantic' unit.  Noticed especially with big Tracks when
+# I switched to the Raymarine Router.
+#
+# (a) we do implicit framing in b_sock and sniffer when we built a packet
+#     that is AT LEAST bigger than two bytes (the presumed initial {msg_len}.
+# (b) discovered that there can be "dangling" bytes at the end of a packet
+#     once it is decomposed into messages.
+# (c) implemented "dangling_packet" scheme to return undef until the
+#     packet ends exactly on a message boundary.
+# (d) had to also change e_Track to append, rather than mergeHash
+#     points into the accumulating record after noticing the E80
+#     sent multiple trk "info Buffers" in a single message group.
+# (e) may have similar issues with big Routes, Groups, or Dictionaries
+#     as I have never tested the limits of those parser/services.
+#
+# I am hoping this weird, implicit, framing is sufficient, as otherwise
+# it implies big architectural changes if the derived parsers have to
+# "figure out" what consitutes a complete message group (semantic unit).
+#
+# In self defense, I added a big 'OUT OF BAND' error message in bsock
+# if we get a sequenced reply and no-one is waiting for it, or it is
+# not the one the parser is waiting for, which would imply a problem
+# with the framing or my basic understanding of the protocol vs tcp.
+
+
+
 
 
 package a_parser;
@@ -20,6 +53,8 @@ use a_utils;
 
 
 my $dbg_parse = 0;
+my $dbg_dangling = 1;
+
 
 
 
@@ -79,9 +114,19 @@ sub doParse
 	# classes' parsePacket methods.
 {
 	my ($this,$packet) = @_;
-	$packet->{mon} = 0;
-	$packet->{color} = 0;
-	$this->applyMonDefs($packet);
+	if ($this->{dangling_packet})
+	{
+		warning($dbg_dangling,0,"using dangling packet");
+		$this->{dangling_packet}->{payload} .= $packet->{payload};
+		$packet = $this->{dangling_packet};
+		$this->{dangling_packet} = undef;
+	}
+	else
+	{
+		$packet->{mon} = 0;
+		$packet->{color} = 0;
+		$this->applyMonDefs($packet);
+	}
 	return $this->parsePacket($packet);
 }
 
@@ -97,6 +142,7 @@ sub parsePacket
 	my $color = $packet->{color};
 	my $payload = $packet->{payload};
 	my $packet_len = length($payload);
+	
 	display($dbg_parse+1,1,sprintf("a_parser::parsePacket($this->{name}) is_sniffer($packet->{is_sniffer}) len($packet_len) mon(%04x) color(%d)",$mon,$color));
 	display_hash($dbg_parse+3,0,"packet($this->{name})",$packet,'payload');
 
@@ -138,13 +184,30 @@ sub parsePacket
 	if ($packet->{proto} eq 'tcp')
 	{
 		my $offset = 0;
-		while ($packet && $packet_len - $offset >= 4)
+		while ($packet && $packet_len - $offset >= 2)
 		{
 			my $len_bytes = substr($payload,$offset,2);
+			$offset += 2;
+
 			my $len = unpack('v',$len_bytes);
-			my $part = substr($payload,$offset+2,$len);
+			if ($offset + $len > $packet_len)
+			{
+				warning($dbg_dangling,0,"insufficent len($len) offset($offset) packet_len($packet_len) dangling: ".unpack('H*',substr($payload,$offset)));
+				$packet->{payload} = $len_bytes . substr($payload,$offset);
+				$this->{dangling_packet} = $packet;
+				return undef;
+			}
+
+			my $part = substr($payload,$offset,$len);
 			$packet = $this->parseMessage($packet,$len,$part);
-			$offset += $len + 2;
+			$offset += $len;
+		}
+		if ($offset != $packet_len)
+		{
+			warning(0,0,"dangling packet bytes offset($offset) packet_len($packet_len)=".unpack('H*',substr($payload,$offset)));
+			$packet->{payload} = substr($payload,$offset);
+			$this->{dangling_packet} = $packet;
+			return undef;
 		}
 	}
 	else
