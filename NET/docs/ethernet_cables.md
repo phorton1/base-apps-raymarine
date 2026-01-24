@@ -26,7 +26,7 @@ Upon which it started working and everything became clear to me.
 The RJ45 plug needs to be inserted about 15-16mm into the E80 female for
 the pins to make contact. I have seen (purchased, tested, modified
 and "fixed") shielded connectors that have a "ledge" or "stop" (on the
-side opposite the pins) that prevents the plug from being inseerted more
+side opposite the pins) that prevents the plug from being inserted more
 than about 14mm, just shy of what the E80 needs.
 
 In fact, I bought a bunch of shielded RJ45 connectors and learned to
@@ -42,13 +42,13 @@ the pins.
 ### Waterproof Locking Ring
 
 Apart from that, the female on the E80 does not have a catch for the plastic
-locking tab on a standard ethernet cable.  Instead Raymarine used a "waterpoof
+locking tab on a standard ethernet cable.  Instead Raymarine used a "waterproof
 locking ring" to force the connector to stay in place.
 
 The Raymarine "waterproof side" shielded RJ45 connector *may* be a little
 wider than a standard shielded ethernet connector, but I don't think the
 difference is significant. I could just be the years of corrosion on the
-particular connectors I ahve.
+particular connectors I have.
 
 ### Slightly wider?
 
@@ -72,15 +72,17 @@ sides that must make contact with the the shield for the E80 to recognize
 the cable and enable its ethernet connection, so a standard non-shielded
 cable will not work. Or at least I never got one to work.
 
-I don't believe there are any other interlock protection or magic to the
+I don't believe there are any other interlock protections or magic to the
 E80 female apart from the fact that I believe it must make contact on both
 sides to the shielded connector.
 
 ### Only Four wires
 
 Apart from that, I note that the cable, as bulky as it is, only has
-four conductors, and the plugs only use 4 of the 8 RJ56 pins:
+four conductors, and the plugs only use 4 of the 8 RJ45 pins.
+Pin one is on the left with the connector facing upward facing the contact.
 
+												Raymarine colors
 	E80 side	standard side	T568A colors	T568B colors	function
 		1 			1			white green		white orange	transmit +
 		2 			2			green			orange			transmit -
@@ -91,10 +93,11 @@ four conductors, and the plugs only use 4 of the 8 RJ56 pins:
 		7 			NC			white brown		white brown		not used	bi-directional transmit+
 		8 			NC			brown			brown			not used	bi-directional transmit-
 
+The Raymarine cables I hav ematch the T-568B color scheme.
 
-## Personal Boat Soolutions.
+## Personal Boat Solutions.
 
-Subitle: Create a 3D printed Waterproof Ring Connector or crimp new RJ45's
+Subtitle: Create a 3D printed Waterproof Ring Connector or crimp new RJ45's
 to shortened versions of my existing official Raymarine cables?
 
 I think I can 3D print my own "waterproof locking ring", one that
@@ -109,7 +112,7 @@ up in the Pod, that connected to a female-to-female RJ45 adapter, that
 connected on the other side to a 20 year old 50 foot radio shack standard
 plastic ethernet cable.  Not only did an adapter and 1 meter of cable coiled
 up in the Pod bother me, but there was also about 20 feet of the radio shack
-eithernet cable of that coiled up on the other end near my "raymarine
+ethernet cable of that coiled up on the other end near my "raymarine
 ethernet switch".
 
 I will continue to use the raymarine ethernet switch, but have learned
@@ -120,7 +123,7 @@ how I feel about the 3D printed waterproof locking ring idea and reality,
 I *may* cut the end off of one or more of my 3 official Raymarine E80
 ethernet cables and make a shorter pigtails.  One would be for use in the
 Pod with the same basic female-to-female RJ45 adapter scheme, though
-the more connectors, the more chancs of a failure.
+the more connectors, the more chances of a failure.
 
 I have another E80 at the nav station, and a DSM300.
 I will probably continue to use the official Raymarine cable to connect
