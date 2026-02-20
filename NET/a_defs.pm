@@ -112,9 +112,10 @@ BEGIN
 		$PSI_TO_MILLIBARS
 		$GALLONS_TO_LITRES
 
+		$E80_0A_IP
 		$E80_1_IP
         $E80_2_IP
-
+		$E80_3_IP
     );
 }
 
@@ -123,8 +124,10 @@ BEGIN
 
 # Interesting factoids that I want to remember
 
+our $E80_0A_IP = '10.0.18.120';
 our $E80_1_IP = '10.0.241.54';
 our $E80_2_IP = '10.0.241.83';
+our $E80_3_IP = '10.0.42.39';
 
 
 #----------------------------------------
@@ -264,14 +267,18 @@ our %DEVICE_TYPE =(
 our $SHARK_DEVICE_ID = 'aaaaaaaa';
 
 our %KNOWN_DEVICES = (
+	'c48a80b2' =>	'E80_0A',
 	'37a681b2' =>	'E80_1',
 	'37ad80b2' =>	'E80_2',
+	'67e280b2' =>	'E80_3',
 	'ffffffff' =>	'RNS',
 	$SHARK_DEVICE_ID =>   'shark' );
 
 our %KNOWN_SERVER_IPS = (
+	$E80_0A_IP =>	'E80_0B',
 	$E80_1_IP =>	'E80_1',
 	$E80_2_IP =>	'E80_2',
+	$E80_3_IP =>	'E80_3',
 	$LOCAL_IP =>	'RNS',	);
 
 

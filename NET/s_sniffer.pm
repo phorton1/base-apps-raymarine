@@ -282,7 +282,10 @@ sub sniffer_thread
 					$server_ip 	 = $src_ip;
 					$server_port = $src_port;
 
-					if ($dst_ip eq $E80_1_IP)
+					if ($dst_ip eq $E80_0A_IP ||
+						$dst_ip eq $E80_1_IP ||
+						$dst_ip eq $E80_2_IP ||
+						$dst_ip eq $E80_3_IP)
 					{
 						$client_ip 	 = $src_ip;
 						$client_port = $src_port;
