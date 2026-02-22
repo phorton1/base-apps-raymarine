@@ -82,18 +82,18 @@ Apart from that, I note that the cable, as bulky as it is, only has
 four conductors, and the plugs only use 4 of the 8 RJ45 pins.
 Pin one is on the left with the connector facing upward facing the contact.
 
-												Raymarine colors
-	E80 side	standard side	T568A colors	T568B colors	function
-		1 			1			white green		white orange	transmit +
-		2 			2			green			orange			transmit -
-		3 			3			white orange	white green		receive +
-		4 			NC			blue 			blue			not used	bi-directional transmit+
-		5 			NC			white blue		white blue		not used	bi-directional transmit-
-		6 			6			orange			green 			receive -
-		7 			NC			white brown		white brown		not used	bi-directional transmit+
-		8 			NC			brown			brown			not used	bi-directional transmit-
+| E80 side | standard side | T568A colors   | T568B colors   | function                     |
+|---------|----------------|----------------|----------------|------------------------------|
+| 1       | 1              | white green    | white orange   | transmit +                   |
+| 2       | 2              | green          | orange         | transmit -                   |
+| 3       | 3              | white orange   | white green    | receive +                    |
+| 4       | NC             | blue           | blue           | not used / bi-dir transmit + |
+| 5       | NC             | white blue     | white blue     | not used / bi-dir transmit - |
+| 6       | 6              | orange         | green          | receive -                    |
+| 7       | NC             | white brown    | white brown    | not used / bi-dir transmit + |
+| 8       | NC             | brown          | brown          | not used / bi-dir transmit - |
 
-The Raymarine cables I hav ematch the T-568B color scheme.
+The Raymarine cables I have ematch the T-568B color scheme.
 
 ## Personal Boat Solutions.
 
