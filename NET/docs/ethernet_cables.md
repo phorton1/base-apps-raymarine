@@ -1,86 +1,141 @@
-# The RaynetHS / E80 official Raymarine Ethernet Cable
+# SeatalkHS E80/E120 ethernet cables de-mystified
 
-WHAT IS DIFFERENT ABOUT THE OFFICIAL E80 (SeatalkHS) ETHERNET CABLE?
+### The Raymarine E80 and E120 Chartplotter and the DSM300 Sonar module can use STANDARD ETHERNET CABLES.  Period.
 
-I saw a lot of (mostly uninformed junk) on the internet about these
-cables, and how almost everyone thinks they are downright required to
-connect SeatalkHS devices to a router or each other.
+![SeatalkHS_cable.jpg](images/SeatalkHS_cable.jpg)
 
-Short answer:  A standard shielded ethernet cable WILL work, despite all
-that you've read on the internet about how it wont work, or doesn't fit.
+*There is a **LOT of misinformation** on the internet about these cables
+and whether or not it is possible to use standard shielded RJ45 cables
+and plugs with Raymarine devices.*  This document makes it <u>unequivocally</u>
+clear that it is indeed possible to use **standard shielded RJ45 ethernet
+cables with these devices**.
 
-Of course, a crossover cable is required to connect two E80's directly
-together, and that is not my configuration, so this discussion is about
-straight-through ethernet cables, but would apply if you wanted to make
-your own cross over cable.
+There are two basic issues to deal with in order to use a standard CAT5/6/7/8
+RJ45 **shielded** ethernet cable with these devices:
 
-My success arrived, finally, when, on my standard shielded ethernet cable,
-which has no "ledge" or "stop" (see below), and which has all 8 pins
-connected, I bent back the rubber cover over the plastic locking tab
-so that I could push the connector a bit farther into the E80 female.
+- **plug insertion depth** and making electrical contact inside the socket
+- **mechanical security** of the connector is NOT provided by standard ethernet cables!
 
-Upon which it started working and everything became clear to me.
+Because Raymarine did not include a *catch* for the standard RJ45 *plastic latch*,
+standard ethernet cables are not securely held in place in the E80 female connector.
+Please see my **field installable 3D printed Waterproof Connector** below
+for my solution to the *mechanical security* of standard ethernet cables.
 
-### Insertion Depth (Beware the Ledge)
+![E80_connector_3dp.jpg](images/E80_connector_3dp.jpg)
+![E80_connector_real.jpg](images/E80_connector_real.jpg)
 
-The RJ45 plug needs to be inserted about 15-16mm into the E80 female for
-the pins to make contact. I have seen (purchased, tested, modified
-and "fixed") shielded connectors that have a "ledge" or "stop" (on the
-side opposite the pins) that prevents the plug from being inserted more
-than about 14mm, just shy of what the E80 needs.
 
-In fact, I bought a bunch of shielded RJ45 connectors and learned to
-crimp them.  I took an old unshielded ethernet cable I had that only had
-pins 1,2,3 and 6 wired (four conductors) and crimped s shielded connector on it.
-It didn't work. But when I took a dremel to the shielded connector and removed
-the "ledge" or "stop", so that I could insert the RJ45 plug a few more
-mm into the E80, the cable started working.
 
-So, beware shielded cables with "ledges" or "stops" on the side opposite
-the pins.
+## Shielded Cable Required
 
-### Waterproof Locking Ring
+On the E80, inside the female connector there are two spring loaded tabs
+that make contact on each side with the shield when the plug is inserted.
+The E80 will fail to recognize a cable that does not connect these two
+spring loaded side tabs electrically.
 
-Apart from that, the female on the E80 does not have a catch for the plastic
-locking tab on a standard ethernet cable.  Instead Raymarine used a "waterproof
-locking ring" to force the connector to stay in place.
+It is important that the shielding is complete on the sides.  Most shielded
+ethernet cables and connectors I have seen have sufficient contact surfaces
+on each side to make good contact with the spring loaded tabs.
 
-The Raymarine "waterproof side" shielded RJ45 connector *may* be a little
-wider than a standard shielded ethernet connector, but I don't think the
-difference is significant. I could just be the years of corrosion on the
-particular connectors I have.
+As far as I can tell, the DSM300 female socket DOES NOT contain such tabs, and
+does not require a shielded connector
 
-### Slightly wider?
 
-Probably not significant.
 
-I measured all kinds of cables, including the 3 20 year old official
-Raymarine cables I have, and generally found that the widths of all
-of them were the same to within a few 1/10's of a millimeter.
-Perhaps the official cables were a tidge wider.
 
-- measured width of E80 side of official cable: 11.72 mm (snug fit)
-- measured width of standard grounded ethernet cable: 11.67mm (jiggles a little)
+## Plug Insertion Depth
 
-I don't, can't, believe that Raymarine is/was depending on 0.01 mm accuracy
-in the connectors.
+Regarding the *plug insertion depth*, the bottom line is that Raymarine put
+a **bit of plastic** in their housing design that prevents most  industry standard
+ethernet cables from going in far enough.
 
-### Shield Detection
+![SeatalkHS_plastic_annotated.jpg](images/SeatalkHS_plastic_annotated.jpg)
 
-I believe that within the female on the E80 there are two metal tabs on the
-sides that must make contact with the the shield for the E80 to recognize
-the cable and enable its ethernet connection, so a standard non-shielded
-cable will not work. Or at least I never got one to work.
+There are several approaches to getting an RJ45 plug to go deeply enough
+into the female socket to make electrical contact:
 
-I don't believe there are any other interlock protections or magic to the
-E80 female apart from the fact that I believe it must make contact on both
-sides to the shielded connector.
+- *use **flat** connectors without a **chin***
+- *modify the connectors to **remove the chin***
+- ***remove** the 2x12mm pieces of **plastic with a dremel***
 
-### Only Four wires
+Note that in all cases it is usually best to **cut off the black rubber finger**
+protecting the *latch* to prevent it from getting in the way.
+It is not generally necessary to cut off the latch itself, but
+worth noting that it provides no mechanical security to actually
+keep the plug attached to an E80/E120/DSM300.
 
-Apart from that, I note that the cable, as bulky as it is, only has
-four conductors, and the plugs only use 4 of the 8 RJ45 pins.
-Pin one is on the left with the connector facing upward facing the contact.
+
+
+### RJ45 connectors - Flat versus those with a "Chin"
+
+It is possible to find pre-made ethernet cables with **flat** RJ45 connectors,
+but almost all that are produced, including crimp-on RJ45 connectors sold separately,
+have a **chin**.
+
+![RJ45_flat.jpg](images/RJ45_flat.jpg)
+![RJ45_with_chin.jpg](images/RJ45_with_chin.jpg)
+
+
+**Flat connectors** will go into the E80 and make electrical contact.
+**Connectors with the Chin** will not go deep enough into the female
+socket to make electrical connection.  The aforementioned **piece of
+plastic** catches the chin and prevents them from going in deep enough.
+
+
+### Modifying connectors to remove the Chin
+
+I have used a Dremel with a sanding drum to **remove the chin** from
+a number of cables and connectors.  This solution is generally *sub-optimal*
+as the metal on the chin is usually an integral part of how the shield
+is connected to the clear plastic piece inside of it.  This is particularly
+true of molded connectors where you cannot remove and redesign the
+shield itself.
+However, for crimp on connectors, with care, and a fair amount of work, it is
+possible to remove the shield, grind down the plastic Chin, and modify
+the shield to make new bendable tabs that hold the shield securely on the
+plastic.
+
+
+### Remove the piece of Plastic (Best Solution)
+
+In the end this was the solution I chose.  The plastic that is removed
+**does not affect the alignment or security** of the plug, or have anything to
+do with the **waterproof connector**, so this modification *still allows for
+complete use of the original Raymarine cables if desired*, but also **allows
+most standard ethernet cables to plug into the E80**.
+
+![E80_mod_before.jpg](images/E80_mod_before.jpg)
+![E80_mod_after.jpg](images/E80_mod_after.jpg)
+
+I have two E80's on my boat as well as a number of working spare units.
+I modified them all as follows and have not noticed any ill effects as
+a result.
+
+I use a **Dremel with a 2mm end-mill bit** to remove the plastic.
+Before I start I cram a piece of paper towel in the female socket
+to minimize the amount of plastic dust that might get in there.
+A *bit of care* must be taken to not mill into the metal of the
+actual RJ45 female socket soldered to the printed circuit board
+inside the E80. About 6mm deep of plastic must be removed.  I usually
+get the rectangle down to about 1mm from the metal before gingerly
+removing the last plastic.  A bit of cleanup with an exacto knife
+removes the fuzzy edges left from the milling process.
+
+![Dremel_with_end_mill.jpg](images/Dremel_with_end_mill.jpg)
+
+
+
+
+
+
+## Raymarine SeatalkHS Cable Pin-outs and Wire colors
+
+For completeness, this section includes the details about the actual
+electrical connections in the E80 cable.
+
+Note that, for all of its bulk, the Raymarine cable only has
+**four conductors**. In the table Pin one is on the left with the connector facing upward
+while looking at the contacts.
 
 | E80 side | standard side | T568A colors   | T568B colors   | function                     |
 |---------|----------------|----------------|----------------|------------------------------|
@@ -93,50 +148,45 @@ Pin one is on the left with the connector facing upward facing the contact.
 | 7       | NC             | white brown    | white brown    | not used / bi-dir transmit + |
 | 8       | NC             | brown          | brown          | not used / bi-dir transmit - |
 
-The Raymarine cables I have ematch the T-568B color scheme.
+The Raymarine cables I have match the above T-568B color scheme.
 
-## Personal Boat Solutions.
+Note that this a **NOT
+a crossover cable!**  To produce a cross-over cable you must reverse
+the receive and transmit channels on one end of the cable.
 
-Subtitle: Create a 3D printed Waterproof Ring Connector or crimp new RJ45's
-to shortened versions of my existing official Raymarine cables?
 
-I think I can 3D print my own "waterproof locking ring", one that
-I can attach to the cable in the field, so that I can run a standard high
-quality modern shielded ethernet cable through the tight spaces needed to
-get to my E80 on the helm (which is in a Pod with barely space to get the
-RJ45 through the holes in the stainless steel tubes), and then attach the
-waterproof locking ring to keep the cable in place.
+## Mechanical Security  - **field installable 3D printed Waterproof Connector**
 
-Previously I had an entire 1 meter "official" E80 ethernet cable coiled
-up in the Pod, that connected to a female-to-female RJ45 adapter, that
-connected on the other side to a 20 year old 50 foot radio shack standard
-plastic ethernet cable.  Not only did an adapter and 1 meter of cable coiled
-up in the Pod bother me, but there was also about 20 feet of the radio shack
-ethernet cable of that coiled up on the other end near my "raymarine
-ethernet switch".
+As noted above, Raymarine did not include a **catch** for the standard RJ45 **plastic latch**
+so some alternative way of holding the plug in place must be provided.
 
-I will continue to use the raymarine ethernet switch, but have learned
-that any ethernet switch, including WiFi routers, will work.
+In this section I present a Waterproof Connector for SeatalkHS that I 3D printed and used
+on my boat. There is an E80 in a **Pod** on the helm of my boat.  The Pod already provides
+a substantial amount of protection from the elements.
 
-Now that I have learned how to crimp RJ45 connectors, and depending on
-how I feel about the 3D printed waterproof locking ring idea and reality,
-I *may* cut the end off of one or more of my 3 official Raymarine E80
-ethernet cables and make a shorter pigtails.  One would be for use in the
-Pod with the same basic female-to-female RJ45 adapter scheme, though
-the more connectors, the more chances of a failure.
+In fact, the main reason for this whole readme page and all of this effort is because the
+Raymarine Waterproof Connector is **too big** to pass through the cable run to the Pod.
+So instead I had a standard ethernet cable (which IS small enough to run into the Pod),
+where it then connected with *RJ45 Female to Female adapter*, then
+to a full feet (1.5M) Standard Raymarine SeatalkHS cable which then plugs into the E80.
+So, inside the Pod, I ended up with a adapter with TWO additional connections that had
+to be made waterproof by wrapping them in amalgamating tape.  Not only that, but all
+**five feet** of the Raymarine cable are coiled up inside the Pod as well.
 
-I have another E80 at the nav station, and a DSM300.
-I will probably continue to use the official Raymarine cable to connect
-to the nav station E80, as it is a few feet away from the router, so a
-1 meter cable seems ok.
+![E80_connector.gif](images/E80_connector.gif)
 
-I have not checked if the DSM300 has the same interlock protection,
-but know already that it won't hold a standard RJ45 jack without the
-waterproof locking ring. My DSM300 is only a few inches from the Router
-and I don't really like to have a 1 meter cable coiled up for that, so,
-hence, I *may* cut another one of my my official Raymarine cables shorter,
-and crimp an RJ45 to the shortened end (leaving the waterproof end unchanged),
-just to minimize the cable mess in the instrument wiring compartment.
+So, with this solution I just do the cable run, attached the 3D printed Waterproof Connector
+and plug it directly into the E80, eliminating two potential points of failure and a messy
+tangle of wires.
 
-That concludes my experiments with old Raymarine "SeatalkHS" cables
-and connectors to the E80.
+Although this is specifically designed for use with some ethernet cables I purchased, it
+should work fairly well with most run-of-the mill ethernet cables you might buy.  If not,
+all of the 3D printing files, the Fusion360 design, the STL files, the Prusa Slicer files
+and Gcode files are available in the
+[**NET/e80_connector**](https://github.com/phorton1/base-apps-raymarine/tree/master/NET/e80_connector)
+folder within this repo to allow you to customize for your particular cable or connector.
+
+
+![E80_connector_real.jpg](images/E80_connector_real.jpg)
+
+
