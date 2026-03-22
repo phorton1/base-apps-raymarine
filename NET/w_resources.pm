@@ -70,22 +70,6 @@ my $command_data = {
 };
 
 
-# Notebook data includes an array "in order",
-# and a lookup by id for notebooks to be opened by
-# command id's
-
-my $notebook_data = {
-	content  => {
-        name => 'content',
-        row => 1,
-        pos => 1,
-        position => '',
-        title => 'Content Notebook' },
-};
-my $notebooks = [$notebook_data->{content}];
-my $notebook_name = {};
-
-
 # Menus
 
 my $main_menu = [
@@ -122,9 +106,6 @@ $resources = { %$resources,
     # logfile         => '/base/apps/minimum/data/minimum.log',
 
     command_data    => $command_data,
-    notebooks       => $notebooks,
-    notebook_data   => $notebook_data,
-    notebook_name   => $notebook_name,
     pane_data       => $pane_data,
     main_menu       => $main_menu,
     file_menu       => $file_menu,
