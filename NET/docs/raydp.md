@@ -1,1 +1,0 @@
-# RAYSYS - Raynet Discovery Protocol

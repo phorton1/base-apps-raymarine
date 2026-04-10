@@ -1,4 +1,15 @@
-# SeatalkHS E80/E120 ethernet cables de-mystified
+# SeatalkHS — E80/E120 Ethernet Cables
+
+**[Home](../../docs/readme.md)** --
+**[NET](readme.md)** --
+**[RAYNET](RAYNET.md)** --
+**[RAYSYS](RAYSYS.md)** --
+**[WPMGR](WPMGR.md)** --
+**[TRACK](TRACK.md)** --
+**[FILESYS](FILESYS.md)** --
+**[DBNAV](DBNAV.md)** --
+**[shark](shark.md)** --
+**Cables**
 
 ### The Raymarine E80 and E120 Chartplotter and the DSM300 Sonar module can use STANDARD ETHERNET CABLES.  Period.
 
@@ -183,7 +194,7 @@ Although this is specifically designed for use with some ethernet cables I purch
 should work fairly well with most run-of-the mill ethernet cables you might buy.  If not,
 all of the 3D printing files, the Fusion360 design, the STL files, the Prusa Slicer files
 and Gcode files are available in the
-[**NET/e80_connector**](https://github.com/phorton1/base-apps-raymarine/tree/master/NET/e80_connector)
+[**NET/docs/e80_connector**](https://github.com/phorton1/base-apps-raymarine/tree/master/NET/docs/e80_connector)
 folder within this repo to allow you to customize for your particular cable or connector.
 
 

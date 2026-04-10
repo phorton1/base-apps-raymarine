@@ -1,165 +1,151 @@
-# readme for /base/apps/raymarine/NET
+# SeatalkHS — NET Protocol Documentation
 
-Perl code specific to the my probing and undertanding of SeatalkHS,
-Raymarine's proprietary UPD and TCP protocols.  They call it SeatalkHS,
-but I just call it **raynet** as I have to type it over and over.
+**[Home](../../docs/readme.md)** --
+**NET** --
+**[RAYNET](RAYNET.md)** --
+**[RAYSYS](RAYSYS.md)** --
+**[WPMGR](WPMGR.md)** --
+**[TRACK](TRACK.md)** --
+**[FILESYS](FILESYS.md)** --
+**[DBNAV](DBNAV.md)** --
+**[shark](shark.md)** --
+**[Cables](ethernet_cables.md)**
 
+The NET folder contains Perl implementations of the Raymarine **SeatalkHS**
+ethernet protocols, along with the engineering tool (**shark**) used to explore
+them, and supporting documentation.
 
-## General Goal
+Throughout this documentation and the implementation code, **RAYNET** is used
+as the working shorthand for the complete SeatalkHS ethernet protocol suite —
+every UDP, TCP, and multicast service that operates over SeatalkHS, as observed
+on the E80 and E120. For background on this name, see the
+[project home page](../../docs/readme.md). All protocol knowledge documented
+here was derived from packet capture, probing, and analysis. No official
+Raymarine developer documentation exists for these protocols.
 
-I am not necessarily trying to understand everything about raynet.
-The main purport of this effort is for me to be able to do RWT
-(Route, Waypoint, and Track) management on the E80 directly from
-my laptop, over an ethernet cable, WITHOUT running the **Raytech RNS**
-program.  I already have/had a "text based" solution this that
-involves (or requires) RNS, as well as swapping CF cards out of the
-E80 to my laptop, which is very onerous.  RNS itself is a horrible
-program and I have worked very hard to to try get it out of my workflow.
+This page is the overview. It is organized in two parts: **Protocols**
+covers the reverse-engineered SeatalkHS services; **Engineering Tools**
+covers the software and hardware used to work with them.
 
-Please see the higher level readme files and the FSH and CSV sibling
-folders for more information on my "text based" RWT management solution.
+## Protocols
 
+The entry point into RAYNET is **RAYSYS** — the service discovery protocol at
+**224.0.0.1:5800** — through which every device on the network advertises the
+services it provides. RAYSYS is the key to the whole system: without it, none
+of the service protocols below can be located. All implemented and observed ports
+in the table below were discovered through RAYSYS advertisement packets. The
+protocol was originally named **RAYDP** (Raymarine Discovery Protocol) in this
+codebase, which more accurately captures its role, and that name appears in older
+notes and probe files.
 
-## Desktop Network Configuration
+Every advertised port is identified by a **RAYNAME** — a name assigned to
+reflect the current level of understanding of that port:
 
-Using the new E80 #1 to the Archer C20�AC750 Router to th Laptop
+- **ALLCAPS** — a fully decoded and implemented protocol with its own
+  documentation. These are named protocols: RAYSYS, WPMGR, TRACK, FILESYS,
+  DBNAV. FILE_RNS and MY_FILE are listener ports that have been identified
+  and can be monitored.
+- **Capitalized** — a port identified with a known Raymarine service (visible
+  in the E80's ethernet Services dialog), connected to and observed, but not
+  yet fully decoded or implemented. Examples: Database, Navig, Alarm.
+- **lowercase** — a port observed in traffic, either a secondary
+  protocol variant of an identified service, or not yet associated with any
+  known Raymarine function. Examples: func8_u, func35_m, alarm, hidden_t.
 
-Starting with the fact that the New E80 shows an IP address of 10.0.241.54,
-I configured the Router with an IP address of 10.0.241.254 and the laptop
-with a fixed ethernet address of 10.0.241.200.
+The full RAYNAME convention and the protocol architecture that underlies all
+services are documented in **[RAYNET](RAYNET.md)**.
 
-I figured out how to use a regular shielded ethernet cable in place of
-the official shielded rayMarine ethernet cable. See ethernet_cables.md
-for more info.
+| Port  | Proto | SID | RAYNAME   | Status      | Description                          |
+| ----- | ----- | --- | --------- | ----------- | ------------------------------------ |
+| 5800  | mcast |  0  | RAYSYS    | Implemented | Service discovery (224.0.0.1:5800)   |
+| 2052  | tcp   | 15  | WPMGR     | Implemented | Waypoint / Route / Group management  |
+| 2053  | tcp   | 19  | TRACK     | Implemented | Track management                     |
+| 2049  | udp   |  5  | FILESYS   | Implemented | CF card filesystem access (read-only)|
+| 2050  | tcp   | 16  | Database  | Implemented | Navigation field database (TCP)      |
+| 2562  | mcast | 16  | DBNAV     | Implemented | Navigation data broadcast            |
+| 2054  | tcp   |  7  | Navig     | Observed    | Navigation TCP — not decoded         |
+| 2055  | tcp   | 22  | func22_t  | Observed    | Gets 9-byte msgs — not decoded       |
+| 5801  | mcast | 27  | Alarm     | Observed    | Alarm multicast — not decoded        |
+| 5802  | udp   | 27  | alarm     | Observed    | Alarm UDP — not decoded              |
+| 2048  | udp   | 35  | func35_u  | Observed    | Appears with teensyBoat active       |
+| 2051  | udp   | 16  | database  | Observed    | DB UDP variant — not decoded         |
+| 2056  | udp   |  8  | func8_u   | Observed    | Appears with teensyBoat compass/GPS  |
+| 2560  | mcast | 35  | func35_m  | Observed    | Multicast variant of func35          |
+| 2561  | mcast |  5  | filesys   | Observed    | FILESYS multicast — purpose unclear  |
+| 2563  | mcast |  8  | func8_m   | Observed    | Packets seen when RNS running        |
+| 6668  | tcp   | —   | hidden_t  | Observed    | Found by port scan, not advertised   |
+| 18432 | udp   |  5  | FILE_RNS  | Identified  | RNS's FILESYS listener port          |
+| 18433 | udp   |  5  | MY_FILE   | Identified  | shark's FILESYS listener port        |
 
-**The Laptop can be connected Wirelessly to the router, but that means
-you have to be off the net.**
+Ports 2048–2055 and 2560–2563 appear on a bare E80. Port 2056 appears only
+when teensyBoat is providing compass and GPS. func8_m (2563) receives packets
+when RNS is running and the E80 is underway.
 
-The router is setup with DHCP but uses address reservation to make sure
-that the new E80 at mac address 00:11:C7:00:F1:36 is reserved for
-10.0.241.54, and the laptop is at 200.
+### Protocol Documentation
 
-With this, RNS should come alive and/or when connecting to the E80 simultaneously
-with a Seatalk, NMEA0183, or NMEA2000 simulator, I was able to begin deciphering
-and/or learning aboutt the various protocols coming over the wire.
+- **[RAYNET](RAYNET.md)** —
+  Protocol architecture: message framing, service model, the RAYNAME naming
+  convention, and the common message structure shared across all services.
 
+- **[RAYSYS](RAYSYS.md)** —
+  The service discovery protocol: multicast advertisement packets, device
+  identification, and service port enumeration. The foundation on which all
+  other RAYNET services rest. Originally named RAYDP in this codebase.
 
-## Protocols and Naming Things
+- **[WPMGR](WPMGR.md)** —
+  Waypoint, Route, and Group management over TCP port 2052. The most fully
+  reverse-engineered and implemented service.
 
-For lack of any official terminology, I have had to learn what comes and goes
-over the wire, discern patterns, and break the traffic into a number of protocols,
-each of which is explored in more detail in various programs and subsequent
-readme files.
+- **[TRACK](TRACK.md)** —
+  Track management over TCP port 2053: start/stop/save/erase, track retrieval,
+  naming, and the complete command and reply tables.
 
-- raynet is the sum total of all UDP and TCP that comes and goes over the wire
+- **[FILESYS](FILESYS.md)** —
+  Read-only access to the CF card filesystem over UDP port 2049: directory
+  listing, file size, file contents, card identification, and advisory locking.
 
-The first, and practically only. clue I had when getting started was an
-open source OpenCPN plugin that could (apparently) connect a Raymarine
-Radar plugged into an E80 MFD to OpenCPN running on a Raspberry pi called
-"RMRadar_pi" in a public github repo.  For completeness I have included a
-zip file of that repo in the docs/reference folder within this folder.
+- **[DBNAV](DBNAV.md)** —
+  Navigation field database (port 2050 TCP) and live navigation data broadcast
+  (port 2562 multicast): field IDs, query protocol, and known field table.
 
-From RMRadar_pi I learned the first "gateway" protcol of the raynet
-protocol stack, that I call **RAY_DP**.  RMRadar_pi itself exposes one
-of the sub protocols, entirely in UDP, that I think of as RAY_RADAR, but
-have not explored further at this time.
+## Engineering Tools
 
-Most of the work I have done involved "getting between" the Raynet RNS
-program, running on my laptop, and an E80, on my desk, using tools like
-wireShark and subsequently Perl programs that I wrote.
+Working with the E80 over SeatalkHS requires physical ethernet access and
+the **shark** engineering application. Each E80 has its own IP address,
+assigned by its DHCP server or by static configuration; addresses vary across
+units and networks. The specific addresses used in development are recorded in
+`NET/a_defs.pm`. A standard **shielded** ethernet cable is required between
+the laptop and the E80 (or a router that bridges them); see
+**[Cables](ethernet_cables.md)** for wiring details and the 3D-printed
+field-installable waterproof connector.
 
-In a sense, raynet exposes a number of **virtual devices** that each have
-various IP addresses and ports associated with them, and which, as far
-as I can tell, use similar, but different packets in their communication.
-Inasmuch as the purport of my efforts is to understand the **packets**
-so as to learn to listen to and control the devices, my focus is on
-the protocols, the packets, themselves.
+### Implementation Architecture
 
-It is likely that (much) later, I will come up with a better understanding
-of "devices" versus "protocols". At this time the definition is rather fluid
-and I use both terms as is convenient in my descriptions that follow.
+The NET Perl implementation follows a layered naming convention (one letter
+prefix per layer):
 
-The protocols I have thus far explored in some detail, and named, are as follows.
+| Prefix | Layer        | Examples                                          |
+| ------ | ------------ | ------------------------------------------------- |
+| a_     | Definitions  | a_defs.pm — feature flags, shared constants       |
+| b_     | Base classes | b_sock.pm, b_parser.pm, b_probe.pm                |
+| c_     | RAYSYS       | c_RAYSYS.pm — discovery protocol                  |
+| d_     | Services     | d_WPMGR.pm, d_TRACK.pm, d_FILESYS.pm, d_DB.pm    |
+| e_     | APIs         | e_wp_api.pm, e_wp_defs.pm — WPMGR API and constants |
+| f_     | FSH bridge   | fshWriter.pm — writes FSH from live E80 data      |
+| w_     | wxPerl UI    | w_frame.pm, winShark, winRAYSYS, winFILESYS, etc. |
 
-- *RAY_DP* - Raynet UDP multicast Discovery Protocol at 224.0.0.1:5800
+The main application entry point is **shark.pm**.
 
-**RAY_DP** is the very top level SSDP like protocol by which raynet exposes
-the virtual devices, each with their own protocols, using multicast UDP.
-By joining the multicast group at the above IP address and port, and listening
-to UDP packets, subsequent virtual devices and protocols are discovered
-and accessed. See **raynet.md** and the **raynet.pm** program for more
-details about what I learned about this protocol.
+### Engineering Tool Documentation
 
-- **E80_NAV** - is a multicast UDP protcol that appears to be sent by the
-  E80 that contains basic Navigation information, like the lat/lon, heading
-  speed of the boat, time of day, etc.  Although it would probablly be better
-  called RAY_NAV, as it is probably also supported by other Raymarine MFD's
-  and devices, I first decoded it on my E80 and the code that is already
-  written currently refers to it as E80_NAV. See **e80.pm** and **ray_E80.pm*
-  for more information.
-- **E80_TCP** - is the holy grail I am trying to crack.  I have indications
-  that RNS communicates Routes and Waypoints to and from the E80 using TCP
-  at a particular IP address and port.
+- **[shark](shark.md)** —
+  The wxPerl engineering application: serial command vocabulary, feature flags,
+  GUI panels, and the probe system for exploring unknown ports and services.
 
-The IP addresses and ports for E80_NAV and E80_TCP are discovered by
-monitoring the RAY_DP multicasts. Though they appear to be somewhat
-fixed, based on the IP address shown by the E80 "Setup-System Diagnostics-
-External Interfaces-SeatalkHS" dialog on the E80, I prefer here
-to omit those addresses and will show my examples in the raynet.md
-readme file.
+- **[Cables](ethernet_cables.md)** —
+  Physical connection requirements: shielded ethernet cables, the E80/E120
+  ethernet port, and the 3D-printed field-installable waterproof connector.
 
+---
 
-## Programs
-
-As of this time I have written a few programs to probe, explore, and
-learn to control raynet and the E80.  This list is entirely in flux
-as I am in the middle of this project.  At this time these are
-the programs:
-
-- raynet_old.pm - my first effort to probe RAY_DP, which then grew
-  to also start decoding E80_NAV.  It currently consists of the
-  files:
-  - ray_UI.pm - a somewhat general approach to prenting a screen
-    like UI in a Windows Console (Dos Box)
-  - ray_E80.pm - a screen oriented program to understand and
-    display various packets of E80_NAV that I learned abut.
-- tcp_old.pm - my first (failed) attempt to connect to the E80 via TCP.
-  I am currently keeping this because it has a handshaking clue
-  where a unicast packet is sent to the E80 telling it what
-  unicast address to send a subsequent packet to.
-- shark_old.pm - a perl wireShark parser and monitor that gave
-  me my first breakthrough in E80_TCP, and which will likely
-  grow into the real program.
-
-It is very possible that I will write a wxPerl app as the communication
-grows too complex to capture and manipulate on a dos box console screen.
-I like the dos box for the time being because it can display a lot of
-information and be easily zoomed in and out.
-
-
-## Wireshark (tshark) vs actual multicast UDP and TCP sockets
-
-**tshark** is a CLI interface to wireShark that can be used via
-a pipe from within a Perl program.
-
-raynet_old.pm makes use of actual multicast UDP sockets to obtain and
-parse RAY_DP and E80_NAV packets.   In the end, any actual program
-for RWT management will also make use of actual UDP and TCP sockets.
-
-But, for exploring and understanding how raynet works, it turns out
-that using tshark within a perl parser has many advantages, including
-allowing me to sniff non-multicast communications between RNS and the
-E80, record sessions, and so on.
-
-So the next verson of raynet.pm will be based on tshark.
-
-
-
-
-
-
-
-
-
-
-
+**Next:** [RAYNET](RAYNET.md)

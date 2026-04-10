@@ -1,4 +1,26 @@
-# RAYNET - an effort to reverse engineer the SeatalkHS protocols
+# RAYNET — Protocol Architecture
+
+**[Home](../../docs/readme.md)** --
+**[NET](readme.md)** --
+**RAYNET** --
+**[RAYSYS](RAYSYS.md)** --
+**[WPMGR](WPMGR.md)** --
+**[TRACK](TRACK.md)** --
+**[FILESYS](FILESYS.md)** --
+**[DBNAV](DBNAV.md)** --
+**[shark](shark.md)** --
+**[Cables](ethernet_cables.md)**
+
+**RAYNET** is the working name for Raymarine's **SeatalkHS** ethernet protocol
+suite. Raymarine does not publish technical documentation for these protocols;
+all content here was derived from packet capture and probing.
+
+**RAYSYS** is the service discovery protocol within RAYNET — the multicast
+protocol at 224.0.0.1:5800 through which devices advertise their services.
+It was originally named **RAYDP** (Raymarine Discovery Protocol) in this
+codebase, which better captures its role, but was renamed to match the label
+Raymarine uses in the E80's own ethernet diagnostics dialog ("Sys"). References
+to RAYDP in older notes and probe files mean RAYSYS.
 
 Communications on **RAYNET** are framed in terms of *Requests and Replies*,
 that consist of *Messages*, that happen on a particular **ip:port**,
@@ -251,5 +273,7 @@ where:
 
 
 
-** end of readme at this time **
 
+---
+
+**Next:** [RAYSYS](RAYSYS.md)

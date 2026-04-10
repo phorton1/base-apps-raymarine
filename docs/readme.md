@@ -1,102 +1,109 @@
-# readme for /base/bat/raymarineE80
+# Raymarine Reverse Engineering — SeatalkHS, FSH, and CSV
 
-Perl code specific to the boat's instrument systems, particularly the E80.
-It consists of a number of Perl programs
+**Home** --
+**[NET Protocols](../NET/docs/readme.md)** --
+**[FSH Format](../FSH/docs/readme.md)** --
+**[CSV Tool](../CSV/docs/readme.md)**
 
-- fshConvert.pm converts FSH files into GPX or KML files
-- kmlToCSV.pm converts KML files into (Raytech) CSV files
-- kmlToFSH.pm is an incomplete experimental attempt to write an FSH file
-- raynet.pm is my current wip for messing with RaytechHS (ethernet)
+This repository documents the results of a systematic reverse-engineering effort
+targeting Raymarine's proprietary protocols and file formats, specifically the
+**SeatalkHS** ethernet protocol suite, the **FSH** binary navigation file format,
+and the **CSV** import format used by Raytech RNS. It includes working Perl
+implementations of the protocols, tools for reading and writing FSH files, and
+tools for converting navigation data between formats.
 
-There is an experimental program **kmlToFSH** that endeavoured to write an FSH
-file, bypassing Raytech RNS, that would have still required a CF card, but it was
-never completed.
+The primary goal is direct **Route, Waypoint, and Track management** on Raymarine
+MFDs from a laptop over an ethernet cable, without running Raymarine's RNS software.
+The work was conducted on a Raymarine **E80** chartplotter, but the SeatalkHS
+protocol is also used by E120-series MFDs, the DSM300 sonar module, and other
+Raymarine hardware of the same generation.
 
-This readme file discusses my basic Text based Route and Waypoint management
-approach, and the network configuration to connect the E80 to the laptop
-for running RNS and for my raynet experiments.
+## About This Work
 
-See raynet.md for my progress in deciphering the SeatalkHS (ethernet)
-protocols used by RNS and the E80.
+**SeatalkHS ethernet protocols (RAYNET):** At the time this work was conducted, no
+public documentation existed for the SeatalkHS ethernet protocol suite — not in
+Raymarine's published materials, not in any forum post, not in any open-source
+project, and not anywhere else on the internet that exhaustive searching could find.
+The only technical breadcrumb discovered was a handful of undocumented C++ lines
+buried inside an OpenCPN plugin for Raymarine radar (`RMRadar_pi`), which exposed
+enough to identify the discovery protocol. Everything else — the WPMGR, TRACK,
+FILESYS, and Database protocols; the complete port and service table — was derived
+from scratch through packet capture, probing, and analysis.
 
+Raymarine does not publish developer documentation for SeatalkHS. This repository
+is believed to be the only structured technical record of these protocols.
 
-## FSH File Converstions (Text Approach)
+**FSH file format:** The open-source [parsefsh](https://github.com/rahra/parsefsh)
+project by Bernhard R. Fischer provided substantial groundwork: the initial decoding
+of the FSH file format and the C struct definitions for block types and coordinates.
+This repository extends parsefsh significantly — additional block types, corrected
+coordinate handling, and the first known implementation that can both *read* and
+*write* FSH files. parsefsh itself is no longer maintained.
 
-Implements my current (only) Text based Route, Waypoint, and Track management
-approach to store, develop, and archive information in Google Earth and get it
-from, or send it to, the E80 in one form or another.
+## A Note on the Name "RAYNET"
 
-The initial requrement, since met, was to get all of the Tracks, Waypoints, and
-Routes off of the old broken E80.  I was able to use it well enough (the screen
-is bad) to get an ARCHIVE.FSH file onto a CF card, and onto the laptop.
+Throughout this codebase, **RAYNET** is used as the working name for the SeatalkHS
+ethernet protocol suite. The name was chosen for brevity — SeatalkHS is long to type
+and appears to be a Raymarine registered trademark. RAYNET as used here means
+*the collection of UDP and TCP protocols that operate over the SeatalkHS physical layer*,
+as observed on the E80.
 
-### FSH Files to Google Earth
+Raymarine subsequently introduced a product line also called "RAYNET" — their
+next-generation ethernet networking standard. This coincidence of names is
+unfortunate. The use of "RAYNET" in this repository predates awareness of that
+branding and refers specifically to the older SeatalkHS-based protocols documented
+here, not to Raymarine's newer RAYNET product line.
 
-The program **fshConvert.pm** has the ability to read FSH files and convert them
-into either KML or GPX files that can then be imported in to Google Earth.
+All Raymarine brand names (SeatalkHS, RAYNET, Raymarine, E80, E120, DSM300, RNS,
+Raytech) are used descriptively for identification purposes. No affiliation with
+or endorsement by Raymarine Ltd. is implied or claimed. This work is independent
+reverse engineering for personal and educational purposes.
 
-It includes the following perl packages, whish should not be confused with
-executable "programs".
+## Documentation Outline
 
-- fshBlocks.pm
-- fshConvert.pm
-- fshFile.pm
-- fshUtils.pm
-- genGPX.pm
-- genKML.pm
+- **[NET Protocols](../NET/docs/readme.md)** —
+  The SeatalkHS ethernet protocol suite: discovery, waypoint/route/track management,
+  filesystem access, navigation data, and the engineering tool used to explore them.
 
-The ouitput KML format contains my conventions for Google Earth including folders,
-tracks, markers, etc.
+- **[FSH Format](../FSH/docs/readme.md)** —
+  Raymarine's proprietary binary navigation file format (ARCHIVE.FSH): structure,
+  block types, coordinate systems, and tools for reading and writing FSH files.
 
-### KML Files to CSV Files
+- **[CSV Tool](../CSV/docs/readme.md)** —
+  Conversion from Google Earth KML to Raymarine RNS-compatible CSV format,
+  enabling a Google Earth → RNS → E80 navigation data workflow.
 
-The program **kmlToCSV.pm** converts my known Google Earth conventions Waypoints
-and Routes folders into a Raytech compatible CSV file, which can then be saved
-as an FSH file and transferred to the E80 by CF Card (or possibly sent directly
-to the E80 over ethernet).
+## Credits
 
-The CSV files into RNS only contain Routes, Folders, and Waypoints.  They do not
-contain Tracks.
+- [**parsefsh**](https://github.com/rahra/parsefsh) by Bernhard R. Fischer —
+  open-source C project that provided the initial decoding of the FSH file format,
+  including C struct definitions for block types and coordinate representations.
+  This repository derives from and significantly extends that work.
 
+- [**RMRadar_pi**](https://github.com/douwefokkema/RMRadar_pi) —
+  OpenCPN plugin for Raymarine radar. The only public source found containing
+  any SeatalkHS packet structure information. Provided the initial clue that
+  led to decoding the RAYSYS discovery protocol.
 
-### Raytech RNS Import/Export (Usage)
+## License
 
-Raytech RNS depends on the existence of a **C:/Archive** folder:
+This software is released under the
+[**GNU General Public License v3**](../LICENSE.TXT).
 
-- It MUST contain a file called RTWptRte.TXT or you cannot import from CSV files.
-- It PROBABLY needs an ARCHIVE.FSH because that's the 'database' for Raytech RNS.
+## Please Also See
 
-Note that Rayech RNS does NOT use or mirror E80 tracks, although it can facilitate
-getting them from the E80 in an FSH file.
+- [**phorton1/base-apps-raymarine**](https://github.com/phorton1/base-apps-raymarine) —
+  this repository on GitHub
 
+- [**teensyBoat.ino**](https://github.com/phorton1/Arduino-boat-teensyBoat) —
+  Arduino/Teensy4.0 physical boat simulator used to drive the E80 to known and
+  reproducible states during protocol reverse engineering. Implements Seatalk1,
+  NMEA0183, and NMEA2000 encoders and decoders; includes KiCad PCB schematic and design.
 
+- [**teensyBoat.pm**](https://github.com/phorton1/base-apps-teensyBoat) —
+  Perl application companion to teensyBoat.ino; provides remote monitoring and
+  control of the teensyBoat device over TCP/IP and UDP.
 
-## Desktop Network Configuration
+---
 
-Using the new E80 #1 to the Archer C20�AC750 Router to th Laptop
-
-Starting with the fact that the New E80 shows an IP address of 10.0.241.54,
-I configured the Router with an IP address of 10.0.241.254 and the laptop
-with a fixed ethernet address of 10.0.241.200.
-
-Thus far it only works when I use the official shielded rayMarine ethernet cable.
-
-**The Laptop can be connected Wirelessly to the router, but that means
-you have to be off the net.**
-
-The router is setup with DHCP but uses address reservation to make sure
-that the new E80 at mac address 00:11:C7:00:F1:36 is reserved for
-10.0.241.54, and the laptop is at 200.
-
-With this, RNS should come alive and/or when connecting to the E80 simultaneously
-with a Seatalk, NMEA0183, or NMEA2000 simulator, deciphering and learning about
-the Raynet protocols.
-
-
-
-
-
-
-
-
-
+**Next:** [NET Protocols](../NET/docs/readme.md)

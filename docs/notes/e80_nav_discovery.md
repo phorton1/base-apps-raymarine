@@ -1,4 +1,16 @@
-# Raynet (SeatalkHS / ethernet)
+# E80 NAV Discovery Notes
+
+> **Historical engineering notes** — This document was written at the very beginning
+> of the RAYNET reverse-engineering effort, before the protocols were understood or
+> named. The terminology and packet interpretations here are early and incomplete.
+> For current protocol documentation, see the
+> [NET Protocols](../../NET/docs/readme.md) documentation.
+>
+> Of particular note: what is called "RAYNET" here (the multicast at 224.0.0.1:5800)
+> is now documented as [RAYSYS](../../NET/docs/RAYSYS.md). What is called "E80_NAV"
+> here is now documented as [DBNAV](../../NET/docs/DBNAV.md).
+
+---
 
 This readme details what I have learned about Raynet
 and other SeatakHS protocols.

@@ -1,6 +1,21 @@
-# FILESYS - Raynet File System Port/Protocol
+# FILESYS — CF Card Filesystem Protocol
 
-Func(5) is advertised by RAYSYS over multicast on 224.0.0.1:580 as the following bytes
+**[Home](../../docs/readme.md)** --
+**[NET](readme.md)** --
+**[RAYNET](RAYNET.md)** --
+**[RAYSYS](RAYSYS.md)** --
+**[WPMGR](WPMGR.md)** --
+**[TRACK](TRACK.md)** --
+**FILESYS** --
+**[DBNAV](DBNAV.md)** --
+**[shark](shark.md)** --
+**[Cables](ethernet_cables.md)**
+
+**FILESYS** provides read access to the CF card filesystem on the E80. It operates
+over UDP on port **2049**, service_id **5**. All known operations are read-only
+in practice — see the critical note below about ARCHIVE.FSH.
+
+Func(5) is advertised by RAYSYS over multicast on 224.0.0.1:5800 as the following bytes
 
     RAYSYS --> 00000000 37a681b2 05000000 01001e00 01081100 c2261ee0 010a0000 36f1000a 01080000 01
 
@@ -25,12 +40,20 @@ responses to the listner port.
 
 ## Protocol Common Headers and Replies
 
-This protocol supports at least the following known commands:
+This protocol supports the following known commands:
 
-09 - Registration Request
-00 - Directory Listing Request
-01 - File Size Request
-02 - File Contents Request
+| Cmd | Constant        | Description                                      |
+| --- | --------------- | ------------------------------------------------ |
+| 00  | CMD_DIR         | Directory listing                                |
+| 01  | CMD_GET_SIZE    | File size (FILES only; fails on directories)     |
+| 02  | CMD_GET_FILE    | File contents                                    |
+| 03  | CMD_UNKNOWN3    | Never produced a response                        |
+| 04  | CMD_GET_ATTR    | Size + byte attributes (fails on root directory) |
+| 05  | CMD_FILE_EXISTS | Returns success if file exists, error otherwise  |
+| 06  | CMD_GET_SIZE2   | Same as CMD_GET_SIZE without the extra word(0)   |
+| 07  | CMD_LOCK        | Increments the advisory lock counter             |
+| 08  | CMD_UNLOCK      | Decrements the advisory lock counter             |
+| 09  | CMD_CARD_ID     | Returns a card identification string             |
 
 Multi-byte values in all RAYNET packets that I have seen are encoded as
 little endian as shown in the byte stream examples below.
@@ -70,38 +93,22 @@ When I implemented my own listener, I used the port 18433, which
 shows up in the hex streams as 0148.
 
 
-### Registration Reply
+### CMD_CARD_ID Request/Reply (command 09)
 
-The requests are sent over any general purpose UDP socket to
-the **FILESYS** ip and port. The reply will come back into the
-listener socket specifically setup on the known listener
-port number.
-
-A succesful registration request and reply will look something like this:
+CMD_CARD_ID returns a string that identifies the CF card currently in the E80.
+The string is card-specific and semi-persistent.
 
     FILESYS <-- 09010500 12300000 0048
     FILESYS --> 09000500 12300000 88130000 01001400 20202020
-                30303134 39313046 30364436 32303632 0f270c                                                           .'.
+                30303134 39313046 30364436 32303632 0f270c
 
-The Registration reply WILL match the first eight bytes of the
-Request, including the command, func, and sequence number bytes,
-but with the request/reply byte set to zero.
+The reply contains a human-readable ASCII string starting at byte 20
+(with 4 leading spaces):
 
-The registration reply has a human readable string in it starting
-at byte 20 (or possibly byte 16 with 4 leading spaces):
+    "0014910F06D62062"  — RAY_DATA CF card
+    "0014802A08W79223"  — Caribbean Navionics CF card
 
-    "0014910F06D62062"  is the ascii string in this example
-
-This string appears to be semi persistent and I believe
-it is related to the particular removable media that FILESYS
-is serving, the CF card on the E80 in this case.
-
-    0014910F06D62062  returned with my RAY_DATA CF card in the E80
-    0014802A08W79223  returned with Caribbean Navionics CF card in the E80
-
-In any case, I have never seen a Registration request fail
-with a well constructed packet, so I don't have any heuristic
-for failure detection.
+CMD_CARD_ID has never been observed to fail with a well-formed packet.
 
 
 ### General Success Reply (failure detection)
@@ -185,8 +192,6 @@ The FAT flags are, bitwise, as follows:
 
 
 
-## SECTIONS WRITTEN BY COPILOT NEED WORK
-
 ### FileSize Request/Reply (command #1)
 
 A FileSize Request is used to query the size of a file on the CF card.
@@ -216,17 +221,16 @@ Example reply:
 
 A FileContents Request retrieves the actual contents of a file.
 
-The request has an additional dword(0) and a UNKNOWN_MAGIC_FILE_KEY=9a9d0100
-
-The request structure is identical to the FileSize Request:
-Common Request Header, followed by a word(length) and a null-terminated
-ASCII path string.
+The request includes an additional dword(0) followed by a **maximum file size**
+parameter before the path. The value `9a9d0100` seen in RNS captures is RNS's
+own maximum file size limit (not a protocol key or magic value). The shark
+implementation uses `ffffff01` (32MB / 0x01ffffff).
 
 Example request for `\junk_data\test_data_image1.jpg`:
 
     FILESYS <-- 02010500 01000000 00480000 00009a9d 01002000 5c6a756e 6b5f6461 74615c74 ... 6a706700
                                       ^        ^        ^ length word (includes null terminator)
-                                      |        +---- additional magic key
+                                      |        +---- max file size (RNS uses 0x019d9a00; shark uses 0x01ffffff)
                                       +--- additional dword(0)
 
 - Command byte is 02 for FileContents.
@@ -262,17 +266,46 @@ The last packet has 0x202 == 514 bytes in, and so the total file size is 35330 b
 If the file is not found or the request fails, the reply will not contain the Success Signature and should be treated as an error.
 
 
-## TODO
+## Advisory Locking (CMD_LOCK / CMD_UNLOCK)
 
-Explore other possible commands, though I have not seen any from RNS.
+FILESYS implements an advisory locking scheme via CMD_LOCK (07) and CMD_UNLOCK (08):
 
-- file listing with sizes?
-- create directories?
-- create and fill files?
-- append/delete files?
-- change attributes?
+- Call CMD_UNLOCK first. If it returns an error, no lock is held — you are free to
+  call CMD_LOCK (which always succeeds).
+- CMD_UNLOCK succeeds as many times as CMD_LOCK was called, then returns an error.
+- Whether LOCK actually prevents the E80 from writing to the CF card is unknown.
 
-Note that malformed packets will crash the E80 and will likely crash RNS as well!
+## Listener Ports
+
+FILESYS replies are sent to the listener port encoded in each request:
+
+| Port  | Constant       | User                          |
+| ----- | -------------- | ----------------------------- |
+| 18432 | FILE_RNS       | RNS's listener port           |
+| 18433 | MY_FILE        | shark's listener port         |
+
+These ports are not advertised by RAYSYS — they are empirical values observed
+in RNS traffic (18432) and chosen for the shark implementation (18433).
+
+## Critical Note: ARCHIVE.FSH
+
+Once CMD_GET_FILE is used to retrieve `\Archive\ARCHIVE.FSH`, the E80 cannot
+subsequently save to ARCHIVE.FSH while it remains connected. Additionally,
+the E80 only writes ARCHIVE.FSH changes to the physical CF card when the card
+is physically removed. These behaviors make FILESYS read-only in practice for
+the FSH file, even though no write commands have been found.
+
+Note that malformed packets will crash the E80 and will likely crash RNS as well.
+
+## Implementation State
+
+All 10 commands are identified. Commands 0x00–0x02 and 0x09 are confirmed working.
+CMD_UNKNOWN3 (0x03) was never observed to produce a response. Write-like operations
+(create, delete, modify) have not been observed from RNS and are not implemented.
+
+---
+
+**Next:** [DBNAV](DBNAV.md)
 
 
 
