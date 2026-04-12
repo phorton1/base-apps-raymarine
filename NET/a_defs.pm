@@ -23,11 +23,11 @@ our $WITH_WX			= 1;
 
 # implemented service_ports that can be turned on and of
 
-our $WITH_TRACK 		= 1;
-our $WITH_WPMGR 		= 1;
-our $WITH_FILESYS 		= 1;
-our $WITH_DBNAV 		= 1;
-our $WITH_DB			= 1;
+our $WITH_TRACK 		= 0;
+our $WITH_WPMGR 		= 0;
+our $WITH_FILESYS 		= 0;
+our $WITH_DBNAV 		= 0;
+our $WITH_DB			= 0;
 
 
 our $AUTO_START_IMPLEMENTED_SERVICES = 1;

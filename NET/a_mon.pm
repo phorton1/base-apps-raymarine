@@ -304,7 +304,7 @@ my $SNIFF_MON_GROUP 	= $MON_ALL;
 
 
 mergeHash($SNIFFER_DEFAULTS{$SPORT_FILESYS},{
-	mon_in			=> $SNIFF_MON_FILESYS,
+	mon_in			=> 0, # 2026-04-12 turned off for chart analysis: $SNIFF_MON_FILESYS,
 	mon_out 		=> $SNIFF_MON_FILESYS,
 	in_color		=> $UTILS_COLOR_BROWN,
 	out_color		=> $UTILS_COLOR_LIGHT_MAGENTA, });
