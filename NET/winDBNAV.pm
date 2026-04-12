@@ -20,7 +20,7 @@ use Pub::Utils;
 use Pub::WX::Window;
 use a_defs;
 use a_utils;
-use c_RAYSYS;
+use c_RAYDP;
 # use d_DB;
 # use d_DBNAV;
 use x_listCtrl;
@@ -198,7 +198,7 @@ sub onIdle
 	my ($this,$event) = @_;
 	$event->RequestMore(1);
 
-	my $dbnav = $raysys->findImplementedService('DBNAV',1);
+	my $dbnav = $raydp->findImplementedService('DBNAV',1);
 	return if !$dbnav;
 	lock($dbnav);
 

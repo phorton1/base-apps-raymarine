@@ -118,7 +118,7 @@ my $FILESYS 	= 0;			# requests made TO the filesystem
 my $MY_DB		= 0;
 my $MY_NAV 		= $UNDER_WAY;	# many packets are sent when 'Underway'
 my $MY_WPS 		= 0;			# the important Waypoint, Route, and Group management tcp protocol
-my $RAYSYS		= 0;
+my $RAYDP		= 0;
 my $FILE		= 0;
 my $FILE_RNS 	= 0;
 my $MY_TRACK	= 0;
@@ -149,7 +149,7 @@ our %RAYPORT_DEFAULTS  = {
 	# Most of these take on the IP address of the E80 master.
 	# 'sid' is the standard func (Service Id) that I believe
 	# 	should be associated with the service_port, but 'func'
-	# 	(determined by actaual RAYSYS packets) is the
+	# 	(determined by actaual RAYDP packets) is the
 	# 	deifnitive number
 
 	# No new ports show up on bare E80 with chart card
@@ -189,7 +189,7 @@ our %RAYPORT_DEFAULTS  = {
 
 	# 5800 added by me
 
-	5800 => { sid => 0,		name => 'RAYSYS',	proto=>'mcast',	mon_from=>1,			mon_to=>$RAYSYS,	multi=>1,	color=>$UTILS_COLOR_LIGHT_BLUE,    },
+	5800 => { sid => 0,		name => 'RAYDP',	proto=>'mcast',	mon_from=>1,			mon_to=>$RAYDP,		multi=>1,	color=>$UTILS_COLOR_LIGHT_BLUE,    },
 
 	# 5801-5802 show up on bare E80
 

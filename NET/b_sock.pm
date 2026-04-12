@@ -32,7 +32,7 @@
 #		service_id has not yet have been identified.
 #
 # The connection addresses are treated differently depending on {proto}.
-# IP:PORT are the Advertised service_port addresses gotten by c_RAYSYS
+# IP:PORT are the Advertised service_port addresses gotten by c_RAYDP
 #
 # 	{ip}:{port}
 #		TCP: 		the remote tcp peer ip:port to connect to
@@ -57,7 +57,7 @@
 #
 #	{DELAY_START}
 #		puts a sleep at the top of sockThread and commandThread
-#		used to delay starting RAYSYS and implemented services
+#		used to delay starting RAYDP and implemented services
 #       until the E80 has settled down
 #	{EXIT_ON_CLOSE}
 #		if this is passed in, a failure to open the tcp
@@ -168,7 +168,7 @@ $LOCAL_UDP_SOCKET ?
 
 
 sub wakeup_e80
-	# needed to open multicast RAYSYS sockeet on Windows.
+	# needed to open multicast RAYDP socket on Windows.
 {
 	if (!$LOCAL_UDP_SOCKET)
 	{
@@ -178,7 +178,7 @@ sub wakeup_e80
     for (my $i = 0; $i < 10; $i++)
     {
 		display(0,1,"sending RAYDP_INIT_PACKET");
-        $LOCAL_UDP_SOCKET->send($RAYSYS_WAKEUP_PACKET, 0, $RAYSYS_ADDR);
+        $LOCAL_UDP_SOCKET->send($RAYDP_WAKEUP_PACKET, 0, $RAYDP_ADDR);
         sleep(0.001);
     }
 
@@ -405,7 +405,7 @@ sub handleEvent
 
 sub onStartSocketThread
 	# called when thread is started
-	# allows c_RAYSYS to send wakeup packets
+	# allows c_RAYDP to send wakeup packets
 {
 	my ($this) = @_;
 }
@@ -419,7 +419,7 @@ sub onConnect
 
 sub onIdle
 	# called from commandThread when no commands in queue
-	# allows c_RAYSYS to cull unadvertised service_port timeouts
+	# allows c_RAYDP to cull unadvertised service_port timeouts
 {
 	my ($this) = @_;
 }
@@ -620,7 +620,7 @@ sub sockThread
 	my $sel = undef;
 	my $sock = undef;
 		# WEIRD - if I don't explicitly assign $sock to undef, it somehow
-		# mysteriously gets plugged with the previous (c_RAYSYS mcast) socket!!!
+		# mysteriously gets plugged with the previous (c_RAYDP mcast) socket!!!
 		
 	display($dbg_thread,0,"sockThread($name,$this->{remote}) running sock="._def($sock));
 	while ($this->{running})
@@ -779,7 +779,7 @@ sub sockThread
 						my $packet = $this->make_packet(1,$client_buffer);
 						my $reply =	$this->{parser}->doParse($packet);
 						display($dbg_thread+1,0,"sockThread got parsePacket reply="._def($reply))
-							if $this->{name} ne 'RAYSYS';
+							if $this->{name} ne 'RAYDP';
 
 						if ($this->{is_probe})
 						{

@@ -83,7 +83,7 @@ reverse engineering for personal and educational purposes.
 - [**RMRadar_pi**](https://github.com/douwefokkema/RMRadar_pi) —
   OpenCPN plugin for Raymarine radar. The only public source found containing
   any SeatalkHS packet structure information. Provided the initial clue that
-  led to decoding the RAYSYS discovery protocol.
+  led to decoding the RAYDP discovery protocol.
 
 ## License
 

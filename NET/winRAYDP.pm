@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #-------------------------------------------------------------------------
-# winRAYSYS.pm
+# winRAYDP.pm
 #-------------------------------------------------------------------------
 # A Window reflecting the Raynet Discovery Protocol
 # that allows for control of shark monitoring.
@@ -9,7 +9,7 @@
 
 
 
-package winRAYSYS;
+package winRAYDP;
 use strict;
 use warnings;
 use threads;
@@ -24,7 +24,7 @@ use Pub::Utils;
 use Pub::WX::Window;
 use a_defs;
 use a_utils;
-use c_RAYSYS;
+use c_RAYDP;
 use base qw(Wx::ScrolledWindow Pub::WX::Window);
 
 my $dbg_win = 0;
@@ -98,8 +98,8 @@ sub new
 {
 	my ($class,$frame,$book,$id,$data) = @_;
 	my $this = $class->SUPER::new($book,$id);
-	display($dbg_win,0,"winRAYSYS::new() called");
-	$this->MyWindow($frame,$book,$id,'RAYSYS',$data);
+	display($dbg_win,0,"winRAYDP::new() called");
+	$this->MyWindow($frame,$book,$id,'RAYDP',$data);
 
 	$this->SetFont($font_fixed);
 	my $dc = Wx::ClientDC->new($this);
@@ -146,16 +146,16 @@ sub onCheckBox
 	my ($this,$event) = @_;
 	my $id = $event->GetId();
 	my $checked = $event->IsChecked() || 0;
-	return if !$raysys;
+	return if !$raydp;
 
 	my $slot_num = $id - $CONNECT_ID_BASE;
 	my $slot = $this->{slots}->[$slot_num];
 	my $addr = $slot->{addr};
-	my $service_port = $raysys->{ports_by_addr}->{$addr};
+	my $service_port = $raydp->{ports_by_addr}->{$addr};
 	my $name = $service_port->{name};
 
 	display($dbg_win,0,"$addr = $name connect($checked) $service_port->{proto}");
-	$raysys->connectServicePort($addr,$checked);
+	$raydp->connectServicePort($addr,$checked);
 
 }
 
@@ -234,10 +234,10 @@ sub cmpRecords
 sub sortRecords
 {
 	my ($this) = @_;
-	return if !$raysys;
-	lock($raysys);
-	my $ports_by_addr = $raysys->{ports_by_addr};
-	my $implemented_services = $raysys->{implemented_services};
+	return if !$raydp;
+	lock($raydp);
+	my $ports_by_addr = $raydp->{ports_by_addr};
+	my $implemented_services = $raydp->{implemented_services};
 
 	my $sort_by 	= $this->{sort_by};
 	my $slots   	= $this->{slots};
@@ -309,10 +309,10 @@ sub sortRecords
 sub setConnectBoxes
 {
 	my ($this) = @_;
-	return if !$raysys;
-	lock($raysys);
-	my $ports_by_addr = $raysys->{ports_by_addr};
-	my $implemented_services = $raysys->{implemented_services};
+	return if !$raydp;
+	lock($raydp);
+	my $ports_by_addr = $raydp->{ports_by_addr};
+	my $implemented_services = $raydp->{implemented_services};
 
 	for my $slot (@{$this->{slots}})
 	{
@@ -382,14 +382,14 @@ sub onIdle
 {
 	my ($this,$event) = @_;
 	$event->RequestMore(1);
-	lock($raysys);
+	lock($raydp);
 
 	#------------------------------------------------------
 	# (a) FIND NEW, OR TO BE DELETED SERVICE PORTS
 	#------------------------------------------------------
 
 	my $addrs = $this->{addrs};
-	my $service_ports = $raysys->getServicePortsByAddr();
+	my $service_ports = $raydp->getServicePortsByAddr();
 
 	for my $addr (keys %$addrs)
 	{

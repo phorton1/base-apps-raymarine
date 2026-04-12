@@ -257,7 +257,7 @@ mergeHash($SHARK_DEFAULTS{$SPORT_WPMGR},{
 
 for my $port (keys %SHARK_DEFAULTS)
 {
-	# print "raysys port($port)\n";
+	# print "raydp port($port)\n";
 	applyMonBits(1,\%SHARK_DEFAULTS,$port,$MON_SRC_SHARK);
 }
 

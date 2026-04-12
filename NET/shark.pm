@@ -31,7 +31,7 @@ use a_utils;
 use b_sock;
 use b_probe;
 
-use c_RAYSYS;
+use c_RAYDP;
 use d_DB;
 use d_TRACK;
 use d_WPMGR;
@@ -93,13 +93,13 @@ sub handleSerialCommand
 
 	elsif ($lpart eq 'i')
 	{
-		my $db = $raysys->findImplementedService('DB');
+		my $db = $raydp->findImplementedService('DB');
 		display(0,0,"db="._def($db));
 		$db->uiInit() if $db;
 	}
 	elsif ($lpart eq 'fids')
 	{
-		my $db = $raysys->findImplementedService('DB');
+		my $db = $raydp->findImplementedService('DB');
 		my $db_parser = $db ? $db->{parser} : 0;
 		display(0,0,"db="._def($db)." db_parser="._def($db_parser));
 		$db_parser->showFids() if $db_parser;
@@ -110,7 +110,7 @@ sub handleSerialCommand
 
 	elsif ($lpart eq 'v')
 	{
-		my $dbnav = $raysys->findImplementedService('DBNAV');
+		my $dbnav = $raydp->findImplementedService('DBNAV');
 		$dbnav->showValues() if $dbnav;
 	}
 
@@ -120,7 +120,7 @@ sub handleSerialCommand
 	elsif ($lpart eq 'f')
 	{
 		my ($cmd,$path) = split(/\s+/,$rpart);
-		my $filesys = $raysys->findImplementedService('FILESYS');
+		my $filesys = $raydp->findImplementedService('FILESYS');
 		$filesys->fileCommand($cmd,$path) if $filesys;
 	}
 	
@@ -128,7 +128,7 @@ sub handleSerialCommand
 
 	if ($lpart eq 't')
 	{
-		my $track = $raysys->findImplementedService('TRACK');
+		my $track = $raydp->findImplementedService('TRACK');
 		return if !$track;
 		$track->trackUICommand($rpart) if $track;
 	}
@@ -137,7 +137,7 @@ sub handleSerialCommand
 
 	elsif ($lpart =~ /^(q|create|delete|wp|route|group)$/)
 	{
-		my $wpmgr = $raysys->findImplementedService('WPMGR');
+		my $wpmgr = $raydp->findImplementedService('WPMGR');
 		return if !$wpmgr;
 
 		if ($lpart eq 'q')
@@ -245,8 +245,8 @@ sub handleSerialCommand
 		$name = 'DB'		if $name eq 'd';
 
 		my $service_port =
-			$raysys->findImplementedService($name,1) ||
-			$raysys->findServicePortByName($name,1);
+			$raydp->findImplementedService($name,1) ||
+			$raydp->findServicePortByName($name,1);
 		return error("service $name("._def($service_port).") doesn't exist or is not connected")
 			if !$service_port || !$service_port->{connected};
 		$service_port->doProbe($params);
@@ -277,10 +277,10 @@ if ($WITH_SERIAL)
 	$serial->start();
 }
 
-c_RAYSYS->new();
-if ($WITH_RAYSYS)
+c_RAYDP->new();
+if ($WITH_RAYDP)
 {
-	$raysys->start();
+	$raydp->start();
 }
 
 if ($WITH_TCP_SCANNER)

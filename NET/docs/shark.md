@@ -3,7 +3,7 @@
 **[Home](../../docs/readme.md)** --
 **[NET](readme.md)** --
 **[RAYNET](RAYNET.md)** --
-**[RAYSYS](RAYSYS.md)** --
+**[RAYDP](RAYDP.md)** --
 **[WPMGR](WPMGR.md)** --
 **[TRACK](TRACK.md)** --
 **[FILESYS](FILESYS.md)** --
@@ -13,7 +13,7 @@
 
 **shark** (`shark.pm`) is the main engineering application for probing and operating
 the SeatalkHS protocols. It is a **wxPerl** GUI application that starts a serial
-command interface, a RAYSYS discovery listener, a tshark-based packet sniffer, an
+command interface, a RAYDP discovery listener, a tshark-based packet sniffer, an
 HTTP server for Google Earth waypoint serving, and wxPerl GUI panels for each service.
 
 ## Feature Flags
@@ -23,7 +23,7 @@ Compile-time feature flags in `a_defs.pm` enable or disable components:
 | Flag                              | Default | Description                              |
 | --------------------------------- | ------- | ---------------------------------------- |
 | `$WITH_SERIAL`                    | 1       | Serial command interface                 |
-| `$WITH_RAYSYS`                    | 1       | RAYSYS discovery listener                |
+| `$WITH_RAYDP`                     | 1       | RAYDP discovery listener                 |
 | `$WITH_HTTP_SERVER`               | 1       | HTTP server for Google Earth (port 9882) |
 | `$WITH_SNIFFER`                   | 1       | tshark packet sniffer                    |
 | `$WITH_TCP_SCANNER`               | 0       | TCP port scanner (disabled by default)   |
@@ -34,7 +34,7 @@ Compile-time feature flags in `a_defs.pm` enable or disable components:
 | `$WITH_FILESYS`                   | 1       | FILESYS service                          |
 | `$WITH_DBNAV`                     | 1       | DBNAV multicast listener                 |
 | `$WITH_DB`                        | 1       | Database TCP service                     |
-| `$AUTO_START_IMPLEMENTED_SERVICES`| 1       | Auto-start services on RAYSYS discovery  |
+| `$AUTO_START_IMPLEMENTED_SERVICES`| 1       | Auto-start services on RAYDP discovery   |
 
 ## Serial Command Interface
 
@@ -47,7 +47,7 @@ into a serial terminal and processed by `handleSerialCommand()`.
 | ------------------- | --------------------------------------------------- |
 | `wakeup`            | Send E80 wakeup packet                              |
 | `db`                | Show local waypoint database                        |
-| `kml`               | Print RAYSYS KML to console                         |
+| `kml`               | Print RAYSYS KML to console (kml_RAYSYS)            |
 | `s`                 | Clear shark.log                                     |
 | `r`                 | Clear rns.log                                       |
 | `log <message>`     | Write labeled separator to both log files           |
@@ -132,7 +132,7 @@ into a serial terminal and processed by `handleSerialCommand()`.
 | ----------- | -------------------------------------------------- |
 | winShark    | Main shark output and console                      |
 | winSniffer  | tshark sniffer output                              |
-| winRAYSYS   | RAYSYS service discovery display                   |
+| winRAYDP    | RAYDP service discovery display                    |
 | winFILESYS  | FILESYS file browser                               |
 | winDBNAV    | Live navigation data display                       |
 

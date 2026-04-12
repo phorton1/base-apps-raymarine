@@ -3,7 +3,7 @@
 **[Home](../../docs/readme.md)** --
 **[NET](readme.md)** --
 **[RAYNET](RAYNET.md)** --
-**[RAYSYS](RAYSYS.md)** --
+**[RAYDP](RAYDP.md)** --
 **WPMGR** --
 **[TRACK](TRACK.md)** --
 **[FILESYS](FILESYS.md)** --
@@ -15,7 +15,7 @@
 Waypoints, Routes, and Groups on the E80. It is the most fully reverse-engineered
 and implemented service in this codebase.
 
-WPMGR is func(15) as advertised by RAYSYS. That is 0x00f0 as a word.
+WPMGR is func(15) as advertised by RAYDP. That is 0x00f0 as a word.
 The func is represented in hex streams as `0f00` and is seen throughout all messages.
 
 The communication takes place via a TCP connection established by the
@@ -29,13 +29,11 @@ of multiple *messages* in a single, or two *packets*.
 
 ### Little Endian
 
-It should be noted that typically, within this document and the
-implementation I view the bytes in the order in which they appear
-in the TCP packets, and that, generally speaking the representations
-are **little endian**, which can lead to confusion if one then also
-talks about the *values* of words, dwords, quad words, and so on.
+Bytes are presented in the order they appear in the TCP packets.
+Representations are **little endian**, which can lead to confusion
+when also discussing the *values* of words, dwords, quad words, and so on.
 
-So, for example, if I show a hex stream that looks like this
+For example, if a hex stream looks like this
 
 	1000 1234 12345678
 
@@ -47,20 +45,15 @@ would be:
 - 0x3412
 - 0x78563412
 
-Because of the large amount of information I have had to look at
-to glean these details from raw ethernet packets, I have become
-fairly proficient at "reading" little endian numbers, when needed,
-from the hex digit streams I usually use to display things.
+Working with these hex digit streams requires facility with reading
+little endian numbers.
 
-However, this will tend to obstruficate the underlying structure
-of the communications in that this means that typically the
-most significant bytes, which tend to be the most significant
-information, are shown (and usually discussed) as being at
-the end of a given word or dword.   I am not presenting this,
-yet, as a series of C data structures, especially as I am using
-Perl in my implementation, but nonetheless, it is important
-to understand the difference and the ramifications when discussing
-communication structures.
+This presentation tends to obfuscate the underlying structure:
+the most significant bytes — which carry the most significant
+information — appear at the end of each word or dword. This
+document does not present C struct equivalents; nonetheless,
+understanding this endian convention is important when reading
+the communication structures.
 
 
 ### Terminology
@@ -76,7 +69,7 @@ A **message** is a length delimited record that has
 - possible **data** that follows
 
 The *command word* will be discussed in more detail, but,
-terminolgically, within the command word is **the command**
+terminologically, within the command word is **the command**
 which is the low order nibble of the command word.
 
 - A **request** is a series one or more *messages*
@@ -108,9 +101,9 @@ In this example
 
 As mentioned above, *requests* and *replies* are typically
 sent in two packets.  The first packet will contain the length
-of the first *message* within the command or replyy, and then
+of the first *message* within the command or reply, and then
 the remainder of the packet, whose length is known from TCP,
-will conisted of additional dword(length)-message paris that
+will consist of additional dword(length)-message pairs that
 are parsed until the end of the packet.
 
 Here is a *reply* from WPMGR to RNS, in two packets, that consists
@@ -134,36 +127,31 @@ The length of the first packet is 2 bytes and the second packet is 116 bytes.
 As mentioned above, the E80 will blast out a series of messages typically in two packets,
 and often RNS sends a series of more than one message in a similar two packet blast.
 
-I refer to any message that I have observed starting a blast as an **Outer** message,
-and any that are then contained within that blast as **Inner** messages as I have
-learned to parse these blasts of messages.
+Messages that open a blast are termed **Outer** messages;
+those contained within the blast are **Inner** messages.
 
 
 
 ### Statefulness and Modality
 
-For what it is worth, it is evident that these messages are **stateful**, in
-that I have observed that, when sending requests to the E80, I can either send
-an entire (specific) series of messages in a single two packet blast, or I can
-send each message in separate two packet blasts and get the exact same result.
+These messages are **stateful**: an entire series of messages may be sent in
+a single two-packet blast, or each message may be sent in separate two-packet
+blasts, with the same result either way.
 
-However, I distinguish a *request* from sending a single *message* to the E80,
-as it is only after the reception of *certain sequences of messages* that the
-E80 will reply, and when it replies, it virtually always replies in a blast
-of two packets, the first containing a length word and the second containing
-one or more message.
+A *request* is distinguished from a single *message*: it is only after the
+reception of *certain sequences of messages* that the E80 will reply, and
+replies are virtually always sent in a blast of two packets, the first
+containing a length word and the second containing one or more messages.
 
-So, therfore, certainly within the parsing of a single *request* to the E80,
-it is building up, and maintaining a state as it parses the messages before
-replying.
+Within the parsing of a single *request*, the E80 builds up and maintains
+state as it parses messages before replying.
 
-But even moreso, I believe that the protocol exhibits **modality**, a higher
-level of statefulness, in which the semantics (meaning) of a request depends
-on what previous requests, specifically, have been sent.
+The protocol also exhibits **modality** — a higher level of statefulness
+in which the semantics of a request depend on what previous requests
+have been sent.
 
-For instance, there is message that can be sent alone as a request,
-the I call the **get dictionary** message (command word=0202) that looks
-like this :
+For instance, a message that can be sent alone as a request is
+the **get dictionary** message (command word=0202):
 
 	1000 0202 0f00 {seq_num} 00000000 00000000
 
@@ -172,9 +160,8 @@ of the uuids for the Waypoints, Routes, or Groups on the E80, depending on
 the previous **set context** message(s) that the E80 received, which set
 the context to **Waypoints** or **Routes** or **Groups**.
 
-Once I have established the correct context, I can send this single message
-over and over again, and each time the E80 will reply with the same "kind"
-of a dictionary reply. The above long long example reply above,is a
+Once the correct context is established, this message may be sent
+repeatedly and the E80 will reply with the same type of dictionary reply. The above long long example reply above,is a
 *get dictionary reply* and always consists of four messages.
 
 
@@ -185,9 +172,9 @@ The **command word**, when viewed in hex stream format, looks like this
 
 	WCXY
 
-where *typically* the semantics seem to beL
+where *typically* the semantics are:
 
-- W = **what** nibble, the context, which I now believe is enumerated
+- W = **what** nibble, the context, which appears to be enumerated
   - 0x0 == Waypoints (appears to always be implied)
   - 0x4 == Routes
   - 0x8 == Groups
@@ -195,7 +182,7 @@ where *typically* the semantics seem to beL
 - C = the **command** nibble appears to be an enumerated value
 - XY = **request/reply** byte for lack of a better term.
   - X is always zero
-  - Y is always 0,1, or 2, and I have inferred
+  - Y is always 0,1, or 2, where:
 	- Y == 0 means **reply**   (or "info", as it is also sent for events)
 	- Y == 1 means **request**
 	- Y == 2 means **either**
@@ -212,28 +199,27 @@ perhaps the whole purport of WPMGR is to be a **Waypoint Manager** and that
 either we are specifically talking about waypoints (0) or *additionally*
 talking about Routes and Groups, both of which contain waypoints.
 
-The only other value I have seen is 0xb, which is only used in a few "monadic"
+The only other value observed is 0xb, used only in a few "monadic"
 requests of length(4) that do not even have sequence numbers (though their
-replies may).  These requests do not always retrurn replies, but when they
-do, they *seem* to return data that contains a number that increments each
-time it is called, which might then be used by a multi-threaded client to
-to check if some other thread in his own process has done something while
-he was not aware of it.
+replies may).  These requests do not always return replies, but when they
+do, they appear to return data containing a number that increments each
+time it is called, which might be used by a multi-threaded client to
+check if another thread has made changes that the current thread is
+not aware of.
 
 
 ### Request/Reply byte
 
-This might better be called the *status* byte, or the *direction* byte,
-and all I can say right now is my empirical observations on it.
+This might better be called the *status* byte, or the *direction* byte.
+The following are empirical observations:
 
 Note, once again, that when the E80 replies, or when RNS sends requests
 to the E80, there are may or may not *inner* messages, but there is **always
 an outer message**.
 
-I sort of think the *outer message* indicates whether a blast is a
-request or a reply.  What I can say is that I have characterized every
-message I have seen and have the following generalizations regarding
-the Request/Reply byte
+The outer message appears to indicate whether a blast is a
+request or a reply.  The following generalizations regarding
+the Request/Reply byte have been observed:
 
 - All messages in requests are ether XY==1 or XY==2
 - All messages in replies (and events) are either XY==0 or XY==2
@@ -259,11 +245,10 @@ The following is the raw discovery-era analysis of the command byte semantics.
 The formalized constants derived from this analysis are in `e_wp_defs.pm` and
 are listed at the end of this section.
 
-At this time I have seen, and applied the following rough semantics,
-to the following command bytes.
+The following rough semantics have been applied to the observed
+command bytes.
 
-These are all the command nibbles I have seen and a very, very
-rough interpretation.  Remember that the protocol is stateful
+These are all command nibbles observed, with rough interpretations.  Remember that the protocol is stateful
 and the meanings of these might change depending on the state.
 
 
@@ -301,7 +286,7 @@ WC0D
 		F = FVERB
 
 
-Of these, I have only seen 7, c, and d when creating a waypoint in
+Commands 7, c, and d are observed when creating a waypoint in
 RNS that gets sent to the E80.
 
 The formalized constants from `e_wp_defs.pm` express this as:

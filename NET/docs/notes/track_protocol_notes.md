@@ -184,7 +184,7 @@ PROBE 2a
 #						color        => 'c',        #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
 #						name         => 'Z16',      #   40    char name[16];            // name of track, string not terminated
 #
-#						// these fields don't come in RAYSYS packets; only FSH files
+#						// these fields don't come in RAYDP packets; only FSH files
 #
 #						u1           => 'C',        #   56    char j;                   // unknown, never 0 in my files, always 0 according to parsefsh
 #						guid_cnt     => 'c',        #   57    uint8_t guid_cnt;         // nr of guids following this header (always 1 in my files)

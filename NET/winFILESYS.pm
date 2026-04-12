@@ -21,7 +21,7 @@ use Pub::WX::Window;
 use Pub::WX::Dialogs;;
 use a_defs;
 use a_utils;
-use c_RAYSYS;
+use c_RAYDP;
 use d_FILESYS;
 use w_resources;
 use x_Progress;
@@ -1015,11 +1015,11 @@ sub clearEverything
 sub checkFilesysPorts
 {
 	my ($this) = @_;
-	lock($raysys);
+	lock($raydp);
 	
 	# see if FILESYS is running, return if not
 
-	my $filesys = $this->{filesys} = $raysys->findImplementedService('FILESYS',1);
+	my $filesys = $this->{filesys} = $raydp->findImplementedService('FILESYS',1);
 	if (!$filesys || !$filesys->{running})
 	{
 		my $msg = $filesys?
@@ -1044,7 +1044,7 @@ sub checkFilesysPorts
 	# add and delete local copies of FILESYS service_ports
 
 	my $my_ports = $this->{filesys_ports};
-	my $raysys_ports = $raysys->getServicePortsByAddr();
+	my $raydp_ports = $raydp->getServicePortsByAddr();
 
 	for my $device_id (sort keys %$my_ports)
 	{
@@ -1052,9 +1052,9 @@ sub checkFilesysPorts
 	}
 
 	my $num_added = 0;
-	for my $addr (sort keys %$raysys_ports)
+	for my $addr (sort keys %$raydp_ports)
 	{
-		my $service_port = $raysys_ports->{$addr};
+		my $service_port = $raydp_ports->{$addr};
 		next if $service_port->{name} ne 'FILESYS';
 
 		my $device_id = $service_port->{device_id};

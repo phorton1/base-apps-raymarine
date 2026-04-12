@@ -3,7 +3,7 @@
 **[Home](../../docs/readme.md)** --
 **[NET](readme.md)** --
 **[RAYNET](RAYNET.md)** --
-**[RAYSYS](RAYSYS.md)** --
+**[RAYDP](RAYDP.md)** --
 **[WPMGR](WPMGR.md)** --
 **[TRACK](TRACK.md)** --
 **FILESYS** --
@@ -15,9 +15,9 @@
 over UDP on port **2049**, service_id **5**. All known operations are read-only
 in practice — see the critical note below about ARCHIVE.FSH.
 
-Func(5) is advertised by RAYSYS over multicast on 224.0.0.1:5800 as the following bytes
+Func(5) is advertised by RAYDP over multicast on 224.0.0.1:5800 as the following bytes
 
-    RAYSYS --> 00000000 37a681b2 05000000 01001e00 01081100 c2261ee0 010a0000 36f1000a 01080000 01
+    RAYDP --> 00000000 37a681b2 05000000 01001e00 01081100 c2261ee0 010a0000 36f1000a 01080000 01
 
 Which is parsed as
 
@@ -25,13 +25,13 @@ Which is parsed as
 - mcast_ip(224.30.38.194) mcast_port(2561)
 - ip(10.0.241.54) port(2049) flags(1)
 
-Thus, RAYSYS presents a multicast ip:port 224.30.38.194:2561 for func(5).
-I am not sure what that is for or how it is used.
+Thus, RAYDP presents a multicast ip:port 224.30.38.194:2561 for func(5).
+The purpose of this multicast port has not been established.
 
-RAYSYS presents a second, non-multicast ip:port 10.0.241.54:**2049** for func(5).
-10.0.241.54 is the IP address of my E80. I have learned that this address for
-func(5) can be used with UDP to access the file system on the CF card in my E80,
-and I call this address the **FILESYS port**
+RAYDP presents a second, non-multicast ip:port 10.0.241.54:**2049** for func(5).
+10.0.241.54 is the E80's IP address in the test network. This address for
+func(5) accepts UDP requests for CF card filesystem access,
+and is referred to as the **FILESYS port**.
 
 To use this protocol, the client sets up a UDP listener on a known port,
 and then makes UDP requests to the FILESYS port. FILESYS will then send
@@ -55,8 +55,8 @@ This protocol supports the following known commands:
 | 08  | CMD_UNLOCK      | Decrements the advisory lock counter             |
 | 09  | CMD_CARD_ID     | Returns a card identification string             |
 
-Multi-byte values in all RAYNET packets that I have seen are encoded as
-little endian as shown in the byte stream examples below.
+Multi-byte values in all observed RAYNET packets are encoded as
+little endian, as shown in the byte stream examples below.
 
 *Note: It is likely these command request and reply structures are used
 in other RAYNET protocols.*
@@ -85,12 +85,12 @@ File Size Request (command #1)
 
 All requests sent to FILESYS include the listener's port number.
 
-The listener port for RNS, from which I recorded and learned many of
-these conversations, is 18432, which shows up as 0048 in the hex byte
-streams. This is the little endian representation of the uint16 18432,
+The listener port for RNS, observed in captured traffic, is 18432,
+which shows up as 0048 in the hex byte streams. This is the
+little endian representation of the uint16 18432.
 
-When I implemented my own listener, I used the port 18433, which
-shows up in the hex streams as 0148.
+The shark implementation uses port 18433, which shows up
+in the hex streams as 0148.
 
 
 ### CMD_CARD_ID Request/Reply (command 09)
@@ -124,18 +124,17 @@ and Reply
 
 Any reply that matches the first 8 bytes of the Reply,
 but that then does not match the Success Signature is
-considered an error.  In general I just report the
-error as "operation failed" and show the user the
-bytes following the sequence number.  Here's an
-example of a failed Directory File Size Request and
-Reply:
+considered an error.  The implementation reports the
+error as "operation failed" and shows the bytes following the
+sequence number.  Here's an example of a failed Directory File
+Size Request and Reply:
 
     FILESYS <-- 00010500 0d000000 0048 .. more bytes
     FILESYS --> 00000500 0d000000 01050480 01000100 0000
 
 Since 01050480 does not match the Success Signature 00000400,
-I report the error to the user as "01050480010001000000" and
-consider the operation to be terminated.
+the error is reported as "01050480010001000000" and
+the operation is considered terminated.
 
 
 
@@ -284,7 +283,7 @@ FILESYS replies are sent to the listener port encoded in each request:
 | 18432 | FILE_RNS       | RNS's listener port           |
 | 18433 | MY_FILE        | shark's listener port         |
 
-These ports are not advertised by RAYSYS — they are empirical values observed
+These ports are not advertised by RAYDP — they are empirical values observed
 in RNS traffic (18432) and chosen for the shark implementation (18433).
 
 ## Critical Note: ARCHIVE.FSH

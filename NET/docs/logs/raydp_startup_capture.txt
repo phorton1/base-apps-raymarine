@@ -1,0 +1,24 @@
+
+RAYDP IDENT(54) type(RAYTECH) id(RNS) vers(6.3) ip(128.118.142.1) role(UNDEFINED)
+       01000000 03000000 ffffffff 76020000 018e7680 00000000 00000000 00000000   ............v.....v.............
+       00000000 00000000 00000000 00000000 00000000 0000                         ......................
+RAYDP IDENT(56) type(E80) id(E80 #1) vers(5.69) ip(10.0.241.54) role(MASTER)
+       01000000 00000000 37a681b2 39020000 36f1000a 0033cc17 4c33c87f 8c330c12   ........7...9...6....3..L3...3..
+       ccb3cc33 c43b8c33 cc114413 cd10c833 ce37cc31 02000100                     ...3.;.3..D....3.7.1....
+
+
+RAYDP 36:0 RNS      func(27)     x(01001e00,aa161000) mcast_ip(224.0.0.2) mcast_port(5801) ip(10.0.241.200) port(5802)='udp'
+RAYDP 28:0 E80 #1   WPMGR(15)    x(01001e00,04080800) ip(10.0.241.54) port(2052)='tcp'
+RAYDP 37:0 E80 #1   FILESYS(5)   x(01001e00,01081100) mcast_ip(224.30.38.194) mcast_port(2561) ip(10.0.241.54) port(2049)='udp' flags(1)
+RAYDP 28:0 E80 #1   Navig(7)     x(01001e00,06080800) ip(10.0.241.54) port(2054)='tcp'
+RAYDP 36:0 E80 #1   func(8)      x(05001e00,08081000) mcast_ip(224.30.38.196) mcast_port(2563) ip(10.0.241.54) port(2056)='udp'
+RAYDP 40:0 E80 #1   Database(16) x(01001e00,02081400) ip(10.0.241.54) port1(2050)='tcp' port2(2051)='udp' mcast_ip(224.30.38.195) mcast_port(2562)
+RAYDP 28:0 E80 #1   Track(19)    x(01001e00,05080800) ip(10.0.241.54) port(2053)='tcp'
+RAYDP 28:0 E80 #1   func(22)     x(01001e00,07080800) ip(10.0.241.54) port(2055)='tcp'
+RAYDP 36:0 E80 #1   func(27)     x(01001e00,aa161000) mcast_ip(224.0.0.2) mcast_port(5801) ip(10.0.241.54) port(5802)='udp'
+RAYDP 36:0 E80 #1   func(35)     x(01001e00,00081000) mcast_ip(224.30.38.193) mcast_port(2560) ip(10.0.241.54) port(2048)='udp'
+												 ^ length following this dword
+
+
+(10148,1) s_serial.pm[68]                     WARNING: ctrl-C pressed ...
+(10148,1) s_serial.pm[112]                  WARNING: EXITING PROGRAM from serial_thread()

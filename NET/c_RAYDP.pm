@@ -1,11 +1,10 @@
 #---------------------------------------------
-# c_RAYSYS.pm
+# c_RAYDP.pm
 #---------------------------------------------
-# RAYSYS is the heart of RAYNET (Seatalk HS ethernet)
-# It is named RAYSYS because it is listed as "System" in the
-# E80 ethernet diagnostics Services dialog.
+# RAYDP (Raymarine Discovery Protocol) is the heart of RAYNET (Seatalk HS ethernet).
+# It is listed as "System" in the E80 ethernet diagnostics Services dialog.
 #
-# RAYSYS is, essentially, a service discovery protocol, like SSDP,
+# RAYDP is, essentially, a service discovery protocol, like SSDP,
 # that broadcasts the Services (service_ids) available via RAYNET,
 # over a known udp multicast address.
 #
@@ -40,7 +39,7 @@
 # SPAWNING UN-IMPLEMENTED SERVICE_PORTS
 #
 # 	- we support the ability to start/promote and stop/destroy un-implemented
-#	  local service_ports, via the winRAYSYS UI.
+#	  local service_ports, via the winRAYDP UI.
 #	- These 'spawned' sockets are promoted with EXIT_ON_CLOSE=1,
 #	  and go away automagically if there is a problem reading/writing
 #     to the socket.
@@ -62,10 +61,10 @@
 # LOCKING($this)
 #
 #   It has been demonstrated that, for thread safety between the
-#   wxPerl UI and these implementation classes, starting with c_RAYSYS
+#   wxPerl UI and these implementation classes, starting with c_RAYDP
 #   itself, that (a) everyone should "use" threads and threads::shared,
 #   and (b) access to the service_port shared variables must be protected
-#   by calling lock($this) (or lock($raysys) or whatever) by the various
+#   by calling lock($this) (or lock($raydp) or whatever) by the various
 #   parties that handle the data.  That will typically include,
 #   handleCommand(), and/or onIdle() in these base classes, and/or the
 #   onIdle() or other methods that access the members in the wxPerl UI.
@@ -91,7 +90,7 @@
 #		finished records
 #			containing the same level of detail
 
-package c_RAYSYS;
+package c_RAYDP;
 use strict;
 use warnings;
 use threads;
@@ -106,14 +105,14 @@ use b_sock;
 use a_parser;
 use base qw(b_sock a_parser);
 
-my $dbg_raysys = 0;
+my $dbg_raydp = 0;
 
-our $raysys:shared;
+our $raydp:shared;
 
 
 my $DELAY_START = 3;
 my $SERVICE_PORT_TIMEOUT = 3;
-	# after this many seconds, RAYSYS will destroy and
+	# after this many seconds, RAYDP will destroy and
 	# delete the service port.
 	
 
@@ -122,7 +121,7 @@ BEGIN
  	use Exporter qw( import );
     our @EXPORT = qw(
 
-		$raysys
+		$raydp
 	);
 }
 
@@ -140,7 +139,7 @@ my %CMD_NAME = (
 #--------------------------------------------------------------
 # ctor
 #-------------------------------------------------------------
-# RAYSYS is multiply inherited from b_sock and b_parser,
+# RAYDP is multiply inherited from b_sock and b_parser,
 # is never destroyed, and does not use the init method.
 # Instead it knowingly sets up the required b_sock and a_parser
 # members.
@@ -155,17 +154,17 @@ sub new
 	# Unknown is a hash by raw bytes of all unknown messages shown once
 {
 	my ($class) = @_;
-	display($dbg_raysys,0,"c_RAYSYS new()");
+	display($dbg_raydp,0,"c_RAYDP new()");
 
-	my $this = shared_clone($SERVICE_PORT_DEFS{$RAYSYS_PORT});
+	my $this = shared_clone($SERVICE_PORT_DEFS{$RAYDP_PORT});
 	mergeHash($this, shared_clone({
-		name 			=> $RAYSYS_NAME,
+		name 			=> $RAYDP_NAME,
 		proto			=> 'mcast',
 		device_id		=> $KNOWN_DEVICES{$SHARK_DEVICE_ID},
-		service_id		=> $RAYSYS_SID,
+		service_id		=> $RAYDP_SID,
 		local_ip		=> $LOCAL_IP,
-		ip   			=> $RAYSYS_IP,
-		port 			=> $RAYSYS_PORT,
+		ip   			=> $RAYDP_IP,
+		port 			=> $RAYDP_PORT,
 
 		DELAY_START		=> $DELAY_START,
 
@@ -190,7 +189,7 @@ sub new
 
 	bless $this,$class;
 	$this->init();
-	$raysys = $this;
+	$raydp = $this;
 
 	$this->addServicePort({
 		proto => 'tcp',
@@ -207,9 +206,9 @@ sub new
 # client API
 #------------------------------------
 
-sub getRaysys
+sub getRayDP
 {
-	return $raysys;
+	return $raydp;
 }
 
 
@@ -251,14 +250,14 @@ sub findServicePortByName
 
 
 sub connectServicePort
-	# Called by winRAYSYS directly when the spawn checkbox is
+	# Called by winRAYDP directly when the spawn checkbox is
 	# checked or unchecked.
 {
 	my ($this,$addr,$checked) = @_;
 	my $service_port = $this->{ports_by_addr}->{$addr};
 	return error("Could not find service_port($addr)") if !$service_port;
 	my $name = $service_port->{name};
-	warning($dbg_raysys,0,"connectServicePort($addr=$name,$checked)");
+	warning($dbg_raydp,0,"connectServicePort($addr=$name,$checked)");
 
 	# If the service_port is IMPLEMENTED, that means that the command
 	# is actually 'connectServicePortByName() and we call connect()
@@ -306,7 +305,7 @@ sub addServicePort
     my ($this,$rec,$ip,$port,$no_delete) = @_;
     my $addr = "$ip:$port";
     my $found = $this->{ports_by_addr}->{$addr};
-	display_hash($dbg_raysys+1,0,"addServicePort($addr)",$rec);
+	display_hash($dbg_raydp+1,0,"addServicePort($addr)",$rec);
 
     if ($found)
 	{
@@ -332,10 +331,10 @@ sub addServicePort
 	}
 
 	
-	display_hash($dbg_raysys+1,1,"adding ServicePort($ip:$port) def",$def);
+	display_hash($dbg_raydp+1,1,"adding ServicePort($ip:$port) def",$def);
 	my $service_port = shared_clone($def);
 	mergeHash($service_port,$rec);
-	display_hash($dbg_raysys+2,1,"after merge",$service_port);
+	display_hash($dbg_raydp+2,1,"after merge",$service_port);
 
 	$service_port->{ip}			= $ip;
 	$service_port->{port}		= $port;
@@ -448,25 +447,25 @@ sub parsePacket
 	#      ^ byte looks like a creation order or some other index, except for a which appears special
 	#
 	# So, as of the new b_sock implementation, the length is still the best indicator of how
-	# to decode these packets, and I am not using a command processor for RAYSYS
+	# to decode these packets, and I am not using a command processor for RAYDP
 {
     my ($this,$packet) = @_;
     my $raw = $packet->{payload};
     my $len = length($raw);
-    display($dbg_raysys+1,0,"decodeRAYSYS($len) raw=".unpack('H*',$raw));
-	lock($raysys);
+    display($dbg_raydp+1,0,"decodeRAYDP($len) raw=".unpack('H*',$raw));
+	lock($raydp);
 
     # packets we can skip merely based on the raw contents
 
-	if ($raw eq $RAYSYS_WAKEUP_PACKET)
+	if ($raw eq $RAYDP_WAKEUP_PACKET)
     {
 		print "RAYDP_WAKEUP_PACKET: ".unpack("H*",$raw)."\n";
         return undef;
     }
 
-    # parse the RAYSYS packet for header fields
+    # parse the RAYDP packet for header fields
 
-    my ($cmd_word, $raysys_service_id, $device_id, $service_id, $x1, $x2) = unpack('vvH8VH8H8', $raw);
+    my ($cmd_word, $raydp_service_id, $device_id, $service_id, $x1, $x2) = unpack('vvH8VH8H8', $raw);
 	$device_id = $KNOWN_DEVICES{$device_id} || $device_id;
     my $rec = shared_clone({
         # raw   		=> $raw,
@@ -478,7 +477,7 @@ sub parsePacket
         x2    		=> $x2,
     });
 
-    display_hash($dbg_raysys+1,0,"decodeRAYSYS($len)",$rec);
+    display_hash($dbg_raydp+1,0,"decodeRAYDP($len)",$rec);
 
 	# handle IDENT messages first
 
@@ -537,9 +536,9 @@ sub parsePacket
 			is_master	=> $is_master,
 			role		=> $role, });
 
-		if ($dbg_raysys <= 0)
+		if ($dbg_raydp <= 0)
 		{
-			my $text = "RAYSYS IDENT type($type) device_id($device_id) role($role) vers($version) ip($ip)";
+			my $text = "RAYDP IDENT type($type) device_id($device_id) role($role) vers($version) ip($ip)";
 			$text .= " name($name) sid($service_id) svc($svc_port) listen($listen_port)" if $svc_port;
 
 			setConsoleColor($DISPLAY_COLOR_WARNING);
@@ -597,7 +596,7 @@ sub parsePacket
 		$this->{unknown}->{$raw} = 1;
 
 		my $name = 'UNKNOWN';
-		my $header = 'RAYSYS '; 
+		my $header = 'RAYDP ';
 		setConsoleColor($DISPLAY_COLOR_WARNING);
 		print $header."$name($len) $text2\n";
 		print parse_dwords(pad('',length($header)),$raw,1);
@@ -607,10 +606,10 @@ sub parsePacket
 
 	# finished. Display new ones
 
-	if ($is_new && $dbg_raysys <= 0)
+	if ($is_new && $dbg_raydp <= 0)
 	{
 		setConsoleColor($DISPLAY_COLOR_LOG);
-		print "RAYSYS $text1 $text2\n";
+		print "RAYDP $text1 $text2\n";
 		setConsoleColor();
 	}
 
@@ -625,10 +624,10 @@ sub parsePacket
 
 sub onStartSocketThread
 	# wakeup_e80 must be called, likely because of MSWindows,
-	# before attempting to open the RAYSYS multicast socket
+	# before attempting to open the RAYDP multicast socket
 {
 	my ($this) = @_;
-	display($dbg_raysys,0,"RAYSYS onStartSocketThread()");
+	display($dbg_raydp,0,"RAYDP onStartSocketThread()");
 	b_sock::wakeup_e80();
 }
 
@@ -639,7 +638,7 @@ sub onIdle
 	# not been advertised in SERVICE_PORT_TIMEOUT seconds
 {
 	my ($this) = @_;
-	lock($raysys);
+	lock($raydp);
 
 	my $now = time();
 	my $ports_by_addr = $this->{ports_by_addr};
@@ -650,7 +649,7 @@ sub onIdle
 		my $name = $service_port->{name};
 		if ($now > $service_port->{alive_time} + $SERVICE_PORT_TIMEOUT)
 		{
-			warning($dbg_raysys,0,"deleting service_port $addr=$name");
+			warning($dbg_raydp,0,"deleting service_port $addr=$name");
 			delete $ports_by_addr->{$addr};
 
 			# We need to destroy() promoted ports that are really going away,
@@ -666,20 +665,20 @@ sub onIdle
 			my $implemented = $this->{implemented_services}->{$name};
 			my $still_exists = $this->findServicePortByName($name,1);
 			my $imp_desc = $implemented ? "$implemented->{addr} $name created("._def($implemented->{created}).")" : 'undef';
-			warning($dbg_raysys+1,1,"implemented($imp_desc)  still_exists="._def($still_exists));
+			warning($dbg_raydp+1,1,"implemented($imp_desc)  still_exists="._def($still_exists));
 
 			# Note that the implemented service might not be the one triggering the delete
 			
 			if ($service_port->{created} && !$implemented)
 			{
-				warning($dbg_raysys,2,"DESTROYING service_port $addr $name");
+				warning($dbg_raydp,2,"DESTROYING service_port $addr $name");
 				$service_port->destroy();
 				bless $service_port,'HASH';
 				b_sock::incVersion();	# addition or deletion of implemented services causes h_server to send a new page
 			}
 			elsif ($implemented && !$still_exists)				# its implemented and there are no more instances
 			{
-				warning($dbg_raysys,2,"DESTROYING IMPLEMENTED SERVICE $implemented->{addr} $name");
+				warning($dbg_raydp,2,"DESTROYING IMPLEMENTED SERVICE $implemented->{addr} $name");
 				delete $this->{implemented_services}->{$name};
 				$implemented->destroy();
 				bless $implemented,'HASH';

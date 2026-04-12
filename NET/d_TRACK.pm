@@ -1,7 +1,7 @@
 #---------------------------------------
 # d_TRACK.pm
 #---------------------------------------
-# Client for RAYSYS func(19) == 0x13 == '1300'
+# Client for RAYDP func(19) == 0x13 == '1300'
 #
 # Get or erase saved Tracks from E80, and can start,
 # stop, save, discard, and rename the 'Current Track'.
@@ -19,7 +19,7 @@ use Pub::Utils;
 use a_utils;
 use a_defs;
 use b_records;	# temporary name
-# use c_RAYSYS  loaded by shark.pm
+# use c_RAYDP  loaded by shark.pm
 use base qw(b_sock);
 
 

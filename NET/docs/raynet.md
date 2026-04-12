@@ -3,7 +3,7 @@
 **[Home](../../docs/readme.md)** --
 **[NET](readme.md)** --
 **RAYNET** --
-**[RAYSYS](RAYSYS.md)** --
+**[RAYDP](RAYDP.md)** --
 **[WPMGR](WPMGR.md)** --
 **[TRACK](TRACK.md)** --
 **[FILESYS](FILESYS.md)** --
@@ -15,55 +15,54 @@
 suite. Raymarine does not publish technical documentation for these protocols;
 all content here was derived from packet capture and probing.
 
-**RAYSYS** is the service discovery protocol within RAYNET — the multicast
-protocol at 224.0.0.1:5800 through which devices advertise their services.
-It was originally named **RAYDP** (Raymarine Discovery Protocol) in this
-codebase, which better captures its role, but was renamed to match the label
-Raymarine uses in the E80's own ethernet diagnostics dialog ("Sys"). References
-to RAYDP in older notes and probe files mean RAYSYS.
+**RAYDP** (Raymarine Discovery Protocol) is the service discovery protocol
+within RAYNET — the multicast protocol at 224.0.0.1:5800 through which devices
+advertise their services. It was called **RAYSYS** for a time in this codebase
+to match the Raymarine "Sys" label in the E80 diagnostics dialog, but has been
+renamed back to RAYDP. References to RAYSYS in older notes and probe files mean
+RAYDP.
 
 Communications on **RAYNET** are framed in terms of *Requests and Replies*,
 that consist of *Messages*, that happen on a particular **ip:port**,
 using a specific internet protocol, **tcp, udp, or mcast**.
 Requests and Replies may also be termed as *Broadcasts* or *Events*,
-respectively, in the context of this disccusion.
+respectively, in the context of this discussion.
 
-The entry point into RAYNET is the **RAYSYS** discovery protocol at
+The entry point into RAYNET is the **RAYDP** discovery protocol at
 the known mcast address **224.0.0.1:5800**, and working with RAYNET
 requires that one sets up a multicast listener on that address
 and processes the advertisement broadcast messages that are sent
 **to** that multicast address.
 
 RAYNET is composed of one or more *Devices* that advertise themselves
-via the RAYSYS discovery protocol with an *IDENT* message.
-Each Device then advertises one or more *service_ids* (that Raymarine
-directly relates to a particular Service, but which I do not),
+via the RAYDP discovery protocol with an *IDENT* message.
+Each Device then advertises one or more *service_ids* (whose correspondence
+to Raymarine service names has not been fully established),
 that the Device supports.
 
 Each **service_id** advertisement message contains one or more *ip:port*
 combinations for the service_id.  Every advertised port has been identified
 to uniquely identify a particular internet protocol, *tcp, udp, or mcast*,
-and a particular service_id, so it is this **port** that I associate with a
+and a particular service_id. The **port** is treated as the identifier for a
 *Service Class*, with the ip address determining an *instance* of the
 Service Class.
 
-In other words, in my current understanding and implementation,
-each ip:port combination represents an instance of a *Service*,
-where the port is sufficent to determine (the service_id, and hence)
+Each ip:port combination represents an instance of a *Service*,
+where the port is sufficient to determine (the service_id, and hence)
 the *Class* of the service.
 
 Each Service Class utilizes a specific internet protocol and has a
 Class specific parser to decode (and possibly use) its messages,
-A Service Class, depending on the level of maturity of my undertanding
-of the port also possibly has methods to build and send Request messages.
+A Service Class, depending on how fully the port has been decoded,
+also possibly has methods to build and send Request messages.
 
 
 
 ### Requests, Replies, and Messages
 
 Typically communications over RAYNET are framed in terms
-of Requests made by us (the Client) to the Server, and
-Replies received by us from the Server.
+of Requests made by the Client to the Server, and
+Replies received by the Client from the Server.
 In the end however, the *Protocols* Requests and Replies
 will be understood in terms of **Messages** making up
 those Requests and Replies.
@@ -72,15 +71,14 @@ The notion of *Messages* will be described more fully below.
 
 #### Events and Broadcasts as Replies
 
-Replies may be recieved by us (the Client) in the absence of
+Replies may be received by the Client in the absence of
 any Request, in the form of **Events**.
-Also, **broadcast messages** sent *to* a multicast port  can be
+Also, **broadcast messages** sent *to* a multicast port can be
 thought of as Replies, to the degree that, although they were sent
-to the multicast port, we (the client) read them and process them.
-In any case, please do not let this terminology confuse you.
-In the following a Request is *anything sent* by us, the Client,
-**to** the Server, and a Reply is anything *received* by us,
-as the Client, **from** the Server.
+to the multicast port, they are received and processed by the Client.
+In the following, a Request is *anything sent* by the Client
+**to** the Server, and a Reply is anything *received* by the Client
+**from** the Server.
 
 
 #### udp/mcast Messages are a single packet
@@ -93,13 +91,13 @@ the internet packet.
 	<message> == internet packet with implied length
 
 
-#### tcp Messages are sent and recieved in groups
+#### tcp Messages are sent and received in groups
 
 **tcp Requests and Replies** consist of at least one Message
 but may contain several Messages, where each message
 is preceded by a &lt;length> word that allows for deserializing
 the Reply or Request into an ordered array of Messages.
-tcp Requests are generally sent (by us) in a single internet packet,
+tcp Requests are generally sent in a single internet packet,
 but are typically received in two internet packets, the first
 consisting of the <length> word of the first message in the
 following packet, and the second containing the first message,
@@ -177,7 +175,7 @@ service_id and the particular &lt;command_byte>.
 ## Implementation Overview
 
 This section of the readme talks about implementation details,
-and object classes (Perl packages in my case) that may or may
+and object classes (Perl packages) that may or may
 not have been implemented yet.
 
 
@@ -189,10 +187,10 @@ and can monitor (display) the raw bytes in the payloads
 as a series of dwords with ascii to the right.
 
 It then passes the undecoded messages (Request or Reply)
-to a service specific Parser, if avaialble, which can then, possibly,
+to a service specific Parser, if available, which can then, possibly,
 decode the message into a meaningful semantic structure (record)
-for the use Replies by the Client Service Instance or to
-validate outgoing Requsest.
+for use by the Client Service Instance or to
+validate outgoing Requests.
 
 These derived parsers may/will/do implement the ability to
 monitor the semantic content of the Requests and/or Replies.
@@ -221,28 +219,23 @@ and monitor both incoming Requests and outgoing Replies
 
 ### RAYNAME
 
-A RAYNAME is a unique identifier per PORT that is associated
-with a particular service_id, that follows a convention depending
-on the maturity of my understanding of that port within that service_id
-where:
+A RAYNAME is a unique identifier per PORT associated with a
+particular service_id. The convention follows a maturity tier:
 
-	ALLCAPS = a mature port (r_service) that I understand
-		and have at least partially decoded Replies from, but
-		more likely have completely probed, understood, and
-		know pretty well how to communicate with.
+	ALLCAPS = a mature port with at least partially decoded replies;
+		typically fully probed with known communication patterns.
 
-		RAYSYS		- mcast
+		RAYDP		- mcast
 		WPMGR		- tcp
 		TRACK		- tcp
 		FILESYS		- udp
-		DBNAV		- mcast from Database that I have partially decoded
-		MY_FILE		- udp FILESYS listener port that I use, and can monitor
-		FILE_RNS	- udp RNS's FILESYS listener port that I have identified, and can monitor
+		DBNAV		- mcast from Database; partially decoded
+		MY_FILE		- udp FILESYS listener port used by shark; can be monitored
+		FILE_RNS	- udp RNS's FILESYS listener port; identified and can be monitored
 
-	Capitalized = a port (r_service) for which I have associated
-		the service_id with a known "Raymarine Service" (as displayed in
-		the E80's ethernet Services dialog box), and which I
-		believe to be the primary client API (typically tcp)
+	Capitalized = a port associated with a known Raymarine service
+		(as displayed in the E80's ethernet Services dialog box),
+		believed to be the primary client API (typically tcp)
 		of the service.
 
 		Alarm		- mcast
@@ -251,9 +244,8 @@ where:
 
 	lowercase = a port which is either a secondary client
 		API to an identified Service (udp/mcast), or a
-		placekeeper that specifically identifies its state
-		of maturity, that I have not extensivly probed, nor
-		claim to understand
+		placeholder that identifies its state of maturity;
+		not extensively probed
 
 		alarm		- udp
 		database	- udp
@@ -266,14 +258,13 @@ where:
 
 	Question Mark
 
-		I *may* append a question mark to a Capitalized or lowercase
-		rayname if I have a speculative belief that it *might* be
-		associated with a certain kind of functionality or specific
-		E80 advertised service.
+		A question mark may be appended to a Capitalized or lowercase
+		RAYNAME when there is a speculative association with a known
+		functionality or E80-advertised service.
 
 
 
 
 ---
 
-**Next:** [RAYSYS](RAYSYS.md)
+**Next:** [RAYDP](RAYDP.md)

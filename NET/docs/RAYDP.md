@@ -1,9 +1,9 @@
-# RAYSYS — Service Discovery Protocol
+# RAYDP — Service Discovery Protocol
 
 **[Home](../../docs/readme.md)** --
 **[NET](readme.md)** --
 **[RAYNET](RAYNET.md)** --
-**RAYSYS** --
+**RAYDP** --
 **[WPMGR](WPMGR.md)** --
 **[TRACK](TRACK.md)** --
 **[FILESYS](FILESYS.md)** --
@@ -11,15 +11,16 @@
 **[shark](shark.md)** --
 **[Cables](ethernet_cables.md)**
 
-**RAYSYS** is the SeatalkHS service discovery protocol — the entry point into
-RAYNET. It operates as a multicast UDP broadcast on **224.0.0.1:5800**. On the
-E80, this service is labeled "Sys" in the ethernet diagnostics Services dialog.
-The implementation class is `c_RAYSYS.pm`.
+**RAYDP** (Raymarine Discovery Protocol) is the SeatalkHS service discovery
+protocol — the entry point into RAYNET. It operates as a multicast UDP broadcast
+on **224.0.0.1:5800**. On the E80, this service is labeled "Sys" in the ethernet
+diagnostics Services dialog. The implementation class is `c_RAYDP.pm`.
 
-The protocol was originally named **RAYDP** (Raymarine Discovery Protocol) in
-this codebase, which more accurately captures its role. It was later renamed
-RAYSYS to match the Raymarine label. The RAYDP name is preserved in older notes
-and probe files.
+The protocol was named **RAYSYS** for a time in this codebase, to match the
+Raymarine "Sys" label, but has been renamed back to **RAYDP** because that name
+more accurately captures its role as a discovery protocol (analogous to SSDP).
+Older notes and probe files may still use RAYSYS; the two names refer to the
+same protocol.
 
 ## Role
 
@@ -60,23 +61,23 @@ The `x1` and `x2` fields in the header are present in all packets but their
 meaning has not been fully decoded. The `type` field is 0 for all observed E80
 advertisements.
 
-Example decoded RAYDP session at startup (from `NET/docs/logs/raysys_startup_capture.txt`).
-The `RAYSYS` prefix in the log lines is the implementation's label in `c_RAYSYS.pm`:
+Example decoded RAYDP session at startup (from `NET/docs/logs/raydp_startup_capture.txt`).
+The `RAYDP` prefix in the log lines is the implementation's label in `c_RAYDP.pm`:
 
 ```
-RAYSYS IDENT(54) type(RAYTECH) id(RNS) vers(6.3) ip(128.118.142.1) role(UNDEFINED)
-RAYSYS IDENT(56) type(E80) id(E80 #1) vers(5.69) ip(10.0.241.54) role(MASTER)
+RAYDP IDENT(54) type(RAYTECH) id(RNS) vers(6.3) ip(128.118.142.1) role(UNDEFINED)
+RAYDP IDENT(56) type(E80) id(E80 #1) vers(5.69) ip(10.0.241.54) role(MASTER)
 
-RAYSYS 36:0 RNS      func(27)     mcast_ip(224.0.0.2) mcast_port(5801) ip(10.0.241.200) port(5802)
-RAYSYS 28:0 E80 #1   WPMGR(15)    ip(10.0.241.54) port(2052)
-RAYSYS 37:0 E80 #1   FILESYS(5)   mcast_ip(224.30.38.194) mcast_port(2561) ip(10.0.241.54) port(2049) flags(1)
-RAYSYS 28:0 E80 #1   Navig(7)     ip(10.0.241.54) port(2054)
-RAYSYS 36:0 E80 #1   func(8)      mcast_ip(224.30.38.196) mcast_port(2563) ip(10.0.241.54) port(2056)
-RAYSYS 40:0 E80 #1   Database(16) ip(10.0.241.54) port1(2050) port2(2051) mcast_ip(224.30.38.195) mcast_port(2562)
-RAYSYS 28:0 E80 #1   Track(19)    ip(10.0.241.54) port(2053)
-RAYSYS 28:0 E80 #1   func(22)     ip(10.0.241.54) port(2055)
-RAYSYS 36:0 E80 #1   func(27)     mcast_ip(224.0.0.2) mcast_port(5801) ip(10.0.241.54) port(5802)
-RAYSYS 36:0 E80 #1   func(35)     mcast_ip(224.30.38.193) mcast_port(2560) ip(10.0.241.54) port(2048)
+RAYDP 36:0 RNS      func(27)     mcast_ip(224.0.0.2) mcast_port(5801) ip(10.0.241.200) port(5802)
+RAYDP 28:0 E80 #1   WPMGR(15)    ip(10.0.241.54) port(2052)
+RAYDP 37:0 E80 #1   FILESYS(5)   mcast_ip(224.30.38.194) mcast_port(2561) ip(10.0.241.54) port(2049) flags(1)
+RAYDP 28:0 E80 #1   Navig(7)     ip(10.0.241.54) port(2054)
+RAYDP 36:0 E80 #1   func(8)      mcast_ip(224.30.38.196) mcast_port(2563) ip(10.0.241.54) port(2056)
+RAYDP 40:0 E80 #1   Database(16) ip(10.0.241.54) port1(2050) port2(2051) mcast_ip(224.30.38.195) mcast_port(2562)
+RAYDP 28:0 E80 #1   Track(19)    ip(10.0.241.54) port(2053)
+RAYDP 28:0 E80 #1   func(22)     ip(10.0.241.54) port(2055)
+RAYDP 36:0 E80 #1   func(27)     mcast_ip(224.0.0.2) mcast_port(5801) ip(10.0.241.54) port(5802)
+RAYDP 36:0 E80 #1   func(35)     mcast_ip(224.30.38.193) mcast_port(2560) ip(10.0.241.54) port(2048)
 ```
 
 Note that both the E80 and RNS advertise func(27)/Alarm on port 5802.
@@ -95,7 +96,7 @@ after a configurable timeout (`$SERVICE_PORT_TIMEOUT`) if no new advertisement
 arrives. This handles devices that go offline.
 
 **Auto-start:** Implemented services (WPMGR, TRACK, FILESYS, DB, DBNAV) are started
-automatically when their ports are discovered via RAYSYS, if
+automatically when their ports are discovered via RAYDP, if
 `$AUTO_START_IMPLEMENTED_SERVICES = 1` in `a_defs.pm`. Implemented services use
 `EXIT_ON_CLOSE=0` and will attempt to reconnect if the E80 reboots.
 
@@ -103,8 +104,8 @@ automatically when their ports are discovered via RAYSYS, if
 `EXIT_ON_CLOSE=1` — a TCP listener thread is spawned to observe traffic, but it
 does not send any requests.
 
-**Thread safety:** The RAYSYS `service_ports` hash is shared across threads. All
-access requires `lock($raysys)`.
+**Thread safety:** The RAYDP `service_ports` hash is shared across threads. All
+access requires `lock($raydp)`.
 
 ---
 

@@ -15,7 +15,7 @@ use apps::raymarine::FSH::fshFile;
 use a_defs;
 use a_mon;
 use b_records;
-use c_RAYSYS;
+use c_RAYDP;
 use Pub::Utils;
 
 my $dbg_fwr = 0;
@@ -42,8 +42,8 @@ sub write
 {
 	display($dbg_fwr,0,"fshWriter::write()");
 	my $fsh_file = apps::raymarine::FSH::fshFile->new();
-	my $wp_mgr = $raysys->findImplementedService('WPMGR');
-	my $trk_mgr = $raysys->findImplementedService('TRACK');
+	my $wp_mgr = $raydp->findImplementedService('WPMGR');
+	my $trk_mgr = $raydp->findImplementedService('TRACK');
 
 	my $mon = 0;
 	my $color = $UTILS_COLOR_WHITE;

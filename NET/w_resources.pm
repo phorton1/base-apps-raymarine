@@ -19,7 +19,7 @@ BEGIN
 		$appName
         $resources
 
-        $WIN_RAYSYS
+        $WIN_RAYDP
 		$WIN_SNIFFER
 		$WIN_SHARK
 		$WIN_FILESYS
@@ -34,7 +34,7 @@ our $appName = "shark";
 # commands added to the view menu, by setting
 # the 'command_id' member on the notebook info.
 
-our ($WIN_RAYSYS,
+our ($WIN_RAYDP,
 	 $WIN_SHARK,
 	 $WIN_SNIFFER,
 	 $WIN_FILESYS,
@@ -47,7 +47,7 @@ our ($WIN_RAYSYS,
 # This is a bit archaic and the first field is not used
 
 my $pane_data = {
-	$WIN_RAYSYS		=> ['Unused String1',		'content'	],
+	$WIN_RAYDP		=> ['Unused String1',		'content'	],
 	$WIN_SHARK		=> ['Unused String1',		'content'	],
 	$WIN_SNIFFER	=> ['Unused String1',		'content'	],
 	$WIN_FILESYS	=> ['Unused String1',		'content'	],
@@ -61,7 +61,7 @@ my $pane_data = {
 
 my $command_data = {
 	%{$resources->{command_data}},
-	$WIN_RAYSYS  	=> ['RaySys', 	'The Raynet Discover Protocol'],
+	$WIN_RAYDP  	=> ['RayDP', 	'The Raynet Discovery Protocol'],
 	$WIN_SHARK   	=> ['Shark', 	'Shark monitoring preferences'],
 	$WIN_SNIFFER 	=> ['Sniffer', 	'tshark based packet sniffer with parsers'],
 	$WIN_FILESYS 	=> ['FileSys', 	'Removable Media Fiile System'],
@@ -83,7 +83,7 @@ my $file_menu = [];
 # on top of the baae class view menu
 
 my $view_menu = [
-	$WIN_RAYSYS,
+	$WIN_RAYDP,
 	$WIN_SHARK,
 	$WIN_SNIFFER,
 	$ID_SEPARATOR,

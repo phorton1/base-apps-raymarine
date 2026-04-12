@@ -16,7 +16,7 @@ use Pub::ServerUtils;
 use Pub::HTTP::ServerBase;
 use Pub::HTTP::Response;
 use a_defs;
-use c_RAYSYS;
+use c_RAYDP;
 use base qw(Pub::HTTP::ServerBase);
 
 
@@ -600,8 +600,8 @@ sub kml_RAYSYS
 	my $param_version = $params->{version};
 	$param_version ||= 0;
 
-	my $wp_mgr = $raysys->findImplementedService('WPMGR',1);
-	my $track_mgr = $raysys->findImplementedService('TRACK',1);
+	my $wp_mgr = $raydp->findImplementedService('WPMGR',1);
+	my $track_mgr = $raydp->findImplementedService('TRACK',1);
 
 	# the global local version is a tcpBase static variable
 
@@ -692,8 +692,8 @@ sub showThings
 
 sub showLocalDatabase
 {
-	my $wp_mgr = $raysys->findImplementedService('WPMGR',1);
-	my $track_mgr = $raysys->findImplementedService('TRACK',1);
+	my $wp_mgr = $raydp->findImplementedService('WPMGR',1);
+	my $track_mgr = $raydp->findImplementedService('TRACK',1);
 	showThings($wp_mgr,'waypoints');
 	showThings($wp_mgr,'routes');
 	showThings($wp_mgr,'groups');

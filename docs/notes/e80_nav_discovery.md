@@ -7,7 +7,7 @@
 > [NET Protocols](../../NET/docs/readme.md) documentation.
 >
 > Of particular note: what is called "RAYNET" here (the multicast at 224.0.0.1:5800)
-> is now documented as [RAYSYS](../../NET/docs/RAYSYS.md). What is called "E80_NAV"
+> is now documented as [RAYDP](../../NET/docs/RAYDP.md). What is called "E80_NAV"
 > here is now documented as [DBNAV](../../NET/docs/DBNAV.md).
 
 ---

@@ -14,7 +14,7 @@ use Pub::Utils;
 # shark features that can be turned on and off
 
 our $WITH_SERIAL		= 1;
-our $WITH_RAYSYS		= 1;
+our $WITH_RAYDP			= 1;
 our $WITH_HTTP_SERVER	= 1;
 our $WITH_SNIFFER 		= 1;
 our $WITH_TCP_SCANNER	= 0;
@@ -31,8 +31,8 @@ our $WITH_DB			= 1;
 
 
 our $AUTO_START_IMPLEMENTED_SERVICES = 1;
-	# RAYSYS will automatically start service_ports marked as 'implemented'.
-	# Otherwise shark will start them, and they will wait for RAYSYS to find them.
+	# RAYDP will automatically start service_ports marked as 'implemented'.
+	# Otherwise shark will start them, and they will wait for RAYDP to find them.
 	
 
 BEGIN
@@ -41,7 +41,7 @@ BEGIN
     our @EXPORT = qw(
 
 		$WITH_SERIAL
-		$WITH_RAYSYS
+		$WITH_RAYDP
 		$WITH_HTTP_SERVER
 		$WITH_SNIFFER
 		$WITH_TCP_SCANNER
@@ -57,11 +57,11 @@ BEGIN
 	
 		$LOCAL_IP
 
-		$RAYSYS_NAME
-		$RAYSYS_SID
-		$RAYSYS_IP
-		$RAYSYS_PORT
-		$RAYSYS_ADDR
+		$RAYDP_NAME
+		$RAYDP_SID
+		$RAYDP_IP
+		$RAYDP_PORT
+		$RAYDP_ADDR
 
 		$SPORT_FILESYS
         $SPORT_WPMGR
@@ -92,7 +92,7 @@ BEGIN
         $LOCAL_UDP_SEND_PORT
 
 		$SUCCESS_SIG
-		$RAYSYS_WAKEUP_PACKET
+		$RAYDP_WAKEUP_PACKET
 
 		$ROUTE_COLOR_RED
 		$ROUTE_COLOR_YELLOW
@@ -116,6 +116,7 @@ BEGIN
 		$E80_1_IP
         $E80_2_IP
 		$E80_3_IP
+		$E80_4_IP
     );
 }
 
@@ -128,7 +129,7 @@ our $E80_0A_IP = '10.0.18.120';
 our $E80_1_IP = '10.0.241.54';
 our $E80_2_IP = '10.0.241.83';
 our $E80_3_IP = '10.0.42.39';
-
+our $E80_4_IP = '10.0.166.121';
 
 #----------------------------------------
 # main stuff
@@ -137,13 +138,13 @@ our $E80_3_IP = '10.0.42.39';
 
 our $LOCAL_IP = '10.0.241.200';
 
-# raysys is at a known mcast address with service_id 0
+# raydp is at a known mcast address with service_id 0
 
-our $RAYSYS_NAME = 'RAYSYS';
-our $RAYSYS_SID  = 0;
-our $RAYSYS_IP   = '224.0.0.1';
-our $RAYSYS_PORT = 5800;
-our $RAYSYS_ADDR = pack_sockaddr_in($RAYSYS_PORT, inet_aton($RAYSYS_IP));
+our $RAYDP_NAME = 'RAYDP';
+our $RAYDP_SID  = 0;
+our $RAYDP_IP   = '224.0.0.1';
+our $RAYDP_PORT = 5800;
+our $RAYDP_ADDR = pack_sockaddr_in($RAYDP_PORT, inet_aton($RAYDP_IP));
 
 
 our $SPORT_FILESYS 	= 2049;
@@ -179,7 +180,7 @@ our $HIDDEN_PORT1 = 6668;
 #-------------------------------------------
 
 our $SUCCESS_SIG = '00000400';
-our $RAYSYS_WAKEUP_PACKET = 'ABCDEFGHIJKLMNOP',
+our $RAYDP_WAKEUP_PACKET = 'ABCDEFGHIJKLMNOP',
 
 # The direction nibble of the command word seems to
 # be consistent across all services
@@ -271,6 +272,7 @@ our %KNOWN_DEVICES = (
 	'37a681b2' =>	'E80_1',
 	'37ad80b2' =>	'E80_2',
 	'67e280b2' =>	'E80_3',
+	'66af81b2' => 	'E80_4',
 	'ffffffff' =>	'RNS',
 	$SHARK_DEVICE_ID =>   'shark' );
 
@@ -279,6 +281,7 @@ our %KNOWN_SERVER_IPS = (
 	$E80_1_IP =>	'E80_1',
 	$E80_2_IP =>	'E80_2',
 	$E80_3_IP =>	'E80_3',
+	$E80_4_IP =>	'E80_4',
 	$LOCAL_IP =>	'RNS',	);
 
 
@@ -325,7 +328,7 @@ our %KNOWN_SERVER_IPS = (
 #	AIS						UDP		ais
 #   Autopilot				UDP		pilot
 #	Alarm					MCAST	alarm					broadcast by master E80 & RNS
-#	Sys						MCAST 	RAYSYS		0			well known main advertisement
+#	Sys						MCAST 	RAYDP		0			well known main advertisement
 #	GVM				TCP				Gvm						TCP PORT YET TO BE IDENTIFIED
 #	Monitor			TCP				monitor					audio-video module - TCP PORT YET TO BE IDENTIFIED
 #	  Monitor				UDP		monitor
@@ -337,7 +340,7 @@ our %KNOWN_SERVER_IPS = (
 # 	called E80NAV, then NAVSTAT, and now call DBNAV.
 
 our %KNOWN_SERVICES = (
-		0	=> 'RAYSYS',
+		0	=> 'RAYDP',
 		1	=> 'Radar',
 		5	=> 'FILESYS',
 		7	=> 'Navig',
@@ -350,14 +353,14 @@ our %KNOWN_SERVICES = (
 #--------------------------------------------------------------------------------------
 # BASE SERVICE_PORT (by PORT) definitions
 #--------------------------------------------------------------------------------------
-# This hash is primarily used to drive RAYSYS, but also forms the basis of the sniffer.
+# This hash is primarily used to drive RAYDP, but also forms the basis of the sniffer.
 #
-#	RAYSYS 	== ports that can be derived from b_sock and may have parsers
+#	RAYDP 	== ports that can be derived from b_sock and may have parsers
 #              that actually connect this program to the E80(s)
 #	sniffer == monitoring driven by tshark that can display and possibly parse
 #		       packets between RNS and the master E80
 #
-# In the context of RAYSYS, these definitions are used to respond to
+# In the context of RAYDP, these definitions are used to respond to
 # advertisements of service_ports, which in turn drive:
 #
 #	- 'real' implemented services that have well understood protocols,
@@ -366,14 +369,14 @@ our %KNOWN_SERVICES = (
 #	  protocols, which can be connected to (or 'spawned' if udp/mcast)
 #     and probed using the probe language.
 #
-# RAYSYS also includes, by default, a known hidden (unadvertised) tcp
+# RAYDP also includes, by default, a known hidden (unadvertised) tcp
 #	port 6668 service_id 22, as a hardwired default that can be connected to
 #   and probed
 #
-# In the context of the sniffer, in combination with RAYSYS discovery,
+# In the context of the sniffer, in combination with RAYDP discovery,
 # 	this drives the list of ports for which communications between
 #	RNS and the E80 can be sniffed, recorded, and possibly played back
-#   from our own RAYSYS service_ports.
+#   from our own RAYDP service_ports.
 #
 #   In addition, sniffer adds some hardwired 'default' ports that can
 #   always be sniffed, including particularly the RNS FILESYS listener
@@ -386,7 +389,7 @@ our %KNOWN_SERVICES = (
 # To the degree that this set of definitions not only defines those basic
 # ports, but also defines the default monitoring characterics (i.e.
 # monitor raw in/out, monitor parsed in/out, in and out colors), AND
-# that we likely want those to be different between RAYSYS and sniffer
+# that we likely want those to be different between RAYDP and sniffer
 # there are TWO sets of monitoring defaults, but only one (full) set
 # of the basic definitions which drive the whole thing.
 #
@@ -430,19 +433,19 @@ our %SERVICE_PORT_DEFS  = (
 	2054 => { sid => 7,		name => 'Navig',	proto=>'tcp',	},	# shows on bareE80
 	2055 => { sid => 22,	name => 'func22_t',	proto=>'tcp',	},	# shows on bareE80; tcp connect immediately starts getting events
 	2056 => { sid => 8,		name => 'func8_ub',	proto=>'udp',	},	# ??? shows with E80 Fix/Heading
-	2057 => { sid => 8,		name => 'func8_u',	proto=>'udp',	},	# shows with RNS & E80 Fix/Heading
+	2057 => { sid => 9,		name => 'func9_u',	proto=>'udp',	},	# shows with RNS & E80 Fix/Heading; originally named func8_u assuming sid=8 by analogy with 2056/2563; confirmed sid=9 on E80-4 v5.69 2026-04-11
 	2058 => { sid => -2,	name => 'exists?',	proto=>'',		},	# seen in distant past
 
 	2560 => { sid => 35,	name => 'func35_m',	proto=>'mcast',	},	# shows on bareE80
 	2561 => { sid => 5,		name => 'filecast',	proto=>'mcast',	},	# shows on bareE80
 	2562 => { sid => 16,	name => 'DBNAV',	proto=>'mcast',	},	# shows on bareE80; database variant; lots of packets with E80 Fix/Heading and RNS
 	2563 => { sid => 8,		name => 'func8_mb',	proto=>'mcast',	},	# ??? shows, starts getting events with E80 Fix/Heading
-	2564 => { sid => 8,		name => 'func8_m',	proto=>'mcast',	},	# shows with RNS E80 Fix/Heading
+	2564 => { sid => 9,		name => 'func9_m',	proto=>'mcast',	},	# shows with RNS E80 Fix/Heading; originally named func8_m assuming sid=8 by analogy with 2056/2563; confirmed sid=9 on E80-4 v5.69 2026-04-11
 
 	5068 => { sid => -2,	name => 'RmlMon',	proto=>'udp',	},	# comes in E80 ident message?!?
 		# guess: service_id=68,  listen_port=13056
 
-	5800 => { sid => 0,		name => 'RAYSYS',	proto=>'mcast',	},	# RAYSYS not advertised
+	5800 => { sid => 0,		name => 'RAYDP',	proto=>'mcast',	},	# RAYDP not advertised
 	5801 => { sid => 27,	name => 'Alarm',	proto=>'mcast',	},	# show on bare E80
 	5802 => { sid => 27,	name => 'alarm_u',	proto=>'udp',	},	# show on bare E80; addl added by RNS
 

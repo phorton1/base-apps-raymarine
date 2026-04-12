@@ -60,7 +60,7 @@ my $dbg_dangling = 1;
 
 sub newParser
 	# not called 'new' so that it can be multiple inherited
-	# into implemented classes, particularly c_RAYSYS
+	# into implemented classes, particularly c_RAYDP
 {
 	my ($class, $mon_defs) = @_;
 	my $name = $mon_defs->{name} ? "e_$mon_defs->{name}" : 'a_parser';

@@ -12,7 +12,7 @@ use Pub::Utils;
 use a_defs;
 use a_mon;
 use a_parser;
-use c_RAYSYS;
+use c_RAYDP;
 
 
 my $dbg_sniff = -1;
@@ -44,7 +44,7 @@ my $ignore_ip_re = join('|',(
 # QUIET DOWN SOME PARTICULAR ports
 
 my $ignore_port_re = join('|',(
-	'5800',					# RAYSYS
+	'5800',					# RAYDP
 	'5801', 				# Alarm
 ));
 # $ignore_port_re = '';
@@ -344,8 +344,8 @@ sub sniffer_thread
 			{
 				my $sp_addr = "$server_ip:$server_port";
 				my $service_port =
-					$raysys->{implemented_services}->{$def->{name}} ||
-					$raysys->{ports_by_addr}->{$sp_addr};
+					$raydp->{implemented_services}->{$def->{name}} ||
+					$raydp->{ports_by_addr}->{$sp_addr};
 				my $local_port = $service_port ? $service_port->{local_port} : 0;
 				$local_port ||= 0;
 				if ($client_port == $local_port)
