@@ -202,7 +202,7 @@ sub printConsole
 sub clearLog
 {
 	my ($filename) = @_;
-	my $path = "$temp_dir/$filename";
+	my $path = "$temp_dir/log/$filename";
 	if (open(AFILE,">$path"))
 	{
 		close AFILE;
@@ -212,7 +212,7 @@ sub clearLog
 sub writeLog
 {
 	my ($text,$filename) = @_;
-	my $path = "$temp_dir/$filename";
+	my $path = "$temp_dir/log/$filename";
 	if (open(AFILE,">>$path"))
 	{
 		print AFILE $text;
