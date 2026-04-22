@@ -76,11 +76,12 @@ reverse engineering for personal and educational purposes.
   enabling a Google Earth → RNS → E80 navigation data workflow.
 
 - **[Navionics Charts](../Navionics/docs/readme.md)** —
-  Original reverse engineering of the Navionics NV2 binary chart format, as
-  found on Raymarine CF card chartsets. Covers the CHARTCAT.XML catalog, the
-  NV2 six-region file structure, panel records, spatial index, and quadtree.
-  Primary target: Caribbean chartset charts for Panama (Bocas del Toro,
-  San Blas / Guna Yala) — regions with no current alternative chart source.
+  Active reverse engineering of the Navionics NV2 binary chart format, as found
+  on Raymarine CF card chartsets.  The NV2 structure (catalog, sections, spatial
+  index, feature vector) is substantially decoded; correct geographic rendering
+  of panel streams is an open problem.  Primary target: Caribbean charts for
+  Panama (Bocas del Toro, San Blas / Guna Yala) — regions with no current
+  alternative chart source.
 
 ## Credits
 
