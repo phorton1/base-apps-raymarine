@@ -4,7 +4,7 @@
 # Serves the WAYPOINT database to Google Earth via network links
 
 
-package h_server;
+package apps::raymarine::NET::h_server;
 use strict;
 use warnings;
 use threads;
@@ -15,8 +15,8 @@ use Pub::Utils;
 use Pub::ServerUtils;
 use Pub::HTTP::ServerBase;
 use Pub::HTTP::Response;
-use a_defs;
-use c_RAYDP;
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::c_RAYDP;
 use base qw(Pub::HTTP::ServerBase);
 
 
@@ -65,7 +65,7 @@ sub startHTTPServer
 {
 	display($dbg,0,"starting h_server");
 
-	$ray_server = h_server->new();
+	$ray_server = apps::raymarine::NET::h_server->new();
 	$ray_server->start();
 	display($dbg,0,"finished starting h_server");
 }
@@ -605,7 +605,7 @@ sub kml_RAYSYS
 
 	# the global local version is a tcpBase static variable
 
-	my $local_version = b_sock::getVersion();
+	my $local_version = apps::raymarine::NET::b_sock::getVersion();
 	my $changed = $server_version == $local_version ? 0 : 1;
 	my $update = !$changed && $param_version == $server_version ? 1 : 0;
 

@@ -8,7 +8,7 @@
 **[TRACK](TRACK.md)** --
 **[FILESYS](FILESYS.md)** --
 **[DBNAV](DBNAV.md)** --
-**[shark](shark.md)** --
+**[shark](../../apps/shark/docs/shark.md)** --
 **[Cables](ethernet_cables.md)**
 
 **RAYNET** is the working name for Raymarine's **SeatalkHS** ethernet protocol

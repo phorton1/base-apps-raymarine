@@ -8,7 +8,7 @@
 **[TRACK](TRACK.md)** --
 **[FILESYS](FILESYS.md)** --
 **DBNAV** --
-**[shark](shark.md)** --
+**[shark](../../apps/shark/docs/shark.md)** --
 **[Cables](ethernet_cables.md)**
 
 Two related services provide access to the E80's navigation field database,
@@ -110,4 +110,4 @@ the primary source for future FID identification work.
 
 ---
 
-**Next:** [shark](shark.md)
+**Next:** [shark](../../apps/shark/docs/shark.md)

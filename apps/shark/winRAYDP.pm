@@ -22,9 +22,9 @@ use Wx::Event qw(
 	EVT_COMBOBOX );
 use Pub::Utils;
 use Pub::WX::Window;
-use a_defs;
-use a_utils;
-use c_RAYDP;
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_utils;
+use apps::raymarine::NET::c_RAYDP;
 use base qw(Wx::ScrolledWindow Pub::WX::Window);
 
 my $dbg_win = 0;

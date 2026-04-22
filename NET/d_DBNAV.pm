@@ -6,16 +6,16 @@
 # and a heading, with lots of data while moving/autopilot, etc,
 # and are setup for broadcast in d_DB.pm
 
-package d_DBNAV;
+package apps::raymarine::NET::d_DBNAV;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(time sleep);
 use Pub::Utils;
-use a_defs;
-use a_utils;
-use base qw(b_sock);
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_utils;
+use base qw(apps::raymarine::NET::b_sock);
 
 my $dbg_nav = 0;
 
@@ -146,17 +146,17 @@ sub showValues
 #========================================================
 #========================================================
 
-package e_DBNAV;
+package apps::raymarine::NET::e_DBNAV;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils;
-use a_defs;
-use a_mon;
-use a_utils;
-use d_DB;
-use base qw(a_parser);
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_mon;
+use apps::raymarine::NET::a_utils;
+use apps::raymarine::NET::d_DB;
+use base qw(apps::raymarine::NET::a_parser);
 
 
 my $dbg_dp = 0;
@@ -168,7 +168,7 @@ our $ONLY_CHANGED_FIELD_VALUES = 0;
 sub newParser
 {
 	my ($class, $mon_defs) = @_;
-	display($dbg_dp,0,"e_DBNAV::newParser($mon_defs->{name})");
+	display($dbg_dp,0,"apps::raymarine::NET::e_DBNAV::newParser($mon_defs->{name})");
 	my $this = $class->SUPER::newParser($mon_defs);
 	bless $this,$class;
 	$this->{field_values}		= shared_clone({});
@@ -192,7 +192,7 @@ sub parsePacket
 	my $payload_len = length($payload);
 	my ($cmd_word,$sid,$num_fields) = unpack('vvV',substr($payload,0,8));
 
-	display($dbg_dp+2,0,"e_DBNAV::parsePacket is_sniffer($is_sniffer) len($payload_len) num_fields($num_fields) ".
+	display($dbg_dp+2,0,"apps::raymarine::NET::e_DBNAV::parsePacket is_sniffer($is_sniffer) len($payload_len) num_fields($num_fields) ".
 			sprintf("mon(%04x) only_new($ONLY_CHANGED_FIELD_VALUES)",$mon));
 
 	if (0)	# debug only
@@ -238,7 +238,7 @@ sub parseMessage
 	my ($this,$packet,$len,$part) = @_;
 	my $mon = $packet->{mon};
 	my $color = $packet->{color};
-	display($dbg_dp+1,0,sprintf("e_DBNAV::parseMessage($len) mon(%04x)",$mon));
+	display($dbg_dp+1,0,sprintf("apps::raymarine::NET::e_DBNAV::parseMessage($len) mon(%04x)",$mon));
 	return undef if !$this->SUPER::parseMessage($packet,$len,$part);
 
 	my $text = $packet->{text};

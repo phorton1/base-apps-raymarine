@@ -24,28 +24,30 @@ use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use Pub::WX::Resources;
+use Pub::WX::AppConfig;
 use Pub::WX::Main;
 
-use a_defs;
-use a_utils;
-use b_sock;
-use b_probe;
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_utils;
+use apps::raymarine::NET::b_sock;
+use apps::raymarine::NET::b_probe;
 
-use c_RAYDP;
-use d_DB;
-use d_TRACK;
-use d_WPMGR;
-use d_FILESYS;
-use d_DBNAV;
+use apps::raymarine::NET::c_RAYDP;
+use apps::raymarine::NET::d_DB;
+use apps::raymarine::NET::d_TRACK;
+use apps::raymarine::NET::d_WPMGR;
+use apps::raymarine::NET::d_FILESYS;
+use apps::raymarine::NET::d_DBNAV;
 
-use e_WPMGR;
-use e_TRACK;
-use e_FILESYS;
+use apps::raymarine::NET::e_WPMGR;
+use apps::raymarine::NET::e_TRACK;
+use apps::raymarine::NET::e_FILESYS;
 
-use fshWriter;
+use apps::raymarine::NET::fshWriter;
 
-use e_wp_api;
-use h_server;
+use apps::raymarine::NET::e_wp_api;
+use apps::raymarine::NET::h_server;
+
 use s_serial;
 use s_sniffer;
 use w_resources;
@@ -53,6 +55,9 @@ use w_frame;
 use tcpScanner;
 use udpScanner;
 use base 'Wx::App';
+
+$ini_file = "$temp_dir/$appName.ini";
+
 
 my $dbg_shark = 0;
 
@@ -70,7 +75,7 @@ sub handleSerialCommand
 
 	if ($lpart eq 'wakeup')
 	{
-		b_sock::wakeup_e80();
+		apps::raymarine::NET::b_sock::wakeup_e80();
 	}
 
 
@@ -256,7 +261,7 @@ sub handleSerialCommand
 
 	elsif ($lpart eq 'write')
 	{
-		fshWriter::write();
+		apps::raymarine::NET::fshWriter::write();
 	}
 
 }   #   handleCommand()
@@ -277,7 +282,7 @@ if ($WITH_SERIAL)
 	$serial->start();
 }
 
-c_RAYDP->new();
+apps::raymarine::NET::c_RAYDP->new();
 if ($WITH_RAYDP)
 {
 	$raydp->start();

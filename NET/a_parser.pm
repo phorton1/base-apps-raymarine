@@ -41,15 +41,15 @@
 
 
 
-package a_parser;
+package apps::raymarine::NET::a_parser;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils;
-use a_defs;
-use a_mon;
-use a_utils;
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_mon;
+use apps::raymarine::NET::a_utils;
 
 
 my $dbg_parse = 0;
@@ -64,7 +64,7 @@ sub newParser
 {
 	my ($class, $mon_defs) = @_;
 	my $name = $mon_defs->{name} ? "e_$mon_defs->{name}" : 'a_parser';
-	display($dbg_parse,0,"a_parser::newParser($name) sid($mon_defs->{sid})  ".
+	display($dbg_parse,0,"apps::raymarine::NET::a_parser::newParser($name) sid($mon_defs->{sid})  ".
 			"is_shark($mon_defs->{is_shark}) is_sniffer($mon_defs->{is_sniffer})");
 	my $this = shared_clone({
 		sid => $mon_defs->{sid},
@@ -100,7 +100,7 @@ sub applyMonDefs
 	$packet->{color} = $is_reply ? $mon_defs->{in_color} : $mon_defs->{out_color};
 	$packet->{name} = "p_$this->{name}";
 
-	display($dbg_parse+1,0,"a_parser::applyMonDefs($packet->{name}) ".
+	display($dbg_parse+1,0,"apps::raymarine::NET::a_parser::applyMonDefs($packet->{name}) ".
 		"active($mon_defs->{active}) ".
 		"is_sniffer($packet->{is_sniffer}) is_reply($is_reply) ".
 		sprintf("mon(%04x) color($packet->{color})",$packet->{mon}));
@@ -143,14 +143,14 @@ sub parsePacket
 	my $payload = $packet->{payload};
 	my $packet_len = length($payload);
 	
-	display($dbg_parse+1,1,sprintf("a_parser::parsePacket($this->{name}) is_sniffer($packet->{is_sniffer}) len($packet_len) mon(%04x) color(%d)",$mon,$color));
+	display($dbg_parse+1,1,sprintf("apps::raymarine::NET::a_parser::parsePacket($this->{name}) is_sniffer($packet->{is_sniffer}) len($packet_len) mon(%04x) color(%d)",$mon,$color));
 	display_hash($dbg_parse+3,0,"packet($this->{name})",$packet,'payload');
 
 	if ($packet->{is_sniffer})
 	{
 		if ($packet->{is_shark} && !($mon & $MON_SNIFF_SELF))
 		{
-			display($dbg_parse+2,1,"a_parser::parsePacket() abandoning sniffer packet to/from self");
+			display($dbg_parse+2,1,"apps::raymarine::NET::a_parser::parsePacket() abandoning sniffer packet to/from self");
 			return undef;
 		}
 
@@ -158,7 +158,7 @@ sub parsePacket
 
 		if (!$mon)
 		{
-			display($dbg_parse+2,1,"a_parser::parsePacket() abandoning sniffer packet with no mon bits");
+			display($dbg_parse+2,1,"apps::raymarine::NET::a_parser::parsePacket() abandoning sniffer packet with no mon bits");
 			return undef;
 		}
 	}
@@ -244,7 +244,7 @@ sub parseMessage
 	my $mon 		= $packet->{mon};
 	my $color		= $packet->{color};
 	
-	display($dbg_parse+2,0,"a_parser::parseMessage($this->{name}) ".
+	display($dbg_parse+2,0,"apps::raymarine::NET::a_parser::parseMessage($this->{name}) ".
 			sprintf("len($len) cmd_word($cmd_hex) sid($sid) mon(%04x)",$mon));
 
 	# there cases with sniffer packets being misasligned, where
@@ -258,7 +258,7 @@ sub parseMessage
 
 	if ($sid != $this->{sid})
 	{
-		my $msg = "a_parser::parseMessage($this->{name}) BAD_SID($sid) != expected($this->{sid}) ".
+		my $msg = "apps::raymarine::NET::a_parser::parseMessage($this->{name}) BAD_SID($sid) != expected($this->{sid}) ".
 			"is_sniffer($packet->{is_sniffer}) is shark($packet->{is_shark}) len($len) cmd_word($cmd_hex)\n".
 			parse_dwords('BAD SID:  ',$packet->{payload},1);
 		error($msg);

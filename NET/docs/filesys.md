@@ -8,7 +8,7 @@
 **[TRACK](TRACK.md)** --
 **FILESYS** --
 **[DBNAV](DBNAV.md)** --
-**[shark](shark.md)** --
+**[shark](../../apps/shark/docs/shark.md)** --
 **[Cables](ethernet_cables.md)**
 
 **FILESYS** provides read access to the CF card filesystem on the E80. It operates

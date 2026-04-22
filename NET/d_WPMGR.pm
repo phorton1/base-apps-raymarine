@@ -19,20 +19,20 @@
 # - Dont know how to add or remove Waypoints from Routes.
 
 
-package d_WPMGR;
+package apps::raymarine::NET::d_WPMGR;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
-use a_defs;
-use a_utils;
-use b_records;
-use e_wp_defs;
-require e_wp_api;
-use c_RAYDP;
-use base qw(b_sock);
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_utils;
+use apps::raymarine::NET::b_records;
+use apps::raymarine::NET::e_wp_defs;
+require apps::raymarine::NET::e_wp_api;
+use apps::raymarine::NET::c_RAYDP;
+use base qw(apps::raymarine::NET::b_sock);
 
 
 my $dbg = 0;
@@ -171,7 +171,7 @@ sub createMsg
 sub sendRequest
 {
 	my ($this,$seq,$name,$request) = @_;
-	display($dbg+1,0,"sendRequest() calling b_sock::sendPacket()");
+	display($dbg+1,0,"sendRequest() calling apps::raymarine::NET::b_sock::sendPacket()");
 	$this->sendPacket($request);
 	$this->{wait_seq} = $seq;
 	$this->{wait_name} = $name;

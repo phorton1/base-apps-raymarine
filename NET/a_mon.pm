@@ -3,13 +3,13 @@
 #---------------------------------------------
 # monitor bit definitions and shared objects
 
-package a_mon;
+package apps::raymarine::NET::a_mon;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils;
-use a_defs;
+use apps::raymarine::NET::a_defs;
 
 
 BEGIN
@@ -339,7 +339,7 @@ mergeHash($SNIFFER_DEFAULTS{$SPORT_WPMGR},{
 		$UTILS_COLOR_CYAN, ]),
 });
 mergeHash($SNIFFER_DEFAULTS{$SPORT_DB},{
-	parser_class	=> 'e_DB',
+	parser_class	=> 'apps::raymarine::NET::e_DB',
 	mon_in			=> $MON_ALL,
 	mon_out 		=> $MON_ALL,
 	in_color		=> $UTILS_COLOR_LIGHT_GREEN,

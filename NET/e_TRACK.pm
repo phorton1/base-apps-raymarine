@@ -6,18 +6,18 @@
 # implement semantic parsing of service specific packets,
 # including returning Track Records in $packet->{item}
 
-package e_TRACK;
+package apps::raymarine::NET::e_TRACK;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils;
-use a_defs;
-use a_mon;
-use a_utils;
-use b_records;
-use d_TRACK;
-use base qw(a_parser);
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_mon;
+use apps::raymarine::NET::a_utils;
+use apps::raymarine::NET::b_records;
+use apps::raymarine::NET::d_TRACK;
+use base qw(apps::raymarine::NET::a_parser);
 
 my $dbg_tp = 0;
 my $dbg_evt = 0;
@@ -26,7 +26,7 @@ my $dbg_evt = 0;
 sub newParser
 {
 	my ($class, $mon_defs) = @_;
-	display($dbg_tp,0,"e_TRACK::new($mon_defs->{name})");
+	display($dbg_tp,0,"apps::raymarine::NET::e_TRACK::new($mon_defs->{name})");
 	my $this = $class->SUPER::newParser($mon_defs);
 	bless $this,$class;
 	return $this;
@@ -45,7 +45,7 @@ sub parsePacket
 		is_point	=> 0,
 		is_event 	=> 0,
 		evt_mask	=> 0, });
-	display($dbg_tp+1,0,"e_TRACK::parsePacket() is_reply($packet->{is_reply})");
+	display($dbg_tp+1,0,"apps::raymarine::NET::e_TRACK::parsePacket() is_reply($packet->{is_reply})");
 	$packet = $this->SUPER::parsePacket($packet);
 
 	my $item = $packet ? $packet->{item} : undef;
@@ -75,7 +75,7 @@ sub parseMessage
 	# and checking twice for rules,
 {
 	my ($this,$packet,$len,$part) = @_;
-	display($dbg_tp+2,0,"e_TRACK::parseMessage($len)");
+	display($dbg_tp+2,0,"apps::raymarine::NET::e_TRACK::parseMessage($len)");
 	return undef if !$this->SUPER::parseMessage($packet,$len,$part);
 
 	my $cmd_word = unpack('v',substr($part,0,2));
@@ -85,7 +85,7 @@ sub parseMessage
 	my $cmd_name = $packet->{is_reply} ? $TRACK_REPLY_NAME{$cmd} : $TRACK_REQUEST_NAME{$cmd};
 	$cmd_name ||= 'WHO CARES?';
 	my $dir_name = $DIRECTION_NAME{$dir};
-	display($dbg_tp+2,1,"e_TRACK::parseMessage() dir($dir)=$dir_name cmd($cmd)=$cmd_name");;
+	display($dbg_tp+2,1,"apps::raymarine::NET::e_TRACK::parseMessage() dir($dir)=$dir_name cmd($cmd)=$cmd_name");;
 
 	my $mon = $packet->{mon};
 	printConsole(1,$mon,$packet->{color},"$dir_name $cmd_name")

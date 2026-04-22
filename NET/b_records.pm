@@ -13,15 +13,15 @@
 #	Track
 #	Point
 
-package b_records;
+package apps::raymarine::NET::b_records;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils;
-use a_defs;
-use a_mon;
-use a_utils;
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_mon;
+use apps::raymarine::NET::a_utils;
 
 
 my $BUILD_CHECK_GROUP = 1;

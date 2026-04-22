@@ -9,10 +9,10 @@ use threads;
 use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
-use a_defs;
-use a_mon;
-use a_parser;
-use c_RAYDP;
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_mon;
+use apps::raymarine::NET::a_parser;
+use apps::raymarine::NET::c_RAYDP;
 
 
 my $dbg_sniff = -1;
@@ -375,7 +375,7 @@ sub sniffer_thread
 			# construct or use existing parser
 			#---------------------------------------------------
 				
-			my $parse_class = $def->{parser_class} || 'a_parser';
+			my $parse_class = $def->{parser_class} || 'apps::raymarine::NET::a_parser';
 			my $parse_id = "$server_ip:$server_port-$client_ip:$client_port";
 			my $parser = $this->{parsers}->{$parse_id};
 

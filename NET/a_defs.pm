@@ -2,7 +2,7 @@
 # a_defs.pm
 #---------------------------------------------
 
-package a_defs;
+package apps::raymarine::NET::a_defs;
 use strict;
 use warnings;
 use threads;
@@ -23,11 +23,11 @@ our $WITH_WX			= 1;
 
 # implemented service_ports that can be turned on and of
 
-our $WITH_TRACK 		= 0;
-our $WITH_WPMGR 		= 0;
-our $WITH_FILESYS 		= 0;
-our $WITH_DBNAV 		= 0;
-our $WITH_DB			= 0;
+our $WITH_TRACK 		= 1;
+our $WITH_WPMGR 		= 1;
+our $WITH_FILESYS 		= 1;
+our $WITH_DBNAV 		= 1;
+our $WITH_DB			= 1;
 
 
 our $AUTO_START_IMPLEMENTED_SERVICES = 1;
@@ -455,27 +455,27 @@ our %SERVICE_PORT_DEFS  = (
 
 
 mergeHash($SERVICE_PORT_DEFS{$SPORT_FILESYS},{
-	parser_class	=> 'e_FILESYS',
+	parser_class	=> 'apps::raymarine::NET::e_FILESYS',
 	implemented 	=> $WITH_FILESYS,
 	auto_connect 	=> 1,
 	auto_populate	=> 1 });
 mergeHash($SERVICE_PORT_DEFS{$SPORT_WPMGR},{
-	parser_class	=> 'e_WPMGR',
+	parser_class	=> 'apps::raymarine::NET::e_WPMGR',
 	implemented 	=> $WITH_WPMGR,
 	auto_connect 	=> 1,
 	auto_populate 	=> 1, });
 mergeHash($SERVICE_PORT_DEFS{$SPORT_TRACK},{
-	parser_class	=> 'e_TRACK',
+	parser_class	=> 'apps::raymarine::NET::e_TRACK',
 	implemented 	=> $WITH_TRACK,
 	auto_connect 	=> 1,
 	auto_populate 	=> 1, });
 mergeHash($SERVICE_PORT_DEFS{$SPORT_DBNAV},{
-	parser_class	=> 'e_DBNAV',
+	parser_class	=> 'apps::raymarine::NET::e_DBNAV',
 	implemented 	=> $WITH_DBNAV,
 	auto_connect 	=> 1,
 	auto_populate 	=> 1 });
 mergeHash($SERVICE_PORT_DEFS{$SPORT_DB},{
-	parser_class	=> 'e_DB',
+	parser_class	=> 'apps::raymarine::NET::e_DB',
 	implemented 	=> $WITH_DB,
 	auto_connect 	=> 1,
 	auto_populate 	=> 1 });

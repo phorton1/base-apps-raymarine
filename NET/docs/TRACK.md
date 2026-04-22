@@ -8,7 +8,7 @@
 **TRACK** --
 **[FILESYS](FILESYS.md)** --
 **[DBNAV](DBNAV.md)** --
-**[shark](shark.md)** --
+**[shark](../../apps/shark/docs/shark.md)** --
 **[Cables](ethernet_cables.md)**
 
 **TRACK** is the service for managing GPS tracks recorded by the E80. It operates

@@ -8,7 +8,7 @@
 **[TRACK](TRACK.md)** --
 **[FILESYS](FILESYS.md)** --
 **[DBNAV](DBNAV.md)** --
-**[shark](shark.md)** --
+**[shark](../../apps/shark/docs/shark.md)** --
 **Cables**
 
 ### The Raymarine E80 and E120 Chartplotter and the DSM300 Sonar module can use STANDARD ETHERNET CABLES.  Period.

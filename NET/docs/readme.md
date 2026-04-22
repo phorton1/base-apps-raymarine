@@ -8,7 +8,7 @@
 **[TRACK](TRACK.md)** --
 **[FILESYS](FILESYS.md)** --
 **[DBNAV](DBNAV.md)** --
-**[shark](shark.md)** --
+**[shark](../../apps/shark/docs/shark.md)** --
 **[Cables](ethernet_cables.md)**
 
 The NET folder contains Perl implementations of the Raymarine **SeatalkHS**
@@ -141,7 +141,7 @@ The main application entry point is **shark.pm**.
 
 ### Engineering Tool Documentation
 
-- **[shark](shark.md)** —
+- **[shark](../../apps/shark/docs/shark.md)** —
   The wxPerl engineering application: serial command vocabulary, feature flags,
   GUI panels, and the probe system for exploring unknown ports and services.
 

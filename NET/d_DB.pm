@@ -17,16 +17,16 @@
 #   command and control processes
 # - as well as implementing command and control processes uniformly
 
-package d_DB;
+package apps::raymarine::NET::d_DB;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
-use a_utils;
-use a_defs;
-use base qw(b_sock);
+use apps::raymarine::NET::a_utils;
+use apps::raymarine::NET::a_defs;
+use base qw(apps::raymarine::NET::b_sock);
 
 
 my $dbg = 0;
@@ -327,7 +327,7 @@ sub onIdle
 sub sendDBCommand
 {
 	my ($this,$dir,$cmd,$fid,$seq) = @_;
-	my $cmd_name = e_DB::dbCmdName($cmd);
+	my $cmd_name = apps::raymarine::NET::e_DB::dbCmdName($cmd);
 	display($dbg+1,0,sprintf("sendDBCommand("._def($seq).",0x%02x)=$cmd_name",$cmd));
 
 	return error("No 'this' in queueTRACKCommand") if !$this;
@@ -353,16 +353,16 @@ sub sendDBCommand
 # e_DB parser
 #===========================================================================
 
-package e_DB;
+package apps::raymarine::NET::e_DB;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils;
-use a_defs;
-use a_mon;
-use a_utils;
-use base qw(a_parser);
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_mon;
+use apps::raymarine::NET::a_utils;
+use base qw(apps::raymarine::NET::a_parser);
 
 my $dbg_ep = 0;
 
@@ -393,7 +393,7 @@ sub fidName
 sub newParser
 {
 	my ($class, $mon_defs) = @_;
-	display($dbg_ep,0,"e_DB::new($mon_defs->{name})");
+	display($dbg_ep,0,"apps::raymarine::NET::e_DB::new($mon_defs->{name})");
 	my $this = $class->SUPER::newParser($mon_defs);
 	bless $this,$class;
 	$this->{fids} = shared_clone({});
@@ -456,7 +456,7 @@ sub parsePacket
 {
 	my ($this,$packet) = @_;
 
-	display($dbg_ep+1,0,"e_DB::parsePacket() is_reply($packet->{is_reply})");
+	display($dbg_ep+1,0,"apps::raymarine::NET::e_DB::parsePacket() is_reply($packet->{is_reply})");
 	my $rslt = $this->SUPER::parsePacket($packet);
 
 	my $fid = $packet->{fid};
@@ -478,7 +478,7 @@ sub parseMessage
 	# and checking twice for rules,
 {
 	my ($this,$packet,$len,$part) = @_;
-	display($dbg_ep+2,0,"e_DB::parseMessage($len)");
+	display($dbg_ep+2,0,"apps::raymarine::NET::e_DB::parseMessage($len)");
 	return undef if !$this->SUPER::parseMessage($packet,$len,$part);
 
 	my $cmd_word = unpack('v',substr($part,0,2));
@@ -487,7 +487,7 @@ sub parseMessage
 
 	my $cmd_name = dbCmdName($cmd);
 	my $dir_name = $DIRECTION_NAME{$dir};
-	display($dbg_ep+2,1,"e_DB::parseMessage() dir($dir)=$dir_name cmd($cmd)=$cmd_name");;
+	display($dbg_ep+2,1,"apps::raymarine::NET::e_DB::parseMessage() dir($dir)=$dir_name cmd($cmd)=$cmd_name");;
 
 	my $mon = $packet->{mon};
 	printConsole(1,$mon,$packet->{color},"$dir_name $cmd_name")

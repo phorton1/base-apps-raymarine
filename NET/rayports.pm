@@ -4,13 +4,13 @@
 # Contains the defaults for rayports and walls of text
 
 
-package rayports;
+package apps::raymarine::NET::rayports;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(sleep time);
-use a_utils;
+use apps::raymarine::NET::a_utils;
 use Socket;
 use IO::Select;
 use Pub::Utils;

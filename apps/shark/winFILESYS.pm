@@ -19,10 +19,10 @@ use Wx::Event qw(
 use Pub::Utils;
 use Pub::WX::Window;
 use Pub::WX::Dialogs;;
-use a_defs;
-use a_utils;
-use c_RAYDP;
-use d_FILESYS;
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_utils;
+use apps::raymarine::NET::c_RAYDP;
+use apps::raymarine::NET::d_FILESYS;
 use w_resources;
 use x_Progress;
 use base qw(Pub::WX::Window);

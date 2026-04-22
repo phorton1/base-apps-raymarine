@@ -5,18 +5,18 @@
 # parsePiece to implement semantic parsing of WPMGR packets,
 # including returning WRG Records in $packet->{item}
 
-package e_WPMGR;
+package apps::raymarine::NET::e_WPMGR;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils;
-use a_defs;
-use a_mon;
-use a_utils;
-use e_wp_defs;
-use b_records;
-use base qw(a_parser);
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_mon;
+use apps::raymarine::NET::a_utils;
+use apps::raymarine::NET::e_wp_defs;
+use apps::raymarine::NET::b_records;
+use base qw(apps::raymarine::NET::a_parser);
 
 my $dbg_ewp = 0;
 
@@ -24,7 +24,7 @@ my $dbg_ewp = 0;
 sub newParser
 {
 	my ($class, $mon_defs) = @_;
-	display($dbg_ewp,0,"e_WPMGR::newParser($mon_defs->{name}) is_shark($mon_defs->{is_shark}) is_sniffer($mon_defs->{is_sniffer})");
+	display($dbg_ewp,0,"apps::raymarine::NET::e_WPMGR::newParser($mon_defs->{name}) is_shark($mon_defs->{is_shark}) is_sniffer($mon_defs->{is_sniffer})");
 	my $this = $class->SUPER::newParser($mon_defs);
 	bless $this,$class;
 	return $this;
@@ -34,7 +34,7 @@ sub newParser
 sub applyMonDefs
 {
 	my ($this,$packet) = @_;
-	display($dbg_ewp+1,0,"e_WPMGR::applyMonDefs()");
+	display($dbg_ewp+1,0,"apps::raymarine::NET::e_WPMGR::applyMonDefs()");
 
 	# skip the 0th message word(length)
 	my $cmd_word = unpack('v',substr($packet->{payload},2,2));
@@ -88,7 +88,7 @@ sub parsePacket
 		seq_num 	=> 0,
 		is_event 	=> 0,
 		uuid		=> '' });
-	display($dbg_ewp+1,0,"e_WPMGR::parsePacket()");
+	display($dbg_ewp+1,0,"apps::raymarine::NET::e_WPMGR::parsePacket()");
 	return $this->SUPER::parsePacket($packet);
 }
 
@@ -101,7 +101,7 @@ sub parseMessage
 	# and checking twice for rules,
 {
 	my ($this,$packet,$len,$part) = @_;
-	display($dbg_ewp+2,0,"e_WPMGR::parseMessage($len)");
+	display($dbg_ewp+2,0,"apps::raymarine::NET::e_WPMGR::parseMessage($len)");
 	return undef if !$this->SUPER::parseMessage($packet,$len,$part);
 
 	my $cmd_word = unpack('v',$part);

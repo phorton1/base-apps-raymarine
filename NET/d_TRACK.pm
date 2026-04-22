@@ -9,18 +9,18 @@
 # Cannot create or modify Tracks otherwise.
 # Cannot even set the color of the 'Current Track'
 
-package d_TRACK;
+package apps::raymarine::NET::d_TRACK;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
-use a_utils;
-use a_defs;
-use b_records;	# temporary name
+use apps::raymarine::NET::a_utils;
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::b_records;	# temporary name
 # use c_RAYDP  loaded by shark.pm
-use base qw(b_sock);
+use base qw(apps::raymarine::NET::b_sock);
 
 
 my $dbg 		= 1;
@@ -426,7 +426,7 @@ sub createMsg
 sub sendRequest
 {
 	my ($this,$seq,$name,$request) = @_;
-	display($dbg+1,0,"sendRequest() calling b_sock::sendPacket()");
+	display($dbg+1,0,"sendRequest() calling apps::raymarine::NET::b_sock::sendPacket()");
 	$this->sendPacket($request);
 	$this->{wait_seq} = $seq;
 	$this->{wait_name} = $name;

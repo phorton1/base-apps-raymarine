@@ -2,7 +2,7 @@
 # e_wp_api.pm
 #---------------------------------------------
 
-package d_WPMGR;	# continued
+package apps::raymarine::NET::d_WPMGR;	# continued
 use strict;
 use warnings;
 use threads;
@@ -10,10 +10,10 @@ use threads::shared;
 use Time::HiRes qw(sleep time);
 use Time::Local;
 use Pub::Utils;
-use a_defs;
-use a_mon;
-use a_utils;
-use e_wp_defs;
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_mon;
+use apps::raymarine::NET::a_utils;
+use apps::raymarine::NET::e_wp_defs;
 
 my $TEMP_COLOR = $UTILS_COLOR_CYAN;
 my $TEMP_MON = $MON_REC | $MON_REC_DETAILS | $MON_PACK | $MON_PACK_CONTROL | $MON_PACK_UNKNOWN;

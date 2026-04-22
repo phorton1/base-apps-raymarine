@@ -2,7 +2,7 @@
 # a_utils.pm
 #---------------------------------------------
 
-package a_utils;
+package apps::raymarine::NET::a_utils;
 use strict;
 use warnings;
 use threads;
@@ -12,9 +12,8 @@ use Time::HiRes qw(sleep);
 use Wx qw(:everything);
 use Pub::Utils;
 use Pub::WX::AppConfig;
-use a_defs;
-use a_mon;
-use w_resources;
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_mon;
 
 
 
@@ -82,7 +81,7 @@ Pub::Utils::initUtils();
 setStandardTempDir($appGroup);
 setStandardDataDir($appGroup);
 
-$ini_file = "$temp_dir/$appName.ini";
+
 
 
 

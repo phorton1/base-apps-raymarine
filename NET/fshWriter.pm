@@ -3,7 +3,7 @@
 #--------------------------------------------
 # Uses FSH routines to write an FSH file
 
-package fshWriter;
+package apps::raymarine::NET::fshWriter;
 use strict;
 use warnings;
 use POSIX qw(floor pow atan);
@@ -12,10 +12,10 @@ use Time::Local;
 use Pub::Utils;
 use apps::raymarine::FSH::fshUtils;
 use apps::raymarine::FSH::fshFile;
-use a_defs;
-use a_mon;
-use b_records;
-use c_RAYDP;
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_mon;
+use apps::raymarine::NET::b_records;
+use apps::raymarine::NET::c_RAYDP;
 use Pub::Utils;
 
 my $dbg_fwr = 0;
@@ -40,7 +40,7 @@ sub createBlock
 
 sub write
 {
-	display($dbg_fwr,0,"fshWriter::write()");
+	display($dbg_fwr,0,"apps::raymarine::NET::fshWriter::write()");
 	my $fsh_file = apps::raymarine::FSH::fshFile->new();
 	my $wp_mgr = $raydp->findImplementedService('WPMGR');
 	my $trk_mgr = $raydp->findImplementedService('TRACK');
