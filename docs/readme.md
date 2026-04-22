@@ -1,18 +1,16 @@
-# Raymarine Reverse Engineering — SeatalkHS, FSH, CSV, and Navionics Charts
+# Raymarine Reverse Engineering — SeatalkHS, FSH, and CSV
 
 **Home** --
 **[NET Protocols](../NET/docs/readme.md)** --
 **[FSH Format](../FSH/docs/readme.md)** --
-**[CSV Tool](../CSV/docs/readme.md)** --
-**[Navionics Charts](../Navionics/docs/readme.md)**
+**[CSV Tool](../CSV/docs/readme.md)**
 
 This repository documents the results of a systematic reverse-engineering effort
 targeting Raymarine's proprietary protocols and file formats: the **SeatalkHS**
-ethernet protocol suite, the **FSH** binary navigation file format, the **CSV**
-import format used by Raytech RNS, and the **Navionics NV2** binary chart format
-used on Raymarine CF card chartsets. It includes working Perl implementations of
-the protocols, tools for reading and writing FSH files, tools for converting
-navigation data between formats, and original documentation of the NV2 format.
+ethernet protocol suite, the **FSH** binary navigation file format, and the **CSV**
+import format used by Raytech RNS. It includes working Perl implementations of
+the protocols, tools for reading and writing FSH files, and tools for converting
+navigation data between formats.
 
 The primary goal is direct **Route, Waypoint, and Track management** on Raymarine
 MFDs from a laptop over an ethernet cable, without running Raymarine's RNS software.
@@ -74,14 +72,6 @@ reverse engineering for personal and educational purposes.
 - **[CSV Tool](../CSV/docs/readme.md)** —
   Conversion from Google Earth KML to Raymarine RNS-compatible CSV format,
   enabling a Google Earth → RNS → E80 navigation data workflow.
-
-- **[Navionics Charts](../Navionics/docs/readme.md)** —
-  Active reverse engineering of the Navionics NV2 binary chart format, as found
-  on Raymarine CF card chartsets.  The NV2 structure (catalog, sections, spatial
-  index, feature vector) is substantially decoded; correct geographic rendering
-  of panel streams is an open problem.  Primary target: Caribbean charts for
-  Panama (Bocas del Toro, San Blas / Guna Yala) — regions with no current
-  alternative chart source.
 
 ## Credits
 
