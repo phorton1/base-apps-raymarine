@@ -115,7 +115,7 @@ sub showCommand
 		"#------------------------------------------------------------------\n".
 		"# $msg\n".
 		"#------------------------------------------------------------------\n\n";
-	print $msg;
+	c_print($msg);
 	writeLog($msg,'shark.log');
 }
 
@@ -213,9 +213,26 @@ sub setWaypointGroup
 
 	if ($group_num)
 	{
-		$group_uuid = std_uuid($STD_GROUP_UUID,$group_num);
+		$group_uuid = $this->findUUIDByName('group',$group_name);
+		return if !$group_uuid;
 		$group = $this->{groups}->{$group_uuid};
-		return error("Could not find group($group_uuid)") if !$group;
+		return error("Could not find group($group_name)") if !$group;
+
+		my $wp = $this->{waypoints}->{$wp_uuid};
+		return error("Could not find WP($wp_uuid)") if !$wp;
+		for my $try_uuid (@{$wp->{uuids} || []})
+		{
+			my $old_group = $this->{groups}->{$try_uuid};
+			next if !$old_group || $try_uuid eq $group_uuid;
+			my $old_name = $old_group->{name};
+			display(0,0,"removing wp($wp_name) from old group($old_name)");
+			my @old_uuids = grep { $_ ne $wp_uuid } @{$old_group->{uuids}};
+			$old_group->{uuids} = shared_clone(\@old_uuids);
+			my $old_buf = buildGroup(0,$old_group,$TEMP_MON,$TEMP_COLOR);
+			my $old_data = unpack('H*',$old_buf);
+			$this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_GROUP,$old_name,$try_uuid,$old_data);
+			last;
+		}
 
 		display_hash(0,0,"got group",$group);
 		push @{$group->{uuids}},$wp_uuid;
@@ -303,7 +320,8 @@ sub routeWaypoint
 {
 	my ($this,$route_num,$wp_num,$add) = @_;
 	$this->showCommand("routeWaypoint($route_num) wp_num($wp_num) add($add)");
-	my $route_uuid = std_uuid($STD_ROUTE_UUID,$route_num);
+	my $route_uuid = $this->findUUIDByName('route',"testRoute$route_num");
+	return if !$route_uuid;
 	my $wp_uuid = std_uuid($STD_WP_UUID,$wp_num);
 
 	my $route = $this->{routes}->{$route_uuid};
@@ -361,7 +379,8 @@ sub routeWaypoint
 
 	my $buffer = buildRoute(0,$route,$TEMP_MON,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
-	return $this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,$data);
+	$this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,$data);
+	return $this->queueWPMGRCommand($API_GET_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,undef);
 
 	# The command appears to be executed OK, and as such, in case of adding a new point,
 	# the point's bearing and distances are updated, and the overal route's end lat/lon
@@ -401,7 +420,7 @@ sub showItem
 		# undef = index
 		# $this = $wpmgr
 		
-	print "----------------------showItem($found=$name) -----------------------------\n$text\n\n";
+	c_print("----------------------showItem($found=$name) -----------------------------\n$text\n\n");
 }
 
 

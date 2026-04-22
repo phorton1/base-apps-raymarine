@@ -138,7 +138,7 @@ sub showCommand
 		"#------------------------------------------------------------------\n".
 		"# $msg\n".
 		"#------------------------------------------------------------------\n\n";
-	print $msg;
+	c_print($msg);
 	# writeLog($msg,'shark.log');
 }
 
@@ -172,7 +172,7 @@ sub queueTRACKCommand
 	if (1)
 	{
 		my $msg = "# queueTRACKCommand($api_command=$cmd_name) uuid($uuid) extra($extra) gen_error($gen_error)\n";
-		print $msg;
+		c_print($msg);
 		# writeLog($msg,"shark.log");
 	}
 
@@ -452,7 +452,7 @@ sub get_tracks
 	# get all track_mts uuids, then all tracks
 {
 	my ($this) = @_;
-	print "get_tracks()\n";
+	c_print("get_tracks()\n");
 
 	my $seq;
 	my $request;
@@ -537,7 +537,7 @@ sub get_track
 
 	if (1 && $dbg <= 0)
 	{
-		print "--------------------  get_track($uuid) '$extra' ------------------------\n";
+		c_print("--------------------  get_track($uuid) '$extra' ------------------------\n");
 	}
 	
 	display($dbg,0,"get_track($uuid)");
@@ -548,7 +548,7 @@ sub get_track
 
 	if (1 && $dbg <= 0)
 	{
-		print "-----------------------------------------------------------------\n";
+		c_print("-----------------------------------------------------------------\n");
 	}
 
 	return 1 if $command->{gen_error};

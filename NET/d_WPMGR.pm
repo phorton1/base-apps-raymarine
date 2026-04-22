@@ -110,7 +110,7 @@ sub queueWPMGRCommand
 	if ($this->{show_parsed_output})
 	{
 		my $msg = "# queueWPMGRCommand($api_command=$cmd_name) what($what) name($name) uuid($uuid) data(".($data?length($data):'empty').")\n";
-		print $msg;
+		c_print($msg);
 		writeLog($msg,"shark.log");
 	}
 
@@ -264,7 +264,7 @@ sub do_query
 	# get all Waypoints, Routes, and Groups from the E80
 {
 	my ($this) = @_;
-	print "do_query()\n";
+	c_print("do_query()\n");
 
 	return 0 if !$this->query_one($WHAT_WAYPOINT);
 	return 0 if !$this->query_one($WHAT_ROUTE);

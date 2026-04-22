@@ -24,6 +24,14 @@ BEGIN
 
 		setConsoleColor
 		printConsole
+		c_print
+
+		enableOutputRing
+		clearOutputRing
+		pushOutputRing
+		getOutputRingSeq
+		getOutputRingSince
+		getOutputRingTail
 
 		clearLog
 		writeLog
@@ -57,6 +65,7 @@ BEGIN
 		$wx_color_lime
 		$wx_color_light_grey
 		$wx_color_medium_grey
+
     );
 }
 
@@ -112,6 +121,8 @@ our $console_color_values = { map { $console_color_names[$_] => $_ } 0..$#consol
 	# map takes a list and applies a block of code to each element, returning a new list.
 	# The block of code is within the {} and $_ is each element of the elist is presented to the right
 	# map {block} list
+
+enableOutputRing(2000);
 
 
 
@@ -195,6 +206,22 @@ sub printConsole
 			writeLog($text."\n",$output_file);
 		}
 	}
+	pushOutputRing($text,$color);
+}
+
+
+sub c_print
+	# Like print, but also pushes to the ring buffer so /api/log captures it.
+	# Use this instead of bare print() anywhere in shark/NET so that application-level
+	# output (show commands, query results, debug banners) is visible to HTTP clients
+	# without needing to freeze/scroll the console window.
+{
+	my ($text) = @_;
+	{
+		lock($local_stdout_sem);
+		print $text;
+	}
+	pushOutputRing($text,0);
 }
 
 

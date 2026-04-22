@@ -157,17 +157,17 @@ sub parseProbes
 
 	if ($dbg_probe < -1)
 	{
-		print "-------- probes ----------\n";
+		c_print("-------- probes ----------\n");
 		for my $key (sort keys %$probes)
 		{
 			my $probe = $probes->{$key};
-			print "PROBE($key)\n";
+			c_print("PROBE($key)\n");
 			for my $line (@$probe)
 			{
-				print "    $line\n";
+				c_print("    $line\n");
 			}
 		}
-		print "-------------------------\n";
+		c_print("-------------------------\n");
 	}
 
 	my $num_probes = keys %$probes;
@@ -211,7 +211,7 @@ sub do_probe
 
 		if ($line =~ s/^>>>//)
 		{
-			print "$line\n";
+			c_print("$line\n");
 		}
 		elsif ($line =~ /INC_SEQ/)
 		{

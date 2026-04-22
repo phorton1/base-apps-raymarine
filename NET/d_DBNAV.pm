@@ -135,7 +135,7 @@ sub showValues
 			"\n";
 	}
 
-	print $text;
+	c_print($text);
 }
 
 

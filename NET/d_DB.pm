@@ -407,7 +407,7 @@ sub showFids
 {
 	my ($this) = @_;
 	my $fids = $this->{fids};
-	print "FIDS\n";
+	c_print("FIDS\n");
 	my $pad1 = pad('',4);
 	my $pad2 = pad('',8);
 
@@ -418,10 +418,10 @@ sub showFids
 		my $def_buffer = $fid_rec->{def_buffer};
 		my $name_buffer = $fid_rec->{name_buffer};
 
-		print $pad1.sprintf("0x%08x\n",$fid);
-		print $pad2."uuid = $uuid\n" if $uuid;
-		print parse_dwords($pad2."def_buffer  ",$def_buffer,1) if $def_buffer;
-		print parse_dwords($pad2."name_buffer ",$name_buffer,1) if $name_buffer;
+		c_print($pad1.sprintf("0x%08x\n",$fid));
+		c_print($pad2."uuid = $uuid\n") if $uuid;
+		c_print(parse_dwords($pad2."def_buffer  ",$def_buffer,1)) if $def_buffer;
+		c_print(parse_dwords($pad2."name_buffer ",$name_buffer,1)) if $name_buffer;
 	}
 }
 

@@ -46,7 +46,7 @@ use apps::raymarine::NET::e_FILESYS;
 use apps::raymarine::NET::fshWriter;
 
 use apps::raymarine::NET::e_wp_api;
-use apps::raymarine::NET::h_server;
+use s_server;
 
 use s_serial;
 use s_sniffer;
@@ -88,10 +88,10 @@ sub handleSerialCommand
 	elsif ($lpart eq 'kml')
 	{
 		my $kml = kml_RAYSYS();
-		print "\n------------------------------------------------------\n";
-		print "RAYSYS kml\n";
-		print "\n------------------------------------------------------\n";
-		print "$kml\n";
+		c_print("\n------------------------------------------------------\n");
+		c_print("RAYSYS kml\n");
+		c_print("\n------------------------------------------------------\n");
+		c_print("$kml\n");
 	}
 
 	# DB

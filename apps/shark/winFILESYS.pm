@@ -485,7 +485,7 @@ sub completeRequest
 		my $row = 0;
 		my $entries = [];
 		my $content = $filesys->getContent();
-		print "got content: $content\n";
+		c_print("got content: $content\n");
 		
 		for my $line (split(/\n/,$content))
 		{

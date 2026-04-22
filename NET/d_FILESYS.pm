@@ -526,7 +526,7 @@ sub handleCommand
 					# round up to even 1024 packets and let the completion code handle it
 					$to_read = (int($to_read / 1024) + 1) * 1024
 				}
-				print "total($total) offset($offset) left($left) to_read=$to_read\n";
+				c_print("total($total) offset($offset) left($left) to_read=$to_read\n");
 				$parser->{file_offset} = $offset;
 				# sleep(0.001);
 				$this->setState($FILE_STATE_START);
