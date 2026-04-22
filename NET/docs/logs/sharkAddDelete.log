@@ -1,0 +1,449 @@
+
+=======================================================================
+# create waypoints
+========================================================================
+
+
+
+#------------------------------------------------------------------
+# createWaypoint(1)
+#------------------------------------------------------------------
+
+# queueWPMGRCommand(3=NEW_ITEM) what(0) name(testWaypoint1) uuid(aaaaaaaaaaaa0100) data(150)
+# sendRequest(1) WAYPOINT name must not exist
+WAYPOINT <-- 9877   1900 0c010f00 01000000 74657374 57617970 6f696e74 31000000 00                  ........testWaypoint1....
+     # send: FIND    WAYPOINT  name = testWaypoint1
+WAYPOINT --> 9877   1400 08000f00 01000000 030b0480 00000000 00000000                              ....................
+     # recv: UUID    WAYPOINT  failed uuid=0000000000000000
+
+# sendRequest(1) WAYPOINT uuid must not exist
+WAYPOINT <-- 9877   1000 03010f00 01000000 aaaaaaaa aaaa0100                                       ................
+     # send: ITEM    WAYPOINT  uuid=aaaaaaaaaaaa0100
+WAYPOINT --> 9877   0c00 06000f00 01000000 030b0480                                                ............
+     # recv: DATA    WAYPOINT  failed
+
+# sendRequest(2) create WAYPOINT
+WAYPOINT <-- 9877   1000 07010f00 02000000 aaaaaaaa aaaa0100                                       ................
+     # send: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0100
+                  1400 00020f00 02000000 aaaaaaaa aaaa0100 03000000                              ....................
+     # info: CONTEXT WAYPOINT  uuid=aaaaaaaaaaaa0100 context_bits=0x03
+                  5300 01020f00 02000000 47000000 9e449005 ecdbface 506c9f06 ae4a84c5 00000000   ........G....D......Pl...J......
+                       00000000 00000000 02000048 010000a6 b800008c 4f000d0a 00000000 74657374   ...........H........O.......test
+                       57617970 6f696e74 31777043 6f6d6d65 6e7431                                Waypoint1wpComment1
+     # info: BUFFER  WAYPOINT
+                    WAYPOINT Record
+                    name       = testWaypoint1
+                    comment    = wpComment1
+                    big_len    = 71
+                    lat        = 93340830            = (9e449005)    9.334 =     9°20.045
+                    lon        = -822420500          = (ecdbface)  -82.242 =   -82°14.523
+                    north      = 111111248           = (506c9f06)    9.334 =     9°20.045
+                    east       = -981185874          = (ae4a84c5)  -82.242 =   -82°14.523
+                    k1_0x12    = 000000000000000000000000
+                    sym        = 2
+                    temp       = 0
+                    depth      = 328                 = (48010000) FEET = 10.76
+                    time       = 47270               = (a6b80000) 13:07:50
+                    date       = 20364               = (8c4f)     2025-10-03
+                    k2_0       = 0
+                    name_len   = 13
+                    cmt_len    = 10
+                    k3_0       = 0
+
+                  1000 02020f00 02000000 00000000 00000000                                       ................
+     # info: LIST    WAYPOINT  uuid=0000000000000000
+WAYPOINT --> 9877   0c00 03000f00 02000000 00000400                                                ............
+     # recv: ITEM    WAYPOINT  success
+                  1000 07000f00 aaaaaaaa aaaa0100 00000000                                       ................
+     # recv: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0100 mod_bits=0x00 MOD(WAYPOINT,0x00,aaaaaaaaaaaa0100)
+
+
+
+#------------------------------------------------------------------
+# createWaypoint(2)
+#------------------------------------------------------------------
+
+# queueWPMGRCommand(3=NEW_ITEM) what(0) name(testWaypoint2) uuid(aaaaaaaaaaaa0200) data(150)
+# sendRequest(3) WAYPOINT name must not exist
+WAYPOINT <-- 9877   1900 0c010f00 03000000 74657374 57617970 6f696e74 32000000 00                  ........testWaypoint2....
+     # send: FIND    WAYPOINT  name = testWaypoint2
+WAYPOINT --> 9877   1400 08000f00 03000000 030b0480 00000000 00000000                              ....................
+     # recv: UUID    WAYPOINT  failed uuid=0000000000000000
+
+# sendRequest(3) WAYPOINT uuid must not exist
+WAYPOINT <-- 9877   1000 03010f00 03000000 aaaaaaaa aaaa0200                                       ................
+     # send: ITEM    WAYPOINT  uuid=aaaaaaaaaaaa0200
+WAYPOINT --> 9877   0c00 06000f00 03000000 030b0480                                                ............
+     # recv: DATA    WAYPOINT  failed
+
+# sendRequest(4) create WAYPOINT
+WAYPOINT <-- 9877   1000 07010f00 04000000 aaaaaaaa aaaa0200                                       ................
+     # send: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0200
+                  1400 00020f00 04000000 aaaaaaaa aaaa0200 03000000                              ....................
+     # info: CONTEXT WAYPOINT  uuid=aaaaaaaaaaaa0200 context_bits=0x03
+                  5300 01020f00 04000000 47000000 2fd08605 e09100cf 47119406 dc1a8bc5 00000000   ........G.../.......G...........
+                       00000000 00000000 02000048 010000e3 b800008c 4f000d0a 00000000 74657374   ...........H........O.......test
+                       57617970 6f696e74 32777043 6f6d6d65 6e7432                                Waypoint2wpComment2
+     # info: BUFFER  WAYPOINT
+                    WAYPOINT Record
+                    name       = testWaypoint2
+                    comment    = wpComment2
+                    big_len    = 71
+                    lat        = 92721199            = (2fd08605)    9.272 =     9°16.327
+                    lon        = -822046240          = (e09100cf)  -82.205 =   -82°12.277
+                    north      = 110367047           = (47119406)    9.272 =     9°16.327
+                    east       = -980739364          = (dc1a8bc5)  -82.205 =   -82°12.277
+                    k1_0x12    = 000000000000000000000000
+                    sym        = 2
+                    temp       = 0
+                    depth      = 328                 = (48010000) FEET = 10.76
+                    time       = 47331               = (e3b80000) 13:08:51
+                    date       = 20364               = (8c4f)     2025-10-03
+                    k2_0       = 0
+                    name_len   = 13
+                    cmt_len    = 10
+                    k3_0       = 0
+
+                  1000 02020f00 04000000 00000000 00000000                                       ................
+     # info: LIST    WAYPOINT  uuid=0000000000000000
+WAYPOINT --> 9877   0c00 03000f00 04000000 00000400                                                ............
+     # recv: ITEM    WAYPOINT  success
+                  1000 07000f00 aaaaaaaa aaaa0200 00000000                                       ................
+     # recv: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0200 mod_bits=0x00 MOD(WAYPOINT,0x00,aaaaaaaaaaaa0200)
+
+
+
+#------------------------------------------------------------------
+# createWaypoint(3)
+#------------------------------------------------------------------
+
+# queueWPMGRCommand(3=NEW_ITEM) what(0) name(testWaypoint3) uuid(aaaaaaaaaaaa0300) data(150)
+# sendRequest(5) WAYPOINT name must not exist
+WAYPOINT <-- 9877   1900 0c010f00 05000000 74657374 57617970 6f696e74 33000000 00                  ........testWaypoint3....
+     # send: FIND    WAYPOINT  name = testWaypoint3
+WAYPOINT --> 9877   1400 08000f00 05000000 030b0480 00000000 00000000                              ....................
+     # recv: UUID    WAYPOINT  failed uuid=0000000000000000
+
+# sendRequest(5) WAYPOINT uuid must not exist
+WAYPOINT <-- 9877   1000 03010f00 05000000 aaaaaaaa aaaa0300                                       ................
+     # send: ITEM    WAYPOINT  uuid=aaaaaaaaaaaa0300
+WAYPOINT --> 9877   0c00 06000f00 05000000 030b0480                                                ............
+     # recv: DATA    WAYPOINT  failed
+
+# sendRequest(6) create WAYPOINT
+WAYPOINT <-- 9877   1000 07010f00 06000000 aaaaaaaa aaaa0300                                       ................
+     # send: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0300
+                  1400 00020f00 06000000 aaaaaaaa aaaa0300 03000000                              ....................
+     # info: CONTEXT WAYPOINT  uuid=aaaaaaaaaaaa0300 context_bits=0x03
+                  5300 01020f00 06000000 47000000 44558405 84b501cf cd169106 cd768cc5 00000000   ........G...DU...........v......
+                       00000000 00000000 02000048 010000eb b800008c 4f000d0a 00000000 74657374   ...........H........O.......test
+                       57617970 6f696e74 33777043 6f6d6d65 6e7433                                Waypoint3wpComment3
+     # info: BUFFER  WAYPOINT
+                    WAYPOINT Record
+                    name       = testWaypoint3
+                    comment    = wpComment3
+                    big_len    = 71
+                    lat        = 92558660            = (44558405)    9.256 =     9°15.352
+                    lon        = -821971580          = (84b501cf)  -82.197 =   -82°11.829
+                    north      = 110171853           = (cd169106)    9.256 =     9°15.352
+                    east       = -980650291          = (cd768cc5)  -82.197 =   -82°11.829
+                    k1_0x12    = 000000000000000000000000
+                    sym        = 2
+                    temp       = 0
+                    depth      = 328                 = (48010000) FEET = 10.76
+                    time       = 47339               = (ebb80000) 13:08:59
+                    date       = 20364               = (8c4f)     2025-10-03
+                    k2_0       = 0
+                    name_len   = 13
+                    cmt_len    = 10
+                    k3_0       = 0
+
+                  1000 02020f00 06000000 00000000 00000000                                       ................
+     # info: LIST    WAYPOINT  uuid=0000000000000000
+WAYPOINT --> 9877   0c00 03000f00 06000000 00000400                                                ............
+     # recv: ITEM    WAYPOINT  success
+                  1000 07000f00 aaaaaaaa aaaa0300 00000000                                       ................
+     # recv: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0300 mod_bits=0x00 MOD(WAYPOINT,0x00,aaaaaaaaaaaa0300)
+
+
+
+#------------------------------------------------------------------
+# createGroup(1)
+#------------------------------------------------------------------
+
+# queueWPMGRCommand(3=NEW_ITEM) what(128) name(testGroup1) uuid(cccccccccccc0100) data(36)
+# sendRequest(7) GROUP name must not exist
+WAYPOINT <-- 9877   1900 8c010f00 07000000 74657374 47726f75 70310000 00000000 00                  ........testGroup1.......
+     # send: FIND    GROUP     name = testGroup1
+WAYPOINT --> 9877   1400 88000f00 07000000 030b0480 00000000 00000000                              ....................
+     # recv: UUID    GROUP     failed uuid=0000000000000000
+
+# sendRequest(7) GROUP uuid must not exist
+WAYPOINT <-- 9877   1000 83010f00 07000000 cccccccc cccc0100                                       ................
+     # send: ITEM    GROUP     uuid=cccccccccccc0100
+WAYPOINT --> 9877   0c00 86000f00 07000000 030b0480                                                ............
+     # recv: DATA    GROUP     failed
+
+# sendRequest(8) create GROUP
+WAYPOINT <-- 9877   1000 87010f00 08000000 cccccccc cccc0100                                       ................
+     # send: MODIFY  GROUP     uuid=cccccccccccc0100
+                  1400 00020f00 08000000 cccccccc cccc0100 03000000                              ....................
+     # info: CONTEXT GROUP     uuid=cccccccccccc0100 context_bits=0x03
+                  1a00 01020f00 08000000 0e000000 0a000000 74657374 47726f75 7031                ................testGroup1
+     # info: BUFFER  GROUP
+                    GROUP Record
+                    name       = testGroup1
+                    big_len    = 14
+                    name_len   = 10
+                    cmt_len    = 0
+                    num_uuids  = 0
+
+                  1000 02020f00 08000000 00000000 00000000                                       ................
+     # info: LIST    GROUP     uuid=0000000000000000
+WAYPOINT --> 9877   0c00 83000f00 08000000 00000400                                                ............
+     # recv: ITEM    GROUP     success
+                  0800 05000f00 00000000                                                         ........
+     # recv: EVENT   WAYPOINT  flag=0
+                  0800 45000f00 00000000                                                         E.......
+     # recv: EVENT   ROUTE     flag=0
+                  0800 85000f00 00000000                                                         ........
+     # recv: EVENT   GROUP     flag=0
+                  1000 87000f00 cccccccc cccc0100 00000000                                       ................
+     # recv: MODIFY  GROUP     uuid=cccccccccccc0100 mod_bits=0x00 MOD(GROUP,0x00,cccccccccccc0100)
+                  0800 05000f00 01000000                                                         ........
+     # recv: EVENT   WAYPOINT  flag=1
+                  0800 45000f00 01000000                                                         E.......
+     # recv: EVENT   ROUTE     flag=1
+                  0800 85000f00 01000000                                                         ........
+     # recv: EVENT   GROUP     flag=1
+
+
+
+#------------------------------------------------------------------
+# createGroup(2)
+#------------------------------------------------------------------
+
+# queueWPMGRCommand(3=NEW_ITEM) what(128) name(testGroup2) uuid(cccccccccccc0200) data(36)
+# sendRequest(9) GROUP name must not exist
+WAYPOINT <-- 9877   1900 8c010f00 09000000 74657374 47726f75 70320000 00000000 00                  ........testGroup2.......
+     # send: FIND    GROUP     name = testGroup2
+WAYPOINT --> 9877   1400 88000f00 09000000 030b0480 00000000 00000000                              ....................
+     # recv: UUID    GROUP     failed uuid=0000000000000000
+
+# sendRequest(9) GROUP uuid must not exist
+WAYPOINT <-- 9877   1000 83010f00 09000000 cccccccc cccc0200                                       ................
+     # send: ITEM    GROUP     uuid=cccccccccccc0200
+WAYPOINT --> 9877   0c00 86000f00 09000000 030b0480                                                ............
+     # recv: DATA    GROUP     failed
+
+# sendRequest(10) create GROUP
+WAYPOINT <-- 9877   1000 87010f00 0a000000 cccccccc cccc0200                                       ................
+     # send: MODIFY  GROUP     uuid=cccccccccccc0200
+                  1400 00020f00 0a000000 cccccccc cccc0200 03000000                              ....................
+     # info: CONTEXT GROUP     uuid=cccccccccccc0200 context_bits=0x03
+                  1a00 01020f00 0a000000 0e000000 0a000000 74657374 47726f75 7032                ................testGroup2
+     # info: BUFFER  GROUP
+                    GROUP Record
+                    name       = testGroup2
+                    big_len    = 14
+                    name_len   = 10
+                    cmt_len    = 0
+                    num_uuids  = 0
+
+                  1000 02020f00 0a000000 00000000 00000000                                       ................
+     # info: LIST    GROUP     uuid=0000000000000000
+WAYPOINT --> 9877   0c00 83000f00 0a000000 00000400                                                ............
+     # recv: ITEM    GROUP     success
+                  0800 05000f00 00000000                                                         ........
+     # recv: EVENT   WAYPOINT  flag=0
+                  0800 45000f00 00000000                                                         E.......
+     # recv: EVENT   ROUTE     flag=0
+                  0800 85000f00 00000000                                                         ........
+     # recv: EVENT   GROUP     flag=0
+                  1000 87000f00 cccccccc cccc0200 00000000                                       ................
+     # recv: MODIFY  GROUP     uuid=cccccccccccc0200 mod_bits=0x00 MOD(GROUP,0x00,cccccccccccc0200)
+                  0800 05000f00 01000000                                                         ........
+     # recv: EVENT   WAYPOINT  flag=1
+                  0800 45000f00 01000000                                                         E.......
+     # recv: EVENT   ROUTE     flag=1
+                  0800 85000f00 01000000                                                         ........
+     # recv: EVENT   GROUP     flag=1
+
+
+
+#------------------------------------------------------------------
+# createGroup(3)
+#------------------------------------------------------------------
+
+# queueWPMGRCommand(3=NEW_ITEM) what(128) name(testGroup3) uuid(cccccccccccc0300) data(36)
+# sendRequest(11) GROUP name must not exist
+WAYPOINT <-- 9877   1900 8c010f00 0b000000 74657374 47726f75 70330000 00000000 00                  ........testGroup3.......
+     # send: FIND    GROUP     name = testGroup3
+WAYPOINT --> 9877   1400 88000f00 0b000000 030b0480 00000000 00000000                              ....................
+     # recv: UUID    GROUP     failed uuid=0000000000000000
+
+# sendRequest(11) GROUP uuid must not exist
+WAYPOINT <-- 9877   1000 83010f00 0b000000 cccccccc cccc0300                                       ................
+     # send: ITEM    GROUP     uuid=cccccccccccc0300
+WAYPOINT --> 9877   0c00 86000f00 0b000000 030b0480                                                ............
+     # recv: DATA    GROUP     failed
+
+# sendRequest(12) create GROUP
+WAYPOINT <-- 9877   1000 87010f00 0c000000 cccccccc cccc0300                                       ................
+     # send: MODIFY  GROUP     uuid=cccccccccccc0300
+                  1400 00020f00 0c000000 cccccccc cccc0300 03000000                              ....................
+     # info: CONTEXT GROUP     uuid=cccccccccccc0300 context_bits=0x03
+                  1a00 01020f00 0c000000 0e000000 0a000000 74657374 47726f75 7033                ................testGroup3
+     # info: BUFFER  GROUP
+                    GROUP Record
+                    name       = testGroup3
+                    big_len    = 14
+                    name_len   = 10
+                    cmt_len    = 0
+                    num_uuids  = 0
+
+                  1000 02020f00 0c000000 00000000 00000000                                       ................
+     # info: LIST    GROUP     uuid=0000000000000000
+WAYPOINT --> 9877   0c00 83000f00 0c000000 00000400                                                ............
+     # recv: ITEM    GROUP     success
+                  0800 05000f00 00000000                                                         ........
+     # recv: EVENT   WAYPOINT  flag=0
+                  0800 45000f00 00000000                                                         E.......
+     # recv: EVENT   ROUTE     flag=0
+                  0800 85000f00 00000000                                                         ........
+     # recv: EVENT   GROUP     flag=0
+                  1000 87000f00 cccccccc cccc0300 00000000                                       ................
+     # recv: MODIFY  GROUP     uuid=cccccccccccc0300 mod_bits=0x00 MOD(GROUP,0x00,cccccccccccc0300)
+                  0800 05000f00 01000000                                                         ........
+     # recv: EVENT   WAYPOINT  flag=1
+                  0800 45000f00 01000000                                                         E.......
+     # recv: EVENT   ROUTE     flag=1
+                  0800 85000f00 01000000                                                         ........
+     # recv: EVENT   GROUP     flag=1
+
+
+=======================================================================
+# modify waypoint1 from RNS
+========================================================================
+
+WAYPOINT --> 9877   1000 07000f00 aaaaaaaa aaaa0100 02000000                                       ................
+     # recv: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0100 mod_bits=0x02 MOD(WAYPOINT,0x02,aaaaaaaaaaaa0100)
+
+
+=======================================================================
+# move wp1 to testGroup1
+========================================================================
+
+WAYPOINT --> 9877   1000 07000f00 aaaaaaaa aaaa0100 02000000                                       ................
+     # recv: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0100 mod_bits=0x02 MOD(WAYPOINT,0x02,aaaaaaaaaaaa0100)
+
+WAYPOINT --> 9877   0800 05000f00 00000000                                                         ........
+     # recv: EVENT   WAYPOINT  flag=0
+                  0800 45000f00 00000000                                                         E.......
+     # recv: EVENT   ROUTE     flag=0
+                  0800 85000f00 00000000                                                         ........
+     # recv: EVENT   GROUP     flag=0
+                  1000 07000f00 aaaaaaaa aaaa0100 02000000                                       ................
+     # recv: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0100 mod_bits=0x02 MOD(WAYPOINT,0x02,aaaaaaaaaaaa0100)
+                  1000 87000f00 cccccccc cccc0100 02000000                                       ................
+     # recv: MODIFY  GROUP     uuid=cccccccccccc0100 mod_bits=0x02 MOD(GROUP,0x02,cccccccccccc0100)
+                  0800 05000f00 01000000                                                         ........
+     # recv: EVENT   WAYPOINT  flag=1
+                  0800 45000f00 01000000                                                         E.......
+     # recv: EVENT   ROUTE     flag=1
+                  0800 85000f00 01000000                                                         ........
+     # recv: EVENT   GROUP     flag=1
+                  1000 87000f00 cccccccc cccc0100 02000000                                       ................
+     # recv: MODIFY  GROUP     uuid=cccccccccccc0100 mod_bits=0x02 MOD(GROUP,0x02,cccccccccccc0100)
+                  1000 07000f00 aaaaaaaa aaaa0100 02000000                                       ................
+     # recv: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0100 mod_bits=0x02 MOD(WAYPOINT,0x02,aaaaaaaaaaaa0100)
+
+
+
+#------------------------------------------------------------------
+# deleteWaypoint(3)
+#------------------------------------------------------------------
+
+# queueWPMGRCommand(4=DEL_ITEM) what(0) name(testWaypoint3) uuid(aaaaaaaaaaaa0300) data(empty)
+# sendRequest(13) delete WAYPOINT
+WAYPOINT <-- 9877   1000 08010f00 0d000000 aaaaaaaa aaaa0300                                       ................
+     # send: UUID    WAYPOINT  uuid=aaaaaaaaaaaa0300
+WAYPOINT --> 9877   0c00 04000f00 0d000000 00000400                                                ............
+     # recv: EXIST   WAYPOINT  success
+                  1000 07000f00 aaaaaaaa aaaa0300 01000000                                       ................
+     # recv: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0300 mod_bits=0x01 MOD(WAYPOINT,0x01,aaaaaaaaaaaa0300)
+
+
+=======================================================================
+# delete waypoint from e80
+========================================================================
+
+WAYPOINT --> 9877   1000 87000f00 cccccccc cccc0100 02000000                                       ................
+     # recv: MODIFY  GROUP     uuid=cccccccccccc0100 mod_bits=0x02 MOD(GROUP,0x02,cccccccccccc0100)
+
+WAYPOINT --> 9877   1000 07000f00 aaaaaaaa aaaa0100 02000000                                       ................
+     # recv: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0100 mod_bits=0x02 MOD(WAYPOINT,0x02,aaaaaaaaaaaa0100)
+
+
+=======================================================================
+# oops hit cancel on E80 re-delete testWaypoint2 from E80
+========================================================================
+
+WAYPOINT --> 9877   1000 07000f00 aaaaaaaa aaaa0200 02000000                                       ................
+     # recv: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0200 mod_bits=0x02 MOD(WAYPOINT,0x02,aaaaaaaaaaaa0200)
+
+
+=======================================================================
+# sheesh finally
+========================================================================
+
+WAYPOINT --> 9877   1000 07000f00 aaaaaaaa aaaa0200 01000000                                       ................
+     # recv: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0200 mod_bits=0x01 MOD(WAYPOINT,0x01,aaaaaaaaaaaa0200)
+
+
+=======================================================================
+# delete testGroup1 from RNS
+========================================================================
+
+WAYPOINT --> 9877   0800 05000f00 00000000                                                         ........
+     # recv: EVENT   WAYPOINT  flag=0
+                  0800 45000f00 00000000                                                         E.......
+     # recv: EVENT   ROUTE     flag=0
+                  0800 85000f00 00000000                                                         ........
+     # recv: EVENT   GROUP     flag=0
+
+WAYPOINT --> 9877   1000 07000f00 aaaaaaaa aaaa0100 02000000                                       ................
+     # recv: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0100 mod_bits=0x02 MOD(WAYPOINT,0x02,aaaaaaaaaaaa0100)
+
+WAYPOINT --> 9877   1000 87000f00 cccccccc cccc0100 02000000                                       ................
+     # recv: MODIFY  GROUP     uuid=cccccccccccc0100 mod_bits=0x02 MOD(GROUP,0x02,cccccccccccc0100)
+
+WAYPOINT --> 9877   1000 07000f00 aaaaaaaa aaaa0100 01000000                                       ................
+     # recv: MODIFY  WAYPOINT  uuid=aaaaaaaaaaaa0100 mod_bits=0x01 MOD(WAYPOINT,0x01,aaaaaaaaaaaa0100)
+
+WAYPOINT --> 9877   0800 05000f00 01000000                                                         ........
+     # recv: EVENT   WAYPOINT  flag=1
+                  0800 45000f00 01000000                                                         E.......
+     # recv: EVENT   ROUTE     flag=1
+                  0800 85000f00 01000000                                                         ........
+     # recv: EVENT   GROUP     flag=1
+
+WAYPOINT --> 9877   0800 05000f00 00000000                                                         ........
+     # recv: EVENT   WAYPOINT  flag=0
+                  0800 45000f00 00000000                                                         E.......
+     # recv: EVENT   ROUTE     flag=0
+                  0800 85000f00 00000000                                                         ........
+     # recv: EVENT   GROUP     flag=0
+                  1000 87000f00 cccccccc cccc0100 01000000                                       ................
+     # recv: MODIFY  GROUP     uuid=cccccccccccc0100 mod_bits=0x01 MOD(GROUP,0x01,cccccccccccc0100)
+                  0800 05000f00 01000000                                                         ........
+     # recv: EVENT   WAYPOINT  flag=1
+                  0800 45000f00 01000000                                                         E.......
+     # recv: EVENT   ROUTE     flag=1
+                  0800 85000f00 01000000                                                         ........
+     # recv: EVENT   GROUP     flag=1
+
+
+=======================================================================
+# note that testGroup1 has now disappeard from E80
+========================================================================
