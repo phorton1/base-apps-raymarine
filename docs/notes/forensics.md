@@ -5,6 +5,22 @@ Raynet RNS and the RaynetHS ethernet protocols with regards to getting
 a workable RWT (Routes, Waypoints, and Tracks) managament workflow.
 
 
+## E80 Factory Reset Procedure
+
+**CONFIRMED 2026-04-23 on E80-4.**
+
+Hold the **1st soft key** (the key closest to the power button) while powering
+the unit on. The screen will show **FACTORY RESET** with a countdown: 3, 2, 1.
+The unit then boots normally with all user data erased (waypoints, routes,
+tracks, groups).
+
+This procedure recovered E80-4 after a WPMGR write operation caused a
+persistent boot loop. It erases all navigation data but restores normal
+operation. If this fails, firmware reflash via CF card is the fallback.
+
+---
+
+
 ### Baseline
 
 First of all, note that Raytech RNS might/will "hang" as a background process

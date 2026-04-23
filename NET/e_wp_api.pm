@@ -103,6 +103,52 @@ sub emptyRoute
 
 
 
+sub _removeFromGroup
+	# Remove $wp_uuid from whatever group it currently belongs to by queuing
+	# an API_MOD_ITEM for that group.
+	#
+	# Called before deleteWaypoint: the E80 rejects CMD_UUID (delete) for any
+	# WP that is still in a group.  Also called from setWaypointGroup when
+	# group_num == 0 (move to My Waypoints).
+	#
+	# Because the command queue is FIFO, any queueWPMGRCommand calls the caller
+	# makes after this return will execute after the group modification.
+	#
+	# Returns 1 immediately if the WP has no group memberships (My Waypoints).
+	# Returns 0 on error, 1 on success (command queued).
+{
+	my ($this,$wp_uuid) = @_;
+
+	my $wp = $this->{waypoints}->{$wp_uuid};
+	return error("_removeFromGroup: WP($wp_uuid) not in memory") if !$wp;
+
+	my $wp_uuids = $wp->{uuids};
+	return 1 if !$wp_uuids || !@$wp_uuids;
+		# WP.uuids is populated by the E80 via GET_ITEM and reflects group membership.
+		# Empty means the WP is already in My Waypoints; nothing to queue.
+
+	my ($group,$group_uuid);
+	for my $try_uuid (@$wp_uuids)
+	{
+		$group = $this->{groups}->{$try_uuid};
+		if ($group)
+		{
+			$group_uuid = $try_uuid;
+			last;
+		}
+	}
+	return error("_removeFromGroup: group for WP($wp_uuid) not in memory") if !$group;
+
+	my @new_uuids = grep { $_ ne $wp_uuid } @{$group->{uuids}};
+	$group->{uuids} = shared_clone(\@new_uuids);
+
+	my $buffer = buildGroup(0,$group,$TEMP_MON,$TEMP_COLOR);
+	my $data = unpack('H*',$buffer);
+	return $this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_GROUP,$group->{name},$group_uuid,$data);
+}
+
+
+
 #--------------------------------------
 # API
 #--------------------------------------
@@ -160,13 +206,58 @@ sub createWaypoint
 	return $this->queueWPMGRCommand($API_NEW_ITEM,$WHAT_WAYPOINT,$name,$uuid,$data);
 }
 
+sub modifyWaypoint
+{
+	my ($this,$name,$changes) = @_;
+	$this->showCommand("modifyWaypoint($name)");
+	my $uuid = $this->findUUIDByName('waypoint',$name);
+	return if !$uuid;
+	my $wp = $this->{waypoints}{$uuid};
+	return error("modifyWaypoint: waypoint($name) not in memory") if !$wp;
+	for my $key (keys %$changes)
+	{
+		$wp->{$key} = $changes->{$key};
+	}
+	my $buffer = buildWaypoint(0,$wp,$TEMP_MON,$TEMP_COLOR);
+	my $data = unpack('H*',$buffer);
+	return $this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_WAYPOINT,$wp->{name},$uuid,$data);
+}
+
 sub deleteWaypoint
 {
 	my ($this,$name) = @_;
 	$this->showCommand("deleteWaypoint($name)");
 	my $uuid = $this->findUUIDByName('waypoint',$name);
 	return if !$uuid;
+	return if !$this->_removeFromGroup($uuid);
+		# E80 rejects CMD_UUID (delete) for a WP that is still in a group.
+		# _removeFromGroup queues the group modification first; the delete below
+		# is then queued after it and fires once the group mod has completed.
+		# No-op (returns 1) if the WP is already in My Waypoints.
 	return $this->queueWPMGRCommand($API_DEL_ITEM,$WHAT_WAYPOINT,$name,$uuid,0);
+}
+
+sub createNamedWaypoint
+{
+	my ($this,$name,$uuid,$lat,$lon,$sym) = @_;
+	$sym //= 25;
+	$this->showCommand("createNamedWaypoint($name) uuid($uuid)");
+	my $alt_coords = latLonToNorthEast($lat,$lon);
+	my $now = timegm(localtime());
+	my $buffer = buildWaypoint(0,{
+		name    => $name,
+		comment => '',
+		lat     => int($lat * $SCALE_LATLON),
+		lon     => int($lon * $SCALE_LATLON),
+		north   => $alt_coords->{north},
+		east    => $alt_coords->{east},
+		sym     => $sym,
+		depth   => 0,
+		date    => int($now / $SECS_PER_DAY),
+		time    => int($now % $SECS_PER_DAY),
+	},$TEMP_MON,$TEMP_COLOR);
+	my $data = unpack('H*',$buffer);
+	return $this->queueWPMGRCommand($API_NEW_ITEM,$WHAT_WAYPOINT,$name,$uuid,$data);
 }
 
 
@@ -190,6 +281,14 @@ sub deleteGroup
 	return $this->queueWPMGRCommand($API_DEL_ITEM,$WHAT_GROUP,$name,$uuid,0);
 }
 
+sub createNamedGroup
+{
+	my ($this,$name,$uuid) = @_;
+	$this->showCommand("createNamedGroup($name) uuid($uuid)");
+	my $data = emptyGroup($name);
+	return $this->queueWPMGRCommand($API_NEW_ITEM,$WHAT_GROUP,$name,$uuid,$data);
+}
+
 
 sub setWaypointGroup
 	# 0 = My Waypoints
@@ -202,16 +301,15 @@ sub setWaypointGroup
 	#   - add it to the new group if it's not My Waypoints
 
 {
-	my ($this,$wp_num,$group_num) = @_;
-	$this->showCommand("setWaypointGroup($wp_num) group_num($group_num)");
+	my ($this,$wp_name,$group_name) = @_;
+	$this->showCommand("setWaypointGroup($wp_name) group_name(".($group_name||0).")");
 
-	my $wp_uuid = std_uuid($STD_WP_UUID,$wp_num);
-	my $wp_name = "testWaypoint$wp_num";
-	my $group_name = $group_num ? "testGroup$group_num" : 'My Waypoints';
+	my $wp_uuid = $this->findUUIDByName('waypoint',$wp_name);
+	return error("setWaypointGroup: waypoint '$wp_name' not in memory") if !$wp_uuid;
 	my $group_uuid;
 	my $group;
 
-	if ($group_num)
+	if ($group_name && $group_name ne '0')
 	{
 		$group_uuid = $this->findUUIDByName('group',$group_name);
 		return if !$group_uuid;
@@ -239,43 +337,10 @@ sub setWaypointGroup
 	}
 	else
 	{
-		my $wp = $this->{waypoints}->{$wp_uuid};
-		return error("Could not find WP($wp_uuid)") if !$wp;
-		display_hash(0,1,"got waypoint",$wp);
-
-		my $wp_uuids = $wp->{uuids};
-		return error("No uuids on waypoint($wp_uuid)") if !$wp_uuids;
-
-		for my $try_uuid (@$wp_uuids)
-		{
-			$group = $this->{groups}->{$try_uuid};
-			$group_uuid = $try_uuid if $group;
-			last if $group;
-		}
-
-		return error("Could not find wp group_uuid") if !$group;
-		display_hash(0,1,"got group($group_uuid)",$group);
-
-		my $num = 0;
-		my $index = -1;
-		my $uuids = $group->{uuids};
-		for my $uuid (@$uuids)
-		{
-			if ($uuid eq $wp_uuid)
-			{
-				$index = $num;
-				last;
-			}
-			$num++;
-		}
-
-		return error("Could not find wp_uuid($wp_uuid) in group($group->{name})")
-			if $index == -1;
-		display(0,1,"removing wp_uuid($wp_uuid) at index($index)");
-
-		my @unshared_uuids = @$uuids;
-		splice @unshared_uuids,$index,1;
-		$group->{uuids} = shared_clone(\@unshared_uuids);
+		return $this->_removeFromGroup($wp_uuid);
+			# My Waypoints = no group; delegate entirely to the helper.
+			# The trailing buildGroup/queue below is intentionally skipped here
+			# since _removeFromGroup does that work for the group being vacated.
 	}
 
 	my $buffer = buildGroup(0,$group,$TEMP_MON,$TEMP_COLOR);
@@ -307,12 +372,26 @@ sub deleteRoute
 	return $this->queueWPMGRCommand($API_DEL_ITEM,$WHAT_ROUTE,$name,$uuid,0);
 }
 
+sub createNamedRoute
+{
+	my ($this,$name,$uuid,$color) = @_;
+	$color //= $next_color++ % $NUM_ROUTE_COLORS;
+	$this->showCommand("createNamedRoute($name) uuid($uuid) color($color)");
+	my $buffer = buildRoute(0,{
+		name  => $name,
+		bits  => 0,
+		color => $color,
+	},$TEMP_MON,$TEMP_COLOR);
+	my $data = unpack('H*',$buffer);
+	return $this->queueWPMGRCommand($API_NEW_ITEM,$WHAT_ROUTE,$name,$uuid,$data);
+}
+
 
 
 
 
 #------------------------------------------------
-# routeWaypoint command still buggy
+# routeWaypoint
 #------------------------------------------------
 
 
@@ -320,9 +399,10 @@ sub routeWaypoint
 {
 	my ($this,$route_num,$wp_num,$add) = @_;
 	$this->showCommand("routeWaypoint($route_num) wp_num($wp_num) add($add)");
-	my $route_uuid = $this->findUUIDByName('route',"testRoute$route_num");
+	my $route_uuid = $this->findUUIDByName('route',$route_num);
 	return if !$route_uuid;
-	my $wp_uuid = std_uuid($STD_WP_UUID,$wp_num);
+	my $wp_uuid = $this->findUUIDByName('waypoint',$wp_num);
+	return if !$wp_uuid;
 
 	my $route = $this->{routes}->{$route_uuid};
 	return error("Could not find route($route_uuid)") if !$route;

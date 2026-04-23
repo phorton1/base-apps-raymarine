@@ -7,16 +7,14 @@
 #
 # Can create and delete Waypoints, Routes, and Groups.
 # Deleting a Group with Waypoints in it, moves them to My Waypoints.
-# Cannot delete a Waypoint that is in a Group.
+# Cannot delete a Waypoint that is in a Group (must remove from group first).
 #
-# I know how to add a waypoint to a Group.
-# - Moving waypoints between folders is a multi-step process.
-# - The waypoints probably need to be removed from the
-#   the group before deleting them
-# - The command_queue is probably overkill.
+# Can add/remove Waypoints to/from Groups and move Waypoints between Groups.
+# - Moving between Groups is two steps: remove from old, add to new.
+# - The command_queue sequences multi-step operations automatically.
 #
-# - Don't know how to move a Waypoint to a Group or back to My Waypoints
-# - Dont know how to add or remove Waypoints from Routes.
+# Can add/remove Waypoints to/from Routes.
+# - E80 does not send a MOD event on route point changes; GET_ITEM is queued explicitly.
 
 
 package apps::raymarine::NET::d_WPMGR;
@@ -346,9 +344,8 @@ sub modify_item
 		createMsg($seq,$DIRECTION_INFO,$CMD_LIST,		0,		$uuid);
 	return 0 if !$this->sendRequest($seq,"modify $what_name",$request);
 	return 0 if !$this->waitReply(1);
-		# This reply is ignored BUT it contains the EVENTS telling us to
-		# get the modified item(s), and since it's not handled as an Event,
-		# the [mods] are ignored.
+		# Reply contains MOD events; handleEvent() processes them and queues
+		# GET_ITEM for each changed item ($WITH_MOD_PROCESSING=1).
 	return 1;
 }
 

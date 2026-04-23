@@ -140,7 +140,7 @@ sub handleSerialCommand
 
 	# WPMGR
 
-	elsif ($lpart =~ /^(q|create|delete|wp|route|group)$/)
+	elsif ($lpart =~ /^(q|create|delete|wp|route|group|new|mod)$/)
 	{
 		my $wpmgr = $raydp->findImplementedService('WPMGR');
 		return if !$wpmgr;
@@ -151,47 +151,104 @@ sub handleSerialCommand
 		}
 		elsif ($lpart eq 'create' || $lpart eq 'delete')
 		{
-			my ($what,$num,@rest) = split(/\s+/,$rpart);
-			$what = lc($what);
+			my ($what,@rest) = split(/\s+/,$rpart);
+			$what = lc($what // '');
+			my $num  = $rest[0];          # create uses numeric index
+			my $name = join(' ',@rest);   # delete uses full name (may contain spaces)
+
 			$wpmgr->createWaypoint($num) 	if $lpart eq 'create' && $what eq 'wp';
-			$wpmgr->createRoute($num,@rest) if $lpart eq 'create' && $what eq 'route';
+			$wpmgr->createRoute($num,@rest[1..$#rest]) if $lpart eq 'create' && $what eq 'route';
 			$wpmgr->createGroup($num) 	 	if $lpart eq 'create' && $what eq 'group';
 
-			# delete commans now take name; in other words, $num is really $name
-			# for the shark 'delete' command
-			
-			$wpmgr->deleteWaypoint($num) 	if $lpart eq 'delete' && $what eq 'wp';
-			$wpmgr->deleteRoute($num) 	 	if $lpart eq 'delete' && $what eq 'route';
-			$wpmgr->deleteGroup($num) 	 	if $lpart eq 'delete' && $what eq 'group';
+			$wpmgr->deleteWaypoint($name) 	if $lpart eq 'delete' && $what eq 'wp';
+			$wpmgr->deleteRoute($name) 	 	if $lpart eq 'delete' && $what eq 'route';
+			$wpmgr->deleteGroup($name) 	 	if $lpart eq 'delete' && $what eq 'group';
 		}
 		elsif ($lpart eq "route")
 		{
-			my ($route_num,$op,$wp_num) = split(/\s+/,$rpart);
+			my ($route_id,$op,$wp_id) = split(/\s+/,$rpart);
 			if ($op && ($op eq '+' || $op eq '-'))
 			{
-				$wpmgr->routeWaypoint($route_num,$wp_num,$op eq '+');
+				my $route_name = $route_id =~ /^\d+$/ ? "testRoute$route_id"   : $route_id;
+				my $wp_name    = $wp_id    =~ /^\d+$/ ? "testWaypoint$wp_id"   : $wp_id;
+				$wpmgr->routeWaypoint($route_name,$wp_name,$op eq '+');
 			}
 			else
 			{
 				$wpmgr->showItem('route',$rpart);
-				# error("bad route command syntax");
 			}
 		}
 		elsif ($lpart eq 'wp')
 		{
-			my ($wp_num,$group_num) = split(/\s+/,$rpart);
-			if ($wp_num =~ /^\d+$/)
+			my ($wp_id,$group_id) = split(/\s+/,$rpart);
+			if (defined($group_id))
 			{
-				$wpmgr->setWaypointGroup($wp_num,$group_num);
+				my $wp_name    = $wp_id   =~ /^\d+$/ ? "testWaypoint$wp_id"  : $wp_id;
+				my $group_name = !$group_id || $group_id eq '0' ? 0 :
+				                 $group_id  =~ /^\d+$/ ? "testGroup$group_id" : $group_id;
+				$wpmgr->setWaypointGroup($wp_name,$group_name);
 			}
 			else
 			{
-				$wpmgr->showItem('waypoint',$rpart);	
+				$wpmgr->showItem('waypoint',$rpart);
 			}
 		}
 		elsif ($lpart eq 'group')
 		{
 			$wpmgr->showItem('group',$rpart);
+		}
+		elsif ($lpart eq 'mod')
+		{
+			my ($what,$item_name,@kvs) = split(/\s+/,$rpart);
+			$what = lc($what) if $what;
+			if (!$what || !$item_name || !@kvs)
+			{
+				error("usage: mod <wp> <name> key=val [key=val ...]");
+			}
+			elsif ($what eq 'wp')
+			{
+				my %changes;
+				for my $kv (@kvs)
+				{
+					my ($k,$v) = split(/=/,$kv,2);
+					$changes{$k} = $v;
+				}
+				$changes{sym} += 0 if exists $changes{sym};
+				$wpmgr->modifyWaypoint($item_name,\%changes);
+			}
+			else
+			{
+				error("mod: unknown type '$what'");
+			}
+		}
+
+		elsif ($lpart eq 'new')
+		{
+			my ($what,$name,$uuid,@rest) = split(/\s+/,$rpart);
+			$what = lc($what) if $what;
+			if (!$what || !$name || !$uuid)
+			{
+				error("usage: new <wp|group|route> <name> <uuid> [params]");
+			}
+			elsif ($what eq 'wp')
+			{
+				my ($lat,$lon,$sym) = @rest;
+				return error("new wp requires lat and lon") if !defined($lat) || !defined($lon);
+				$wpmgr->createNamedWaypoint($name,$uuid,$lat+0,$lon+0,$sym);
+			}
+			elsif ($what eq 'group')
+			{
+				$wpmgr->createNamedGroup($name,$uuid);
+			}
+			elsif ($what eq 'route')
+			{
+				my ($color) = @rest;
+				$wpmgr->createNamedRoute($name,$uuid,defined($color) ? $color+0 : undef);
+			}
+			else
+			{
+				error("new: unknown type '$what'");
+			}
 		}
 
 
