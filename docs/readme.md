@@ -89,7 +89,7 @@ reverse engineering for personal and educational purposes.
   including C struct definitions for block types and coordinate representations.
   This repository derives from and significantly extends that work.
 
-- [**RMRadar_pi**](https://github.com/douwefokkema/RMRadar_pi) —
+- [**radar_pi**](https://github.com/douwefokkema/radar_pi) by Douwe Fokkema —
   OpenCPN plugin for Raymarine radar. The only public source found containing
   any SeatalkHS packet structure information. Provided the initial clue that
   led to decoding the RAYDP discovery protocol.
