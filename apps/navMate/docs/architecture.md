@@ -1,0 +1,169 @@
+# navMate — Architecture
+
+**[Raymarine](../../../docs/readme.md)** --
+**[Home](readme.md)** --
+**Architecture** --
+**[Data Model](data_model.md)**
+
+## Primary Statement
+
+**navMate is a lifelong, device-independent nautical knowledge management system.
+RAYNET/E80 is the first transport. The knowledge base, data model, and UI are the
+product. Everything else is a boundary adapter.**
+
+## Scope
+
+Chartplotters — Raymarine, Garmin, Simrad, Furuno, and OpenCPN alike — are
+operationally scoped. They model the world as a mariner sees it from one boat, in
+one region, on one passage. Their WRGT management surfaces are appropriate for dozens
+of objects, not thousands. UUID-based management, limited organizational depth, no
+concept of a multi-year voyage history spanning multiple oceans.
+
+navMate operates at a fundamentally different scale and time horizon:
+
+- **Where the vessel has been** — a complete voyage record, with temporal metadata,
+  leg identity, and passage context, going back as far as records exist.
+- **Where the vessel is now** — current area management, active routes, local waypoints.
+- **Where the vessel might go** — forward planning, return passages, hypothetical routes.
+
+This scope is not a feature added to a chartplotter companion app. It is the reason
+navMate exists as an independent application.
+
+## Who navMate Is For
+
+The problem navMate solves is universal among mariners, regardless of how many boats
+they own or how many miles they log.
+
+A **recreational boater** who has cruised the same waters for twenty years has
+accumulated something genuinely valuable: which anchorages are quiet in a north swell,
+which channel markers are unreliable, which fuel dock has the best approach, where
+the locals go that the charts don't show. That knowledge typically lives on one
+chartplotter — or in their head — and is at risk every time they upgrade the device,
+change boats, or simply fail to back up. navMate is where that knowledge lives
+permanently, independent of any device.
+
+A **liveaboard or long-distance cruiser** accumulates knowledge across years and
+oceans. A complete voyage record — with dates, leg identity, anchorages, hazards, and
+passage context — is irreplaceable. No chartplotter holds it all, and no chartplotter
+was designed to. navMate holds the full record; any connected device gets the portion
+relevant to where the boat is now.
+
+A **delivery captain** steps onto dozens of boats a year, each with a different
+chartplotter, none of which persist their knowledge. The problem is the same as the
+recreational boater's, but compressed and repeated constantly across a career. navMate
+travels with the captain, not with the boat. Step aboard with a regional scope loaded,
+navigate with whatever chartplotter is installed, and pull back everything new learned
+before handing the boat to its owner.
+
+In every case, the same underlying need: **navigation knowledge that outlasts any
+single boat or device, organized well enough to remain useful over a lifetime.**
+
+## Relationship to Chartplotters and OpenCPN
+
+Chartplotters — Raymarine E80/E120, Garmin, Simrad, Furuno, and software equivalents
+like OpenCPN — are the traditional and probable continued surfaces through which most
+navigation knowledge is originally created. They are also the go-to interface while
+underway: when the boat is moving, the mariner is at the helm watching the chartplotter,
+not at a laptop. A new anchorage discovered, a hazard noted, a waypoint dropped in the
+moment — that knowledge enters the world through the chartplotter, not through navMate.
+
+This makes the device relationship fundamentally **bidirectional**:
+
+- **Before a passage** — navMate pushes a relevant regional subset to the device:
+  waypoints, routes, and track history appropriate to the planned area. The device
+  is loaded from navMate's encyclopedic store, scoped to what is immediately useful.
+
+- **During a passage** — the chartplotter is the primary interface. navMate is
+  not involved in real-time navigation. The device accumulates whatever the mariner
+  adds or modifies underway.
+
+- **After a passage** — navMate pulls from the device, absorbing everything new:
+  waypoints added at anchor, tracks recorded, routes modified in the field. That
+  field knowledge is reconciled into navMate's permanent store, enriched with any
+  metadata navMate can supply (dates, leg context, passage identity), and becomes
+  part of the lifelong record.
+
+This cycle — push a scope, navigate, pull the results — is the core operational
+pattern navMate is built around. It is why sync is a first-class architectural
+concern, not an afterthought.
+
+Chartplotters are also **constrained** as management surfaces — appropriate for dozens
+of objects in the current region, not thousands accumulated over a lifetime. navMate
+makes those limitations visible and manageable: the full encyclopedic record lives
+in navMate; what the device can hold gets scoped and pushed. What the device learns
+gets pulled back and preserved.
+
+The relationship to E80, OpenCPN, Garmin, and any future device is the same in kind:
+a bidirectional boundary adapter, with navMate's own data model and UI unconstrained
+by any device's limitations.
+
+## UI Architecture — Three Simultaneous Layers
+
+navMate runs three UI surfaces simultaneously, each suited to different tasks:
+
+1. **Console window** — command/response and debug interface, always present.
+   Power-user access and development debugging surface. Pattern established in shark.
+
+2. **wx panels** — native OS widgets: list boxes, status displays, quick controls.
+   Better than a browser for anything requiring immediate local response. wx is not
+   the geographic surface.
+
+3. **Leaflet** — the primary geographic canvas. Renders waypoints, routes, and tracks
+   spatially. The wx application hosts a local HTTP server; Leaflet runs in a browser
+   window alongside. This replaces Google Earth's visualization role.
+
+These are not alternatives — all three run concurrently within the same process.
+
+## Transport Abstraction
+
+The RAYNET protocol implementation (NET/ a_–e_ modules) is the first transport layer.
+It is linked directly into the navMate process — not a daemon, not a socket service.
+
+navMate's core (knowledge base, UI, data model) is transport-agnostic. The transport
+abstraction layer sits between the core and any connected device. RAYNET/E80 is the
+first implementation behind that interface. Future implementations — OpenCPN's plugin
+API, NMEA 2000, other chartplotter protocols — plug in behind the same interface
+without affecting the core.
+
+The hard-won RAYNET knowledge (UUID semantics, WPMGR wire protocol, sync patterns,
+E80 behavioral quirks) informs the design of that abstraction rather than defining it.
+
+## Local-First Data Model
+
+SQLite is the authoritative store. The E80 is not authoritative. No connected device
+is authoritative. navMate maintains its own independent local state; sync is a
+first-class operation, not an afterthought.
+
+At sync time, navMate and a connected device present two divergent UUID sets. The sync
+layer classifies each UUID as push-needed, pull-needed, or conflicted, and resolves
+accordingly. This is fundamentally different from treating the E80 as a master to cache.
+
+See [Data Model](data_model.md) for schema detail.
+
+## Google Earth
+
+Google Earth was the accidental archive for many years — not because it was suited
+to the task but because nothing better existed. It has no future role in navMate's
+workflow. KML survives as an import/export interchange format at the boundary; the
+Leaflet canvas replaces GE as the geographic visualization surface.
+
+The migration of historical data from GE/KML (and from phorton.com's voyage archive)
+into navMate's SQLite store is a one-time operation, not an ongoing relationship.
+
+## Distribution Path
+
+navMate is designed to travel a defined arc:
+
+1. **Source** — run from cmd.exe Perl source; developer workflow.
+2. **Public repo** — documentation and architecture publishable before any installer.
+3. **Windows installer** — packaged for other E80/E120 owners; no Perl required.
+4. **OpenCPN plugin** — a C++ plugin connecting to navMate's transport layer via local
+   socket, giving OpenCPN users E80 access through navMate. Substantially later;
+   architecture remains open to it without committing to build it.
+
+The Windows installer capability uses the same Perl packaging infrastructure
+established across Patrick's other deployable applications.
+
+---
+
+**Next:** [Data Model](data_model.md)

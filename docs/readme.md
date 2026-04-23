@@ -3,7 +3,8 @@
 **Home** --
 **[NET Protocols](../NET/docs/readme.md)** --
 **[FSH Format](../FSH/docs/readme.md)** --
-**[CSV Tool](../CSV/docs/readme.md)**
+**[CSV Tool](../CSV/docs/readme.md)** --
+**[navMate](../apps/navMate/docs/readme.md)**
 
 This repository documents the results of a systematic reverse-engineering effort
 targeting Raymarine's proprietary protocols and file formats: the **SeatalkHS**
@@ -17,6 +18,10 @@ MFDs from a laptop over an ethernet cable, without running Raymarine's RNS softw
 The work was conducted on a Raymarine **E80** chartplotter, but the SeatalkHS
 protocol is also used by E120-series MFDs, the DSM300 sonar module, and other
 Raymarine hardware of the same generation.
+
+This protocol and file-format work is the foundation for **[navMate](../apps/navMate/docs/readme.md)**,
+a planned desktop application for lifelong, device-independent navigation data management.
+navMate is pre-implementation; its architecture and design are documented here.
 
 ## About This Work
 
@@ -72,6 +77,10 @@ reverse engineering for personal and educational purposes.
 - **[CSV Tool](../CSV/docs/readme.md)** —
   Conversion from Google Earth KML to Raymarine RNS-compatible CSV format,
   enabling a Google Earth → RNS → E80 navigation data workflow.
+
+- **[navMate](../apps/navMate/docs/readme.md)** —
+  Planned desktop application for lifelong, device-independent navigation data
+  management (WRGT). Architecture and design documentation; pre-implementation.
 
 ## Credits
 
