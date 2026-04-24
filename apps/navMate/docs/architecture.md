@@ -198,7 +198,8 @@ this zone.
 
 | File | Zone | Role |
 |------|------|------|
-| `a_defs.pm` | lower | constants, type vocabulary, UUID helpers |
+| `a_defs.pm` | lower | constants, type vocabulary |
+| `a_utils.pm` | lower | $data_dir/$temp_dir setup, UUID generation |
 | `c_db.pm` | lower | SQLite schema, raw CRUD |
 | `f_kml.pm` | lower | KML import/export |
 | `f_wrgt.pm` | lower | WRGT business logic, collection operations |

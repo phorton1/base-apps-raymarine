@@ -22,13 +22,13 @@ the real database and exercise the lower layers thoroughly before any UI is buil
 
 See [Architecture — Code Organization](architecture.md#code-organization) for the
 full file list and naming conventions. In brief: lower layers use sparse alpha
-prefixes with underscore-delimited lowercase names (`a_defs.pm`, `c_db.pm`,
-`f_kml.pm`, `j_transport.pm`); application layer modules use camelCase
+prefixes with underscore-delimited lowercase names (`a_defs.pm`, `a_utils.pm`,
+`c_db.pm`, `f_kml.pm`, `j_transport.pm`); application layer modules use camelCase
 (`nmSession.pm`, `winMain.pm`).
 
 ## Phase Sequence
 
-### Phase 1 — Foundation (`a_defs.pm`, `c_db.pm`)
+### Phase 1 — Foundation (`a_defs.pm`, `a_utils.pm`, `c_db.pm`)
 
 - UUID generation (byte 1 = `0x4E` for navMate-created objects)
 - SQLite schema creation — all tables: collections, waypoints, routes, tracks,

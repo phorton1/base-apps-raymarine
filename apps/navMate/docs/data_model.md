@@ -182,6 +182,29 @@ Tracks are full members of working sets. The E80 has no RAYNET path to receive
 tracks; the FSH file transfer path handles this at push time. That asymmetry is
 a transport-layer concern; the schema makes no distinction.
 
+### key_values
+
+A general-purpose metadata table used to persist application-level values that
+do not belong in the WRGT or working set tables.
+
+```sql
+key_values (
+  key    TEXT PRIMARY KEY,
+  value  TEXT
+)
+```
+
+Initial entries:
+
+| key | Purpose |
+|-----|---------|
+| `schema_version` | Integer; incremented on schema migrations |
+| `uuid_counter` | Integer; persistent counter for navMate UUID generation (bytes 4–5 of the UUID) |
+
+The `uuid_counter` entry is incremented atomically within the same transaction as
+each new object INSERT, ensuring the counter and the database objects it identifies
+never diverge.
+
 ## Design Decisions
 
 **lat/lon as REAL degrees — no northing/easting in the schema.** The 1e7 integer
