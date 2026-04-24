@@ -16,7 +16,7 @@ use a_defs;
 use a_utils;
 use c_db;
 use w_resources;
-use w_frame;
+use winMain;
 use base 'Wx::App';
 
 $ini_file = "$temp_dir/$appName.ini";
@@ -38,7 +38,7 @@ if ($WITH_WX)
 
 	sub OnInit
 	{
-		$frame = w_frame->new();
+		$frame = winMain->new();
 		if (!$frame)
 		{
 			error("unable to create frame");

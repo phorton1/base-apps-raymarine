@@ -2,6 +2,15 @@
 # migrate/_import_kml.pm
 #-----------------------------------------
 # Run from apps/navMate/ as: perl migrate/_import_kml.pm
+#
+# Folder hierarchy rules:
+#   - Each KML <Folder> becomes one collection (findCollection before
+#     insertCollection avoids same-name duplicates at the same level).
+#   - If the Document's sole top-level folder name matches the source
+#     file's long name, it is merged into the source collection (no
+#     redundant wrapper).
+#   - Route import never creates new waypoints; each vertex is looked
+#     up by coordinate (findWaypointByLatLon) and linked by UUID.
 
 package _import_kml;
 use strict;
@@ -20,23 +29,23 @@ use c_db;
 my @KML_FILES = (
 	'C:/junk/Navigation.kml',
 	'C:/junk/all_data_from_old_chartplotter.kml',
-	'C:/junk/RhapsodyLogs - ends May 31, 2009.kml',
-	'C:/junk/MandalaLogs.kml',
-	'C:/junk/Michelle 2010-2012.kml',
 	'C:/junk/MiscBocas.kml',
+	'C:/junk/Michelle 2010-2012.kml',
 	'C:/junk/Tooling Around Bocas 2009.kml',
 	'C:/junk/Cartagena Trip End 2009.kml',
+	'C:/junk/RhapsodyLogs - ends May 31, 2009.kml',
+	'C:/junk/MandalaLogs.kml',
 );
 
 my %SOURCE_NAMES = (
-	'Navigation.kml'                        => 'Navigation',
-	'all_data_from_old_chartplotter.kml'    => 'OldE80',
-	'RhapsodyLogs - ends May 31, 2009.kml'  => 'RhapsodyLogs',
-	'MandalaLogs.kml'                        => 'MandalaLogs',
-	'Michelle 2010-2012.kml'                => 'Michelle',
-	'MiscBocas.kml'                          => 'MiscBocas',
-	'Tooling Around Bocas 2009.kml'         => 'Bocas2009',
-	'Cartagena Trip End 2009.kml'            => 'Cartagena2009',
+	'Navigation.kml'                       => 'Navigation',
+	'all_data_from_old_chartplotter.kml'   => 'OldE80',
+	'MiscBocas.kml'                        => 'MiscBocas',
+	'Michelle 2010-2012.kml'               => 'Michelle',
+	'Tooling Around Bocas 2009.kml'        => 'Bocas2009',
+	'Cartagena Trip End 2009.kml'          => 'Cartagena2009',
+	'RhapsodyLogs - ends May 31, 2009.kml' => 'RhapsodyLogs',
+	'MandalaLogs.kml'                      => 'MandalaLogs',
 );
 
 my $xs = XML::Simple->new(
@@ -62,13 +71,14 @@ sub _run
 	{
 		if (!-f $path)
 		{
-			warning("_import_kml: not found: $path");
+			warning(0,0,"_import_kml: not found: $path");
 			next;
 		}
 		display(0,0,"importing $path");
 		eval { _importFile($path) };
 		error("_import_kml: $path failed: $@") if $@;
 	}
+	_autoTypeCollections();
 }
 
 
@@ -85,22 +95,37 @@ sub _importFile
 	my $doc         = $data->{Document}
 		or die "no Document element in $path";
 
-	my $top_coll   = insertCollection($source_file, undef,     'branch',    '');
-	my $wp_coll    = insertCollection('Waypoints',  $top_coll, 'waypoints', '');
-	my $route_coll = insertCollection('Routes',     $top_coll, 'routes',    '');
-	my $track_coll = insertCollection('Tracks',     $top_coll, 'tracks',    '');
+	my $top_coll     = insertCollection($source_file, undef, 'branch', '');
+	my $wp_sink_uuid = undef;
 
 	my $ctx = {
-		wp_coll     => $wp_coll,
-		route_coll  => $route_coll,
-		track_coll  => $track_coll,
-		source_file => $source_file,
-		folder_type => '',
+		coll_uuid     => $top_coll,
+		node_type     => 'branch',
+		source_file   => $source_file,
+		top_coll_uuid => $top_coll,
+		wp_sink_ref   => \$wp_sink_uuid,
 	};
 
 	for my $folder (@{$doc->{Folder} // []})
 	{
-		_walkFolder($folder, $ctx);
+		my $fname = $folder->{name} // '';
+		if (($SOURCE_NAMES{$fname . '.kml'} // '') eq $source_file)
+		{
+			# Merge top-level wrapper folder directly into $top_coll.
+			# Sub-folders first so typed collections exist before any wp_sink fires.
+			for my $sub (@{$folder->{Folder} // []})
+			{
+				_walkFolder($sub, $ctx);
+			}
+			for my $pm (@{$folder->{Placemark} // []})
+			{
+				_importPlacemark($pm, $ctx);
+			}
+		}
+		else
+		{
+			_walkFolder($folder, $ctx);
+		}
 	}
 	for my $pm (@{$doc->{Placemark} // []})
 	{
@@ -112,6 +137,44 @@ sub _importFile
 
 
 #---------------------------------
+# _getWpSink
+#---------------------------------
+# Returns the uuid of a 'Waypoints' group collection under the source
+# file's top-level collection.  Created on first call; reused thereafter.
+# Used only when route Point placemarks have no pre-existing waypoint match.
+
+sub _getWpSink
+{
+	my ($ctx) = @_;
+	my $ref = $ctx->{wp_sink_ref};
+	unless ($$ref)
+	{
+		my $existing_uuid = findCollection('Waypoints',    $ctx->{top_coll_uuid})
+		                 // findCollection('My Waypoints', $ctx->{top_coll_uuid});
+		if ($existing_uuid)
+		{
+			my $existing = getCollection($existing_uuid);
+			if (($existing->{node_type} // '') eq 'groups')
+			{
+				# groups container — create/find 'My Waypoints' inside it
+				$$ref = findCollection('My Waypoints', $existing_uuid)
+				     // insertCollection('My Waypoints', $existing_uuid, 'group', '');
+			}
+			else
+			{
+				$$ref = $existing_uuid;
+			}
+		}
+		else
+		{
+			$$ref = insertCollection('My Waypoints', $ctx->{top_coll_uuid}, 'group', '');
+		}
+	}
+	return $$ref;
+}
+
+
+#---------------------------------
 # _walkFolder
 #---------------------------------
 
@@ -119,30 +182,45 @@ sub _walkFolder
 {
 	my ($folder, $ctx) = @_;
 	my $name = $folder->{name} // '';
+	return if $name =~ /~$/;
 
-	my $explicit_ftype;
-	if    ($name =~ /^(waypoints?|places?)$/i) { $explicit_ftype = 'waypoints' }
-	elsif ($name =~ /^routes?$/i)              { $explicit_ftype = 'routes'    }
-	elsif ($name =~ /^(tracks?|soundings?)$/i) { $explicit_ftype = 'tracks'    }
-	elsif ($name =~ /^groups?$/i)              { $explicit_ftype = 'groups'    }
+	my $node_type = 'branch';
+	if ($name =~ /^(waypoints?|my\s+waypoints?)$/i)
+	{
+		# groups if it contains sub-folders (it's a container of groups),
+		# group if it contains only waypoints directly
+		$node_type = @{$folder->{Folder} // []} ? 'groups' : 'group';
+	}
+	elsif ($name =~ /^groups?$/i)                      { $node_type = 'groups' }
+	elsif ($name =~ /^routes?$/i)                      { $node_type = 'routes' }
+	elsif ($name =~ /^(tracks?|soundings?)$/i)         { $node_type = 'tracks' }
 
-	# Named sub-folder inside a routes/groups context → one route definition
-	if (($ctx->{folder_type} // '') =~ /^(routes|groups)$/ && !defined($explicit_ftype))
+	# Named sub-folder inside a groups context → promote to group
+	if ($ctx->{node_type} eq 'groups' && $node_type eq 'branch')
+	{
+		$node_type = 'group';
+	}
+
+	# Named sub-folder inside a routes context with no explicit type → one route
+	if ($ctx->{node_type} eq 'routes' && $node_type eq 'branch')
 	{
 		_importRouteFolder($folder, $ctx);
 		return;
 	}
 
-	my $ftype       = $explicit_ftype // ($ctx->{folder_type} // '');
-	my $child_ctx   = { %$ctx, folder_type => $ftype };
+	my $coll_uuid = findCollection($name, $ctx->{coll_uuid})
+	             // insertCollection($name, $ctx->{coll_uuid}, $node_type, '');
 
-	for my $pm (@{$folder->{Placemark} // []})
-	{
-		_importPlacemark($pm, $child_ctx);
-	}
+	my $child_ctx = { %$ctx, coll_uuid => $coll_uuid, node_type => $node_type };
+
+	# Sub-folders first so typed collections exist before any wp_sink fires.
 	for my $sub (@{$folder->{Folder} // []})
 	{
 		_walkFolder($sub, $child_ctx);
+	}
+	for my $pm (@{$folder->{Placemark} // []})
+	{
+		_importPlacemark($pm, $child_ctx);
 	}
 }
 
@@ -158,11 +236,15 @@ sub _importPlacemark
 
 	if (exists $pm->{Point})
 	{
-		_importWaypoint($pm, $ctx);
+		# Waypoints must live in a group collection; redirect if context is not a group
+		my $wp_ctx = ($ctx->{node_type} eq 'group')
+			? $ctx
+			: { %$ctx, coll_uuid => _getWpSink($ctx) };
+		_importWaypoint($pm, $wp_ctx);
 	}
 	elsif (exists $pm->{LineString})
 	{
-		if (($ctx->{folder_type} // '') eq 'routes')
+		if ($ctx->{node_type} eq 'routes')
 		{
 			_importRouteFromLine($pm, $ctx);
 		}
@@ -192,7 +274,7 @@ sub _importWaypoint
 		created_ts      => $import_ts,
 		ts_source       => $TS_SOURCE_IMPORT,
 		source_file     => $ctx->{source_file},
-		collection_uuid => $ctx->{wp_coll});
+		collection_uuid => $ctx->{coll_uuid});
 }
 
 
@@ -225,7 +307,7 @@ sub _importTrack
 		ts_end          => $ts_end,
 		ts_source       => $ts_source,
 		source_file     => $ctx->{source_file},
-		collection_uuid => $ctx->{track_coll},
+		collection_uuid => $ctx->{coll_uuid},
 		point_count     => scalar @pts);
 
 	insertTrackPoints($uuid, \@pts);
@@ -235,26 +317,48 @@ sub _importTrack
 #---------------------------------
 # _importRouteFolder
 #---------------------------------
-# Named sub-folder inside routes/groups context.
-# Points in order → named-waypoint route.
-# LineStrings (no Points) → coord-based route(s).
+# Named sub-folder inside a routes context.
+# Route record in the routes collection ($ctx->{coll_uuid}).
+# For Point placemarks: look up by coordinate first (handles files where
+#   waypoints were already imported from a groups folder); if not found,
+#   create the waypoint in the peer wp_sink group collection.
+# For LineString placemarks: delegates to _importRouteFromLine.
 
 sub _importRouteFolder
 {
 	my ($folder, $ctx) = @_;
-	my @pms       = grep { ($_->{name} // '') !~ /~$/ } @{$folder->{Placemark} // []};
-	my @point_pms = grep { exists $_->{Point}       } @pms;
-	my @line_pms  = grep { exists $_->{LineString}  } @pms;
+	my $route_name = $folder->{name} // '';
+	my @pms        = grep { ($_->{name} // '') !~ /~$/ } @{$folder->{Placemark} // []};
+	my @point_pms  = grep { exists $_->{Point}      } @pms;
+	my @line_pms   = grep { exists $_->{LineString} } @pms;
 
 	if (@point_pms)
 	{
-		my $route_uuid = insertRoute($folder->{name}, 0, '', $ctx->{route_coll});
-		my $pos = 0;
+		my $route_uuid = insertRoute($route_name, 0, '', $ctx->{coll_uuid});
+		my $pos     = 0;
+		my $created = 0;
 		for my $pm (@point_pms)
 		{
-			my $wp_uuid = _importWaypoint($pm, $ctx);
-			appendRouteWaypoint($route_uuid, $wp_uuid, $pos++) if $wp_uuid;
+			my $raw = $pm->{Point}{coordinates} // '';
+			$raw =~ s/^\s+|\s+$//g;
+			my ($lon, $lat) = split /,/, $raw;
+			next unless defined $lat && defined $lon;
+			my $wp_uuid = findWaypointByLatLon($lat + 0, $lon + 0, $ctx->{source_file});
+			unless ($wp_uuid)
+			{
+				$wp_uuid = insertWaypoint(
+					name            => $pm->{name},
+					lat             => $lat + 0,
+					lon             => $lon + 0,
+					created_ts      => $import_ts,
+					ts_source       => $TS_SOURCE_IMPORT,
+					source_file     => $ctx->{source_file},
+					collection_uuid => _getWpSink($ctx));
+				$created++;
+			}
+			appendRouteWaypoint($route_uuid, $wp_uuid, $pos++);
 		}
+		display(0,1,"  route '$route_name': $pos pts ($created created in wp_sink)") if $created;
 	}
 	elsif (@line_pms)
 	{
@@ -269,26 +373,56 @@ sub _importRouteFolder
 #---------------------------------
 # _importRouteFromLine
 #---------------------------------
+# Route record in $ctx->{coll_uuid}.
+# Coordinate-matches each LineString vertex to an existing waypoint UUID.
+# NEVER creates new waypoint records; warns on any miss.
 
 sub _importRouteFromLine
 {
 	my ($pm, $ctx) = @_;
 	my @pts = _parseCoords($pm->{LineString}{coordinates});
 	return unless @pts;
-	my $route_uuid = insertRoute($pm->{name}, 0, '', $ctx->{route_coll});
-	my $pos = 0;
+	my $route_name = $pm->{name} // '';
+	my $route_uuid = insertRoute($route_name, 0, '', $ctx->{coll_uuid});
+	my $pos   = 0;
+	my $found = 0;
 	for my $pt (@pts)
 	{
-		my $wp_uuid = insertWaypoint(
-			name            => sprintf("%s.%03d", $pm->{name}, $pos),
-			lat             => $pt->{lat},
-			lon             => $pt->{lon},
-			created_ts      => $import_ts,
-			ts_source       => $TS_SOURCE_IMPORT,
-			source_file     => $ctx->{source_file},
-			collection_uuid => $ctx->{wp_coll});
-		appendRouteWaypoint($route_uuid, $wp_uuid, $pos++);
+		my $wp_uuid = findWaypointByLatLon($pt->{lat}, $pt->{lon}, $ctx->{source_file});
+		if ($wp_uuid)
+		{
+			appendRouteWaypoint($route_uuid, $wp_uuid, $pos++);
+			$found++;
+		}
+		else
+		{
+			warning(0,0,"route '$route_name': no waypoint match at $pt->{lat},$pt->{lon}");
+		}
 	}
+	display(0,1,"  route '$route_name': $found/" . scalar(@pts) . " vertices matched");
+}
+
+
+#---------------------------------
+# _autoTypeCollections
+#---------------------------------
+# Upgrade leaf branch collections of uniform object type to their typed node_type.
+
+sub _autoTypeCollections
+{
+	my $branches = getAllBranchCollections();
+	my $n_typed  = 0;
+	for my $coll (@$branches)
+	{
+		my $counts = getCollectionCounts($coll->{uuid});
+		next if $counts->{collections};
+		my $total = $counts->{waypoints} + $counts->{routes} + $counts->{tracks};
+		next unless $total;
+		if    ($counts->{tracks}    == $total) { updateCollectionNodeType($coll->{uuid}, 'tracks'); $n_typed++ }
+		elsif ($counts->{waypoints} == $total) { updateCollectionNodeType($coll->{uuid}, 'group');  $n_typed++ }
+		elsif ($counts->{routes}    == $total) { updateCollectionNodeType($coll->{uuid}, 'routes'); $n_typed++ }
+	}
+	display(0,0,"_autoTypeCollections: $n_typed collections typed");
 }
 
 

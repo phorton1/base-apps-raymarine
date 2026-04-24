@@ -18,7 +18,8 @@ BEGIN
 		$WITH_WX
 
 		$NODE_TYPE_BRANCH
-		$NODE_TYPE_WAYPOINTS
+		$NODE_TYPE_GROUPS
+		$NODE_TYPE_GROUP
 		$NODE_TYPE_ROUTES
 		$NODE_TYPE_TRACKS
 
@@ -39,7 +40,8 @@ our $WITH_WX = 1;
 
 # collections.node_type values
 our $NODE_TYPE_BRANCH    = 'branch';
-our $NODE_TYPE_WAYPOINTS = 'waypoints';
+our $NODE_TYPE_GROUPS    = 'groups';
+our $NODE_TYPE_GROUP     = 'group';
 our $NODE_TYPE_ROUTES    = 'routes';
 our $NODE_TYPE_TRACKS    = 'tracks';
 

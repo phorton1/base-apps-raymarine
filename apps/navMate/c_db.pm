@@ -29,6 +29,17 @@ BEGIN
 		findTrackByNameAndSource
 		getTrackTsSource
 		updateTrackTimestamps
+		getCollectionChildren
+		getCollectionCounts
+		getCollectionObjects
+		updateCollectionNodeType
+		getAllBranchCollections
+		findWaypointByLatLon
+		getCollection
+		getTrack
+		getWaypoint
+		getRoute
+		getRouteWaypointCount
 	);
 }
 
@@ -418,6 +429,194 @@ sub updateTrackTimestamps
 		"UPDATE tracks SET ts_start=?, ts_end=?, ts_source=? WHERE uuid=?",
 		undef, $ts_start, $ts_end, $ts_source, $uuid);
 	return 1;
+}
+
+
+#---------------------------------
+# getCollectionChildren
+#---------------------------------
+
+sub getCollectionChildren
+{
+	my ($parent_uuid) = @_;
+	my $rows;
+	if (defined $parent_uuid)
+	{
+		$rows = $dbh->selectall_arrayref(
+			"SELECT uuid, name, node_type, comment FROM collections WHERE parent_uuid=? ORDER BY rowid",
+			{ Slice => {} }, $parent_uuid);
+	}
+	else
+	{
+		$rows = $dbh->selectall_arrayref(
+			"SELECT uuid, name, node_type, comment FROM collections WHERE parent_uuid IS NULL ORDER BY rowid",
+			{ Slice => {} });
+	}
+	return $rows // [];
+}
+
+
+#---------------------------------
+# getCollectionCounts
+#---------------------------------
+
+sub getCollectionCounts
+{
+	my ($coll_uuid) = @_;
+	my ($n_colls)  = $dbh->selectrow_array(
+		"SELECT COUNT(*) FROM collections WHERE parent_uuid=?", undef, $coll_uuid);
+	my ($n_wps)    = $dbh->selectrow_array(
+		"SELECT COUNT(*) FROM waypoints WHERE collection_uuid=?", undef, $coll_uuid);
+	my ($n_routes) = $dbh->selectrow_array(
+		"SELECT COUNT(*) FROM routes WHERE collection_uuid=?", undef, $coll_uuid);
+	my ($n_tracks) = $dbh->selectrow_array(
+		"SELECT COUNT(*) FROM tracks WHERE collection_uuid=?", undef, $coll_uuid);
+	return {
+		collections => $n_colls + 0,
+		waypoints   => $n_wps    + 0,
+		routes      => $n_routes + 0,
+		tracks      => $n_tracks + 0,
+	};
+}
+
+
+#---------------------------------
+# getCollectionObjects
+#---------------------------------
+# Returns leaf objects in a collection ordered by type then rowid.
+# Each record has: uuid, name, obj_type, plus type-specific fields.
+
+sub getCollectionObjects
+{
+	my ($coll_uuid) = @_;
+	my @objects;
+
+	my $wps = $dbh->selectall_arrayref(
+		"SELECT uuid, name, 'waypoint' AS obj_type, lat, lon
+		 FROM waypoints WHERE collection_uuid=? ORDER BY rowid",
+		{ Slice => {} }, $coll_uuid);
+	push @objects, @$wps;
+
+	my $routes = $dbh->selectall_arrayref(
+		"SELECT uuid, name, 'route' AS obj_type
+		 FROM routes WHERE collection_uuid=? ORDER BY rowid",
+		{ Slice => {} }, $coll_uuid);
+	push @objects, @$routes;
+
+	my $tracks = $dbh->selectall_arrayref(
+		"SELECT uuid, name, 'track' AS obj_type, ts_start, ts_end, ts_source, point_count
+		 FROM tracks WHERE collection_uuid=? ORDER BY rowid",
+		{ Slice => {} }, $coll_uuid);
+	push @objects, @$tracks;
+
+	return \@objects;
+}
+
+
+#---------------------------------
+# updateCollectionNodeType
+#---------------------------------
+
+sub updateCollectionNodeType
+{
+	my ($uuid, $node_type) = @_;
+	$dbh->do(
+		"UPDATE collections SET node_type=? WHERE uuid=?",
+		undef, $node_type, $uuid);
+	return 1;
+}
+
+
+#---------------------------------
+# getAllBranchCollections
+#---------------------------------
+
+sub getAllBranchCollections
+{
+	my $rows = $dbh->selectall_arrayref(
+		"SELECT uuid, name FROM collections WHERE node_type='branch' ORDER BY rowid",
+		{ Slice => {} });
+	return $rows // [];
+}
+
+
+#---------------------------------
+# findWaypointByLatLon
+#---------------------------------
+
+sub findWaypointByLatLon
+{
+	my ($lat, $lon, $source_file) = @_;
+	my ($uuid) = $dbh->selectrow_array(
+		"SELECT uuid FROM waypoints WHERE ABS(lat-?) < 0.000001 AND ABS(lon-?) < 0.000001 AND source_file=? LIMIT 1",
+		undef, $lat, $lon, $source_file);
+	return $uuid;
+}
+
+
+#---------------------------------
+# getCollection
+#---------------------------------
+
+sub getCollection
+{
+	my ($uuid) = @_;
+	return $dbh->selectrow_hashref(
+		"SELECT uuid, name, parent_uuid, node_type, comment FROM collections WHERE uuid=?",
+		undef, $uuid);
+}
+
+
+#---------------------------------
+# getTrack
+#---------------------------------
+
+sub getTrack
+{
+	my ($uuid) = @_;
+	return $dbh->selectrow_hashref(
+		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, source_file, collection_uuid FROM tracks WHERE uuid=?",
+		undef, $uuid);
+}
+
+
+#---------------------------------
+# getWaypoint
+#---------------------------------
+
+sub getWaypoint
+{
+	my ($uuid) = @_;
+	return $dbh->selectrow_hashref(
+		"SELECT uuid, name, comment, lat, lon, sym, depth_cm, created_ts, ts_source, source_file, source, collection_uuid FROM waypoints WHERE uuid=?",
+		undef, $uuid);
+}
+
+
+#---------------------------------
+# getRoute
+#---------------------------------
+
+sub getRoute
+{
+	my ($uuid) = @_;
+	return $dbh->selectrow_hashref(
+		"SELECT uuid, name, comment, color, collection_uuid FROM routes WHERE uuid=?",
+		undef, $uuid);
+}
+
+
+#---------------------------------
+# getRouteWaypointCount
+#---------------------------------
+
+sub getRouteWaypointCount
+{
+	my ($uuid) = @_;
+	my ($count) = $dbh->selectrow_array(
+		"SELECT COUNT(*) FROM route_waypoints WHERE route_uuid=?",
+		undef, $uuid);
+	return $count + 0;
 }
 
 

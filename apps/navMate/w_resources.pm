@@ -18,15 +18,24 @@ BEGIN
 	our @EXPORT = qw(
 		$appName
 		$resources
+		$WIN_COLLECTIONS
 	);
 }
 
 
 our $appName = "navMate";
 
+our $WIN_COLLECTIONS = 10001;
 
-my $pane_data    = {};
-my $command_data = { %{$resources->{command_data}} };
+
+my $pane_data = {
+	$WIN_COLLECTIONS => ['Unused String1', 'content'],
+};
+
+my $command_data = {
+	%{$resources->{command_data}},
+	$WIN_COLLECTIONS => ['Collections', 'Navigation data collections tree'],
+};
 
 my $main_menu = [
 	'file_menu,&File',
@@ -36,7 +45,9 @@ my $main_menu = [
 my $file_menu = [];
 
 my $view_menu = [
-	@{$resources->{view_menu}}
+	$WIN_COLLECTIONS,
+	$ID_SEPARATOR,
+	@{$resources->{view_menu}},
 ];
 
 
