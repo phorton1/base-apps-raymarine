@@ -3,7 +3,9 @@
 **[Raymarine](../../../docs/readme.md)** --
 **[Home](readme.md)** --
 **Architecture** --
-**[Data Model](data_model.md)**
+**[Data Model](data_model.md)** --
+**[UI Model](ui_model.md)** --
+**[Implementation](implementation.md)**
 
 ## Primary Statement
 
@@ -69,9 +71,10 @@ moment — that knowledge enters the world through the chartplotter, not through
 
 This makes the device relationship fundamentally **bidirectional**:
 
-- **Before a passage** — navMate pushes a relevant regional subset to the device:
-  waypoints, routes, and track history appropriate to the planned area. The device
-  is loaded from navMate's encyclopedic store, scoped to what is immediately useful.
+- **Before a passage** — navMate pushes a **working set** to the device: a named,
+  user-curated subset of waypoints, routes, and tracks appropriate to the planned
+  area. The working set is assembled in navMate and scoped from the full encyclopedic
+  store down to what is immediately useful on the chartplotter.
 
 - **During a passage** — the chartplotter is the primary interface. navMate is
   not involved in real-time navigation. The device accumulates whatever the mariner
@@ -120,10 +123,25 @@ The RAYNET protocol implementation (NET/ a_–e_ modules) is the first transport
 It is linked directly into the navMate process — not a daemon, not a socket service.
 
 navMate's core (knowledge base, UI, data model) is transport-agnostic. The transport
-abstraction layer sits between the core and any connected device. RAYNET/E80 is the
-first implementation behind that interface. Future implementations — OpenCPN's plugin
-API, NMEA 2000, other chartplotter protocols — plug in behind the same interface
-without affecting the core.
+abstraction layer sits between the core and any connected device or file format.
+RAYNET/E80 is the first implementation behind that interface. Future implementations
+— OpenCPN's plugin API, NMEA 2000, other chartplotter protocols — plug in behind
+the same interface without affecting the core.
+
+**Transports are session-level, not permanent.** navMate operates fully with no
+transport active — browsing, editing, and organizing the local database requires
+no connection to anything. A transport is activated deliberately by the user for
+a specific purpose: sync with this E80, import from this KML file, export for this
+FSH archive. The 90% case — automatically syncing with a known E80 on network
+connection — is a user preference layered on top of this model, not an architectural
+assumption.
+
+Transport types differ in their session model:
+
+- **Live transports** (RAYNET/E80, future chartplotter protocols) — maintain an
+  active connection; support UUID-set reconciliation and event-driven sync.
+- **File transports** (KML, FSH) — activated per operation (open/export dialog);
+  no persistent connection; no UUID-set reconciliation.
 
 The hard-won RAYNET knowledge (UUID semantics, WPMGR wire protocol, sync patterns,
 E80 behavioral quirks) informs the design of that abstraction rather than defining it.
@@ -164,6 +182,39 @@ navMate is designed to travel a defined arc:
 The Windows installer capability uses the same Perl packaging infrastructure
 established across Patrick's other deployable applications.
 
+## Code Organization
+
+navMate source modules are divided into two naming zones.
+
+**Lower layers** use alphabetic prefixes with underscore-delimited lowercase names
+(`a_defs.pm`, `c_db.pm`, etc.). The prefix encodes layer position — a lower letter
+means a lower layer, and no module may import from a higher-prefixed module. The
+namespace is assigned sparsely (initial assignments: `a_`, `c_`, `f_`, `j_`) to
+leave gaps for future layer insertion without renaming.
+
+**Application layer** modules use camelCase (`nmSession.pm`, `winMain.pm`, etc.).
+These are above `navMate.pm` and carry wx dependencies. No strict ordering within
+this zone.
+
+| File | Zone | Role |
+|------|------|------|
+| `a_defs.pm` | lower | constants, type vocabulary, UUID helpers |
+| `c_db.pm` | lower | SQLite schema, raw CRUD |
+| `f_kml.pm` | lower | KML import/export |
+| `f_wrgt.pm` | lower | WRGT business logic, collection operations |
+| `j_transport.pm` | lower | NET adapter, session-level transport |
+| `navMate.pm` | boundary | wx init, main loop |
+| `nmLeaflet.pm` | app | Leaflet bridge, embedded HTTP server |
+| `nmSession.pm` | app | session state (viewport, tree, working set) |
+| `winMain.pm` | app | main frame |
+| `winTree.pm` | app | collection tree panel |
+
+**`migrate/`** — one-time import scripts (KML pipeline, phorton.com enrichment).
+Version-controlled but not production modules.
+
+**`_site/`** — Leaflet applet HTML/JS, served by navMate's embedded HTTP server.
+Not a Perl layer.
+
 ---
 
-**Next:** [Data Model](data_model.md)
+**Next:** [Data Model](data_model.md) — [UI Model](ui_model.md) — [Implementation](implementation.md)

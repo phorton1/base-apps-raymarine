@@ -3,7 +3,9 @@
 **[Raymarine](../../../docs/readme.md)** --
 **Home** --
 **[Architecture](architecture.md)** --
-**[Data Model](data_model.md)**
+**[Data Model](data_model.md)** --
+**[UI Model](ui_model.md)** --
+**[Implementation](implementation.md)**
 
 **navMate** is a desktop application for managing a mariner's complete navigation
 data — waypoints, groups, routes, and tracks — across a lifetime of voyaging, across
@@ -28,7 +30,17 @@ base, data model, and UI are the product. Everything else is a boundary adapter.
   chartplotters and OpenCPN, distribution path.
 
 - **[Data Model](data_model.md)** —
-  Core data objects (WRGT), SQLite schema, UUID strategy, sync model. *(stub)*
+  SQLite schema: collections hierarchy, WRGT tables, working sets, UUID strategy,
+  sync model, timestamp sources, KML import/export.
+
+- **[UI Model](ui_model.md)** —
+  Three concurrent UI surfaces (console, wx panels, Leaflet canvas), collection
+  tree with checkbox visibility control, active and working set layers, Leaflet
+  selection operations, session state persistence.
+
+- **[Implementation](implementation.md)** —
+  Module naming conventions, code organization, bottom-up implementation sequence
+  by phase.
 
 ## Status
 
