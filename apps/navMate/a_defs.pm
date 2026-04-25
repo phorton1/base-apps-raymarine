@@ -15,7 +15,6 @@ BEGIN
 	use Exporter qw( import );
 	our @EXPORT = qw(
 
-		$WITH_WX
 		$SCHEMA_VERSION
 
 		$WP_TYPE_NAV
@@ -34,8 +33,6 @@ BEGIN
 	);
 }
 
-
-our $WITH_WX = 1;
 
 # Schema version: integer part = breaking change (reimport required),
 # decimal part = non-breaking change (advisory).

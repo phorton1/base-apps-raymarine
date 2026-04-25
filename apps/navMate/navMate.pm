@@ -12,12 +12,28 @@ use Pub::Utils;
 use Pub::WX::Resources;
 use Pub::WX::AppConfig;
 use Pub::WX::Main;
+
+use apps::raymarine::NET::a_defs;
+use apps::raymarine::NET::a_mon;
+use apps::raymarine::NET::a_utils;
+use apps::raymarine::NET::a_parser;
+use apps::raymarine::NET::b_sock;
+use apps::raymarine::NET::b_records;
+use apps::raymarine::NET::c_RAYDP;
+use apps::raymarine::NET::d_WPMGR;
+use apps::raymarine::NET::d_TRACK;
+use apps::raymarine::NET::e_WPMGR;
+use apps::raymarine::NET::e_TRACK;
+use apps::raymarine::NET::e_wp_api;
+
 use a_defs;
 use a_utils;
 use c_db;
 use nmServer;
+use s_serial;
 use w_resources;
 use winMain;
+
 use base 'Wx::App';
 
 $ini_file = "$temp_dir/$appName.ini";
@@ -29,6 +45,14 @@ $ini_file = "$temp_dir/$appName.ini";
 
 display(0,0,"navMate.pm initializing");
 
+sub _handleSerialCommand
+{
+	my ($lpart, $rpart) = @_;
+	dispatchNavMateCommand($lpart, $rpart);
+}
+
+my $serial = s_serial->new(\&_handleSerialCommand);
+
 my $db_rc = c_db::openDB();
 if ($db_rc == -1)
 {
@@ -36,39 +60,31 @@ if ($db_rc == -1)
 }
 nmServer::startNavMateServer();
 
-if ($WITH_WX)
+apps::raymarine::NET::c_RAYDP->new();
+$raydp->start();
+
+$serial->start();
+
+display(0,0,"starting app");
+
+my $frame;
+
+sub OnInit
 {
-	display(0,0,"starting app");
-
-	my $frame;
-
-	sub OnInit
+	$frame = winMain->new();
+	if (!$frame)
 	{
-		$frame = winMain->new();
-		if (!$frame)
-		{
-			error("unable to create frame");
-			return undef;
-		}
-		$frame->Show(1);
-		display(0,0,"$$resources{app_title} started");
-		my $uuid = c_db::newUUID();
-		display(0,0,"test UUID: $uuid");
-		return 1;
+		error("unable to create frame");
+		return undef;
 	}
-
-	my $app = navMate->new();
-	Pub::WX::Main::run($app);
-
-	display(0,0,"ending $appName.pm frame=$frame");
-	$frame->DESTROY() if $frame;
-	$frame = undef;
+	$frame->Show(1);
+	display(0,0,"$$resources{app_title} started");
+	return 1;
 }
-else
-{
-	display(0,0,"starting null console loop");
-	while (1)
-	{
-		sleep(1);
-	}
-}
+
+my $app = navMate->new();
+Pub::WX::Main::run($app);
+
+display(0,0,"ending $appName.pm frame=$frame");
+$frame->DESTROY() if $frame;
+$frame = undef;

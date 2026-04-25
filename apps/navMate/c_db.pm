@@ -18,8 +18,9 @@ BEGIN
 	use Exporter qw( import );
 	our @EXPORT = qw(
 		openDB
-		closeDB
 		resetDB
+		connectDB
+		disconnectDB
 		newUUID
 		insertCollection
 		findCollection
@@ -50,7 +51,6 @@ BEGIN
 }
 
 
-my $db;
 my $db_path = "$data_dir/navMate.db";
 
 my $db_def = {
@@ -145,22 +145,27 @@ my $db_def = {
 #---------------------------------
 # openDB
 #---------------------------------
+# Connect, create/verify schema, disconnect.  Returns 1=ok, 0=error, -1=mismatch.
 
 sub openDB
 {
 	display(0,0,"c_db::openDB($db_path)");
 
-	$db = Pub::Database->connect(_db_params());
-	if (!$db)
+	my $dbh = Pub::Database->connect(_db_params());
+	if (!$dbh)
 	{
 		error("c_db::openDB connect failed");
 		return 0;
 	}
 
-	_createTables() or return 0;
-	_initKeyValues();
+	unless (_createTables($dbh))
+	{
+		$dbh->disconnect();
+		return 0;
+	}
+	_initKeyValues($dbh);
 
-	my $rec = $db->get_record("SELECT value FROM key_values WHERE key='schema_version'");
+	my $rec    = $dbh->get_record("SELECT value FROM key_values WHERE key='schema_version'");
 	my $stored = $rec ? $rec->{value} : '0.0';
 
 	my ($stored_major)   = split(/\./, $stored);
@@ -169,8 +174,7 @@ sub openDB
 	if ($stored_major != $expected_major)
 	{
 		warning(0,0,"schema_version mismatch: DB has $stored, code expects $SCHEMA_VERSION — reimport required");
-		$db->disconnect();
-		$db = undef;
+		$dbh->disconnect();
 		return -1;
 	}
 
@@ -180,32 +184,37 @@ sub openDB
 	}
 
 	display(0,0,"c_db::openDB ok (schema $stored)");
+	$dbh->disconnect();
 	return 1;
 }
 
 
 #---------------------------------
-# closeDB
+# connectDB / disconnectDB
 #---------------------------------
 
-sub closeDB
+sub connectDB
 {
-	return unless $db;
-	$db->disconnect();
-	$db = undef;
-	display(0,0,"c_db::closeDB ok");
+	my $dbh = Pub::Database->connect(_db_params());
+	error("c_db::connectDB failed") unless $dbh;
+	return $dbh;
+}
+
+
+sub disconnectDB
+{
+	my ($dbh) = @_;
+	$dbh->disconnect() if $dbh;
 }
 
 
 #---------------------------------
 # resetDB
 #---------------------------------
-# Close DB, delete the file, and reopen (fresh schema + reimport).
-# Returns same values as openDB: 1=ok, 0=connect failed, -1=schema mismatch.
+# Delete the database file and re-run openDB (fresh schema).
 
 sub resetDB
 {
-	closeDB();
 	Pub::Database::deleteDatabase(_db_params());
 	return openDB();
 }
@@ -231,13 +240,14 @@ sub _db_params
 
 sub _createTables
 {
+	my ($dbh) = @_;
 	for my $table (qw(
 		key_values collections waypoints routes route_waypoints
 		tracks track_points working_sets working_set_members))
 	{
-		next if $db->tableExists($table);
-		$db->createTable($table)
-			or return error("c_db::_createTables failed for $table: $db->{errstr}");
+		next if $dbh->tableExists($table);
+		$dbh->createTable($table)
+			or return error("c_db::_createTables failed for $table: $dbh->{errstr}");
 	}
 	return 1;
 }
@@ -249,31 +259,33 @@ sub _createTables
 
 sub _initKeyValues
 {
-	$db->do("INSERT OR IGNORE INTO key_values (key, value) VALUES ('schema_version', ?)",
+	my ($dbh) = @_;
+	$dbh->do("INSERT OR IGNORE INTO key_values (key, value) VALUES ('schema_version', ?)",
 		[$SCHEMA_VERSION]);
-	$db->do("INSERT OR IGNORE INTO key_values (key, value) VALUES ('uuid_counter', '0')");
+	$dbh->do("INSERT OR IGNORE INTO key_values (key, value) VALUES ('uuid_counter', '0')");
 }
 
 
 #---------------------------------
 # newUUID
 #---------------------------------
+# Atomically increment uuid_counter and return a new navMate UUID.
 
 sub newUUID
-	# Atomically increment uuid_counter and return a new navMate UUID.
 {
+	my ($dbh) = @_;
 	my $counter;
 	eval
 	{
-		$db->{dbh}->begin_work();
-		my $rec = $db->get_record("SELECT value FROM key_values WHERE key='uuid_counter'");
+		$dbh->{dbh}->begin_work();
+		my $rec = $dbh->get_record("SELECT value FROM key_values WHERE key='uuid_counter'");
 		$counter = ($rec ? $rec->{value} : 0) + 1;
-		$db->do("UPDATE key_values SET value=? WHERE key='uuid_counter'", [$counter]);
-		$db->commit();
+		$dbh->do("UPDATE key_values SET value=? WHERE key='uuid_counter'", [$counter]);
+		$dbh->commit();
 	};
 	if ($@)
 	{
-		eval { $db->rollback() };
+		eval { $dbh->rollback() };
 		error("c_db::newUUID failed: $@");
 		return undef;
 	}
@@ -287,9 +299,9 @@ sub newUUID
 
 sub insertCollection
 {
-	my ($name, $parent_uuid, $comment) = @_;
-	my $uuid = newUUID();
-	$db->do(
+	my ($dbh, $name, $parent_uuid, $comment) = @_;
+	my $uuid = newUUID($dbh);
+	$dbh->do(
 		"INSERT INTO collections (uuid, name, parent_uuid, comment) VALUES (?,?,?,?)",
 		[$uuid, $name, $parent_uuid, $comment // '']);
 	return $uuid;
@@ -302,17 +314,17 @@ sub insertCollection
 
 sub findCollection
 {
-	my ($name, $parent_uuid) = @_;
+	my ($dbh, $name, $parent_uuid) = @_;
 	my $rec;
 	if (defined $parent_uuid)
 	{
-		$rec = $db->get_record(
+		$rec = $dbh->get_record(
 			"SELECT uuid FROM collections WHERE name=? AND parent_uuid=?",
 			[$name, $parent_uuid]);
 	}
 	else
 	{
-		$rec = $db->get_record(
+		$rec = $dbh->get_record(
 			"SELECT uuid FROM collections WHERE name=? AND parent_uuid IS NULL",
 			[$name]);
 	}
@@ -326,9 +338,9 @@ sub findCollection
 
 sub insertWaypoint
 {
-	my (%a) = @_;
-	my $uuid = newUUID();
-	$db->do(qq{
+	my ($dbh, %a) = @_;
+	my $uuid = newUUID($dbh);
+	$dbh->do(qq{
 		INSERT INTO waypoints
 			(uuid, name, comment, lat, lon, sym, wp_type, color, depth_cm,
 			 created_ts, ts_source, source_file, source, collection_uuid)
@@ -357,9 +369,9 @@ sub insertWaypoint
 
 sub insertRoute
 {
-	my ($name, $color, $comment, $collection_uuid) = @_;
-	my $uuid = newUUID();
-	$db->do(
+	my ($dbh, $name, $color, $comment, $collection_uuid) = @_;
+	my $uuid = newUUID($dbh);
+	$dbh->do(
 		"INSERT INTO routes (uuid, name, color, comment, collection_uuid) VALUES (?,?,?,?,?)",
 		[$uuid, $name, $color // 0, $comment // '', $collection_uuid]);
 	return $uuid;
@@ -372,8 +384,8 @@ sub insertRoute
 
 sub appendRouteWaypoint
 {
-	my ($route_uuid, $wp_uuid, $position) = @_;
-	$db->do(
+	my ($dbh, $route_uuid, $wp_uuid, $position) = @_;
+	$dbh->do(
 		"INSERT INTO route_waypoints (route_uuid, wp_uuid, position) VALUES (?,?,?)",
 		[$route_uuid, $wp_uuid, $position]);
 	return 1;
@@ -386,9 +398,9 @@ sub appendRouteWaypoint
 
 sub insertTrack
 {
-	my (%a) = @_;
-	my $uuid = newUUID();
-	$db->do(qq{
+	my ($dbh, %a) = @_;
+	my $uuid = newUUID($dbh);
+	$dbh->do(qq{
 		INSERT INTO tracks
 			(uuid, name, color, ts_start, ts_end, ts_source,
 			 point_count, source_file, collection_uuid)
@@ -412,15 +424,15 @@ sub insertTrack
 
 sub insertTrackPoints
 {
-	my ($track_uuid, $points) = @_;
+	my ($dbh, $track_uuid, $points) = @_;
 	return 0 unless @$points;
-	my $sth = $db->{dbh}->prepare(qq{
+	my $sth = $dbh->{dbh}->prepare(qq{
 		INSERT INTO track_points
 			(track_uuid, position, lat, lon, depth_cm, temp_k, ts)
 		VALUES (?,?,?,?,?,?,?)});
 	eval
 	{
-		$db->{dbh}->begin_work();
+		$dbh->{dbh}->begin_work();
 		for my $i (0 .. $#$points)
 		{
 			my $p = $points->[$i];
@@ -429,11 +441,11 @@ sub insertTrackPoints
 				$p->{lat}, $p->{lon},
 				$p->{depth_cm}, $p->{temp_k}, $p->{ts});
 		}
-		$db->commit();
+		$dbh->commit();
 	};
 	if ($@)
 	{
-		eval { $db->rollback() };
+		eval { $dbh->rollback() };
 		error("c_db::insertTrackPoints failed: $@");
 		return 0;
 	}
@@ -444,21 +456,21 @@ sub insertTrackPoints
 #---------------------------------
 # findTrackByNameAndSource
 #---------------------------------
+# ts_source is optional; omit to match any ts_source.
 
 sub findTrackByNameAndSource
-	# ts_source is optional; omit to match any ts_source.
 {
-	my ($name, $source_file, $ts_source) = @_;
+	my ($dbh, $name, $source_file, $ts_source) = @_;
 	my $rec;
 	if (defined $ts_source)
 	{
-		$rec = $db->get_record(
+		$rec = $dbh->get_record(
 			"SELECT uuid FROM tracks WHERE name=? AND source_file=? AND ts_source=?",
 			[$name, $source_file, $ts_source]);
 	}
 	else
 	{
-		$rec = $db->get_record(
+		$rec = $dbh->get_record(
 			"SELECT uuid FROM tracks WHERE name=? AND source_file=?",
 			[$name, $source_file]);
 	}
@@ -472,8 +484,8 @@ sub findTrackByNameAndSource
 
 sub getTrackTsSource
 {
-	my ($uuid) = @_;
-	my $rec = $db->get_record(
+	my ($dbh, $uuid) = @_;
+	my $rec = $dbh->get_record(
 		"SELECT ts_source FROM tracks WHERE uuid=?", [$uuid]);
 	return $rec ? $rec->{ts_source} : undef;
 }
@@ -485,8 +497,8 @@ sub getTrackTsSource
 
 sub updateTrackTimestamps
 {
-	my ($uuid, $ts_start, $ts_end, $ts_source) = @_;
-	$db->do(
+	my ($dbh, $uuid, $ts_start, $ts_end, $ts_source) = @_;
+	$dbh->do(
 		"UPDATE tracks SET ts_start=?, ts_end=?, ts_source=? WHERE uuid=?",
 		[$ts_start, $ts_end, $ts_source, $uuid]);
 	return 1;
@@ -499,14 +511,14 @@ sub updateTrackTimestamps
 
 sub getCollectionChildren
 {
-	my ($parent_uuid) = @_;
+	my ($dbh, $parent_uuid) = @_;
 	if (defined $parent_uuid)
 	{
-		return $db->get_records(
+		return $dbh->get_records(
 			"SELECT uuid, name, comment FROM collections WHERE parent_uuid=? ORDER BY rowid",
 			[$parent_uuid]);
 	}
-	return $db->get_records(
+	return $dbh->get_records(
 		"SELECT uuid, name, comment FROM collections WHERE parent_uuid IS NULL ORDER BY rowid");
 }
 
@@ -517,11 +529,11 @@ sub getCollectionChildren
 
 sub getCollectionCounts
 {
-	my ($coll_uuid) = @_;
-	my $r_c = $db->get_record("SELECT COUNT(*) AS n FROM collections WHERE parent_uuid=?",  [$coll_uuid]);
-	my $r_w = $db->get_record("SELECT COUNT(*) AS n FROM waypoints   WHERE collection_uuid=?", [$coll_uuid]);
-	my $r_r = $db->get_record("SELECT COUNT(*) AS n FROM routes      WHERE collection_uuid=?", [$coll_uuid]);
-	my $r_t = $db->get_record("SELECT COUNT(*) AS n FROM tracks      WHERE collection_uuid=?", [$coll_uuid]);
+	my ($dbh, $coll_uuid) = @_;
+	my $r_c = $dbh->get_record("SELECT COUNT(*) AS n FROM collections WHERE parent_uuid=?",    [$coll_uuid]);
+	my $r_w = $dbh->get_record("SELECT COUNT(*) AS n FROM waypoints   WHERE collection_uuid=?", [$coll_uuid]);
+	my $r_r = $dbh->get_record("SELECT COUNT(*) AS n FROM routes      WHERE collection_uuid=?", [$coll_uuid]);
+	my $r_t = $dbh->get_record("SELECT COUNT(*) AS n FROM tracks      WHERE collection_uuid=?", [$coll_uuid]);
 	return {
 		collections => ($r_c ? $r_c->{n} : 0) + 0,
 		waypoints   => ($r_w ? $r_w->{n} : 0) + 0,
@@ -535,23 +547,22 @@ sub getCollectionCounts
 # getCollectionObjects
 #---------------------------------
 # Returns leaf objects in a collection ordered by type then rowid.
-# Each record has: uuid, name, obj_type, plus type-specific fields.
 
 sub getCollectionObjects
 {
-	my ($coll_uuid) = @_;
+	my ($dbh, $coll_uuid) = @_;
 	my @objects;
-	my $wps = $db->get_records(
+	my $wps = $dbh->get_records(
 		"SELECT uuid, name, 'waypoint' AS obj_type, lat, lon, sym, wp_type, color
 		 FROM waypoints WHERE collection_uuid=? ORDER BY rowid",
 		[$coll_uuid]);
 	push @objects, @$wps;
-	my $routes = $db->get_records(
+	my $routes = $dbh->get_records(
 		"SELECT uuid, name, color, 'route' AS obj_type
 		 FROM routes WHERE collection_uuid=? ORDER BY rowid",
 		[$coll_uuid]);
 	push @objects, @$routes;
-	my $tracks = $db->get_records(
+	my $tracks = $dbh->get_records(
 		"SELECT uuid, name, color, 'track' AS obj_type, ts_start, ts_end, ts_source, point_count
 		 FROM tracks WHERE collection_uuid=? ORDER BY rowid",
 		[$coll_uuid]);
@@ -566,8 +577,8 @@ sub getCollectionObjects
 
 sub findWaypointByLatLon
 {
-	my ($lat, $lon, $source_file) = @_;
-	my $rec = $db->get_record(
+	my ($dbh, $lat, $lon, $source_file) = @_;
+	my $rec = $dbh->get_record(
 		"SELECT uuid FROM waypoints WHERE ABS(lat-?) < 0.000001 AND ABS(lon-?) < 0.000001 AND source_file=? LIMIT 1",
 		[$lat, $lon, $source_file]);
 	return $rec ? $rec->{uuid} : undef;
@@ -580,8 +591,8 @@ sub findWaypointByLatLon
 
 sub getCollection
 {
-	my ($uuid) = @_;
-	return $db->get_record(
+	my ($dbh, $uuid) = @_;
+	return $dbh->get_record(
 		"SELECT uuid, name, parent_uuid, comment FROM collections WHERE uuid=?",
 		[$uuid]);
 }
@@ -593,8 +604,8 @@ sub getCollection
 
 sub getTrack
 {
-	my ($uuid) = @_;
-	return $db->get_record(
+	my ($dbh, $uuid) = @_;
+	return $dbh->get_record(
 		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, source_file, collection_uuid FROM tracks WHERE uuid=?",
 		[$uuid]);
 }
@@ -606,8 +617,8 @@ sub getTrack
 
 sub getWaypoint
 {
-	my ($uuid) = @_;
-	return $db->get_record(
+	my ($dbh, $uuid) = @_;
+	return $dbh->get_record(
 		"SELECT uuid, name, comment, lat, lon, sym, wp_type, color, depth_cm, created_ts, ts_source, source_file, source, collection_uuid FROM waypoints WHERE uuid=?",
 		[$uuid]);
 }
@@ -619,8 +630,8 @@ sub getWaypoint
 
 sub getRoute
 {
-	my ($uuid) = @_;
-	return $db->get_record(
+	my ($dbh, $uuid) = @_;
+	return $dbh->get_record(
 		"SELECT uuid, name, comment, color, collection_uuid FROM routes WHERE uuid=?",
 		[$uuid]);
 }
@@ -632,8 +643,8 @@ sub getRoute
 
 sub getRouteWaypointCount
 {
-	my ($uuid) = @_;
-	my $rec = $db->get_record(
+	my ($dbh, $uuid) = @_;
+	my $rec = $dbh->get_record(
 		"SELECT COUNT(*) AS n FROM route_waypoints WHERE route_uuid=?",
 		[$uuid]);
 	return $rec ? $rec->{n} + 0 : 0;
@@ -648,7 +659,7 @@ sub getRouteWaypointCount
 
 sub getCollectionWRGTs
 {
-	my ($uuid) = @_;
+	my ($dbh, $uuid) = @_;
 	my $cte = qq{
 		WITH RECURSIVE tree(uuid) AS (
 			SELECT uuid FROM collections WHERE uuid=?
@@ -656,13 +667,13 @@ sub getCollectionWRGTs
 			SELECT c.uuid FROM collections c JOIN tree ON c.parent_uuid=tree.uuid
 		)
 	};
-	my $wps = $db->get_records(
+	my $wps = $dbh->get_records(
 		$cte . "SELECT uuid, name, lat, lon, sym, wp_type, color, depth_cm FROM waypoints WHERE collection_uuid IN (SELECT uuid FROM tree)",
 		[$uuid]);
-	my $routes = $db->get_records(
+	my $routes = $dbh->get_records(
 		$cte . "SELECT uuid, name, color FROM routes WHERE collection_uuid IN (SELECT uuid FROM tree)",
 		[$uuid]);
-	my $tracks = $db->get_records(
+	my $tracks = $dbh->get_records(
 		$cte . "SELECT uuid, name, color, point_count FROM tracks WHERE collection_uuid IN (SELECT uuid FROM tree)",
 		[$uuid]);
 	return {
@@ -679,8 +690,8 @@ sub getCollectionWRGTs
 
 sub getTrackPoints
 {
-	my ($uuid) = @_;
-	return $db->get_records(
+	my ($dbh, $uuid) = @_;
+	return $dbh->get_records(
 		"SELECT lat, lon FROM track_points WHERE track_uuid=? ORDER BY position",
 		[$uuid]);
 }
@@ -693,8 +704,8 @@ sub getTrackPoints
 
 sub getRoutePoints
 {
-	my ($uuid) = @_;
-	return $db->get_records(
+	my ($dbh, $uuid) = @_;
+	return $dbh->get_records(
 		"SELECT w.lat, w.lon FROM route_waypoints rw JOIN waypoints w ON rw.wp_uuid=w.uuid WHERE rw.route_uuid=? ORDER BY rw.position",
 		[$uuid]);
 }
@@ -707,8 +718,8 @@ sub getRoutePoints
 
 sub getRouteWaypoints
 {
-	my ($uuid) = @_;
-	return $db->get_records(
+	my ($dbh, $uuid) = @_;
+	return $dbh->get_records(
 		"SELECT w.uuid, w.name, w.lat, w.lon
 		 FROM route_waypoints rw JOIN waypoints w ON rw.wp_uuid=w.uuid
 		 WHERE rw.route_uuid=? ORDER BY rw.position",
@@ -725,7 +736,7 @@ sub getRouteWaypoints
 
 sub classifyOrphanWaypoints
 {
-	my ($top_uuid, $tol) = @_;
+	my ($dbh, $top_uuid, $tol) = @_;
 	$tol //= 0.001;
 
 	my $cte = "WITH RECURSIVE tree(uuid) AS (
@@ -734,12 +745,12 @@ sub classifyOrphanWaypoints
 		SELECT c.uuid FROM collections c JOIN tree ON c.parent_uuid=tree.uuid
 	) ";
 
-	my $tc = $db->get_record(
+	my $tc = $dbh->get_record(
 		$cte . "SELECT COUNT(*) AS n FROM tracks WHERE collection_uuid IN (SELECT uuid FROM tree)",
 		[$top_uuid]);
 	return 0 unless $tc && $tc->{n} > 0;
 
-	my $eps = $db->get_records(
+	my $eps = $dbh->get_records(
 		$cte . "SELECT tp.lat, tp.lon
 		        FROM track_points tp
 		        JOIN tracks t ON tp.track_uuid = t.uuid
@@ -749,7 +760,7 @@ sub classifyOrphanWaypoints
 		[$top_uuid]);
 	return 0 unless @$eps;
 
-	my $wps = $db->get_records(
+	my $wps = $dbh->get_records(
 		$cte . "SELECT uuid, lat, lon FROM waypoints
 		        WHERE collection_uuid IN (SELECT uuid FROM tree)
 		        AND wp_type = 'nav'",
@@ -771,7 +782,7 @@ sub classifyOrphanWaypoints
 		}
 		unless ($matched)
 		{
-			$db->do("UPDATE waypoints SET wp_type='label' WHERE uuid=?", [$wp->{uuid}]);
+			$dbh->do("UPDATE waypoints SET wp_type='label' WHERE uuid=?", [$wp->{uuid}]);
 			$relabeled++;
 		}
 	}
@@ -786,8 +797,8 @@ sub classifyOrphanWaypoints
 
 sub rawQuery
 {
-	my ($sql) = @_;
-	my $rows = eval { $db->get_records($sql) };
+	my ($dbh, $sql) = @_;
+	my $rows = eval { $dbh->get_records($sql) };
 	return (undef, $@) if $@;
 	return ($rows // []);
 }

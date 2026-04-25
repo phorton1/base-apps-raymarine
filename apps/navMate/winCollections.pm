@@ -21,12 +21,16 @@ use Wx qw(:everything);
 use Wx::Event qw(
 	EVT_TREE_SEL_CHANGED
 	EVT_TREE_ITEM_EXPANDING
-	EVT_LEFT_DCLICK);
+	EVT_TREE_ITEM_RIGHT_CLICK
+	EVT_LEFT_DCLICK
+	EVT_MENU);
 use POSIX qw(strftime);
 use Pub::Utils qw(display warning error);
 use Pub::WX::Window;
+use Pub::WX::Menu;
 use c_db;
 use nmServer;
+use nmUpload;
 use w_resources;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
@@ -40,7 +44,7 @@ sub new
 {
 	my ($class, $frame, $book, $id, $data) = @_;
 	my $this = $class->SUPER::new($book, $id);
-	$this->MyWindow($frame, $book, $id, 'Collections', $data);
+	$this->MyWindow($frame, $book, $id, 'Browser', $data);
 
 	$this->{tree} = Wx::TreeCtrl->new($this, -1, wxDefaultPosition, wxDefaultSize,
 		wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT);
@@ -57,9 +61,12 @@ sub new
 
 	_loadTopLevel($this);
 
-	EVT_TREE_SEL_CHANGED($this,   $this->{tree}, \&onTreeSelect);
-	EVT_TREE_ITEM_EXPANDING($this, $this->{tree}, \&onTreeExpanding);
+	EVT_TREE_SEL_CHANGED($this,        $this->{tree}, \&onTreeSelect);
+	EVT_TREE_ITEM_EXPANDING($this,     $this->{tree}, \&onTreeExpanding);
+	EVT_TREE_ITEM_RIGHT_CLICK($this,   $this->{tree}, \&onTreeRightClick);
 	EVT_LEFT_DCLICK($this->{tree}, sub { _onTreeDblClick($this, @_) });
+
+	EVT_MENU($this, $CMD_UPLOAD_E80, \&_onUploadE80);
 
 	return $this;
 }
@@ -76,11 +83,21 @@ sub _loadTopLevel
 	$tree->DeleteAllItems();
 	my $root = $tree->AddRoot('root');
 
-	my $top_colls = getCollectionChildren(undef);
+	my $dbh       = connectDB();
+	my $top_colls = getCollectionChildren($dbh, undef);
 	for my $coll (@$top_colls)
 	{
-		_addCollectionItem($this, $root, $coll);
+		_addCollectionItem($dbh, $this, $root, $coll);
 	}
+	disconnectDB($dbh);
+}
+
+
+sub refresh
+{
+	my ($this) = @_;
+	$this->{detail}->SetValue('');
+	_loadTopLevel($this);
 }
 
 
@@ -106,9 +123,9 @@ sub _collectionLabel
 
 sub _addCollectionItem
 {
-	my ($this, $parent, $coll) = @_;
+	my ($dbh, $this, $parent, $coll) = @_;
 	my $tree   = $this->{tree};
-	my $counts = getCollectionCounts($coll->{uuid});
+	my $counts = getCollectionCounts($dbh, $coll->{uuid});
 	my $label  = _collectionLabel($coll, $counts);
 
 	my $item = $tree->AppendItem($parent, $label, -1, -1,
@@ -124,11 +141,11 @@ sub _addCollectionItem
 
 sub _addObjectItem
 {
-	my ($this, $parent, $obj) = @_;
+	my ($dbh, $this, $parent, $obj) = @_;
 	my $label;
 	if ($obj->{obj_type} eq 'route')
 	{
-		my $n = getRouteWaypointCount($obj->{uuid});
+		my $n = getRouteWaypointCount($dbh, $obj->{uuid});
 		$label = "$obj->{name} ($n pts)";
 	}
 	elsif ($obj->{obj_type} eq 'track')
@@ -166,17 +183,19 @@ sub onTreeExpanding
 	my $node = $item_data->GetData();
 	return unless ref $node eq 'HASH' && $node->{type} eq 'collection';
 
-	_populateNode($this, $item, $node->{data});
+	my $dbh = connectDB();
+	_populateNode($dbh, $this, $item, $node->{data});
+	disconnectDB($dbh);
 }
 
 
 sub _populateNode
 {
-	my ($this, $parent_item, $coll) = @_;
+	my ($dbh, $this, $parent_item, $coll) = @_;
 	my $coll_uuid = $coll->{uuid};
 	my $node_type = $coll->{node_type} // 'branch';
 
-	my $children = getCollectionChildren($coll_uuid);
+	my $children = getCollectionChildren($dbh, $coll_uuid);
 
 	if ($node_type eq 'groups' && @$children)
 	{
@@ -187,13 +206,13 @@ sub _populateNode
 
 	for my $child (@$children)
 	{
-		_addCollectionItem($this, $parent_item, $child);
+		_addCollectionItem($dbh, $this, $parent_item, $child);
 	}
 
-	my $objects = getCollectionObjects($coll_uuid);
+	my $objects = getCollectionObjects($dbh, $coll_uuid);
 	for my $obj (@$objects)
 	{
-		_addObjectItem($this, $parent_item, $obj);
+		_addObjectItem($dbh, $this, $parent_item, $obj);
 	}
 }
 
@@ -212,14 +231,16 @@ sub onTreeSelect
 	my $node = $item_data->GetData();
 	return unless ref $node eq 'HASH';
 
+	my $dbh = connectDB();
 	if ($node->{type} eq 'collection')
 	{
-		_showCollection($this, $node->{data});
+		_showCollection($dbh, $this, $node->{data});
 	}
 	elsif ($node->{type} eq 'object')
 	{
-		_showObject($this, $node->{data});
+		_showObject($dbh, $this, $node->{data});
 	}
+	disconnectDB($dbh);
 }
 
 
@@ -232,9 +253,9 @@ sub _fmt
 
 sub _showCollection
 {
-	my ($this, $coll_stub) = @_;
-	my $coll   = getCollection($coll_stub->{uuid});
-	my $counts = getCollectionCounts($coll->{uuid});
+	my ($dbh, $this, $coll_stub) = @_;
+	my $coll   = getCollection($dbh, $coll_stub->{uuid});
+	my $counts = getCollectionCounts($dbh, $coll->{uuid});
 	my $text   = '';
 	$text .= _fmt('uuid',        $coll->{uuid});
 	$text .= _fmt('name',        $coll->{name});
@@ -251,12 +272,12 @@ sub _showCollection
 
 sub _showObject
 {
-	my ($this, $obj_stub) = @_;
+	my ($dbh, $this, $obj_stub) = @_;
 	my $text = '';
 
 	if ($obj_stub->{obj_type} eq 'track')
 	{
-		my $t = getTrack($obj_stub->{uuid});
+		my $t = getTrack($dbh, $obj_stub->{uuid});
 		my $ts_start = $t->{ts_start}
 			? strftime("%Y-%m-%d %H:%M UTC", gmtime($t->{ts_start}))
 			: '(none)';
@@ -275,7 +296,7 @@ sub _showObject
 	}
 	elsif ($obj_stub->{obj_type} eq 'waypoint')
 	{
-		my $w = getWaypoint($obj_stub->{uuid});
+		my $w = getWaypoint($dbh, $obj_stub->{uuid});
 		my $ts = $w->{created_ts}
 			? strftime("%Y-%m-%d %H:%M UTC", gmtime($w->{created_ts}))
 			: '(none)';
@@ -296,8 +317,8 @@ sub _showObject
 	}
 	elsif ($obj_stub->{obj_type} eq 'route')
 	{
-		my $r   = getRoute($obj_stub->{uuid});
-		my $wps = getRouteWaypoints($r->{uuid});
+		my $r   = getRoute($dbh, $obj_stub->{uuid});
+		my $wps = getRouteWaypoints($dbh, $r->{uuid});
 		$text .= _fmt('uuid',            $r->{uuid});
 		$text .= _fmt('name',            $r->{name});
 		$text .= _fmt('comment',         $r->{comment});
@@ -339,20 +360,22 @@ sub _onTreeDblClick
 	my $node = $item_data->GetData();
 	return unless ref $node eq 'HASH';
 
+	my $dbh = connectDB();
 	if ($node->{type} eq 'collection')
 	{
-		_renderCollection($this, $node->{data}{uuid});
+		_renderCollection($dbh, $this, $node->{data}{uuid});
 	}
 	elsif ($node->{type} eq 'object')
 	{
-		_renderObject($this, $node->{data});
+		_renderObject($dbh, $this, $node->{data});
 	}
+	disconnectDB($dbh);
 }
 
 
 sub _renderCollection
 {
-	my ($this, $uuid) = @_;
+	my ($dbh, $this, $uuid) = @_;
 
 	my $cv = getClearVersion();
 	if ($cv != $last_clear_version)
@@ -361,7 +384,7 @@ sub _renderCollection
 		$last_clear_version = $cv;
 	}
 
-	my $wrgt = getCollectionWRGTs($uuid);
+	my $wrgt = getCollectionWRGTs($dbh, $uuid);
 	my @features;
 
 	for my $wp (@{$wrgt->{waypoints}})
@@ -389,7 +412,7 @@ sub _renderCollection
 	for my $t (@{$wrgt->{tracks}})
 	{
 		next if $rendered_uuids{$t->{uuid}};
-		my $pts = getTrackPoints($t->{uuid});
+		my $pts = getTrackPoints($dbh, $t->{uuid});
 		next unless @$pts;
 		$rendered_uuids{$t->{uuid}} = 1;
 		my @coords = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
@@ -411,7 +434,7 @@ sub _renderCollection
 	for my $r (@{$wrgt->{routes}})
 	{
 		next if $rendered_uuids{$r->{uuid}};
-		my $pts = getRoutePoints($r->{uuid});
+		my $pts = getRoutePoints($dbh, $r->{uuid});
 		next unless @$pts;
 		$rendered_uuids{$r->{uuid}} = 1;
 		my @coords = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
@@ -438,7 +461,7 @@ sub _renderCollection
 
 sub _renderObject
 {
-	my ($this, $obj) = @_;
+	my ($dbh, $this, $obj) = @_;
 
 	my $cv = getClearVersion();
 	if ($cv != $last_clear_version)
@@ -473,7 +496,7 @@ sub _renderObject
 	}
 	elsif ($obj->{obj_type} eq 'track')
 	{
-		my $pts = getTrackPoints($obj->{uuid});
+		my $pts = getTrackPoints($dbh, $obj->{uuid});
 		if (@$pts)
 		{
 			$rendered_uuids{$obj->{uuid}} = 1;
@@ -495,7 +518,7 @@ sub _renderObject
 	}
 	elsif ($obj->{obj_type} eq 'route')
 	{
-		my $pts = getRoutePoints($obj->{uuid});
+		my $pts = getRoutePoints($dbh, $obj->{uuid});
 		if (@$pts)
 		{
 			$rendered_uuids{$obj->{uuid}} = 1;
@@ -519,6 +542,36 @@ sub _renderObject
 	addRenderFeatures(\@features) if @features;
 
 	openMapBrowser() unless isBrowserConnected();
+}
+
+
+#---------------------------------
+# right-click context menu
+#---------------------------------
+
+sub onTreeRightClick
+{
+	my ($this, $event) = @_;
+	my $item = $event->GetItem();
+	return unless $item->IsOk();
+	my $item_data = $this->{tree}->GetItemData($item);
+	return unless $item_data;
+	my $node = $item_data->GetData();
+	return unless ref $node eq 'HASH' && $node->{type} eq 'collection';
+	return unless isWPMGRConnected();
+
+	$this->{_upload_coll} = $node->{data};
+	my $menu = Pub::WX::Menu::createMenu('collection_context_menu');
+	$this->PopupMenu($menu, [-1,-1]);
+}
+
+
+sub _onUploadE80
+{
+	my ($this) = @_;
+	my $coll = $this->{_upload_coll};
+	return unless $coll;
+	uploadCollectionToE80($coll->{uuid}, $coll->{name});
 }
 
 

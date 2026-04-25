@@ -61,269 +61,25 @@ $ini_file = "$temp_dir/$appName.ini";
 
 my $dbg_shark = 0;
 
+my $WITH_SERIAL      = 1;
+my $WITH_RAYDP       = 1;
+my $WITH_HTTP_SERVER = 1;
+my $WITH_SNIFFER     = 1;
+my $WITH_TCP_SCANNER = 0;
+my $WITH_UDP_SCANNER = 0;
+my $WITH_WX          = 1;
+
 
 #-----------------------------------------
-# handleSerialCommand()
+# handleSerialCommand
 #-----------------------------------------
 
 sub handleSerialCommand
 {
-    my ($lpart,$rpart) = @_;
-    display(0,0,"handleSerialCommand left($lpart) right($rpart)");
-
-	# WAKEUP
-
-	if ($lpart eq 'wakeup')
-	{
-		apps::raymarine::NET::b_sock::wakeup_e80();
-	}
-
-
-	# HTTP server
-
-	elsif ($lpart eq 'db')
-	{
-		showLocalDatabase();
-	}
-	elsif ($lpart eq 'kml')
-	{
-		my $kml = kml_RAYSYS();
-		c_print("\n------------------------------------------------------\n");
-		c_print("RAYSYS kml\n");
-		c_print("\n------------------------------------------------------\n");
-		c_print("$kml\n");
-	}
-
-	# DB
-
-	elsif ($lpart eq 'i')
-	{
-		my $db = $raydp->findImplementedService('DB');
-		display(0,0,"db="._def($db));
-		$db->uiInit() if $db;
-	}
-	elsif ($lpart eq 'fids')
-	{
-		my $db = $raydp->findImplementedService('DB');
-		my $db_parser = $db ? $db->{parser} : 0;
-		display(0,0,"db="._def($db)." db_parser="._def($db_parser));
-		$db_parser->showFids() if $db_parser;
-	}
-
-
-	# DBNAV
-
-	elsif ($lpart eq 'v')
-	{
-		my $dbnav = $raydp->findImplementedService('DBNAV');
-		$dbnav->showValues() if $dbnav;
-	}
-
-
-    # FILESYS
-
-	elsif ($lpart eq 'f')
-	{
-		my ($cmd,$path) = split(/\s+/,$rpart);
-		my $filesys = $raydp->findImplementedService('FILESYS');
-		$filesys->fileCommand($cmd,$path) if $filesys;
-	}
-	
-	# TRACK
-
-	if ($lpart eq 't')
-	{
-		my $track = $raydp->findImplementedService('TRACK');
-		return if !$track;
-		$track->trackUICommand($rpart) if $track;
-	}
-
-	# WPMGR
-
-	elsif ($lpart =~ /^(q|create|delete|wp|route|group|new|mod)$/)
-	{
-		my $wpmgr = $raydp->findImplementedService('WPMGR');
-		return if !$wpmgr;
-
-		if ($lpart eq 'q')
-		{
-			$wpmgr->queryWaypoints();
-		}
-		elsif ($lpart eq 'create' || $lpart eq 'delete')
-		{
-			my ($what,@rest) = split(/\s+/,$rpart);
-			$what = lc($what // '');
-			my $num  = $rest[0];          # create uses numeric index
-			my $name = join(' ',@rest);   # delete uses full name (may contain spaces)
-
-			$wpmgr->createWaypoint($num) 	if $lpart eq 'create' && $what eq 'wp';
-			$wpmgr->createRoute($num,@rest[1..$#rest]) if $lpart eq 'create' && $what eq 'route';
-			$wpmgr->createGroup($num) 	 	if $lpart eq 'create' && $what eq 'group';
-
-			$wpmgr->deleteWaypoint($name) 	if $lpart eq 'delete' && $what eq 'wp';
-			$wpmgr->deleteRoute($name) 	 	if $lpart eq 'delete' && $what eq 'route';
-			$wpmgr->deleteGroup($name) 	 	if $lpart eq 'delete' && $what eq 'group';
-		}
-		elsif ($lpart eq "route")
-		{
-			my ($route_id,$op,$wp_id) = split(/\s+/,$rpart);
-			if ($op && ($op eq '+' || $op eq '-'))
-			{
-				my $route_name = $route_id =~ /^\d+$/ ? "testRoute$route_id"   : $route_id;
-				my $wp_name    = $wp_id    =~ /^\d+$/ ? "testWaypoint$wp_id"   : $wp_id;
-				$wpmgr->routeWaypoint($route_name,$wp_name,$op eq '+');
-			}
-			else
-			{
-				$wpmgr->showItem('route',$rpart);
-			}
-		}
-		elsif ($lpart eq 'wp')
-		{
-			my ($wp_id,$group_id) = split(/\s+/,$rpart);
-			if (defined($group_id))
-			{
-				my $wp_name    = $wp_id   =~ /^\d+$/ ? "testWaypoint$wp_id"  : $wp_id;
-				my $group_name = !$group_id || $group_id eq '0' ? 0 :
-				                 $group_id  =~ /^\d+$/ ? "testGroup$group_id" : $group_id;
-				$wpmgr->setWaypointGroup($wp_name,$group_name);
-			}
-			else
-			{
-				$wpmgr->showItem('waypoint',$rpart);
-			}
-		}
-		elsif ($lpart eq 'group')
-		{
-			$wpmgr->showItem('group',$rpart);
-		}
-		elsif ($lpart eq 'mod')
-		{
-			my ($what,$item_name,@kvs) = split(/\s+/,$rpart);
-			$what = lc($what) if $what;
-			if (!$what || !$item_name || !@kvs)
-			{
-				error("usage: mod <wp> <name> key=val [key=val ...]");
-			}
-			elsif ($what eq 'wp')
-			{
-				my %changes;
-				for my $kv (@kvs)
-				{
-					my ($k,$v) = split(/=/,$kv,2);
-					$changes{$k} = $v;
-				}
-				$changes{sym} += 0 if exists $changes{sym};
-				$wpmgr->modifyWaypoint($item_name,\%changes);
-			}
-			else
-			{
-				error("mod: unknown type '$what'");
-			}
-		}
-
-		elsif ($lpart eq 'new')
-		{
-			my ($what,$name,$uuid,@rest) = split(/\s+/,$rpart);
-			$what = lc($what) if $what;
-			if (!$what || !$name || !$uuid)
-			{
-				error("usage: new <wp|group|route> <name> <uuid> [params]");
-			}
-			elsif ($what eq 'wp')
-			{
-				my ($lat,$lon,$sym) = @rest;
-				return error("new wp requires lat and lon") if !defined($lat) || !defined($lon);
-				$wpmgr->createNamedWaypoint($name,$uuid,$lat+0,$lon+0,$sym);
-			}
-			elsif ($what eq 'group')
-			{
-				$wpmgr->createNamedGroup($name,$uuid);
-			}
-			elsif ($what eq 'route')
-			{
-				my ($color) = @rest;
-				$wpmgr->createNamedRoute($name,$uuid,defined($color) ? $color+0 : undef);
-			}
-			else
-			{
-				error("new: unknown type '$what'");
-			}
-		}
-
-
-	}	# WPMGR
-
-
-	# LOGFILES
-
-	elsif ($lpart eq 's')
-	{
-		display(0,0,"Clear Shark Log File");
-		clearLog("shark.log");
-	}
-	elsif ($lpart eq 'r')
-	{
-		display(0,0,"Clear RNS Log File");
-		clearLog("rns.log");
-	}
-	elsif ($lpart eq 'log')
-	{
-		my $msg =
-			"\n=======================================================================\n".
-			"# $rpart\n".
-			"========================================================================\n\n";
-		writeLog($msg,'rns.log');
-		writeLog($msg,'shark.log');
-	}
-
-	# PORT SCANS and PROBES
-
-	elsif ($lpart eq 'scan')
-	{
-		my ($low,$high) = split(/\s+/,$rpart);
-		return error("No tcpScanner!") if !$tcp_scanner;
-		$rpart ?
-			$tcp_scanner->scanRange($low,$high) :
-			$tcp_scanner->showAliveScans();
-	}
-	elsif ($lpart eq 'udp')
-	{
-		my $aggresive = $rpart =~ s/a// ? 1 : 0;
-		$rpart =~ s/^\s+|\s$//g;
-		my ($low,$high) = split(/\s+/,$rpart);
-		return error("No udpScanner!") if !$udp_scanner;
-		$rpart ?
-			$udp_scanner->scanRange($low,$high,$aggresive) :
-			$udp_scanner->showAliveScans();
-	}
-	elsif ($lpart eq 'p')
-	{
-		my ($name,@params) = split(/\s+/,$rpart);
-		my $params = join(' ',@params) || '';
-		$name = 'TRACK' 	if $name eq 't';
-		$name = 'WPMGR' 	if $name eq 'w';
-		$name = 'FILESYS'	if $name eq 'f';
-		$name = 'DB'		if $name eq 'd';
-
-		my $service_port =
-			$raydp->findImplementedService($name,1) ||
-			$raydp->findServicePortByName($name,1);
-		return error("service $name("._def($service_port).") doesn't exist or is not connected")
-			if !$service_port || !$service_port->{connected};
-		$service_port->doProbe($params);
-	}
-
-	# fshWriter
-
-	elsif ($lpart eq 'write')
-	{
-		apps::raymarine::NET::fshWriter::write();
-	}
-
-}   #   handleCommand()
-
-
+	my ($lpart,$rpart) = @_;
+	display(0,0,"handleSerialCommand left($lpart) right($rpart)");
+	dispatchCommand($lpart,$rpart);
+}
 
 
 #---------------------------------------------------------
@@ -349,7 +105,7 @@ if ($WITH_TCP_SCANNER)
 {
 	tcpScanner->new();
 }
-if ($WITH_TCP_SCANNER)
+if ($WITH_UDP_SCANNER)
 {
 	udpScanner->new();
 }
@@ -360,7 +116,7 @@ startHTTPServer() if $WITH_HTTP_SERVER;
 # the sniffer is started last because it has a blocking
 # read in the thread which, for some reason, will cause
 # threads->create() to block unless the E80 is turned on
-# or there is ethernet traffice.
+# or there is ethernet traffic.
 
 if ($WITH_SNIFFER)
 {
@@ -389,14 +145,13 @@ if ($WITH_WX)
 			error("unable to create frame");
 			return undef;
 		}
-		$frame->Show( 1 );
+		$frame->Show(1);
 		display(0,0,"$$resources{app_title} started");
 		return 1;
 	}
 
 	my $app = shark->new();
 	Pub::WX::Main::run($app);
-
 
 	display(0,0,"ending $appName.pm frame=$frame");
 	$frame->DESTROY() if $frame;

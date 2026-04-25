@@ -55,7 +55,13 @@ my $xs = XML::Simple->new(
 my $import_ts = time();
 
 
-sub run { _run(); display(0,0,"_import_kml done"); }
+sub run
+{
+	my $dbh = connectDB();
+	_run($dbh);
+	disconnectDB($dbh);
+	display(0,0,"_import_kml done");
+}
 
 
 #---------------------------------
@@ -64,6 +70,7 @@ sub run { _run(); display(0,0,"_import_kml done"); }
 
 sub _run
 {
+	my ($dbh) = @_;
 	for my $path (@KML_FILES)
 	{
 		if (!-f $path)
@@ -72,7 +79,7 @@ sub _run
 			next;
 		}
 		display(0,0,"importing $path");
-		eval { _importFile($path) };
+		eval { _importFile($dbh, $path) };
 		error("_import_kml: $path failed: $@") if $@;
 	}
 }
@@ -84,17 +91,18 @@ sub _run
 
 sub _importFile
 {
-	my ($path) = @_;
+	my ($dbh, $path) = @_;
 	my $kml_name    = basename($path);
 	my $source_file = $SOURCE_NAMES{$kml_name} // $kml_name;
 	my $data        = $xs->XMLin($path);
 	my $doc         = $data->{Document}[0]
 		or die "no Document element in $path";
 
-	my $top_coll     = insertCollection($source_file, undef, '');
+	my $top_coll     = insertCollection($dbh, $source_file, undef, '');
 	my $style_colors = _buildStyleMap($doc);
 
 	my $ctx = {
+		dbh          => $dbh,
 		coll_uuid    => $top_coll,
 		node_type    => 'branch',
 		source_file  => $source_file,
@@ -132,7 +140,7 @@ sub _importFile
 		_importPlacemark($pm, $ctx);
 	}
 
-	my $n_relabeled = classifyOrphanWaypoints($top_coll);
+	my $n_relabeled = classifyOrphanWaypoints($dbh, $top_coll);
 	display(0,1,"  reclassified $n_relabeled waypoint(s) nav→label (no track endpoint match)")
 		if $n_relabeled;
 
@@ -174,8 +182,9 @@ sub _walkFolder
 		return;
 	}
 
-	my $coll_uuid = findCollection($name, $ctx->{coll_uuid})
-	             // insertCollection($name, $ctx->{coll_uuid}, '');
+	my $dbh = $ctx->{dbh};
+	my $coll_uuid = findCollection($dbh, $name, $ctx->{coll_uuid})
+	             // insertCollection($dbh, $name, $ctx->{coll_uuid}, '');
 
 	my $child_ctx = { %$ctx, coll_uuid => $coll_uuid, node_type => $node_type };
 
@@ -245,7 +254,7 @@ sub _importWaypoint
 		$depth_cm = int($name * 30.48);
 	}
 
-	return insertWaypoint(
+	return insertWaypoint($ctx->{dbh},
 		name            => $name,
 		wp_type         => $wp_type,
 		depth_cm        => $depth_cm,
@@ -281,8 +290,9 @@ sub _importTrack
 	my @pts = _parseCoords($pm->{LineString}{coordinates});
 	return unless @pts;
 
+	my $dbh   = $ctx->{dbh};
 	my $color = _resolveColor($ctx->{style_colors}, $pm->{styleUrl});
-	my $uuid = insertTrack(
+	my $uuid  = insertTrack($dbh,
 		name            => $pm->{name},
 		color           => $color,
 		ts_start        => $ts_start,
@@ -292,7 +302,7 @@ sub _importTrack
 		collection_uuid => $ctx->{coll_uuid},
 		point_count     => scalar @pts);
 
-	insertTrackPoints($uuid, \@pts);
+	insertTrackPoints($dbh, $uuid, \@pts);
 }
 
 
@@ -316,11 +326,12 @@ sub _importRouteFolder
 
 	if (@point_pms)
 	{
+		my $dbh   = $ctx->{dbh};
 		my $color = @line_pms
 			? _resolveColor($ctx->{style_colors}, $line_pms[0]{styleUrl})
 			: 0;
 		my $sub_coll;   # lazy: created only if a waypoint has no existing home
-		my $route_uuid = insertRoute($route_name, $color, '', $ctx->{coll_uuid});
+		my $route_uuid = insertRoute($dbh, $route_name, $color, '', $ctx->{coll_uuid});
 		my $pos     = 0;
 		my $created = 0;
 		for my $pm (@point_pms)
@@ -329,12 +340,12 @@ sub _importRouteFolder
 			$raw =~ s/^\s+|\s+$//g;
 			my ($lon, $lat) = split /,/, $raw;
 			next unless defined $lat && defined $lon;
-			my $wp_uuid = findWaypointByLatLon($lat + 0, $lon + 0, $ctx->{source_file});
+			my $wp_uuid = findWaypointByLatLon($dbh, $lat + 0, $lon + 0, $ctx->{source_file});
 			unless ($wp_uuid)
 			{
-				$sub_coll //= findCollection($route_name, $ctx->{coll_uuid})
-				          // insertCollection($route_name, $ctx->{coll_uuid}, '');
-				$wp_uuid = insertWaypoint(
+				$sub_coll //= findCollection($dbh, $route_name, $ctx->{coll_uuid})
+				          // insertCollection($dbh, $route_name, $ctx->{coll_uuid}, '');
+				$wp_uuid = insertWaypoint($dbh,
 					name            => $pm->{name},
 					lat             => $lat + 0,
 					lon             => $lon + 0,
@@ -344,7 +355,7 @@ sub _importRouteFolder
 					collection_uuid => $sub_coll);
 				$created++;
 			}
-			appendRouteWaypoint($route_uuid, $wp_uuid, $pos++);
+			appendRouteWaypoint($dbh, $route_uuid, $wp_uuid, $pos++);
 		}
 		display(0,1,"  route '$route_name': $pos pts ($created new)") if $created;
 	}
@@ -370,17 +381,18 @@ sub _importRouteFromLine
 	my ($pm, $ctx) = @_;
 	my @pts = _parseCoords($pm->{LineString}{coordinates});
 	return unless @pts;
+	my $dbh        = $ctx->{dbh};
 	my $route_name = $pm->{name} // '';
 	my $color      = _resolveColor($ctx->{style_colors}, $pm->{styleUrl});
-	my $route_uuid = insertRoute($route_name, $color, '', $ctx->{coll_uuid});
+	my $route_uuid = insertRoute($dbh, $route_name, $color, '', $ctx->{coll_uuid});
 	my $pos   = 0;
 	my $found = 0;
 	for my $pt (@pts)
 	{
-		my $wp_uuid = findWaypointByLatLon($pt->{lat}, $pt->{lon}, $ctx->{source_file});
+		my $wp_uuid = findWaypointByLatLon($dbh, $pt->{lat}, $pt->{lon}, $ctx->{source_file});
 		if ($wp_uuid)
 		{
-			appendRouteWaypoint($route_uuid, $wp_uuid, $pos++);
+			appendRouteWaypoint($dbh, $route_uuid, $wp_uuid, $pos++);
 			$found++;
 		}
 		else

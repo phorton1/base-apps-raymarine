@@ -1,11 +1,20 @@
 #---------------------------------------------
 # nmServer.pm
 #---------------------------------------------
-# HTTP server for navMate. Port 9883.
-# Static files from _site/. API: /poll /geojson /clear.
+# navMate HTTP server.  Extends h_server.pm.
+# Port 9883.  Static files from _site/.
 #
-# Shared state is written by the wx thread (addRenderFeatures, clearRenderMap)
-# and read by the server threads (/geojson, /poll). All updates lock $map_version.
+# Inherits from h_server:
+#   /api/db      - E80 WGRT in-memory state as JSON
+#   /api/log     - console ring buffer
+#   /api/command - NET-layer command dispatch
+#   /raysys.kml  - E80 state as Google Earth KML
+#
+# navMate-specific endpoints:
+#   /poll        - Leaflet map version check
+#   /geojson     - current render feature set
+#   /clear       - clear render map
+#   /api/query   - SELECT against navMate SQLite DB
 
 package nmServer;
 use strict;
@@ -14,12 +23,13 @@ use threads;
 use threads::shared;
 use File::Basename qw(dirname);
 use Cwd qw(abs_path);
-use Pub::Utils qw(display warning error);
-use Pub::HTTP::ServerBase;
-use Pub::HTTP::Response qw(json_response);
 use JSON::PP qw(encode_json decode_json);
+use Pub::Utils qw(display warning error);
+use Pub::HTTP::Response qw(json_response);
+use apps::raymarine::NET::h_server;
 use c_db;
-use base qw(Pub::HTTP::ServerBase);
+use base qw(apps::raymarine::NET::h_server);
+
 
 my $SERVER_PORT = 9883;
 my $SITE_DIR    = dirname(abs_path(__FILE__)) . '/_site';
@@ -37,6 +47,7 @@ BEGIN
 	use Exporter qw(import);
 	our @EXPORT = qw(
 		startNavMateServer
+		dispatchNavMateCommand
 		addRenderFeatures
 		clearRenderMap
 		isBrowserConnected
@@ -52,10 +63,17 @@ BEGIN
 
 sub startNavMateServer
 {
-	display(0, 0, "starting nmServer on port $SERVER_PORT");
+	display(0,0,"starting nmServer on port $SERVER_PORT");
 	$nm_server = nmServer->new();
 	$nm_server->start();
-	display(0, 0, "nmServer started");
+	display(0,0,"nmServer started");
+}
+
+
+sub dispatchNavMateCommand
+{
+	my ($lpart, $rpart) = @_;
+	$nm_server->handleCommand($lpart, $rpart) if $nm_server;
 }
 
 
@@ -88,7 +106,7 @@ sub isBrowserConnected
 
 sub openMapBrowser
 {
-	system(1, 'cmd /c start firefox --new-window http://localhost:9883/map.html');
+	system(1,'cmd /c start firefox --new-window http://localhost:9883/map.html');
 }
 
 
@@ -125,18 +143,17 @@ sub handle_request
 
 	if ($uri eq '/poll')
 	{
-		my $params = $request->{params} || {};
 		my $cv;
 		{ lock($map_version); $cv = $map_version + 0; }
 		$last_poll_time = time();
-		return json_response($request, { version => $cv });
+		return json_response($request,{ version => $cv });
 	}
 	elsif ($uri eq '/geojson')
 	{
 		my $json;
 		{ lock($map_version); $json = $features_json; }
 		my $features = decode_json($json);
-		return json_response($request, {
+		return json_response($request,{
 			type     => 'FeatureCollection',
 			features => $features,
 		});
@@ -144,21 +161,23 @@ sub handle_request
 	elsif ($uri eq '/clear')
 	{
 		clearRenderMap();
-		return json_response($request, { ok => 1 });
+		return json_response($request,{ ok => 1 });
 	}
 	elsif ($uri eq '/api/query')
 	{
 		my $sql = ($request->{params} || {})->{sql} // '';
-		return json_response($request, { error => 'no sql' }) unless $sql;
-		return json_response($request, { error => 'only SELECT allowed' })
+		return json_response($request,{ error => 'no sql' }) unless $sql;
+		return json_response($request,{ error => 'only SELECT allowed' })
 			unless $sql =~ /^\s*SELECT\s/i;
-		my ($rows, $err) = c_db::rawQuery($sql);
+		my $dbh = c_db::connectDB();
+		my ($rows,$err) = c_db::rawQuery($dbh,$sql);
+		c_db::disconnectDB($dbh);
 		return $err
-			? json_response($request, { error => $err })
-			: json_response($request, { rows => $rows });
+			? json_response($request,{ error => $err })
+			: json_response($request,{ rows  => $rows });
 	}
 
-	return $this->SUPER::handle_request($client, $request);
+	return $this->SUPER::handle_request($client,$request);
 }
 
 

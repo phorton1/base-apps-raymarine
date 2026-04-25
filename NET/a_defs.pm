@@ -11,17 +11,7 @@ use Socket qw(pack_sockaddr_in inet_aton);
 use Pub::Utils;
 
 
-# shark features that can be turned on and off
-
-our $WITH_SERIAL		= 1;
-our $WITH_RAYDP			= 1;
-our $WITH_HTTP_SERVER	= 1;
-our $WITH_SNIFFER 		= 1;
-our $WITH_TCP_SCANNER	= 0;
-our $WITH_UDP_SCANNER	= 0;	# sniffer must be disabled for udp_scanner
-our $WITH_WX			= 1;
-
-# implemented service_ports that can be turned on and of
+# implemented service_ports that can be turned on and off
 
 our $WITH_TRACK 		= 1;
 our $WITH_WPMGR 		= 1;
@@ -39,14 +29,6 @@ BEGIN
 {
  	use Exporter qw( import );
     our @EXPORT = qw(
-
-		$WITH_SERIAL
-		$WITH_RAYDP
-		$WITH_HTTP_SERVER
-		$WITH_SNIFFER
-		$WITH_TCP_SCANNER
-		$WITH_UDP_SCANNER
-		$WITH_WX
 
 		$WITH_TRACK
 		$WITH_WPMGR

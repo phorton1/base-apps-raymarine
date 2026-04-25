@@ -91,7 +91,9 @@ sub _doImportKML
 		return;
 	}
 	_import_kml::run();
-	display(0,0,"winMain: ImportKML done — restart navMate to reload tree");
+	my $browser = $this->findPane($WIN_COLLECTIONS);
+	$browser->refresh() if $browser;
+	display(0,0,"winMain: ImportKML done");
 }
 
 

@@ -16,22 +16,13 @@ BEGIN
 {
 	use Exporter qw( import );
 	our @EXPORT = qw(
-		$appGroup
+		$appName
 		makeUUID
 	);
 }
 
 
-#---------------------------------
-# main
-#---------------------------------
-
-our $appGroup = 'raymarine';
-
-$USE_SHARED_LOCK_SEM = 1;
-Pub::Utils::initUtils();
-setStandardTempDir($appGroup);
-setStandardDataDir($appGroup);
+our $appName = 'navMate';
 
 
 #---------------------------------
