@@ -31,3 +31,7 @@ html, body { margin: 0; padding: 0; height: 100%; }
     box-sizing: border-box;
 }
 .nm-clear-btn:hover { background: #e0e0e0; }
+
+.leaflet-control-attribution {
+    font-size: 12px;
+}

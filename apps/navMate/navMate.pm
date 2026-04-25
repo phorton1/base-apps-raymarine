@@ -29,7 +29,11 @@ $ini_file = "$temp_dir/$appName.ini";
 
 display(0,0,"navMate.pm initializing");
 
-c_db::openDB();
+my $db_rc = c_db::openDB();
+if ($db_rc == -1)
+{
+	display(0,0,"navMate: schema mismatch — use File->Import KML to rebuild database");
+}
 nmServer::startNavMateServer();
 
 if ($WITH_WX)

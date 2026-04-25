@@ -20,13 +20,16 @@ The collection hierarchy is presented as a wx tree control. Each node carries a
 checkbox with three states — checked, unchecked, and partial (some children
 checked):
 
-- Checking a branch node checks all descendants
-- Unchecking a branch node unchecks all descendants
-- A branch node shows partial state when some but not all descendants are checked
+- Checking a collection checks all descendants
+- Unchecking a collection unchecks all descendants
+- A collection shows partial state when some but not all descendants are checked
 
-**Visibility** — the checked state of the tree drives what appears on the Leaflet
-canvas. A checked `'waypoints'` leaf makes its waypoints visible; an unchecked
-`'tracks'` branch hides all tracks under it regardless of depth.
+**Collection labels** — derived from content counts, not from a declared type:
+`"Name (N track/tracks)"`, `"Name (N waypoint/waypoints)"`, `"Name (N route/routes)"`,
+`"Name (N folder/folders)"`, or a combined count for mixed-content collections.
+
+**Visibility** — the checked state drives what appears on the Leaflet canvas.
+An unchecked collection hides all of its content regardless of depth.
 
 **Working set membership** — tree nodes may carry a secondary indicator (distinct
 from the visibility checkbox) showing whether items belong to the current working
@@ -36,12 +39,22 @@ set. The exact visual treatment is open.
 
 The Leaflet canvas is the primary geographic surface. It renders:
 
-- **Waypoints** — as point markers (symbol determined by `sym` field)
-- **Routes** — as polylines connecting their ordered waypoints
-- **Tracks** — as polylines
+- **Waypoints** — rendering depends on `wp_type`:
+  - `nav`: hollow colored circle; color from `waypoints.color` (hex); name in click-detail panel
+  - `label`: text div at coordinate; no circle; the name is the label text
+  - `sounding`: depth number at coordinate; red when depth is critical (depth_cm < ~200 cm / 6 ft)
+- **Routes** — dashed, thicker polyline connecting ordered waypoints; waypoint positions
+  shown as small markers along the line; visually distinct from tracks
+- **Tracks** — solid colored polyline; color from `tracks.color`
 
-What is rendered is controlled by the collection tree checkbox state and the map
-viewport. Collections are not themselves rendered.
+What is rendered is controlled by the collection tree checkbox state. Collections
+themselves are not rendered. For performance, tracks belonging to the currently
+selected or visible collection are rendered rather than all tracks globally.
+
+**Click-to-select** — clicking a waypoint, route, or track opens a persistent detail
+panel showing the object's full record. Hover tooltips (name on mouseover) are also
+present but are secondary. The detail panel does not require a hover; it persists
+until a new item is clicked or the panel is dismissed.
 
 ### Two Layers: Active and Working Set
 
@@ -60,11 +73,11 @@ the active layer; it annotates it.
 ### Selection Operations
 
 The Leaflet canvas supports multiple selection modalities, all producing the same
-result: a set of selected WRGT UUIDs.
+result: a set of selected WRT UUIDs.
 
 - **Individual click** — selects a single waypoint, route, or track
-- **Rectangle drag** — selects all visible WRGT objects within the drawn bounds
-- **Lasso** — selects all visible WRGT objects within a drawn polygon
+- **Rectangle drag** — selects all visible WRT objects within the drawn bounds
+- **Lasso** — selects all visible WRT objects within a drawn polygon
 - **Multi-select** — modifier key extends the current selection
 
 Selected items can then be added to the current working set, removed from it,

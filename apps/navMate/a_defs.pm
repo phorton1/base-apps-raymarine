@@ -16,12 +16,11 @@ BEGIN
 	our @EXPORT = qw(
 
 		$WITH_WX
+		$SCHEMA_VERSION
 
-		$NODE_TYPE_BRANCH
-		$NODE_TYPE_GROUPS
-		$NODE_TYPE_GROUP
-		$NODE_TYPE_ROUTES
-		$NODE_TYPE_TRACKS
+		$WP_TYPE_NAV
+		$WP_TYPE_LABEL
+		$WP_TYPE_SOUNDING
 
 		$TS_SOURCE_E80
 		$TS_SOURCE_KML_TIMESPAN
@@ -38,12 +37,14 @@ BEGIN
 
 our $WITH_WX = 1;
 
-# collections.node_type values
-our $NODE_TYPE_BRANCH    = 'branch';
-our $NODE_TYPE_GROUPS    = 'groups';
-our $NODE_TYPE_GROUP     = 'group';
-our $NODE_TYPE_ROUTES    = 'routes';
-our $NODE_TYPE_TRACKS    = 'tracks';
+# Schema version: integer part = breaking change (reimport required),
+# decimal part = non-breaking change (advisory).
+our $SCHEMA_VERSION = '2.0';
+
+# waypoints.wp_type values
+our $WP_TYPE_NAV      = 'nav';
+our $WP_TYPE_LABEL    = 'label';
+our $WP_TYPE_SOUNDING = 'sounding';
 
 # ts_source values (waypoints.ts_source, tracks.ts_source)
 our $TS_SOURCE_E80          = 'e80';

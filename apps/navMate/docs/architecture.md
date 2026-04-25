@@ -161,12 +161,20 @@ See [Data Model](data_model.md) for schema detail.
 ## Google Earth
 
 Google Earth was the accidental archive for many years — not because it was suited
-to the task but because nothing better existed. It has no future role in navMate's
-workflow. KML survives as an import/export interchange format at the boundary; the
-Leaflet canvas replaces GE as the geographic visualization surface.
+to the task but because nothing better existed. The Leaflet canvas replaces GE as
+navMate's primary geographic visualization surface.
 
-The migration of historical data from GE/KML (and from phorton.com's voyage archive)
-into navMate's SQLite store is a one-time operation, not an ongoing relationship.
+KML survives in two roles:
+
+**Import** — the initial population of navMate's database comes from GE's
+`My Places.kml` export. This is a one-time migration from GE to navMate, not an
+ongoing relationship.
+
+**Export** — navMate can produce a reorganized, deduplicated KML that supersedes
+the original `My Places.kml` as a clean GE archive. This export is a first-class
+deliverable: it represents the same lifelong geographic knowledge in a better-organized
+form, and retains value even independent of the full navMate application. KML export
+is not an afterthought; it is a peer use case alongside the Leaflet UI.
 
 ## Distribution Path
 
@@ -196,25 +204,28 @@ leave gaps for future layer insertion without renaming.
 These are above `navMate.pm` and carry wx dependencies. No strict ordering within
 this zone.
 
-| File | Zone | Role |
-|------|------|------|
-| `a_defs.pm` | lower | constants, type vocabulary |
-| `a_utils.pm` | lower | $data_dir/$temp_dir setup, UUID generation |
-| `c_db.pm` | lower | SQLite schema, raw CRUD |
-| `f_kml.pm` | lower | KML import/export |
-| `f_wrgt.pm` | lower | WRGT business logic, collection operations |
-| `j_transport.pm` | lower | NET adapter, session-level transport |
-| `navMate.pm` | boundary | wx init, main loop |
-| `nmLeaflet.pm` | app | Leaflet bridge, embedded HTTP server |
-| `nmSession.pm` | app | session state (viewport, tree, working set) |
-| `winMain.pm` | app | main frame |
-| `winTree.pm` | app | collection tree panel |
+| File | Zone | Status | Role |
+|------|------|--------|------|
+| `a_defs.pm` | lower | built | constants, type vocabulary |
+| `a_utils.pm` | lower | built | $data_dir/$temp_dir setup, UUID generation |
+| `c_db.pm` | lower | built | SQLite schema, raw CRUD |
+| `f_kml.pm` | lower | planned | production KML import/export with round-trip UUID |
+| `f_wrgt.pm` | lower | planned | WRT business logic, collection operations |
+| `j_transport.pm` | lower | planned | NET adapter, session-level transport |
+| `navMate.pm` | boundary | built | wx init, main loop |
+| `nmServer.pm` | app | built | embedded HTTP server; Leaflet bridge; GeoJSON API |
+| `nmSession.pm` | app | planned | session state (viewport, tree, working set) |
+| `winMain.pm` | app | built | main frame |
+| `winCollections.pm` | app | built | collection tree panel, object detail |
+| `w_frame.pm` | app | built | wx frame/panel base utilities |
+| `w_resources.pm` | app | built | wx resource loading |
 
 **`migrate/`** — one-time import scripts (KML pipeline, phorton.com enrichment).
-Version-controlled but not production modules.
+Version-controlled but not production modules. Currently: `_import_kml.pm`,
+`_enrich_phorton.pm`.
 
-**`_site/`** — Leaflet applet HTML/JS, served by navMate's embedded HTTP server.
-Not a Perl layer.
+**`_site/`** — Leaflet applet HTML/JS, served by `nmServer.pm`'s embedded HTTP
+server. Not a Perl layer.
 
 ---
 

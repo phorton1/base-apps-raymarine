@@ -13,11 +13,13 @@ use Wx::Event qw(
 	EVT_IDLE
 	EVT_MENU);
 use Time::HiRes qw(time sleep);
+use lib 'migrate';
 use Pub::Utils qw(display warning error _def);
 use Pub::WX::Frame;
 use w_resources;
 use nmServer;
 use winCollections;
+use _import_kml;
 use base qw(Pub::WX::Frame);
 
 
@@ -32,6 +34,7 @@ sub new
 
 	EVT_MENU($this, $WIN_COLLECTIONS, \&onCommand);
 	EVT_MENU($this, $CMD_OPEN_MAP,    \&onCommand);
+	EVT_MENU($this, $CMD_IMPORT_KML,  \&onCommand);
 	EVT_IDLE($this, \&onIdle);
 
 	$this->createPane($WIN_COLLECTIONS) if !$this->findPane($WIN_COLLECTIONS);
@@ -70,6 +73,25 @@ sub onCommand
 	{
 		openMapBrowser() unless isBrowserConnected();
 	}
+	elsif ($id == $CMD_IMPORT_KML)
+	{
+		_doImportKML($this);
+	}
+}
+
+
+sub _doImportKML
+{
+	my ($this) = @_;
+	display(0,0,"winMain: ImportKML starting");
+	my $rc = c_db::resetDB();
+	if ($rc <= 0)
+	{
+		warning(0,0,"winMain: ImportKML aborted — resetDB returned $rc");
+		return;
+	}
+	_import_kml::run();
+	display(0,0,"winMain: ImportKML done — restart navMate to reload tree");
 }
 
 

@@ -6,16 +6,22 @@
 
 const imageryLayer = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    { attribution: 'Tiles &copy; Esri' }
+    { attribution: 'Tiles &copy; Esri', maxNativeZoom: 19, maxZoom: 22 }
 );
 const labelsLayer = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-    { attribution: 'Labels &copy; Esri' }
+    { attribution: 'Labels &copy; Esri', maxNativeZoom: 19, maxZoom: 22 }
 );
 
 // ---- Map init ----
 
-const map = L.map('map', { layers: [imageryLayer, labelsLayer] });
+const map = L.map('map', {
+    layers:             [imageryLayer, labelsLayer],
+    maxZoom:            22,
+    zoomSnap:           0,
+    zoomDelta:          0.5,
+    wheelPxPerZoomLevel: 240,
+});
 map.setView([9.35, -82.25], 8);
 
 // ---- Render layer ----

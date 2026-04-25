@@ -1,7 +1,8 @@
 #-----------------------------------------
 # migrate/_import_kml.pm
 #-----------------------------------------
-# Run from apps/navMate/ as: perl migrate/_import_kml.pm
+# Called from winMain File->Import KML menu item.
+# run() imports all KML files listed in @KML_FILES and displays progress.
 #
 # Folder hierarchy rules:
 #   - Each KML <Folder> becomes one collection (findCollection before
@@ -15,8 +16,6 @@
 package _import_kml;
 use strict;
 use warnings;
-use FindBin;
-use lib "$FindBin::Bin/..";
 use XML::Simple;
 use Time::Local qw(timegm);
 use File::Basename;
@@ -31,8 +30,8 @@ my @KML_FILES = (
 	'C:/junk/all_data_from_old_chartplotter.kml',
 	'C:/junk/MiscBocas.kml',
 	'C:/junk/Michelle 2010-2012.kml',
-	'C:/junk/Tooling Around Bocas 2009.kml',
 	'C:/junk/Cartagena Trip End 2009.kml',
+	'C:/junk/Tooling Around Bocas 2009.kml',
 	'C:/junk/RhapsodyLogs - ends May 31, 2009.kml',
 	'C:/junk/MandalaLogs.kml',
 );
@@ -56,9 +55,7 @@ my $xs = XML::Simple->new(
 my $import_ts = time();
 
 
-c_db::openDB();
-_run();
-display(0,0,"_import_kml done");
+sub run { _run(); display(0,0,"_import_kml done"); }
 
 
 #---------------------------------
@@ -78,7 +75,6 @@ sub _run
 		eval { _importFile($path) };
 		error("_import_kml: $path failed: $@") if $@;
 	}
-	_autoTypeCollections();
 }
 
 
@@ -95,7 +91,7 @@ sub _importFile
 	my $doc         = $data->{Document}
 		or die "no Document element in $path";
 
-	my $top_coll     = insertCollection($source_file, undef, 'branch', '');
+	my $top_coll     = insertCollection($source_file, undef, '');
 	my $wp_sink_uuid = undef;
 	my $style_colors = _buildStyleMap($doc);
 
@@ -151,26 +147,8 @@ sub _getWpSink
 	my $ref = $ctx->{wp_sink_ref};
 	unless ($$ref)
 	{
-		my $existing_uuid = findCollection('Waypoints',    $ctx->{top_coll_uuid})
-		                 // findCollection('My Waypoints', $ctx->{top_coll_uuid});
-		if ($existing_uuid)
-		{
-			my $existing = getCollection($existing_uuid);
-			if (($existing->{node_type} // '') eq 'groups')
-			{
-				# groups container — create/find 'My Waypoints' inside it
-				$$ref = findCollection('My Waypoints', $existing_uuid)
-				     // insertCollection('My Waypoints', $existing_uuid, 'group', '');
-			}
-			else
-			{
-				$$ref = $existing_uuid;
-			}
-		}
-		else
-		{
-			$$ref = insertCollection('My Waypoints', $ctx->{top_coll_uuid}, 'group', '');
-		}
+		$$ref = findCollection('My Waypoints', $ctx->{top_coll_uuid})
+		     // insertCollection('My Waypoints', $ctx->{top_coll_uuid}, '');
 	}
 	return $$ref;
 }
@@ -211,7 +189,7 @@ sub _walkFolder
 	}
 
 	my $coll_uuid = findCollection($name, $ctx->{coll_uuid})
-	             // insertCollection($name, $ctx->{coll_uuid}, $node_type, '');
+	             // insertCollection($name, $ctx->{coll_uuid}, '');
 
 	my $child_ctx = { %$ctx, coll_uuid => $coll_uuid, node_type => $node_type };
 
@@ -493,29 +471,6 @@ sub _resolveColor
 	my $abgr = $style_colors->{$style_url};
 	return 0 unless $abgr;
 	return _abgrToRouteColor($abgr);
-}
-
-
-#---------------------------------
-# _autoTypeCollections
-#---------------------------------
-# Upgrade leaf branch collections of uniform object type to their typed node_type.
-
-sub _autoTypeCollections
-{
-	my $branches = getAllBranchCollections();
-	my $n_typed  = 0;
-	for my $coll (@$branches)
-	{
-		my $counts = getCollectionCounts($coll->{uuid});
-		next if $counts->{collections};
-		my $total = $counts->{waypoints} + $counts->{routes} + $counts->{tracks};
-		next unless $total;
-		if    ($counts->{tracks}    == $total) { updateCollectionNodeType($coll->{uuid}, 'tracks'); $n_typed++ }
-		elsif ($counts->{waypoints} == $total) { updateCollectionNodeType($coll->{uuid}, 'group');  $n_typed++ }
-		elsif ($counts->{routes}    == $total) { updateCollectionNodeType($coll->{uuid}, 'routes'); $n_typed++ }
-	}
-	display(0,0,"_autoTypeCollections: $n_typed collections typed");
 }
 
 

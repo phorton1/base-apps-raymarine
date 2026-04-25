@@ -20,6 +20,7 @@ BEGIN
 		$resources
 		$WIN_COLLECTIONS
 		$CMD_OPEN_MAP
+		$CMD_IMPORT_KML
 	);
 }
 
@@ -28,6 +29,7 @@ our $appName = "navMate";
 
 our $WIN_COLLECTIONS = 10001;
 our $CMD_OPEN_MAP    = 10002;
+our $CMD_IMPORT_KML  = 10003;
 
 
 my $pane_data = {
@@ -38,6 +40,7 @@ my $command_data = {
 	%{$resources->{command_data}},
 	$WIN_COLLECTIONS => ['Collections', 'Navigation data collections tree'],
 	$CMD_OPEN_MAP    => ['Open Map',    'Open the Leaflet map in a browser'],
+	$CMD_IMPORT_KML  => ['Import KML',  'Delete and rebuild database from KML files'],
 };
 
 my $main_menu = [
@@ -45,7 +48,9 @@ my $main_menu = [
 	'view_menu,&View',
 ];
 
-my $file_menu = [];
+my $file_menu = [
+	$CMD_IMPORT_KML,
+];
 
 my $view_menu = [
 	$WIN_COLLECTIONS,

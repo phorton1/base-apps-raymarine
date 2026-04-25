@@ -30,8 +30,9 @@ base, data model, and UI are the product. Everything else is a boundary adapter.
   chartplotters and OpenCPN, distribution path.
 
 - **[Data Model](data_model.md)** —
-  SQLite schema: collections hierarchy, WRGT tables, working sets, UUID strategy,
-  sync model, timestamp sources, KML import/export.
+  SQLite schema: collections hierarchy, WRT tables (Waypoints, Routes, Tracks),
+  waypoint types, working sets, UUID strategy, sync model, timestamp sources,
+  KML import/export.
 
 - **[UI Model](ui_model.md)** —
   Three concurrent UI surfaces (console, wx panels, Leaflet canvas), collection
@@ -44,9 +45,11 @@ base, data model, and UI are the product. Everything else is a boundary adapter.
 
 ## Status
 
-navMate is pre-implementation. The RAYNET protocol library (NET/) and the engineering
-tool (shark) are the current active development. navMate will be built on that
-foundation once the protocol layer is production-complete.
+navMate implementation is underway. Foundation (schema, CRUD, wx tree, embedded HTTP
+server, basic Leaflet rendering) is built. Current focus: data model refinement,
+import redesign from `My Places.kml`, and Leaflet renderer expansion (tracks,
+wp_type-based waypoint rendering, click-to-select detail). All 8 historical KML
+source folders have been fully characterized; import rules are defined.
 
 See the **[NET protocols documentation](../../NET/docs/readme.md)** and
 **[shark](../../apps/shark/docs/shark.md)** for the underlying infrastructure.

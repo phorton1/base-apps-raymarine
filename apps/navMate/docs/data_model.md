@@ -7,24 +7,28 @@
 **[UI Model](ui_model.md)** --
 **[Implementation](implementation.md)**
 
-## Core Objects — WRGT
+## Core Objects — WRT
 
-navMate manages four first-class navigation objects, collectively referred to as
-**WRGT** (Waypoints, Routes, Groups, Tracks):
+navMate manages three first-class navigation objects, collectively referred to as
+**WRT** (Waypoints, Routes, Tracks):
 
-- **Waypoint** — a named geographic point with position, symbol, and optional metadata.
-- **Group** — a named collection of waypoints; organizational container.
+- **Waypoint** — a named geographic point with position, type, and optional metadata.
 - **Route** — an ordered sequence of waypoints defining a planned path.
 - **Track** — a recorded sequence of positions representing a path actually travelled;
-  carries a date and is the primary historical record.
+  the primary historical record.
 
 Routes are forward-looking planning artifacts. Tracks are historical voyage records.
 The historical dataset is almost entirely Tracks and Waypoints — Routes were not used
 historically and should not be assumed as the primary historical structure.
 
+**Groups** (named sets of waypoints used by the E80's WPMGR protocol) are a
+transport-layer concern, not a first-class storage type. Collections of waypoints in
+navMate are untyped folders. When pushing to an E80, group membership is inferred
+from the collection structure at sync time.
+
 ## Storage
 
-SQLite is the authoritative store. All WRGT objects are persisted locally. The E80
+SQLite is the authoritative store. All WRT objects are persisted locally. The E80
 and any other connected device are peers that navMate syncs with — not masters that
 navMate caches.
 
@@ -45,37 +49,31 @@ intra-tick uniqueness. The full UUID structure is documented in `NET/docs/WPMGR.
 
 ## Schema
 
-navMate uses SQLite as its authoritative data store.
+navMate uses SQLite as its authoritative data store. The schema version is tracked
+in the `key_values` table and incremented on migrations.
 
 ### collections
 
-The collection tree is the organizational hierarchy for all WRGT objects. Every
-WRGT exists in exactly one collection. Three node types structure the tree:
+The collection tree is the organizational hierarchy for all WRT objects. Every
+WRT object exists in exactly one collection.
 
 ```sql
 collections (
   uuid          TEXT PRIMARY KEY,
   name          TEXT NOT NULL,
   parent_uuid   TEXT REFERENCES collections(uuid),  -- NULL = root-level node
-  node_type     TEXT NOT NULL,   -- 'branch', 'waypoints', 'routes', 'tracks'
   comment       TEXT DEFAULT ''
 )
 ```
 
-`'branch'` nodes contain only other collections and may appear at any depth.
-The three leaf types contain only their corresponding WRGT objects and are always
-terminal — a leaf node has no child collections.
+Collections are untyped folders — they carry no node_type classification. What a
+collection contains (waypoints, routes, tracks, or child collections) is always
+queryable from the objects that reference it. The UI derives labels from content
+counts rather than from a declared type.
 
-Three default collections are created at installation and cannot be deleted:
-
-| Name | node_type | Role |
-|------|-----------|------|
-| My Waypoints | `'waypoints'` | Default home for uncategorized waypoints |
-| My Routes | `'routes'` | Default home for uncategorized routes |
-| My Tracks | `'tracks'` | Default home for uncategorized tracks |
-
-At the E80 transport boundary, `'waypoints'` leaf folders map to E80 WPMGR groups.
-The "My Waypoints" default corresponds directly to the E80's own "My Waypoints" group.
+Every WRT object belongs to exactly one collection via a non-null `collection_uuid`
+foreign key. Mixed-content collections (containing both waypoints and tracks, for
+example) are valid and common.
 
 ### waypoints
 
@@ -86,15 +84,39 @@ waypoints (
   comment           TEXT DEFAULT '',
   lat               REAL NOT NULL,       -- degrees WGS84
   lon               REAL NOT NULL,       -- degrees WGS84
-  sym               INTEGER DEFAULT 0,   -- icon index 0-39; see NET/docs/WPMGR.md
-  depth_cm          INTEGER DEFAULT 0,
+  sym               INTEGER DEFAULT 0,   -- E80 icon index 0-39; see NET/docs/WPMGR.md
+  wp_type           TEXT NOT NULL DEFAULT 'nav',  -- see Waypoint Types
+  color             TEXT DEFAULT NULL,   -- resolved hex color (#rrggbb); NULL = type default
+  depth_cm          INTEGER DEFAULT 0,   -- non-zero only for sounding waypoints
   created_ts        INTEGER NOT NULL,    -- Unix epoch seconds; never NULL
   ts_source         TEXT NOT NULL,       -- see Timestamp Sources
-  source_file       TEXT,                -- KML filename when sourced from KML
+  source_file       TEXT,                -- originating KML path when sourced from KML
   source            TEXT,                -- 'kml', 'e80', 'user'
   collection_uuid   TEXT NOT NULL REFERENCES collections(uuid)
 )
 ```
+
+### Waypoint Types
+
+`wp_type` determines how a waypoint is rendered and what its `name` field means:
+
+| wp_type | Meaning | Rendering | name field |
+|---------|---------|-----------|------------|
+| `'nav'` | Navigation waypoint — anchorage, marina, landmark, track endpoint | Hollow colored circle; name in popup | Meaningful place name |
+| `'label'` | Geographic text label — non-navigable area reference, scene annotation | Text at coordinate; no circle | Display text (may have `~` suffix or `~Date` suffix) |
+| `'sounding'` | Depth measurement | Depth number at coordinate; red if `depth_cm < 200` (~6 ft) | Integer depth in feet |
+
+Tilde (`~`) suffixes in `name` carry additional semantics for `label` waypoints
+(see KML Import Rules below).
+
+`depth_cm` is non-zero only for sounding waypoints. The name field holds the
+original display string (the integer depth in feet); `depth_cm` holds the metric
+conversion (feet × 30.48) for programmatic use.
+
+`color` is the hex color resolved from the KML style at import time. For `nav`
+waypoints the color encodes significance (green = anchorage, red = major hub,
+yellow = notable, cyan = visited/secondary). For `sounding` waypoints color is
+derived from depth (not stored separately). Null means use the type default.
 
 ### routes
 
@@ -152,7 +174,7 @@ accommodates both without fabricating values.
 
 ### working sets
 
-Working sets are named subsets of the WRGT database, curated for a specific
+Working sets are named subsets of the WRT database, curated for a specific
 operational context and used as the unit of push to a connected device.
 
 ```sql
@@ -182,10 +204,13 @@ Tracks are full members of working sets. The E80 has no RAYNET path to receive
 tracks; the FSH file transfer path handles this at push time. That asymmetry is
 a transport-layer concern; the schema makes no distinction.
 
+Working sets also serve as the unit for the working set layer of the Leaflet canvas —
+showing what is staged for push as a distinct visual overlay.
+
 ### key_values
 
 A general-purpose metadata table used to persist application-level values that
-do not belong in the WRGT or working set tables.
+do not belong in the WRT or working set tables.
 
 ```sql
 key_values (
@@ -225,12 +250,10 @@ tracks without encoding assumptions about how they arrived.
 is stored once in `waypoints` and referenced by `route_waypoints.wp_uuid`. It is
 not inlined as route geometry. The same waypoint can appear in multiple routes.
 
-**The folder invariant.** Every waypoint, route, and track exists in exactly one
-typed folder. This is navMate's own organizational principle — not inherited from
-the E80, but chosen deliberately for manageability at scale. `collection_uuid` is
-`NOT NULL` on all three WRGT tables. The E80's group concept maps cleanly to a
-navMate `'waypoints'`-typed leaf folder; that alignment is a consequence of the
-invariant, not its cause.
+**The collection invariant.** Every waypoint, route, and track exists in exactly
+one collection. `collection_uuid` is `NOT NULL` on all three WRT tables. Collections
+are untyped — the E80's group concept (named waypoint sets for WPMGR) is inferred
+at sync time, not stored as a folder attribute.
 
 ## Timestamp Sources
 
@@ -252,10 +275,19 @@ no timestamp in their KML export. These receive `ts_source = 'import'`.
 
 ## KML as a Transport Layer
 
-KML is an import/export format at the boundary between navMate and Google Earth.
-GE serves as a secondary backup store (via KML export from navMate) and a tertiary
-editing surface — objects created or modified in GE and re-exported flow back into
-navMate through the standard import path. GE is not authoritative; navMate is.
+KML serves two roles at the navMate boundary:
+
+**Import** — the initial population of navMate's database comes from KML. The
+historical source is a single `My Places.kml` exported from Google Earth, which
+accumulated years of navigation data. navMate's config-driven importer parses this
+file folder by folder, applying per-folder rules derived from thorough characterization
+of each folder's content and semantics. GE is not an ongoing source; after initial
+import, navMate is authoritative.
+
+**Export** — navMate can export a reorganized, deduplicated KML back to GE. This is
+a first-class deliverable independent of the Leaflet UI: a clean, well-structured
+version of the same geographic knowledge, useful even if the application never
+reaches full production.
 
 **Round-trip identity.** navMate embeds its UUID in every exported KML object via
 `<ExtendedData>`:
@@ -271,16 +303,30 @@ triggers collision detection (name and coordinate proximity) or creation of a ne
 
 **KML import rules:**
 
-- Names with a `~` suffix (e.g. `CatalinaIsland~`): visual overlays, not navigation
-  waypoints — skip on import
-- Route LineString Placemarks: skip; navMate generates geometry from ordered waypoint lists
-- Track Placemarks where a Point co-locates at the track start with the same name:
-  import the LineString, skip the Point
-- Generic E80-default names (`Waypoint 2`, `Waypoint 3`): import with a source prefix
-  (e.g. `[E80-0A] Waypoint 2`) to avoid collision with identically named objects
-  from other sources
-- Duplicate track names within a source file: import all; overlapping tracks of the
-  same passage are the safety evidence base, not errors to deduplicate
+*Waypoint classification:*
+- Placemarks where name is an integer (e.g. `6`, `14`, `37`): `wp_type='sounding'`;
+  depth_cm = name × 30.48. Red label = critical shallow (typically depth_cm < 200, ~6 ft).
+- Placemarks with `#sn_noicon` style (invisible icon): `wp_type='label'` — geographic
+  area reference, not a navigation point.
+- Placemarks whose name contains `~`: `wp_type='label'`. Three sub-forms:
+  - `Name~` — geographic context label, appears on multiple story pages; the `~` is the disambiguator (not a zoom level)
+  - `Name~N` — same label name used on N different story pages; number ensures GE name uniqueness
+  - `Name~Date` — dated location annotation; the date is part of the place's identity
+- All other Point placemarks: `wp_type='nav'`
+
+*LineStrings (tracks and routes):*
+- Route LineString placemarks named `"Route"` inside a route folder: skip — visual aid only;
+  navMate generates route geometry from ordered `route_waypoints` on demand
+- Track companion Point placemarks (same name as a LineString in the same folder): skip the
+  Point, import only the LineString. This applies to OldE80 Tracks folder pairs.
+- All other LineStrings: import as tracks
+- Duplicate track names within or across source folders: import all; overlapping tracks
+  of the same passage are GPS safety evidence, not errors to deduplicate
+
+*Color:*
+- Resolve `styleUrl` → Document-level Style/StyleMap at import time; store resolved hex in `color`
+- Document-local styles (inside imported `<Document>` sub-elements) are not visible to the
+  top-level resolver; affected objects receive `color = NULL`
 
 ## Sync Model
 
@@ -317,22 +363,36 @@ anti-pattern in the protocol notes.
 
 ## Data Migration
 
-The initial population of navMate's SQLite store comes from three source segments:
+The initial population of navMate's SQLite store comes from a single source:
+`C:/junk/My Places.kml` — a Google Earth export of all accumulated navigation data.
+This file contains eight named top-level folders, each fully characterized before
+import rules were written:
 
-1. **Voyage records** — Rhapsody and Mandala KML log files, enriched with temporal
-   metadata from phorton.com's `map_data/` index files. Those index files link track
-   names and KML source files to voyage story pages, which carry dates. Import
-   sequence: parse KML geometry → cross-reference track name and `source_file` against
-   the `map_data/` index → if matched, back-fill `ts_start`/`ts_end` and set
-   `ts_source = 'phorton'`; otherwise `ts_source = 'import'`. Where the HTML story
-   pages themselves carry more precise date information, they are a secondary source
-   for the same enrichment pass.
+| Folder | Content |
+|--------|---------|
+| Navigation | Current curated waypoints and routes; manually maintained |
+| all_data_from_old_chartplotter (OldE80) | ARCHIVE.FSH snapshot from E80-0A: Groups, Routes, Waypoints, Tracks sections |
+| MiscBocas | Raw E80 track exports; local Bocas passages |
+| Michelle 2010-2012 | Voyage tracks, Places, depth soundings, and a Document-embedded route |
+| Cartagena Trip End 2009 | 7 dated E80 tracks; the Bocas→Cartagena round trip |
+| Tooling Around Bocas 2009 | 14 tracks; earliest Bocas exploration |
+| RhapsodyLogs (ends May 31, 2009) | 9-part voyage log; San Diego→Panama Canal→Bocas |
+| MandalaLogs | California coast (2005-2006); same structure as RhapsodyLogs |
 
-2. **Recent material** — current active area data from Navigation.kml and similar
-   GE exports. Tractable KML parsing.
+Import is config-driven: each folder has explicit per-folder rules covering which
+objects to import, how to classify them (wp_type, color), and which to skip. Folders
+with known structure (Navigation, OldE80) have fully declared rules. Loosely
+structured folders (MiscBocas, MandalaLogs) use structural heuristics with per-folder
+overrides.
 
-3. **Messy middle** — organically accumulated tracks between the end of the voyage
-   narrative and the current active material. No structure, no consistent naming;
-   requires manual triage. Approached last.
+OldE80 requires special handling: its Tracks folder stores each track as a
+Point+LineString pair (E80 start-marker + track data); only the LineString is imported.
+Its Routes folders contain a `"Route"` LineString plus waypoint copies — the LineString
+is skipped and waypoints are matched by coordinate to existing records.
+
+After the initial KML import, a second pass enriches RhapsodyLogs and MandalaLogs
+tracks with temporal metadata from phorton.com's `map_data/` index files. Those index
+files link track names and source folders to dated voyage story pages. Matched tracks
+get `ts_start`/`ts_end` back-filled and `ts_source = 'phorton'`.
 
 ---

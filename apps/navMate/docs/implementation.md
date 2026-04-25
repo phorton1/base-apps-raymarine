@@ -23,67 +23,65 @@ the real database and exercise the lower layers thoroughly before any UI is buil
 See [Architecture — Code Organization](architecture.md#code-organization) for the
 full file list and naming conventions. In brief: lower layers use sparse alpha
 prefixes with underscore-delimited lowercase names (`a_defs.pm`, `a_utils.pm`,
-`c_db.pm`, `f_kml.pm`, `j_transport.pm`); application layer modules use camelCase
-(`nmSession.pm`, `winMain.pm`).
+`c_db.pm`); application layer modules use camelCase (`nmServer.pm`, `winMain.pm`,
+`winCollections.pm`).
 
 ## Phase Sequence
 
-### Phase 1 — Foundation (`a_defs.pm`, `a_utils.pm`, `c_db.pm`)
+### Phase 1 — Foundation (`a_defs.pm`, `a_utils.pm`, `c_db.pm`)  ✓ done
 
 - UUID generation (byte 1 = `0x4E` for navMate-created objects)
-- SQLite schema creation — all tables: collections, waypoints, routes, tracks,
-  working sets
-- Basic CRUD operations
-- Console window attached for direct invocation and smoke-testing
+- SQLite schema creation — all tables: collections (untyped), waypoints (with
+  wp_type and color), routes, tracks, working sets
+- CRUD operations; console window for smoke-testing
 
-### Phase 2 — Data Population (`migrate/`)
+### Phase 2 — Data Population (`migrate/`)  ✓ substantially done; import being redesigned
 
-One-time import scripts, not production modules. Import is raw — no collision
-checking — because the database is empty on first run:
+One-time import scripts, not production modules. Single source:
+`C:/junk/My Places.kml`. Config-driven per-folder rules for all 8 folders
+(fully characterized before import rules were written — see Data Model).
 
-- `_import_kml.pm` — all 8 KML source files from `C:\junk\`; each file gets its
-  own collection branch with Waypoints / Routes / Tracks sub-collections
-- `_enrich_phorton.pm` — cross-reference track names against
-  `C:\var\www\phorton\map_data\` index files, back-fill `ts_start` / `ts_end`,
+- `_import_kml.pm` — config-driven import from `My Places.kml`; waypoints
+  classified by wp_type and color at parse time
+- `_enrich_phorton.pm` — cross-reference RhapsodyLogs/MandalaLogs track names
+  against `C:\var\www\phorton\map_data\` index files; back-fill `ts_start`/`ts_end`;
   set `ts_source = 'phorton'`
 
-Produces a real, populated database for all subsequent development phases.
-Duplicate objects across source files are expected and are left for Phase 5.
+### Phase 3 — wx Panels (`winMain.pm`, `winCollections.pm`)  ✓ substantially done
 
-### Phase 3 — wx Panels (`winMain.pm`, `winTree.pm`, `nmSession.pm`)
+- Main frame and collection tree with three-state checkboxes — built
+- Collection labels derived from content counts — in progress
+- Object detail panel (fixed-width font, full DB record) — in progress
+- Session state persistence (`nmSession.pm`) — planned
 
-- Main frame and collection tree panel with three-state checkboxes
-- Visibility state drives what is available to the Leaflet layer
-- Session state persistence (viewport, tree state, active working set)
+### Phase 4 — Leaflet Canvas (`nmServer.pm`, `_site/`)  in progress
 
-### Phase 4 — Leaflet Canvas (`nmLeaflet.pm`, `_site/`)
+- Embedded HTTP server with GeoJSON API — built (`nmServer.pm`)
+- Route rendering (dashed line + waypoint markers) — partially built
+- Track rendering (colored polylines from track_points) — pending
+- Waypoint wp_type-based rendering (hollow circles, labels, sounding numbers) — pending
+- Click-to-select persistent detail panel — pending
+- Working set layer (distinct visual overlay) — planned
+- Selection operations (rectangle, lasso, multi-select) — planned
 
-- Embedded HTTP server serving `_site/` content
-- Active layer: waypoints, routes, and tracks rendered per tree visibility
-- Working set layer: distinct visual overlay showing push target
-- Selection operations: rectangle, lasso, individual click, multi-select
+### Phase 5 — Deduplication (`c_match.pm`)  planned
 
-### Phase 5 — Deduplication (`c_match.pm`)
-
-Requires the tree (Phase 3) and ideally the map (Phase 4) to be useful.
-`c_match.pm` is the recurring service for all future import and sync work —
-not a one-off migration utility:
+Requires the tree (Phase 3) and map (Phase 4) to be useful.
+`c_match.pm` is the recurring service for all future import and sync work:
 
 - Proximity search (`findNearbyWaypoints`) and name-similarity candidates
-- Merge operations (`mergeWaypoints`, `mergeRoutes`) that rewrite all
-  foreign-key references before discarding the duplicate
-- Dedup UI: collision candidates surfaced in the tree and visible on the map;
-  merge / keep / discard decisions made with eyes on the data
+- Merge operations that rewrite all foreign-key references before discarding duplicates
+- Dedup UI: collision candidates surfaced in the tree and visible on the map
 
 `c_match.pm` is also called by Phase 7 sync for every incoming E80 object.
 
-### Phase 6 — Domain Layer (`f_kml.pm`, `f_wrgt.pm`)
+### Phase 6 — Domain Layer (`f_kml.pm`, `f_wrgt.pm`)  planned
 
 - Production KML import/export with round-trip UUID embedding via `<ExtendedData>`
-- WRGT business logic — collection tree operations, working set operations
-- UUID-primary lookups; name lookup as convenience layer only
+- WRT business logic — collection tree operations, working set operations
+- KML export: reorganized, deduplicated output suitable as a clean GE archive
 
-### Phase 7 — Transport (`j_transport.pm`)
+### Phase 7 — Transport (`j_transport.pm`)  planned
 
 - NET adapter wired in as a session-level, user-activated transport
 - E80 sync: UUID set reconciliation via WPMGR; incoming objects run through
