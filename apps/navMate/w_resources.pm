@@ -19,6 +19,7 @@ BEGIN
 		$appName
 		$resources
 		$WIN_COLLECTIONS
+		$CMD_OPEN_MAP
 	);
 }
 
@@ -26,6 +27,7 @@ BEGIN
 our $appName = "navMate";
 
 our $WIN_COLLECTIONS = 10001;
+our $CMD_OPEN_MAP    = 10002;
 
 
 my $pane_data = {
@@ -35,6 +37,7 @@ my $pane_data = {
 my $command_data = {
 	%{$resources->{command_data}},
 	$WIN_COLLECTIONS => ['Collections', 'Navigation data collections tree'],
+	$CMD_OPEN_MAP    => ['Open Map',    'Open the Leaflet map in a browser'],
 };
 
 my $main_menu = [
@@ -46,6 +49,7 @@ my $file_menu = [];
 
 my $view_menu = [
 	$WIN_COLLECTIONS,
+	$CMD_OPEN_MAP,
 	$ID_SEPARATOR,
 	@{$resources->{view_menu}},
 ];

@@ -1,0 +1,33 @@
+html, body { margin: 0; padding: 0; height: 100%; }
+#map { width: 100%; height: 100%; }
+
+/* Waypoint marker: small red transparent-fill circle */
+.nm-wp-marker {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid #cc0000;
+    background: rgba(204, 0, 0, 0.20);
+}
+
+/* Overlay controls stacked below the zoom buttons */
+.nm-ctl {
+    background: white;
+    padding: 4px 8px;
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: default;
+}
+.nm-ctl label { cursor: pointer; }
+
+.nm-clear-btn {
+    display: block;
+    border: 1px solid #999;
+    background: #f0f0f0;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-size: 12px;
+    width: 100%;
+    box-sizing: border-box;
+}
+.nm-clear-btn:hover { background: #e0e0e0; }

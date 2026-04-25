@@ -20,15 +20,20 @@ use threads::shared;
 use Wx qw(:everything);
 use Wx::Event qw(
 	EVT_TREE_SEL_CHANGED
-	EVT_TREE_ITEM_EXPANDING);
+	EVT_TREE_ITEM_EXPANDING
+	EVT_LEFT_DCLICK);
 use POSIX qw(strftime);
 use Pub::Utils qw(display warning error);
 use Pub::WX::Window;
 use c_db;
+use nmServer;
 use w_resources;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
 my $DUMMY = '__dummy__';
+
+my %rendered_uuids;
+my $last_clear_version = 0;
 
 
 sub new
@@ -54,6 +59,7 @@ sub new
 
 	EVT_TREE_SEL_CHANGED($this,   $this->{tree}, \&onTreeSelect);
 	EVT_TREE_ITEM_EXPANDING($this, $this->{tree}, \&onTreeExpanding);
+	EVT_LEFT_DCLICK($this->{tree}, sub { _onTreeDblClick($this, @_) });
 
 	return $this;
 }
@@ -319,6 +325,207 @@ sub _showObject
 	}
 
 	$this->{detail}->SetValue($text);
+}
+
+
+#---------------------------------
+# double-click → render in Leaflet
+#---------------------------------
+# Single click on +/- expands/collapses as normal.
+# Double-click on item label sends that collection to the map.
+# NOT calling $event->Skip() suppresses the default expand/collapse.
+
+sub _onTreeDblClick
+{
+	my ($this, $tree, $event) = @_;
+	my $pt = $event->GetPosition();
+	my ($item, $flags) = $tree->HitTest($pt);
+
+	unless ($item && $item->IsOk() && ($flags & wxTREE_HITTEST_ONITEMLABEL))
+	{
+		$event->Skip();
+		return;
+	}
+
+	my $item_data = $tree->GetItemData($item);
+	return unless $item_data;
+	my $node = $item_data->GetData();
+	return unless ref $node eq 'HASH';
+
+	if ($node->{type} eq 'collection')
+	{
+		_renderCollection($this, $node->{data}{uuid});
+	}
+	elsif ($node->{type} eq 'object')
+	{
+		_renderObject($this, $node->{data});
+	}
+}
+
+
+sub _renderCollection
+{
+	my ($this, $uuid) = @_;
+
+	my $cv = getClearVersion();
+	if ($cv != $last_clear_version)
+	{
+		%rendered_uuids    = ();
+		$last_clear_version = $cv;
+	}
+
+	my $wrgt = getCollectionWRGTs($uuid);
+	my @features;
+
+	for my $wp (@{$wrgt->{waypoints}})
+	{
+		next if $rendered_uuids{$wp->{uuid}};
+		$rendered_uuids{$wp->{uuid}} = 1;
+		push @features, {
+			type       => 'Feature',
+			properties => {
+				uuid     => $wp->{uuid},
+				name     => $wp->{name} // '',
+				obj_type => 'waypoint',
+				sym      => ($wp->{sym} // 0) + 0,
+			},
+			geometry => {
+				type        => 'Point',
+				coordinates => [$wp->{lon} + 0, $wp->{lat} + 0],
+			},
+		};
+	}
+
+	for my $t (@{$wrgt->{tracks}})
+	{
+		next if $rendered_uuids{$t->{uuid}};
+		my $pts = getTrackPoints($t->{uuid});
+		next unless @$pts;
+		$rendered_uuids{$t->{uuid}} = 1;
+		my @coords = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
+		push @features, {
+			type       => 'Feature',
+			properties => {
+				uuid     => $t->{uuid},
+				name     => $t->{name} // '',
+				obj_type => 'track',
+				color    => ($t->{color} // 0) + 0,
+			},
+			geometry => {
+				type        => 'LineString',
+				coordinates => \@coords,
+			},
+		};
+	}
+
+	for my $r (@{$wrgt->{routes}})
+	{
+		next if $rendered_uuids{$r->{uuid}};
+		my $pts = getRoutePoints($r->{uuid});
+		next unless @$pts;
+		$rendered_uuids{$r->{uuid}} = 1;
+		my @coords = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
+		push @features, {
+			type       => 'Feature',
+			properties => {
+				uuid     => $r->{uuid},
+				name     => $r->{name} // '',
+				obj_type => 'route',
+				color    => ($r->{color} // 0) + 0,
+			},
+			geometry => {
+				type        => 'LineString',
+				coordinates => \@coords,
+			},
+		};
+	}
+
+	addRenderFeatures(\@features) if @features;
+
+	openMapBrowser() unless isBrowserConnected();
+}
+
+
+sub _renderObject
+{
+	my ($this, $obj) = @_;
+
+	my $cv = getClearVersion();
+	if ($cv != $last_clear_version)
+	{
+		%rendered_uuids    = ();
+		$last_clear_version = $cv;
+	}
+
+	return if $rendered_uuids{$obj->{uuid}};
+
+	my @features;
+
+	if ($obj->{obj_type} eq 'waypoint')
+	{
+		$rendered_uuids{$obj->{uuid}} = 1;
+		push @features, {
+			type       => 'Feature',
+			properties => {
+				uuid     => $obj->{uuid},
+				name     => $obj->{name} // '',
+				obj_type => 'waypoint',
+				sym      => ($obj->{sym} // 0) + 0,
+			},
+			geometry => {
+				type        => 'Point',
+				coordinates => [$obj->{lon} + 0, $obj->{lat} + 0],
+			},
+		};
+	}
+	elsif ($obj->{obj_type} eq 'track')
+	{
+		my $pts = getTrackPoints($obj->{uuid});
+		if (@$pts)
+		{
+			$rendered_uuids{$obj->{uuid}} = 1;
+			my @coords = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
+			push @features, {
+				type       => 'Feature',
+				properties => {
+					uuid     => $obj->{uuid},
+					name     => $obj->{name} // '',
+					obj_type => 'track',
+					color    => ($obj->{color} // 0) + 0,
+				},
+				geometry => {
+					type        => 'LineString',
+					coordinates => \@coords,
+				},
+			};
+		}
+	}
+	elsif ($obj->{obj_type} eq 'route')
+	{
+		my $pts = getRoutePoints($obj->{uuid});
+		if (@$pts)
+		{
+			$rendered_uuids{$obj->{uuid}} = 1;
+			my @coords = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
+			push @features, {
+				type       => 'Feature',
+				properties => {
+					uuid     => $obj->{uuid},
+					name     => $obj->{name} // '',
+					obj_type => 'route',
+					color    => ($obj->{color} // 0) + 0,
+				},
+				geometry => {
+					type        => 'LineString',
+					coordinates => \@coords,
+				},
+			};
+		}
+	}
+
+	addRenderFeatures(\@features) if @features;
+
+	openMapBrowser() unless isBrowserConnected();
 }
 
 

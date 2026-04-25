@@ -16,6 +16,7 @@ use Time::HiRes qw(time sleep);
 use Pub::Utils qw(display warning error _def);
 use Pub::WX::Frame;
 use w_resources;
+use nmServer;
 use winCollections;
 use base qw(Pub::WX::Frame);
 
@@ -30,6 +31,7 @@ sub new
 	my $this = $class->SUPER::new($parent, $rect);
 
 	EVT_MENU($this, $WIN_COLLECTIONS, \&onCommand);
+	EVT_MENU($this, $CMD_OPEN_MAP,    \&onCommand);
 	EVT_IDLE($this, \&onIdle);
 
 	$this->createPane($WIN_COLLECTIONS) if !$this->findPane($WIN_COLLECTIONS);
@@ -63,6 +65,10 @@ sub onCommand
 	{
 		my $pane = $this->findPane($id);
 		$this->createPane($id) if !$pane;
+	}
+	elsif ($id == $CMD_OPEN_MAP)
+	{
+		openMapBrowser() unless isBrowserConnected();
 	}
 }
 

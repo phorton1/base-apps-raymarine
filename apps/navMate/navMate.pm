@@ -15,6 +15,7 @@ use Pub::WX::Main;
 use a_defs;
 use a_utils;
 use c_db;
+use nmServer;
 use w_resources;
 use winMain;
 use base 'Wx::App';
@@ -29,6 +30,7 @@ $ini_file = "$temp_dir/$appName.ini";
 display(0,0,"navMate.pm initializing");
 
 c_db::openDB();
+nmServer::startNavMateServer();
 
 if ($WITH_WX)
 {

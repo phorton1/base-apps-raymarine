@@ -50,7 +50,7 @@ my %SOURCE_NAMES = (
 
 my $xs = XML::Simple->new(
 	KeyAttr       => [],
-	ForceArray    => ['Folder', 'Placemark'],
+	ForceArray    => ['Folder', 'Placemark', 'Style', 'StyleMap', 'Pair'],
 	SuppressEmpty => '');
 
 my $import_ts = time();
@@ -97,6 +97,7 @@ sub _importFile
 
 	my $top_coll     = insertCollection($source_file, undef, 'branch', '');
 	my $wp_sink_uuid = undef;
+	my $style_colors = _buildStyleMap($doc);
 
 	my $ctx = {
 		coll_uuid     => $top_coll,
@@ -104,6 +105,7 @@ sub _importFile
 		source_file   => $source_file,
 		top_coll_uuid => $top_coll,
 		wp_sink_ref   => \$wp_sink_uuid,
+		style_colors  => $style_colors,
 	};
 
 	for my $folder (@{$doc->{Folder} // []})
@@ -301,8 +303,10 @@ sub _importTrack
 	my @pts = _parseCoords($pm->{LineString}{coordinates});
 	return unless @pts;
 
+	my $color = _resolveColor($ctx->{style_colors}, $pm->{styleUrl});
 	my $uuid = insertTrack(
 		name            => $pm->{name},
+		color           => $color,
 		ts_start        => $ts_start,
 		ts_end          => $ts_end,
 		ts_source       => $ts_source,
@@ -334,7 +338,10 @@ sub _importRouteFolder
 
 	if (@point_pms)
 	{
-		my $route_uuid = insertRoute($route_name, 0, '', $ctx->{coll_uuid});
+		my $color = @line_pms
+			? _resolveColor($ctx->{style_colors}, $line_pms[0]{styleUrl})
+			: 0;
+		my $route_uuid = insertRoute($route_name, $color, '', $ctx->{coll_uuid});
 		my $pos     = 0;
 		my $created = 0;
 		for my $pm (@point_pms)
@@ -383,7 +390,8 @@ sub _importRouteFromLine
 	my @pts = _parseCoords($pm->{LineString}{coordinates});
 	return unless @pts;
 	my $route_name = $pm->{name} // '';
-	my $route_uuid = insertRoute($route_name, 0, '', $ctx->{coll_uuid});
+	my $color      = _resolveColor($ctx->{style_colors}, $pm->{styleUrl});
+	my $route_uuid = insertRoute($route_name, $color, '', $ctx->{coll_uuid});
 	my $pos   = 0;
 	my $found = 0;
 	for my $pt (@pts)
@@ -400,6 +408,91 @@ sub _importRouteFromLine
 		}
 	}
 	display(0,1,"  route '$route_name': $found/" . scalar(@pts) . " vertices matched");
+}
+
+
+#---------------------------------
+# _buildStyleMap
+#---------------------------------
+# Collects <Style id="..."><LineStyle><color> entries from the Document,
+# then resolves <StyleMap> "normal" pairs so both #style_id and
+# #stylemap_id keys are available.  Returns hashref of url→abgr_string.
+
+sub _buildStyleMap
+{
+	my ($doc) = @_;
+	my %sc;
+
+	for my $s (@{$doc->{Style} // []})
+	{
+		my $id    = $s->{id} // next;
+		my $color = $s->{LineStyle}{color} // next;
+		$sc{"#$id"} = $color;
+	}
+
+	for my $sm (@{$doc->{StyleMap} // []})
+	{
+		my $id = $sm->{id} // next;
+		for my $pair (@{$sm->{Pair} // []})
+		{
+			next unless ($pair->{key} // '') eq 'normal';
+			my $url = $pair->{styleUrl} // next;
+			next unless exists $sc{$url};
+			$sc{"#$id"} = $sc{$url};
+			last;
+		}
+	}
+
+	return \%sc;
+}
+
+
+#---------------------------------
+# _abgrToRouteColor
+#---------------------------------
+# Parses an 8-char ABGR hex string (Google Earth format: aabbggrr) and
+# returns the nearest E80 color index 0-5 by Euclidean distance in RGB.
+
+sub _abgrToRouteColor
+{
+	my ($abgr) = @_;
+	return 0 unless $abgr && length($abgr) >= 8;
+	my $rr = hex(substr($abgr, 6, 2));
+	my $gg = hex(substr($abgr, 4, 2));
+	my $bb = hex(substr($abgr, 2, 2));
+	my @targets = (
+		[255,   0,   0],   # 0 RED
+		[255, 255,   0],   # 1 YELLOW
+		[  0, 255,   0],   # 2 GREEN
+		[  0,   0, 255],   # 3 BLUE
+		[255,   0, 255],   # 4 PURPLE
+		[255, 255, 255],   # 5 WHITE
+	);
+	my ($best_idx, $best_dist) = (0, 9e99);
+	for my $i (0 .. $#targets)
+	{
+		my $d = ($rr-$targets[$i][0])**2
+		      + ($gg-$targets[$i][1])**2
+		      + ($bb-$targets[$i][2])**2;
+		if ($d < $best_dist) { $best_dist = $d; $best_idx = $i; }
+	}
+	return $best_idx;
+}
+
+
+#---------------------------------
+# _resolveColor
+#---------------------------------
+# Given a styleUrl (e.g. '#myStyle') and the file's style_colors map,
+# returns an E80 color index 0-5, defaulting to 0.
+
+sub _resolveColor
+{
+	my ($style_colors, $style_url) = @_;
+	return 0 unless $style_url && $style_colors;
+	my $abgr = $style_colors->{$style_url};
+	return 0 unless $abgr;
+	return _abgrToRouteColor($abgr);
 }
 
 

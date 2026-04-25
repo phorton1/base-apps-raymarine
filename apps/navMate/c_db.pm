@@ -40,6 +40,10 @@ BEGIN
 		getWaypoint
 		getRoute
 		getRouteWaypointCount
+		getCollectionWRGTs
+		getTrackPoints
+		getRoutePoints
+		rawQuery
 	);
 }
 
@@ -492,19 +496,19 @@ sub getCollectionObjects
 	my @objects;
 
 	my $wps = $dbh->selectall_arrayref(
-		"SELECT uuid, name, 'waypoint' AS obj_type, lat, lon
+		"SELECT uuid, name, 'waypoint' AS obj_type, lat, lon, sym
 		 FROM waypoints WHERE collection_uuid=? ORDER BY rowid",
 		{ Slice => {} }, $coll_uuid);
 	push @objects, @$wps;
 
 	my $routes = $dbh->selectall_arrayref(
-		"SELECT uuid, name, 'route' AS obj_type
+		"SELECT uuid, name, color, 'route' AS obj_type
 		 FROM routes WHERE collection_uuid=? ORDER BY rowid",
 		{ Slice => {} }, $coll_uuid);
 	push @objects, @$routes;
 
 	my $tracks = $dbh->selectall_arrayref(
-		"SELECT uuid, name, 'track' AS obj_type, ts_start, ts_end, ts_source, point_count
+		"SELECT uuid, name, color, 'track' AS obj_type, ts_start, ts_end, ts_source, point_count
 		 FROM tracks WHERE collection_uuid=? ORDER BY rowid",
 		{ Slice => {} }, $coll_uuid);
 	push @objects, @$tracks;
@@ -617,6 +621,82 @@ sub getRouteWaypointCount
 		"SELECT COUNT(*) FROM route_waypoints WHERE route_uuid=?",
 		undef, $uuid);
 	return $count + 0;
+}
+
+
+#---------------------------------
+# getCollectionWRGTs
+#---------------------------------
+# Returns all waypoints, routes, and tracks under $uuid and all
+# descendant collections (recursive).  Uses WITH RECURSIVE CTE.
+
+sub getCollectionWRGTs
+{
+	my ($uuid) = @_;
+	my $cte = qq{
+		WITH RECURSIVE tree(uuid) AS (
+			SELECT uuid FROM collections WHERE uuid=?
+			UNION ALL
+			SELECT c.uuid FROM collections c JOIN tree ON c.parent_uuid=tree.uuid
+		)
+	};
+	my $wps = $dbh->selectall_arrayref(
+		$cte . "SELECT uuid, name, lat, lon, sym FROM waypoints WHERE collection_uuid IN (SELECT uuid FROM tree)",
+		{ Slice => {} }, $uuid);
+	my $routes = $dbh->selectall_arrayref(
+		$cte . "SELECT uuid, name, color FROM routes WHERE collection_uuid IN (SELECT uuid FROM tree)",
+		{ Slice => {} }, $uuid);
+	my $tracks = $dbh->selectall_arrayref(
+		$cte . "SELECT uuid, name, color, point_count FROM tracks WHERE collection_uuid IN (SELECT uuid FROM tree)",
+		{ Slice => {} }, $uuid);
+	return {
+		waypoints => $wps    // [],
+		routes    => $routes // [],
+		tracks    => $tracks // [],
+	};
+}
+
+
+#---------------------------------
+# getTrackPoints
+#---------------------------------
+
+sub getTrackPoints
+{
+	my ($uuid) = @_;
+	my $rows = $dbh->selectall_arrayref(
+		"SELECT lat, lon FROM track_points WHERE track_uuid=? ORDER BY position",
+		{ Slice => {} }, $uuid);
+	return $rows // [];
+}
+
+
+#---------------------------------
+# getRoutePoints
+#---------------------------------
+# Returns ordered lat/lon via route_waypoints JOIN waypoints.
+
+sub getRoutePoints
+{
+	my ($uuid) = @_;
+	my $rows = $dbh->selectall_arrayref(
+		"SELECT w.lat, w.lon FROM route_waypoints rw JOIN waypoints w ON rw.wp_uuid=w.uuid WHERE rw.route_uuid=? ORDER BY rw.position",
+		{ Slice => {} }, $uuid);
+	return $rows // [];
+}
+
+
+#---------------------------------
+# rawQuery
+#---------------------------------
+# Debug endpoint — SELECT only.
+
+sub rawQuery
+{
+	my ($sql) = @_;
+	my $rows = eval { $dbh->selectall_arrayref($sql, { Slice => {} }) };
+	return (undef, $@) if $@;
+	return ($rows // []);
 }
 
 
