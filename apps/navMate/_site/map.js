@@ -93,21 +93,59 @@ function e80Color(idx) {
 
 // ---- Render all features from a GeoJSON FeatureCollection ----
 
+// Track UUIDs already rendered so autozoom only moves to newly added items.
+let renderedUuids = new Set();
+
 function renderAll(geojson) {
     renderLayer.clearLayers();
-    const allLatLngs = [];
+    const features = geojson.features || [];
 
-    (geojson.features || []).forEach(f => {
+    // Server cleared — reset our UUID tracking.
+    if (features.length === 0) {
+        renderedUuids = new Set();
+        return;
+    }
+
+    const newLatLngs = [];
+
+    features.forEach(f => {
         const geom  = f.geometry;
         const props = f.properties || {};
         if (!geom) return;
 
+        const isNew = !renderedUuids.has(props.uuid);
+        if (props.uuid) renderedUuids.add(props.uuid);
+
         if (geom.type === 'Point') {
             const [lon, lat] = geom.coordinates;
-            const m = L.marker([lat, lon], { icon: wpIcon });
-            if (props.name) m.bindTooltip(props.name, { permanent: false });
+            const wpType = props.wp_type || 'nav';
+            let m;
+            if (wpType === 'label') {
+                const displayName = (props.name || '').replace(/~.*$/, '');
+                m = L.marker([lat, lon], {
+                    icon: L.divIcon({
+                        className:  'nm-label',
+                        html:       displayName,
+                        iconSize:   [0, 0],
+                        iconAnchor: [0, 8],
+                    })
+                });
+            } else if (wpType === 'sounding') {
+                const shallow = props.depth_cm > 0 && props.depth_cm < 183;
+                m = L.marker([lat, lon], {
+                    icon: L.divIcon({
+                        className:  'nm-sounding' + (shallow ? ' nm-sounding-shallow' : ''),
+                        html:       props.name || '',
+                        iconSize:   [0, 0],
+                        iconAnchor: [0, 8],
+                    })
+                });
+            } else {
+                m = L.marker([lat, lon], { icon: wpIcon });
+                if (props.name) m.bindTooltip(props.name, { permanent: false });
+            }
             m.addTo(renderLayer);
-            allLatLngs.push([lat, lon]);
+            if (isNew) newLatLngs.push([lat, lon]);
         }
         else if (geom.type === 'LineString') {
             if (!geom.coordinates.length) return;
@@ -116,7 +154,7 @@ function renderAll(geojson) {
             const line   = L.polyline(coords, { color: color, weight: 2 });
             if (props.name) line.bindTooltip(props.name, { permanent: false, sticky: true });
             line.addTo(renderLayer);
-            allLatLngs.push(...coords);
+            if (isNew) newLatLngs.push(...coords);
             if (props.obj_type === 'route') {
                 coords.forEach(([lat, lon]) => {
                     L.circleMarker([lat, lon], {
@@ -131,8 +169,12 @@ function renderAll(geojson) {
         }
     });
 
-    if (isAutoZoom() && allLatLngs.length) {
-        map.fitBounds(L.latLngBounds(allLatLngs), { padding: [30, 30] });
+    if (isAutoZoom() && newLatLngs.length) {
+        if (newLatLngs.length === 1) {
+            map.setView(newLatLngs[0], 15);
+        } else {
+            map.fitBounds(L.latLngBounds(newLatLngs), { padding: [30, 30], maxZoom: 17 });
+        }
     }
 }
 

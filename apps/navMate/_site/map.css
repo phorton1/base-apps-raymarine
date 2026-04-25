@@ -32,6 +32,31 @@ html, body { margin: 0; padding: 0; height: 100%; }
 }
 .nm-clear-btn:hover { background: #e0e0e0; }
 
+/* Label waypoints: place-name text, no icon circle */
+.nm-label {
+    color: white;
+    font-size: 11px;
+    font-weight: bold;
+    white-space: nowrap;
+    text-shadow: 1px 1px 2px black, -1px -1px 2px black,
+                 1px -1px 2px black, -1px 1px 2px black;
+    cursor: default;
+    pointer-events: none;
+}
+
+/* Sounding waypoints: depth number */
+.nm-sounding {
+    color: #333;
+    font-size: 10px;
+    white-space: nowrap;
+    cursor: default;
+    pointer-events: none;
+}
+.nm-sounding-shallow {
+    color: red;
+    font-weight: bold;
+}
+
 .leaflet-control-attribution {
     font-size: 12px;
 }

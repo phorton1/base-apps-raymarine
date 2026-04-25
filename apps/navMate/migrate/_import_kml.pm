@@ -49,7 +49,7 @@ my %SOURCE_NAMES = (
 
 my $xs = XML::Simple->new(
 	KeyAttr       => [],
-	ForceArray    => ['Folder', 'Placemark', 'Style', 'StyleMap', 'Pair'],
+	ForceArray    => ['Folder', 'Document', 'Placemark', 'Style', 'StyleMap', 'Pair'],
 	SuppressEmpty => '');
 
 my $import_ts = time();
@@ -88,20 +88,17 @@ sub _importFile
 	my $kml_name    = basename($path);
 	my $source_file = $SOURCE_NAMES{$kml_name} // $kml_name;
 	my $data        = $xs->XMLin($path);
-	my $doc         = $data->{Document}
+	my $doc         = $data->{Document}[0]
 		or die "no Document element in $path";
 
 	my $top_coll     = insertCollection($source_file, undef, '');
-	my $wp_sink_uuid = undef;
 	my $style_colors = _buildStyleMap($doc);
 
 	my $ctx = {
-		coll_uuid     => $top_coll,
-		node_type     => 'branch',
-		source_file   => $source_file,
-		top_coll_uuid => $top_coll,
-		wp_sink_ref   => \$wp_sink_uuid,
-		style_colors  => $style_colors,
+		coll_uuid    => $top_coll,
+		node_type    => 'branch',
+		source_file  => $source_file,
+		style_colors => $style_colors,
 	};
 
 	for my $folder (@{$doc->{Folder} // []})
@@ -110,7 +107,7 @@ sub _importFile
 		if (($SOURCE_NAMES{$fname . '.kml'} // '') eq $source_file)
 		{
 			# Merge top-level wrapper folder directly into $top_coll.
-			# Sub-folders first so typed collections exist before any wp_sink fires.
+			# Sub-folders first so route collections exist before their placemarks are processed.
 			for my $sub (@{$folder->{Folder} // []})
 			{
 				_walkFolder($sub, $ctx);
@@ -118,6 +115,11 @@ sub _importFile
 			for my $pm (@{$folder->{Placemark} // []})
 			{
 				_importPlacemark($pm, $ctx);
+			}
+			for my $doc (@{$folder->{Document} // []})
+			{
+				for my $sub (@{$doc->{Folder} // []})    { _walkFolder($sub, $ctx) }
+				for my $pm  (@{$doc->{Placemark} // []}) { _importPlacemark($pm, $ctx) }
 			}
 		}
 		else
@@ -130,28 +132,13 @@ sub _importFile
 		_importPlacemark($pm, $ctx);
 	}
 
+	my $n_relabeled = classifyOrphanWaypoints($top_coll);
+	display(0,1,"  reclassified $n_relabeled waypoint(s) nav→label (no track endpoint match)")
+		if $n_relabeled;
+
 	display(0,0,"  done: $source_file");
 }
 
-
-#---------------------------------
-# _getWpSink
-#---------------------------------
-# Returns the uuid of a 'Waypoints' group collection under the source
-# file's top-level collection.  Created on first call; reused thereafter.
-# Used only when route Point placemarks have no pre-existing waypoint match.
-
-sub _getWpSink
-{
-	my ($ctx) = @_;
-	my $ref = $ctx->{wp_sink_ref};
-	unless ($$ref)
-	{
-		$$ref = findCollection('My Waypoints', $ctx->{top_coll_uuid})
-		     // insertCollection('My Waypoints', $ctx->{top_coll_uuid}, '');
-	}
-	return $$ref;
-}
 
 
 #---------------------------------
@@ -165,10 +152,9 @@ sub _walkFolder
 	return if $name =~ /~$/;
 
 	my $node_type = 'branch';
-	if ($name =~ /^(waypoints?|my\s+waypoints?)$/i)
+	if ($name =~ /^(waypoints?|my\s+waypoints?|places?)$/i)
 	{
-		# groups if it contains sub-folders (it's a container of groups),
-		# group if it contains only waypoints directly
+		# groups if it contains sub-folders, group if it contains only waypoints directly
 		$node_type = @{$folder->{Folder} // []} ? 'groups' : 'group';
 	}
 	elsif ($name =~ /^groups?$/i)                      { $node_type = 'groups' }
@@ -193,7 +179,7 @@ sub _walkFolder
 
 	my $child_ctx = { %$ctx, coll_uuid => $coll_uuid, node_type => $node_type };
 
-	# Sub-folders first so typed collections exist before any wp_sink fires.
+	# Sub-folders first so route collections exist before their placemarks are processed.
 	for my $sub (@{$folder->{Folder} // []})
 	{
 		_walkFolder($sub, $child_ctx);
@@ -201,6 +187,11 @@ sub _walkFolder
 	for my $pm (@{$folder->{Placemark} // []})
 	{
 		_importPlacemark($pm, $child_ctx);
+	}
+	for my $doc (@{$folder->{Document} // []})
+	{
+		for my $sub (@{$doc->{Folder} // []})    { _walkFolder($sub, $child_ctx) }
+		for my $pm  (@{$doc->{Placemark} // []}) { _importPlacemark($pm, $child_ctx) }
 	}
 }
 
@@ -216,11 +207,7 @@ sub _importPlacemark
 
 	if (exists $pm->{Point})
 	{
-		# Waypoints must live in a group collection; redirect if context is not a group
-		my $wp_ctx = ($ctx->{node_type} eq 'group')
-			? $ctx
-			: { %$ctx, coll_uuid => _getWpSink($ctx) };
-		_importWaypoint($pm, $wp_ctx);
+		_importWaypoint($pm, $ctx);
 	}
 	elsif (exists $pm->{LineString})
 	{
@@ -247,8 +234,21 @@ sub _importWaypoint
 	$raw =~ s/^\s+|\s+$//g;
 	my ($lon, $lat) = split /,/, $raw;
 	return unless defined $lat && defined $lon;
+
+	my $name     = $pm->{name} // '';
+	my $wp_type  = $WP_TYPE_NAV;
+	my $depth_cm = 0;
+	$wp_type = $WP_TYPE_LABEL if $name =~ /~/;
+	if ($name =~ /^\d+$/)
+	{
+		$wp_type  = $WP_TYPE_SOUNDING;
+		$depth_cm = int($name * 30.48);
+	}
+
 	return insertWaypoint(
-		name            => $pm->{name},
+		name            => $name,
+		wp_type         => $wp_type,
+		depth_cm        => $depth_cm,
 		lat             => $lat + 0,
 		lon             => $lon + 0,
 		created_ts      => $import_ts,
@@ -302,8 +302,8 @@ sub _importTrack
 # Named sub-folder inside a routes context.
 # Route record in the routes collection ($ctx->{coll_uuid}).
 # For Point placemarks: look up by coordinate first (handles files where
-#   waypoints were already imported from a groups folder); if not found,
-#   create the waypoint in the peer wp_sink group collection.
+#   waypoints were already imported from a sibling groups folder); if not found,
+#   create the waypoint in a sub-collection named after the route.
 # For LineString placemarks: delegates to _importRouteFromLine.
 
 sub _importRouteFolder
@@ -319,6 +319,7 @@ sub _importRouteFolder
 		my $color = @line_pms
 			? _resolveColor($ctx->{style_colors}, $line_pms[0]{styleUrl})
 			: 0;
+		my $sub_coll;   # lazy: created only if a waypoint has no existing home
 		my $route_uuid = insertRoute($route_name, $color, '', $ctx->{coll_uuid});
 		my $pos     = 0;
 		my $created = 0;
@@ -331,6 +332,8 @@ sub _importRouteFolder
 			my $wp_uuid = findWaypointByLatLon($lat + 0, $lon + 0, $ctx->{source_file});
 			unless ($wp_uuid)
 			{
+				$sub_coll //= findCollection($route_name, $ctx->{coll_uuid})
+				          // insertCollection($route_name, $ctx->{coll_uuid}, '');
 				$wp_uuid = insertWaypoint(
 					name            => $pm->{name},
 					lat             => $lat + 0,
@@ -338,12 +341,12 @@ sub _importRouteFolder
 					created_ts      => $import_ts,
 					ts_source       => $TS_SOURCE_IMPORT,
 					source_file     => $ctx->{source_file},
-					collection_uuid => _getWpSink($ctx));
+					collection_uuid => $sub_coll);
 				$created++;
 			}
 			appendRouteWaypoint($route_uuid, $wp_uuid, $pos++);
 		}
-		display(0,1,"  route '$route_name': $pos pts ($created created in wp_sink)") if $created;
+		display(0,1,"  route '$route_name': $pos pts ($created new)") if $created;
 	}
 	elsif (@line_pms)
 	{

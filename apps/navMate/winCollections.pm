@@ -91,34 +91,16 @@ sub _loadTopLevel
 sub _collectionLabel
 {
 	my ($coll, $counts) = @_;
-	my $n    = $coll->{node_type} // 'branch';
 	my $name = $coll->{name};
-	if ($n eq 'tracks')
-	{
-		my $c = $counts->{tracks};
-		return "$name ($c " . ($c == 1 ? 'track' : 'tracks') . ")";
-	}
-	elsif ($n eq 'routes')
-	{
-		my $c = $counts->{routes};
-		return "$name ($c " . ($c == 1 ? 'route' : 'routes') . ")";
-	}
-	elsif ($n eq 'group')
-	{
-		my $c = $counts->{waypoints};
-		return "$name ($c " . ($c == 1 ? 'waypoint' : 'waypoints') . ")";
-	}
-	elsif ($n eq 'groups')
-	{
-		my $c = $counts->{collections};
-		return "$name ($c " . ($c == 1 ? 'group' : 'groups') . ")";
-	}
-	else
-	{
-		my $c = $counts->{collections} + $counts->{waypoints}
-		      + $counts->{routes}      + $counts->{tracks};
-		return "$name ($c " . ($c == 1 ? 'child' : 'children') . ")";
-	}
+	my ($nc, $nw, $nr, $nt) = @{$counts}{qw(collections waypoints routes tracks)};
+	my $total = $nc + $nw + $nr + $nt;
+	return "$name (empty)" unless $total;
+	my @parts;
+	push @parts, "$nc " . ($nc==1 ? 'folder'   : 'folders')   if $nc;
+	push @parts, "$nw " . ($nw==1 ? 'waypoint' : 'waypoints') if $nw;
+	push @parts, "$nr " . ($nr==1 ? 'route'    : 'routes')    if $nr;
+	push @parts, "$nt " . ($nt==1 ? 'track'    : 'tracks')    if $nt;
+	return "$name (" . join(', ', @parts) . ")";
 }
 
 
@@ -256,7 +238,6 @@ sub _showCollection
 	my $text   = '';
 	$text .= _fmt('uuid',        $coll->{uuid});
 	$text .= _fmt('name',        $coll->{name});
-	$text .= _fmt('node_type',   $coll->{node_type});
 	$text .= _fmt('parent_uuid', $coll->{parent_uuid});
 	$text .= _fmt('comment',     $coll->{comment});
 	$text .= "\n";
@@ -303,6 +284,8 @@ sub _showObject
 		$text .= _fmt('comment',         $w->{comment});
 		$text .= _fmt('lat',             sprintf("%.6f", $w->{lat}));
 		$text .= _fmt('lon',             sprintf("%.6f", $w->{lon}));
+		$text .= _fmt('wp_type',         $w->{wp_type});
+		$text .= _fmt('color',           $w->{color});
 		$text .= _fmt('sym',             $w->{sym});
 		$text .= _fmt('depth_cm',        $w->{depth_cm});
 		$text .= _fmt('created_ts',      $ts);
@@ -313,15 +296,19 @@ sub _showObject
 	}
 	elsif ($obj_stub->{obj_type} eq 'route')
 	{
-		my $r     = getRoute($obj_stub->{uuid});
-		my $n_pts = getRouteWaypointCount($r->{uuid});
+		my $r   = getRoute($obj_stub->{uuid});
+		my $wps = getRouteWaypoints($r->{uuid});
 		$text .= _fmt('uuid',            $r->{uuid});
 		$text .= _fmt('name',            $r->{name});
 		$text .= _fmt('comment',         $r->{comment});
 		$text .= _fmt('color',           $r->{color});
 		$text .= _fmt('collection_uuid', $r->{collection_uuid});
 		$text .= "\n";
-		$text .= _fmt('route_points',    $n_pts);
+		for my $i (0 .. $#$wps)
+		{
+			$text .= sprintf("  %2d. %-24s  %.5f, %.5f\n",
+				$i + 1, $wps->[$i]{name} // '', $wps->[$i]{lat}, $wps->[$i]{lon});
+		}
 	}
 
 	$this->{detail}->SetValue($text);
@@ -387,6 +374,9 @@ sub _renderCollection
 				uuid     => $wp->{uuid},
 				name     => $wp->{name} // '',
 				obj_type => 'waypoint',
+				wp_type  => $wp->{wp_type} // 'nav',
+				color    => $wp->{color},
+				depth_cm => ($wp->{depth_cm} // 0) + 0,
 				sym      => ($wp->{sym} // 0) + 0,
 			},
 			geometry => {
@@ -470,6 +460,9 @@ sub _renderObject
 				uuid     => $obj->{uuid},
 				name     => $obj->{name} // '',
 				obj_type => 'waypoint',
+				wp_type  => $obj->{wp_type} // 'nav',
+				color    => $obj->{color},
+				depth_cm => ($obj->{depth_cm} // 0) + 0,
 				sym      => ($obj->{sym} // 0) + 0,
 			},
 			geometry => {
