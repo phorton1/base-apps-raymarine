@@ -89,7 +89,7 @@ sub _enrichFromIndex
 		{
 			next if $name =~ /~$/;    # skip visual overlay references
 
-			my $uuid = findTrackByNameAndSource($name, $source);
+			my $uuid = findTrackByNameAndSource($name);
 			if (!$uuid)
 			{
 				display(0,1,"  not found: $name");

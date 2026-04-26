@@ -96,7 +96,6 @@ sub _importTopLevel
 		dbh          => $dbh,
 		coll_uuid    => $top_coll,
 		node_type    => $NODE_TYPE_BRANCH,
-		source_file  => $name,
 		style_colors => $style_colors,
 	};
 
@@ -113,8 +112,8 @@ sub _importTopLevel
 		for my $pm  (@{$doc->{Placemark} // []}) { _importPlacemark($pm, $doc_ctx) }
 	}
 
-	my $n = classifyOrphanWaypoints($dbh, $top_coll);
-	display(0,1,"  reclassified $n waypoint(s) nav->label") if $n;
+	my $n = promoteNavWaypoints($dbh, $top_coll);
+	display(0,1,"  promoted $n waypoint(s) label->nav") if $n;
 	display(0,0,"  done: $name");
 }
 
@@ -211,9 +210,8 @@ sub _importWaypoint
 	return unless defined $lat && defined $lon;
 
 	my $name     = $pm->{name} // '';
-	my $wp_type  = $WP_TYPE_NAV;
+	my $wp_type  = $WP_TYPE_LABEL;
 	my $depth_cm = 0;
-	$wp_type = $WP_TYPE_LABEL if $name =~ /~/;
 	if ($name =~ /^\d+$/)
 	{
 		$wp_type  = $WP_TYPE_SOUNDING;
@@ -228,7 +226,6 @@ sub _importWaypoint
 		lon             => $lon + 0,
 		created_ts      => $import_ts,
 		ts_source       => $TS_SOURCE_IMPORT,
-		source_file     => $ctx->{source_file},
 		collection_uuid => $ctx->{coll_uuid});
 }
 
@@ -264,7 +261,6 @@ sub _importTrack
 		ts_start        => $ts_start,
 		ts_end          => $ts_end,
 		ts_source       => $ts_source,
-		source_file     => $ctx->{source_file},
 		collection_uuid => $ctx->{coll_uuid},
 		point_count     => scalar @pts);
 
@@ -306,18 +302,18 @@ sub _importRouteFolder
 			$raw =~ s/^\s+|\s+$//g;
 			my ($lon, $lat) = split /,/, $raw;
 			next unless defined $lat && defined $lon;
-			my $wp_uuid = findWaypointByLatLon($dbh, $lat + 0, $lon + 0, $ctx->{source_file});
+			my $wp_uuid = findWaypointByLatLon($dbh, $lat + 0, $lon + 0);
 			unless ($wp_uuid)
 			{
 				$sub_coll //= findCollection($dbh, $route_name, $ctx->{coll_uuid})
 				          // insertCollection($dbh, $route_name, $ctx->{coll_uuid}, $NODE_TYPE_GROUP, '');
 				$wp_uuid = insertWaypoint($dbh,
 					name            => $pm->{name},
+					wp_type         => $WP_TYPE_NAV,
 					lat             => $lat + 0,
 					lon             => $lon + 0,
 					created_ts      => $import_ts,
 					ts_source       => $TS_SOURCE_IMPORT,
-					source_file     => $ctx->{source_file},
 					collection_uuid => $sub_coll);
 				$created++;
 			}
@@ -355,7 +351,7 @@ sub _importRouteFromLine
 	my $found = 0;
 	for my $pt (@pts)
 	{
-		my $wp_uuid = findWaypointByLatLon($dbh, $pt->{lat}, $pt->{lon}, $ctx->{source_file});
+		my $wp_uuid = findWaypointByLatLon($dbh, $pt->{lat}, $pt->{lon});
 		if ($wp_uuid)
 		{
 			appendRouteWaypoint($dbh, $route_uuid, $wp_uuid, $pos++);

@@ -84,7 +84,8 @@ sub _loadTopLevel
 	$tree->DeleteAllItems();
 	my $root = $tree->AddRoot('root');
 
-	my $dbh       = connectDB();
+	my $dbh = connectDB();
+	unless ($dbh) { $tree->Thaw(); return; }
 	my $top_colls = getCollectionChildren($dbh, undef);
 	for my $coll (@$top_colls)
 	{
@@ -285,7 +286,6 @@ sub _showObject
 		$text .= _fmt('ts_end',          $ts_end);
 		$text .= _fmt('ts_source',       $t->{ts_source});
 		$text .= _fmt('point_count',     $t->{point_count});
-		$text .= _fmt('source_file',     $t->{source_file});
 		$text .= _fmt('collection_uuid', $t->{collection_uuid});
 	}
 	elsif ($obj_stub->{obj_type} eq 'waypoint')
@@ -305,7 +305,6 @@ sub _showObject
 		$text .= _fmt('depth_cm',        $w->{depth_cm});
 		$text .= _fmt('created_ts',      $ts);
 		$text .= _fmt('ts_source',       $w->{ts_source});
-		$text .= _fmt('source_file',     $w->{source_file});
 		$text .= _fmt('source',          $w->{source});
 		$text .= _fmt('collection_uuid', $w->{collection_uuid});
 	}
@@ -388,13 +387,20 @@ sub _renderCollection
 		push @features, {
 			type       => 'Feature',
 			properties => {
-				uuid     => $wp->{uuid},
-				name     => $wp->{name} // '',
-				obj_type => 'waypoint',
-				wp_type  => $wp->{wp_type} // 'nav',
-				color    => $wp->{color},
-				depth_cm => ($wp->{depth_cm} // 0) + 0,
-				sym      => ($wp->{sym} // 0) + 0,
+				uuid            => $wp->{uuid},
+				name            => $wp->{name} // '',
+				obj_type        => 'waypoint',
+				wp_type         => $wp->{wp_type} // 'nav',
+				color           => $wp->{color},
+				depth_cm        => ($wp->{depth_cm}   // 0) + 0,
+				sym             => ($wp->{sym}         // 0) + 0,
+				lat             => ($wp->{lat}         // 0) + 0,
+				lon             => ($wp->{lon}         // 0) + 0,
+				comment         => $wp->{comment}      // '',
+				created_ts      => ($wp->{created_ts}  // 0) + 0,
+				ts_source       => $wp->{ts_source}    // '',
+				source          => $wp->{source}       // '',
+				collection_uuid => $wp->{collection_uuid} // '',
 			},
 			geometry => {
 				type        => 'Point',
@@ -413,10 +419,15 @@ sub _renderCollection
 		push @features, {
 			type       => 'Feature',
 			properties => {
-				uuid     => $t->{uuid},
-				name     => $t->{name} // '',
-				obj_type => 'track',
-				color    => ($t->{color} // 0) + 0,
+				uuid            => $t->{uuid},
+				name            => $t->{name} // '',
+				obj_type        => 'track',
+				color           => ($t->{color}       // 0) + 0,
+				point_count     => ($t->{point_count} // 0) + 0,
+				ts_start        => ($t->{ts_start}    // 0) + 0,
+				ts_end          => ($t->{ts_end}      // 0) + 0,
+				ts_source       => $t->{ts_source}    // '',
+				collection_uuid => $t->{collection_uuid} // '',
 			},
 			geometry => {
 				type        => 'LineString',
@@ -428,17 +439,22 @@ sub _renderCollection
 	for my $r (@{$wrgt->{routes}})
 	{
 		next if $rendered_uuids{$r->{uuid}};
-		my $pts = getRoutePoints($dbh, $r->{uuid});
+		my $pts = getRouteWaypoints($dbh, $r->{uuid});
 		next unless @$pts;
 		$rendered_uuids{$r->{uuid}} = 1;
-		my @coords = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
+		my @coords   = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
+		my @rp_names = map { $_->{name} // '' } @$pts;
 		push @features, {
 			type       => 'Feature',
 			properties => {
-				uuid     => $r->{uuid},
-				name     => $r->{name} // '',
-				obj_type => 'route',
-				color    => ($r->{color} // 0) + 0,
+				uuid            => $r->{uuid},
+				name            => $r->{name} // '',
+				obj_type        => 'route',
+				color           => ($r->{color} // 0) + 0,
+				wp_count        => scalar(@$pts) + 0,
+				rp_names        => \@rp_names,
+				comment         => $r->{comment} // '',
+				collection_uuid => $r->{collection_uuid} // '',
 			},
 			geometry => {
 				type        => 'LineString',
@@ -470,38 +486,53 @@ sub _renderObject
 
 	if ($obj->{obj_type} eq 'waypoint')
 	{
-		$rendered_uuids{$obj->{uuid}} = 1;
+		my $w = getWaypoint($dbh, $obj->{uuid});
+		return unless $w;
+		$rendered_uuids{$w->{uuid}} = 1;
 		push @features, {
 			type       => 'Feature',
 			properties => {
-				uuid     => $obj->{uuid},
-				name     => $obj->{name} // '',
-				obj_type => 'waypoint',
-				wp_type  => $obj->{wp_type} // 'nav',
-				color    => $obj->{color},
-				depth_cm => ($obj->{depth_cm} // 0) + 0,
-				sym      => ($obj->{sym} // 0) + 0,
+				uuid            => $w->{uuid},
+				name            => $w->{name} // '',
+				obj_type        => 'waypoint',
+				wp_type         => $w->{wp_type}  // 'nav',
+				color           => $w->{color},
+				depth_cm        => ($w->{depth_cm}   // 0) + 0,
+				sym             => ($w->{sym}         // 0) + 0,
+				lat             => ($w->{lat}         // 0) + 0,
+				lon             => ($w->{lon}         // 0) + 0,
+				comment         => $w->{comment}      // '',
+				created_ts      => ($w->{created_ts}  // 0) + 0,
+				ts_source       => $w->{ts_source}    // '',
+				source          => $w->{source}       // '',
+				collection_uuid => $w->{collection_uuid} // '',
 			},
 			geometry => {
 				type        => 'Point',
-				coordinates => [$obj->{lon} + 0, $obj->{lat} + 0],
+				coordinates => [$w->{lon} + 0, $w->{lat} + 0],
 			},
 		};
 	}
 	elsif ($obj->{obj_type} eq 'track')
 	{
+		my $t   = getTrack($dbh, $obj->{uuid});
 		my $pts = getTrackPoints($dbh, $obj->{uuid});
-		if (@$pts)
+		if ($t && @$pts)
 		{
-			$rendered_uuids{$obj->{uuid}} = 1;
+			$rendered_uuids{$t->{uuid}} = 1;
 			my @coords = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
 			push @features, {
 				type       => 'Feature',
 				properties => {
-					uuid     => $obj->{uuid},
-					name     => $obj->{name} // '',
-					obj_type => 'track',
-					color    => ($obj->{color} // 0) + 0,
+					uuid            => $t->{uuid},
+					name            => $t->{name} // '',
+					obj_type        => 'track',
+					color           => ($t->{color}       // 0) + 0,
+					point_count     => ($t->{point_count} // 0) + 0,
+					ts_start        => ($t->{ts_start}    // 0) + 0,
+					ts_end          => ($t->{ts_end}      // 0) + 0,
+					ts_source       => $t->{ts_source}    // '',
+						collection_uuid => $t->{collection_uuid} // '',
 				},
 				geometry => {
 					type        => 'LineString',
@@ -512,18 +543,24 @@ sub _renderObject
 	}
 	elsif ($obj->{obj_type} eq 'route')
 	{
-		my $pts = getRoutePoints($dbh, $obj->{uuid});
-		if (@$pts)
+		my $r   = getRoute($dbh, $obj->{uuid});
+		my $pts = getRouteWaypoints($dbh, $obj->{uuid});
+		if ($r && @$pts)
 		{
-			$rendered_uuids{$obj->{uuid}} = 1;
-			my @coords = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
+			$rendered_uuids{$r->{uuid}} = 1;
+			my @coords   = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
+			my @rp_names = map { $_->{name} // '' } @$pts;
 			push @features, {
 				type       => 'Feature',
 				properties => {
-					uuid     => $obj->{uuid},
-					name     => $obj->{name} // '',
-					obj_type => 'route',
-					color    => ($obj->{color} // 0) + 0,
+					uuid            => $r->{uuid},
+					name            => $r->{name} // '',
+					obj_type        => 'route',
+					color           => ($r->{color} // 0) + 0,
+					wp_count        => scalar(@$pts) + 0,
+					rp_names        => \@rp_names,
+					comment         => $r->{comment} // '',
+					collection_uuid => $r->{collection_uuid} // '',
 				},
 				geometry => {
 					type        => 'LineString',

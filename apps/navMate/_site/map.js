@@ -24,48 +24,117 @@ const map = L.map('map', {
 });
 map.setView([9.35, -82.25], 8);
 
+// ---- Cursor coordinates ----
+
+function toDDM(dd, isLat) {
+    const dir = isLat ? (dd >= 0 ? 'N' : 'S') : (dd >= 0 ? 'E' : 'W');
+    const abs = Math.abs(dd);
+    const deg = Math.floor(abs);
+    const min = (abs - deg) * 60;
+    return deg + '°' + min.toFixed(3) + "' " + dir;
+}
+
+const coordsDiv = document.getElementById('nm-coords');
+map.on('mousemove', e => {
+    const lat = e.latlng.lat, lng = e.latlng.lng;
+    coordsDiv.textContent =
+        toDDM(lat, true) + '  ' + toDDM(lng, false) + '\n' +
+        lat.toFixed(5)   + '  ' + lng.toFixed(5);
+});
+map.on('mouseout', () => { coordsDiv.textContent = ''; });
+
 // ---- Render layer ----
 
 const renderLayer = L.layerGroup().addTo(map);
 
-// ---- Auto-zoom control (top-left, below zoom buttons) ----
+// ---- Overlay control (top-left, below zoom buttons) ----
 
-const AutoZoomControl = L.Control.extend({
+const OverlayControl = L.Control.extend({
     options: { position: 'topleft' },
     onAdd: function() {
         const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control nm-ctl');
-        const lbl = L.DomUtil.create('label', '', div);
-        const cb  = document.createElement('input');
-        cb.type    = 'checkbox';
-        cb.id      = 'autozoom';
-        cb.checked = true;
-        lbl.appendChild(cb);
-        lbl.appendChild(document.createTextNode(' Auto-zoom'));
-        L.DomEvent.disableClickPropagation(div);
-        L.DomEvent.disableScrollPropagation(div);
-        return div;
-    }
-});
-new AutoZoomControl().addTo(map);
 
-// ---- Clear control (top-left, below auto-zoom) ----
+        function makeRow(id, text, checked) {
+            const lbl = document.createElement('label');
+            const cb  = document.createElement('input');
+            cb.type    = 'checkbox';
+            cb.id      = id;
+            cb.checked = checked;
+            cb.addEventListener('change', rerender);
+            lbl.appendChild(cb);
+            lbl.appendChild(document.createTextNode(' ' + text));
+            return lbl;
+        }
 
-const ClearControl = L.Control.extend({
-    options: { position: 'topleft' },
-    onAdd: function() {
-        const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control nm-ctl');
+        div.appendChild(makeRow('autozoom', 'Auto-zoom', true));
+
         const btn = L.DomUtil.create('button', 'nm-clear-btn', div);
         btn.textContent = 'Clear';
         L.DomEvent.on(btn, 'click', function(e) {
             L.DomEvent.stopPropagation(e);
             fetch('/clear', { method: 'POST' }).catch(() => {});
         });
+
+        div.appendChild(makeRow('labels',  'Labels',   true));
+        div.appendChild(makeRow('wpnames', 'WP names', false));
+        div.appendChild(makeRow('rpnames', 'RP names', false));
         L.DomEvent.disableClickPropagation(div);
         L.DomEvent.disableScrollPropagation(div);
         return div;
     }
 });
-new ClearControl().addTo(map);
+new OverlayControl().addTo(map);
+
+const TS_FIELDS = new Set(['created_ts', 'ts_start', 'ts_end']);
+const SKIP_FIELDS = new Set(['obj_type', 'name', 'rp_names']);
+const TYPE_ABBREV = { waypoint: 'WP', route: 'Route', track: 'TRK' };
+
+function escHtml(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function fmtVal(k, v) {
+    if (TS_FIELDS.has(k) && v > 0)
+        return new Date(v * 1000).toISOString().replace('T',' ').replace('.000Z',' UTC');
+    return String(v);
+}
+
+function showInfo(props, context) {
+    const div = document.getElementById('nm-info');
+    if (!div) return;
+    const abbrev = TYPE_ABBREV[props.obj_type] || props.obj_type || '';
+    let html = '<div class="nm-info-header">'
+             + '<span class="nm-info-type">' + escHtml(abbrev) + ':</span> '
+             + '<span class="nm-info-name">' + escHtml(props.name || '(unnamed)') + '</span>'
+             + '</div>';
+    if (context) html += '<div class="nm-info-ctx">' + escHtml(context) + '</div>';
+    html += '<table class="nm-info-table">';
+    for (const [k, v] of Object.entries(props)) {
+        if (SKIP_FIELDS.has(k)) continue;
+        if (v === null || v === undefined || v === '' || v === 0 && TS_FIELDS.has(k)) continue;
+        html += '<tr><td class="nm-info-key">' + escHtml(k) + '</td>'
+              + '<td class="nm-info-val">' + escHtml(fmtVal(k, v)) + '</td></tr>';
+    }
+    html += '</table>';
+    div.innerHTML = html;
+    div.style.display = 'block';
+}
+
+function hideInfo() {
+    const div = document.getElementById('nm-info');
+    if (div) div.style.display = 'none';
+}
+
+function nearestPointIdx(coords, latlng) {
+    let best = 0, bestDist = Infinity;
+    for (let i = 0; i < coords.length; i++) {
+        const dlat = coords[i][0] - latlng.lat;
+        const dlon = coords[i][1] - latlng.lng;
+        const d = dlat * dlat + dlon * dlon;
+        if (d < bestDist) { bestDist = d; best = i; }
+    }
+    return best;
+}
 
 // ---- Helpers ----
 
@@ -96,8 +165,19 @@ function e80Color(idx) {
 // Track UUIDs already rendered so autozoom only moves to newly added items.
 let renderedUuids = new Set();
 
+let lastGeojson = null;
+
+function rerender() {
+    if (lastGeojson) renderAll(lastGeojson);
+}
+
+function isLabels()  { const cb = document.getElementById('labels');  return cb ? cb.checked : true;  }
+function isWpNames() { const cb = document.getElementById('wpnames'); return cb ? cb.checked : false; }
+function isRpNames() { const cb = document.getElementById('rpnames'); return cb ? cb.checked : false; }
+
 function renderAll(geojson) {
     renderLayer.clearLayers();
+    lastGeojson = geojson;
     const features = geojson.features || [];
 
     // Server cleared — reset our UUID tracking.
@@ -117,6 +197,7 @@ function renderAll(geojson) {
         if (props.uuid) renderedUuids.add(props.uuid);
 
         if (geom.type === 'Point') {
+            if (!isLabels()) return;
             const [lon, lat] = geom.coordinates;
             const wpType = props.wp_type || 'nav';
             let m;
@@ -125,7 +206,7 @@ function renderAll(geojson) {
                 m = L.marker([lat, lon], {
                     icon: L.divIcon({
                         className:  'nm-label',
-                        html:       displayName,
+                        html: escHtml(displayName),
                         iconSize:   [0, 0],
                         iconAnchor: [0, 8],
                     })
@@ -142,28 +223,78 @@ function renderAll(geojson) {
                 });
             } else {
                 m = L.marker([lat, lon], { icon: wpIcon });
-                if (props.name) m.bindTooltip(props.name, { permanent: false });
             }
+            const isNavWp = (wpType !== 'label' && wpType !== 'sounding');
+            m.on('mouseover', () => {
+                if (isNavWp) m.getElement()?.classList.add('nm-wp-hover');
+                showInfo(props);
+            });
+            m.on('mouseout', () => {
+                if (isNavWp) m.getElement()?.classList.remove('nm-wp-hover');
+                hideInfo();
+            });
             m.addTo(renderLayer);
             if (isNew) newLatLngs.push([lat, lon]);
+            if (isWpNames() && props.name) {
+                L.marker([lat, lon], {
+                    icon: L.divIcon({
+                        className:  'nm-wp-name',
+                        html:       escHtml(props.name),
+                        iconSize:   [0, 0],
+                        iconAnchor: [-8, 5],
+                    })
+                }).addTo(renderLayer);
+            }
         }
         else if (geom.type === 'LineString') {
             if (!geom.coordinates.length) return;
             const coords = geom.coordinates.map(([lon, lat]) => [lat, lon]);
             const color  = e80Color(props.color);
             const line   = L.polyline(coords, { color: color, weight: 2 });
-            if (props.name) line.bindTooltip(props.name, { permanent: false, sticky: true });
+            if (props.obj_type === 'track') {
+                const total = coords.length;
+                line.on('mouseover', () => line.setStyle({ color: '#ffffff' }));
+                line.on('mousemove', e => {
+                    const idx = nearestPointIdx(coords, e.latlng);
+                    showInfo(props, 'point ' + (idx + 1) + ' / ' + total);
+                });
+                line.on('mouseout', () => { line.setStyle({ color: color }); hideInfo(); });
+            } else {
+                line.on('mouseover', () => { line.setStyle({ color: '#ffffff' }); showInfo(props, coords.length + ' route points'); });
+                line.on('mouseout',  () => { line.setStyle({ color: color }); hideInfo(); });
+            }
             line.addTo(renderLayer);
             if (isNew) newLatLngs.push(...coords);
             if (props.obj_type === 'route') {
-                coords.forEach(([lat, lon]) => {
+                const total = coords.length;
+                coords.forEach(([lat, lon], idx) => {
                     L.circleMarker([lat, lon], {
                         radius:      4,
                         color:       color,
                         fillColor:   color,
                         fillOpacity: 0.5,
                         weight:      1
-                    }).addTo(renderLayer);
+                    })
+                    .on('mouseover', function() {
+                        this.setStyle({ color: '#ffffff', fillColor: '#ffffff' });
+                        showInfo(props, 'RP: ' + (idx + 1) + ' / ' + total);
+                    })
+                    .on('mouseout', function() {
+                        this.setStyle({ color: color, fillColor: color });
+                        hideInfo();
+                    })
+                    .addTo(renderLayer);
+                    if (isRpNames()) {
+                        const rpName = (props.rp_names && props.rp_names[idx]) || String(idx + 1);
+                        L.marker([lat, lon], {
+                            icon: L.divIcon({
+                                className:  'nm-rp-name',
+                                html:       escHtml(rpName),
+                                iconSize:   [0, 0],
+                                iconAnchor: [-6, 5],
+                            })
+                        }).addTo(renderLayer);
+                    }
                 });
             }
         }

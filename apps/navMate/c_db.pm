@@ -47,13 +47,16 @@ BEGIN
 		getRoutePoints
 		getRouteWaypoints
 		rawQuery
-		classifyOrphanWaypoints
+		promoteNavWaypoints
 		promoteWaypointOnlyBranches
+		isDBReady
 	);
 }
 
 
 my $db_path = "$data_dir/navMate.db";
+
+our $db_ready :shared = 0;
 
 my $db_def = {
 
@@ -77,12 +80,11 @@ my $db_def = {
 		"lat             REAL NOT NULL",
 		"lon             REAL NOT NULL",
 		"sym             INTEGER DEFAULT 0",
-		"wp_type         TEXT NOT NULL DEFAULT 'nav'",
+		"wp_type         TEXT NOT NULL DEFAULT 'label'",
 		"color           TEXT",
 		"depth_cm        INTEGER DEFAULT 0",
 		"created_ts      INTEGER NOT NULL",
 		"ts_source       TEXT NOT NULL",
-		"source_file     TEXT",
 		"source          TEXT",
 		"collection_uuid TEXT NOT NULL",
 	],
@@ -110,7 +112,6 @@ my $db_def = {
 		"ts_end          INTEGER",
 		"ts_source       TEXT NOT NULL",
 		"point_count     INTEGER",
-		"source_file     TEXT",
 		"collection_uuid TEXT NOT NULL",
 	],
 
@@ -153,6 +154,7 @@ my $db_def = {
 sub openDB
 {
 	display(0,0,"c_db::openDB($db_path)");
+	$db_ready = 0;
 
 	my $dbh = Pub::Database->connect(_db_params());
 	if (!$dbh)
@@ -187,6 +189,7 @@ sub openDB
 	}
 
 	display(0,0,"c_db::openDB ok (schema $stored)");
+	$db_ready = 1;
 	$dbh->disconnect();
 	return 1;
 }
@@ -198,6 +201,7 @@ sub openDB
 
 sub connectDB
 {
+	return undef unless $db_ready;
 	my $dbh = Pub::Database->connect(_db_params());
 	error("c_db::connectDB failed") unless $dbh;
 	return $dbh;
@@ -356,8 +360,8 @@ sub insertWaypoint
 	$dbh->do(qq{
 		INSERT INTO waypoints
 			(uuid, name, comment, lat, lon, sym, wp_type, color, depth_cm,
-			 created_ts, ts_source, source_file, source, collection_uuid)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)},
+			 created_ts, ts_source, source, collection_uuid)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)},
 		[$uuid,
 		$a{name},
 		$a{comment}         // '',
@@ -369,7 +373,6 @@ sub insertWaypoint
 		$a{depth_cm}        // 0,
 		$a{created_ts},
 		$a{ts_source},
-		$a{source_file},
 		$a{source},
 		$a{collection_uuid}]);
 	return $uuid;
@@ -416,8 +419,8 @@ sub insertTrack
 	$dbh->do(qq{
 		INSERT INTO tracks
 			(uuid, name, color, ts_start, ts_end, ts_source,
-			 point_count, source_file, collection_uuid)
-		VALUES (?,?,?,?,?,?,?,?,?)},
+			 point_count, collection_uuid)
+		VALUES (?,?,?,?,?,?,?,?)},
 		[$uuid,
 		$a{name},
 		$a{color}       // 0,
@@ -425,7 +428,6 @@ sub insertTrack
 		$a{ts_end},
 		$a{ts_source},
 		$a{point_count} // 0,
-		$a{source_file},
 		$a{collection_uuid}]);
 	return $uuid;
 }
@@ -473,19 +475,19 @@ sub insertTrackPoints
 
 sub findTrackByNameAndSource
 {
-	my ($dbh, $name, $source_file, $ts_source) = @_;
+	my ($dbh, $name, $ts_source) = @_;
 	my $rec;
 	if (defined $ts_source)
 	{
 		$rec = $dbh->get_record(
-			"SELECT uuid FROM tracks WHERE name=? AND source_file=? AND ts_source=?",
-			[$name, $source_file, $ts_source]);
+			"SELECT uuid FROM tracks WHERE name=? AND ts_source=?",
+			[$name, $ts_source]);
 	}
 	else
 	{
 		$rec = $dbh->get_record(
-			"SELECT uuid FROM tracks WHERE name=? AND source_file=?",
-			[$name, $source_file]);
+			"SELECT uuid FROM tracks WHERE name=?",
+			[$name]);
 	}
 	return $rec ? $rec->{uuid} : undef;
 }
@@ -590,10 +592,10 @@ sub getCollectionObjects
 
 sub findWaypointByLatLon
 {
-	my ($dbh, $lat, $lon, $source_file) = @_;
+	my ($dbh, $lat, $lon) = @_;
 	my $rec = $dbh->get_record(
-		"SELECT uuid FROM waypoints WHERE ABS(lat-?) < 0.000001 AND ABS(lon-?) < 0.000001 AND source_file=? LIMIT 1",
-		[$lat, $lon, $source_file]);
+		"SELECT uuid FROM waypoints WHERE ABS(lat-?) < 0.000001 AND ABS(lon-?) < 0.000001 LIMIT 1",
+		[$lat, $lon]);
 	return $rec ? $rec->{uuid} : undef;
 }
 
@@ -619,7 +621,7 @@ sub getTrack
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, source_file, collection_uuid FROM tracks WHERE uuid=?",
+		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, collection_uuid FROM tracks WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -632,7 +634,7 @@ sub getWaypoint
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, comment, lat, lon, sym, wp_type, color, depth_cm, created_ts, ts_source, source_file, source, collection_uuid FROM waypoints WHERE uuid=?",
+		"SELECT uuid, name, comment, lat, lon, sym, wp_type, color, depth_cm, created_ts, ts_source, source, collection_uuid FROM waypoints WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -681,13 +683,18 @@ sub getCollectionWRGTs
 		)
 	};
 	my $wps = $dbh->get_records(
-		$cte . "SELECT uuid, name, lat, lon, sym, wp_type, color, depth_cm FROM waypoints WHERE collection_uuid IN (SELECT uuid FROM tree)",
+		$cte . "SELECT uuid, name, comment, lat, lon, sym, wp_type, color, depth_cm,
+		        created_ts, ts_source, source, collection_uuid
+		        FROM waypoints WHERE collection_uuid IN (SELECT uuid FROM tree)",
 		[$uuid]);
 	my $routes = $dbh->get_records(
-		$cte . "SELECT uuid, name, color FROM routes WHERE collection_uuid IN (SELECT uuid FROM tree)",
+		$cte . "SELECT uuid, name, comment, color, collection_uuid
+		        FROM routes WHERE collection_uuid IN (SELECT uuid FROM tree)",
 		[$uuid]);
 	my $tracks = $dbh->get_records(
-		$cte . "SELECT uuid, name, color, point_count FROM tracks WHERE collection_uuid IN (SELECT uuid FROM tree)",
+		$cte . "SELECT uuid, name, color, ts_start, ts_end, ts_source,
+		        point_count, collection_uuid
+		        FROM tracks WHERE collection_uuid IN (SELECT uuid FROM tree)",
 		[$uuid]);
 	return {
 		waypoints => $wps    // [],
@@ -788,13 +795,13 @@ sub getRouteWaypoints
 
 
 #---------------------------------
-# classifyOrphanWaypoints
+# promoteNavWaypoints
 #---------------------------------
-# Post-import pass: any 'nav' waypoint in the tree under $top_uuid that is not
-# within $tol degrees of a track start or end point is reclassified as 'label'.
-# Skipped (returns 0) when the tree has no tracks.
+# Post-import pass: any 'label' waypoint in the tree under $top_uuid that is
+# referenced in route_waypoints, or is within $tol degrees of a track start or
+# end point, is promoted to 'nav'.  Everything else stays 'label'.
 
-sub classifyOrphanWaypoints
+sub promoteNavWaypoints
 {
 	my ($dbh, $top_uuid, $tol) = @_;
 	$tol //= 0.001;
@@ -805,10 +812,20 @@ sub classifyOrphanWaypoints
 		SELECT c.uuid FROM collections c JOIN tree ON c.parent_uuid=tree.uuid
 	) ";
 
-	my $tc = $dbh->get_record(
-		$cte . "SELECT COUNT(*) AS n FROM tracks WHERE collection_uuid IN (SELECT uuid FROM tree)",
+	my $wps = $dbh->get_records(
+		$cte . "SELECT uuid, lat, lon FROM waypoints
+		        WHERE collection_uuid IN (SELECT uuid FROM tree)
+		        AND wp_type = 'label'",
 		[$top_uuid]);
-	return 0 unless $tc && $tc->{n} > 0;
+	return 0 unless @$wps;
+
+	my $route_rows = $dbh->get_records(
+		$cte . "SELECT DISTINCT rw.wp_uuid
+		        FROM route_waypoints rw
+		        JOIN routes r ON rw.route_uuid = r.uuid
+		        WHERE r.collection_uuid IN (SELECT uuid FROM tree)",
+		[$top_uuid]);
+	my %in_route = map { $_->{wp_uuid} => 1 } @{$route_rows // []};
 
 	my $eps = $dbh->get_records(
 		$cte . "SELECT tp.lat, tp.lon
@@ -818,35 +835,30 @@ sub classifyOrphanWaypoints
 		        AND (tp.position = 0
 		             OR (t.point_count > 0 AND tp.position = t.point_count - 1))",
 		[$top_uuid]);
-	return 0 unless @$eps;
 
-	my $wps = $dbh->get_records(
-		$cte . "SELECT uuid, lat, lon FROM waypoints
-		        WHERE collection_uuid IN (SELECT uuid FROM tree)
-		        AND wp_type = 'nav'",
-		[$top_uuid]);
-	return 0 unless @$wps;
-
-	my $relabeled = 0;
+	my $promoted = 0;
 	for my $wp (@$wps)
 	{
-		my $matched = 0;
-		for my $ep (@$eps)
+		my $is_nav = $in_route{$wp->{uuid}};
+		unless ($is_nav)
 		{
-			if (abs($wp->{lat} - $ep->{lat}) <= $tol
-			 && abs($wp->{lon} - $ep->{lon}) <= $tol)
+			for my $ep (@{$eps // []})
 			{
-				$matched = 1;
-				last;
+				if (abs($wp->{lat} - $ep->{lat}) <= $tol
+				 && abs($wp->{lon} - $ep->{lon}) <= $tol)
+				{
+					$is_nav = 1;
+					last;
+				}
 			}
 		}
-		unless ($matched)
+		if ($is_nav)
 		{
-			$dbh->do("UPDATE waypoints SET wp_type='label' WHERE uuid=?", [$wp->{uuid}]);
-			$relabeled++;
+			$dbh->do("UPDATE waypoints SET wp_type='nav' WHERE uuid=?", [$wp->{uuid}]);
+			$promoted++;
 		}
 	}
-	return $relabeled;
+	return $promoted;
 }
 
 
@@ -876,6 +888,9 @@ sub promoteWaypointOnlyBranches
 	display(0,1,"  promoted $n branch(es) to group") if $n;
 	return $n;
 }
+
+
+sub isDBReady { return $db_ready }
 
 
 #---------------------------------

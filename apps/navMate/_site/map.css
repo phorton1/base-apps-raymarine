@@ -1,6 +1,26 @@
 html, body { margin: 0; padding: 0; height: 100%; }
 #map { width: 100%; height: 100%; }
 
+#nm-coords {
+    position: absolute;
+    bottom: 24px;
+    left: 8px;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.65);
+    color: #ddd;
+    font: 11px/1.6 monospace;
+    padding: 3px 8px;
+    border-radius: 3px;
+    pointer-events: none;
+    white-space: pre;
+    min-width: 16em;
+}
+
+.leaflet-container        { cursor: default  !important; }
+.leaflet-grab             { cursor: default  !important; }
+.leaflet-dragging .leaflet-grab { cursor: default !important; }
+.leaflet-interactive      { cursor: crosshair !important; }
+
 /* Waypoint marker: small red transparent-fill circle */
 .nm-wp-marker {
     width: 12px;
@@ -8,6 +28,10 @@ html, body { margin: 0; padding: 0; height: 100%; }
     border-radius: 50%;
     border: 2px solid #cc0000;
     background: rgba(204, 0, 0, 0.20);
+}
+.nm-wp-hover {
+    border-color: #ffffff !important;
+    background: rgba(255, 255, 255, 0.35) !important;
 }
 
 /* Overlay controls stacked below the zoom buttons */
@@ -18,7 +42,7 @@ html, body { margin: 0; padding: 0; height: 100%; }
     white-space: nowrap;
     cursor: default;
 }
-.nm-ctl label { cursor: pointer; }
+.nm-ctl label { display: block; cursor: pointer; }
 
 .nm-clear-btn {
     display: block;
@@ -29,13 +53,15 @@ html, body { margin: 0; padding: 0; height: 100%; }
     font-size: 12px;
     width: 100%;
     box-sizing: border-box;
+    margin-top: 5px;
+    margin-bottom: 5px;
 }
 .nm-clear-btn:hover { background: #e0e0e0; }
 
-/* Label waypoints: place-name text, no icon circle */
+/* Label waypoints: place-name text in yellow */
 .nm-label {
-    color: white;
-    font-size: 11px;
+    color: #ffdd00;
+    font-size: 12px;
     font-weight: bold;
     white-space: nowrap;
     text-shadow: 1px 1px 2px black, -1px -1px 2px black,
@@ -57,6 +83,67 @@ html, body { margin: 0; padding: 0; height: 100%; }
     font-weight: bold;
 }
 
+/* WP / RP name overlay labels (toggled by checkboxes) */
+.nm-wp-name,
+.nm-rp-name {
+    color: white;
+    font-size: 11px;
+    font-weight: bold;
+    white-space: nowrap;
+    text-shadow: 1px 1px 2px black, -1px -1px 2px black,
+                 1px -1px 2px black, -1px 1px 2px black;
+    cursor: default;
+    pointer-events: none;
+}
+.nm-rp-name { font-size: 10px; }
+
+/* Hover info panel — top right, body-level so map container can't clip it */
+#nm-info {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.70);
+    color: #ddd;
+    padding: 8px 10px;
+    font-family: monospace;
+    font-size: 11px;
+    max-width: 320px;
+    min-width: 190px;
+    max-height: calc(100vh - 30px);
+    overflow-y: auto;
+    border-radius: 3px;
+    pointer-events: none;
+    line-height: 1.4;
+}
+.nm-info-header { margin-bottom: 5px; }
+.nm-info-type {
+    color: #bbb;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.nm-info-name {
+    font-size: 13px;
+    font-weight: bold;
+    color: #fff;
+}
+.nm-info-ctx {
+    color: #7ab;
+    font-size: 11px;
+    margin-bottom: 4px;
+}
+.nm-info-table { border-collapse: collapse; width: 100%; }
+.nm-info-key   { color: #999; padding-right: 8px; vertical-align: top; white-space: nowrap; }
+.nm-info-val   { color: #ddd; word-break: break-all; }
+
 .leaflet-control-attribution {
-    font-size: 12px;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: #aaa;
+    font-size: 9px;
+    text-shadow: 0 0 3px rgba(0,0,0,0.5);
+}
+.leaflet-control-attribution a {
+    color: #bbb;
 }
