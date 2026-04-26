@@ -52,7 +52,7 @@ sub kml_header
 	xmlns:gx="http://www.google.com/kml/ext/2.2"
 	xmlns:kml="http://www.opengis.net/kml/2.2"
 	xmlns:atom="http://www.w3.org/2005/Atom">
-<Document>
+<Folder>
 
 	<Style id='s_track'>
 		<LineStyle>
@@ -123,7 +123,7 @@ EOKMLHEADER
 
 sub kml_footer
 {
-	return "</Document>\n</kml>\n";
+	return "</Folder>\n</kml>\n";
 }
 
 
@@ -257,7 +257,7 @@ sub genTrack
 sub genTracks
 {
 	my ($fsh_file) = @_;
-	my $tracks = $fsh_file-getTracks();
+	my $tracks = $fsh_file->getTracks();
 	display(0,0,"generating ".scalar(@$tracks)." tracks");
 	if (@$tracks)
 	{
