@@ -30,13 +30,16 @@ BEGIN
 		$OBJ_TYPE_ROUTE
 		$OBJ_TYPE_TRACK
 
+		$NODE_TYPE_BRANCH
+		$NODE_TYPE_GROUP
+
 	);
 }
 
 
 # Schema version: integer part = breaking change (reimport required),
 # decimal part = non-breaking change (advisory).
-our $SCHEMA_VERSION = '2.0';
+our $SCHEMA_VERSION = '3.0';
 
 # waypoints.wp_type values
 our $WP_TYPE_NAV      = 'nav';
@@ -53,6 +56,10 @@ our $TS_SOURCE_IMPORT       = 'import';
 our $OBJ_TYPE_WAYPOINT = 'waypoint';
 our $OBJ_TYPE_ROUTE    = 'route';
 our $OBJ_TYPE_TRACK    = 'track';
+
+# collections.node_type values (DB-level only; import uses transient 'routes'/'groups'/'tracks' strings internally)
+our $NODE_TYPE_BRANCH = 'branch';
+our $NODE_TYPE_GROUP  = 'group';
 
 
 1;

@@ -165,19 +165,49 @@ sub parsePiece
 
 	if ($piece eq 'buffer' && !$packet->{is_dict})
 	{
-		# Parse WPMGR specific buffers into records
-		my $item;
 		my $what = $packet->{what};
 		my $buffer = substr($part,$$poffset);
 
 		printConsole(2,$mon,$color,"buffer piece($NAV_WHAT{$what})")
 			if $mon & $MON_PIECES;
 
-		$item = parseWaypoint(0,$buffer,$mon,$color) if $what == $WHAT_WAYPOINT;
-		$item = parseRoute(0,$buffer,$mon,$color)    if $what == $WHAT_ROUTE;
-		$item = parseGroup(0,$buffer,$mon,$color)    if $what == $WHAT_GROUP;
+		if ($what == $WHAT_ROUTE)
+		{
+			# Routes can span multiple BUFFER packets (one per 512-byte TCP chunk).
+			# Each chunk: 4-byte big_len (this chunk's payload size) + payload bytes.
+			# Accumulate payload across chunks; call parseRoute once complete.
 
-		$packet->{item} = shared_clone($item);
+			my $big_len = unpack('V', substr($buffer, 0, 4));
+
+			if (!defined $packet->{item_total})
+			{
+				$packet->{item_buf} = substr($buffer, 4, $big_len);
+				my $name_len = unpack('C', substr($packet->{item_buf}, 2, 1));
+				my $cmt_len  = unpack('C', substr($packet->{item_buf}, 3, 1));
+				my $num_wpts = unpack('v', substr($packet->{item_buf}, 4, 2));
+				$packet->{item_total} = 8 + $name_len + $cmt_len + $num_wpts * 18 + 46;
+			}
+			else
+			{
+				$packet->{item_buf} .= substr($buffer, 4, $big_len);
+			}
+
+			if (length($packet->{item_buf}) >= $packet->{item_total})
+			{
+				my $total = length($packet->{item_buf});
+				my $item = parseRoute(0, pack('V',$total) . $packet->{item_buf}, $mon, $color);
+				$packet->{item} = shared_clone($item) if $item;
+				delete $packet->{item_buf};
+				delete $packet->{item_total};
+			}
+		}
+		else
+		{
+			my $item;
+			$item = parseWaypoint(0,$buffer,$mon,$color) if $what == $WHAT_WAYPOINT;
+			$item = parseGroup(0,$buffer,$mon,$color)    if $what == $WHAT_GROUP;
+			$packet->{item} = shared_clone($item);
+		}
 	}
 	elsif ($piece eq 'context_bits')
 	{

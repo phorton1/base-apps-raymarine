@@ -87,7 +87,7 @@ sub apiCommandName
 	return 'GET_ITEM'	if $cmd == $API_GET_ITEM;
 	return 'NEW_ITEM'	if $cmd == $API_NEW_ITEM;
 	return 'DEL_ITEM'	if $cmd == $API_DEL_ITEM;
-	return 'MOD_ITEM'	if $cmd == $API_MOD_ITEM;
+	return 'MOD_ITEM'		if $cmd == $API_MOD_ITEM;
 	return "UNKNOWN API COMMAND";
 }
 
@@ -163,6 +163,32 @@ sub createMsg
 
 	display($dbg+3,1,"msg=".unpack('H*',$msg));
 	return $msg;
+}
+
+
+sub buildBufferMsgs
+	# Split a hex-encoded buffer (big_len prefix + payload) into 512-byte-safe
+	# BUFFER messages.  The E80 rejects individual messages > 512 bytes, so any
+	# payload longer than 498 bytes must be sent as multiple BUFFER messages,
+	# each with its own big_len prefix, exactly mirroring how the E80 itself
+	# chunks large route/group buffers on the receive side.
+{
+	my ($seq, $hex_data) = @_;
+	my $bin     = pack('H*', $hex_data);
+	my $payload = substr($bin, 4);		# strip the big_len prefix
+	my $msgs    = '';
+	my $CHUNK   = 498;
+	my $offset  = 0;
+	while ($offset < length($payload))
+	{
+		my $n     = length($payload) - $offset;
+		$n = $CHUNK if $n > $CHUNK;
+		my $chunk = substr($payload, $offset, $n);
+		$msgs    .= createMsg($seq, $DIRECTION_INFO, $CMD_BUFFER, 0,
+		                      unpack('H*', pack('V',$n) . $chunk));
+		$offset  += $n;
+	}
+	return $msgs;
 }
 
 
@@ -303,12 +329,14 @@ sub create_item
 	$request =
 		createMsg($seq,$DIRECTION_SEND,$CMD_MODIFY,		$what,	$uuid).
 		createMsg($seq,$DIRECTION_INFO,$CMD_CONTEXT,	0,		$uuid.'03000000').	#.'00000000').
-		createMsg($seq,$DIRECTION_INFO,$CMD_BUFFER,		0,		$data).
+		buildBufferMsgs($seq, $data).
 		createMsg($seq,$DIRECTION_INFO,$CMD_LIST,		0,		'00000000 00000000'); # $uuid);
 
 	return 0 if !$this->sendRequest($seq,"$name $what_name",$request);
-	return 0 if !$this->waitReply(1);
-	return 1;
+	my $ok = $this->waitReply(1);
+	$this->queueWPMGRCommand($API_GET_ITEM, $what, $name, $uuid, undef)
+		if $what != $WHAT_WAYPOINT;
+	return $ok;
 }
 
 
@@ -340,7 +368,7 @@ sub modify_item
 	$request =
 		createMsg($seq,$DIRECTION_SEND,$CMD_DATA,		$what,	'07000000'.$uuid).	# '15000000'.$uuid);
 		createMsg($seq,$DIRECTION_INFO,$CMD_CONTEXT,	0,		$uuid.'00000000').	#.'03000000').
-		createMsg($seq,$DIRECTION_INFO,$CMD_BUFFER,		0,		$data).
+		buildBufferMsgs($seq, $data).
 		createMsg($seq,$DIRECTION_INFO,$CMD_LIST,		0,		$uuid);
 	return 0 if !$this->sendRequest($seq,"modify $what_name",$request);
 	return 0 if !$this->waitReply(1);

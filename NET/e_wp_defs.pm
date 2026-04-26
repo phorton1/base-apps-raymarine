@@ -60,7 +60,7 @@ our $API_DO_QUERY	= 1;
 our $API_GET_ITEM	= 2;
 our $API_NEW_ITEM 	= 3;
 our $API_DEL_ITEM 	= 4;
-our $API_MOD_ITEM	= 5;
+our $API_MOD_ITEM		= 5;
 
 
 our $WHAT_WAYPOINT	= 0x00;

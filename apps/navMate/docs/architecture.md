@@ -119,8 +119,9 @@ These are not alternatives — all three run concurrently within the same proces
 
 ## Transport Abstraction
 
-The RAYNET protocol implementation (NET/ a_–e_ modules) is the first transport layer.
-It is linked directly into the navMate process — not a daemon, not a socket service.
+The RAYNET protocol implementation (NET/ — a standalone Perl library used by both
+shark and navMate) is the first transport layer. It is linked directly into the
+navMate process — not a daemon, not a socket service.
 
 navMate's core (knowledge base, UI, data model) is transport-agnostic. The transport
 abstraction layer sits between the core and any connected device or file format.
@@ -208,21 +209,23 @@ this zone.
 |------|------|--------|------|
 | `a_defs.pm` | lower | built | constants, type vocabulary |
 | `a_utils.pm` | lower | built | $data_dir/$temp_dir setup, UUID generation |
-| `c_db.pm` | lower | built | SQLite schema, raw CRUD |
+| `c_db.pm` | lower | built | SQLite schema, raw CRUD, promoteWaypointOnlyBranches |
 | `f_kml.pm` | lower | planned | production KML import/export with round-trip UUID |
-| `f_wrgt.pm` | lower | planned | WRT business logic, collection operations |
+| `f_wrgt.pm` | lower | planned | WRGT business logic, collection operations |
 | `j_transport.pm` | lower | planned | NET adapter, session-level transport |
 | `navMate.pm` | boundary | built | wx init, main loop |
-| `nmServer.pm` | app | built | embedded HTTP server; Leaflet bridge; GeoJSON API |
+| `nmServer.pm` | app | built | embedded HTTP server (port 9883); Leaflet bridge; GeoJSON + navMate query API; extends NET/h_server.pm |
+| `nmUpload.pm` | app | built | upload collection to E80 via WPMGR (waypoints, routes, groups) |
 | `nmSession.pm` | app | planned | session state (viewport, tree, working set) |
-| `winMain.pm` | app | built | main frame |
-| `winCollections.pm` | app | built | collection tree panel, object detail |
+| `s_serial.pm` | app | built (temp) | serial port interface; temporary location — belongs in NET layer |
+| `winMain.pm` | app | built | main frame, menu dispatch |
+| `winBrowser.pm` | app | built | collection tree + detail panel (SplitterWindow); upload context menu |
 | `w_frame.pm` | app | built | wx frame/panel base utilities |
-| `w_resources.pm` | app | built | wx resource loading |
+| `w_resources.pm` | app | built | wx resource constants (IDs, menus, context menus) |
 
 **`migrate/`** — one-time import scripts (KML pipeline, phorton.com enrichment).
-Version-controlled but not production modules. Currently: `_import_kml.pm`,
-`_enrich_phorton.pm`.
+Version-controlled but not production modules. Currently: `_import_kml.pm` (imports
+`C:/junk/My Places.kml` into SQLite), `_enrich_phorton.pm`.
 
 **`_site/`** — Leaflet applet HTML/JS, served by `nmServer.pm`'s embedded HTTP
 server. Not a Perl layer.

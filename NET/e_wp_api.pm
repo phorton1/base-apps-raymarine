@@ -16,7 +16,7 @@ use apps::raymarine::NET::a_utils;
 use apps::raymarine::NET::e_wp_defs;
 
 my $TEMP_COLOR = $UTILS_COLOR_CYAN;
-my $TEMP_MON = $MON_REC | $MON_REC_DETAILS | $MON_PACK | $MON_PACK_CONTROL | $MON_PACK_UNKNOWN;
+my $TEMP_MON   = $MONITOR_API_BUILDS;
 
 
 my $STD_WP_UUID	   = 'aaaaaaaaaaaa{int}';

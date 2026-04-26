@@ -42,11 +42,13 @@ BEGIN
 		getRoute
 		getRouteWaypointCount
 		getCollectionWRGTs
+		getCollectionGroups
 		getTrackPoints
 		getRoutePoints
 		getRouteWaypoints
 		rawQuery
 		classifyOrphanWaypoints
+		promoteWaypointOnlyBranches
 	);
 }
 
@@ -64,6 +66,7 @@ my $db_def = {
 		"uuid        TEXT PRIMARY KEY",
 		"name        TEXT NOT NULL",
 		"parent_uuid TEXT",
+		"node_type   TEXT NOT NULL DEFAULT 'branch'",
 		"comment     TEXT DEFAULT ''",
 	],
 
@@ -299,11 +302,21 @@ sub newUUID
 
 sub insertCollection
 {
-	my ($dbh, $name, $parent_uuid, $comment) = @_;
+	my ($dbh, $name, $parent_uuid, $node_type, $comment) = @_;
+	if (defined $parent_uuid)
+	{
+		my $pr = $dbh->get_record(
+			"SELECT node_type FROM collections WHERE uuid=?", [$parent_uuid]);
+		if ($pr && $pr->{node_type} eq $NODE_TYPE_GROUP)
+		{
+			error(0,0,"insertCollection: cannot add sub-collection under group '$name'");
+			return undef;
+		}
+	}
 	my $uuid = newUUID($dbh);
 	$dbh->do(
-		"INSERT INTO collections (uuid, name, parent_uuid, comment) VALUES (?,?,?,?)",
-		[$uuid, $name, $parent_uuid, $comment // '']);
+		"INSERT INTO collections (uuid, name, parent_uuid, node_type, comment) VALUES (?,?,?,?,?)",
+		[$uuid, $name, $parent_uuid, $node_type // $NODE_TYPE_BRANCH, $comment // '']);
 	return $uuid;
 }
 
@@ -515,11 +528,11 @@ sub getCollectionChildren
 	if (defined $parent_uuid)
 	{
 		return $dbh->get_records(
-			"SELECT uuid, name, comment FROM collections WHERE parent_uuid=? ORDER BY rowid",
+			"SELECT uuid, name, node_type, comment FROM collections WHERE parent_uuid=? ORDER BY rowid",
 			[$parent_uuid]);
 	}
 	return $dbh->get_records(
-		"SELECT uuid, name, comment FROM collections WHERE parent_uuid IS NULL ORDER BY rowid");
+		"SELECT uuid, name, node_type, comment FROM collections WHERE parent_uuid IS NULL ORDER BY rowid");
 }
 
 
@@ -593,7 +606,7 @@ sub getCollection
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, parent_uuid, comment FROM collections WHERE uuid=?",
+		"SELECT uuid, name, parent_uuid, node_type, comment FROM collections WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -681,6 +694,53 @@ sub getCollectionWRGTs
 		routes    => $routes // [],
 		tracks    => $tracks // [],
 	};
+}
+
+
+#---------------------------------
+# getCollectionGroups
+#---------------------------------
+# Returns all node_type='group' collections in the sub-tree rooted at
+# $coll_uuid, with their member waypoints.
+# Returns arrayref of { uuid, name, waypoints => [{uuid,name,lat,lon,sym}] }.
+
+sub getCollectionGroups
+{
+	my ($dbh, $coll_uuid) = @_;
+	my $rows = $dbh->get_records(qq{
+		WITH RECURSIVE tree(uuid) AS (
+			SELECT uuid FROM collections WHERE parent_uuid=?
+			UNION ALL
+			SELECT c.uuid FROM collections c JOIN tree ON c.parent_uuid=tree.uuid
+		)
+		SELECT col.uuid AS coll_uuid, col.name AS coll_name,
+		       w.uuid   AS wp_uuid,   w.name   AS wp_name,
+		       w.lat, w.lon, w.sym
+		FROM tree t
+		JOIN collections col ON col.uuid=t.uuid AND col.node_type='group'
+		JOIN waypoints w ON w.collection_uuid=col.uuid
+		ORDER BY col.name, w.rowid
+	}, [$coll_uuid]);
+
+	my @groups;
+	my %idx;
+	for my $row (@{$rows // []})
+	{
+		my $cu = $row->{coll_uuid};
+		unless (exists $idx{$cu})
+		{
+			$idx{$cu} = scalar @groups;
+			push @groups, { uuid => $cu, name => $row->{coll_name}, waypoints => [] };
+		}
+		push @{$groups[$idx{$cu}]->{waypoints}}, {
+			uuid => $row->{wp_uuid},
+			name => $row->{wp_name},
+			lat  => $row->{lat},
+			lon  => $row->{lon},
+			sym  => $row->{sym},
+		};
+	}
+	return \@groups;
 }
 
 
@@ -787,6 +847,34 @@ sub classifyOrphanWaypoints
 		}
 	}
 	return $relabeled;
+}
+
+
+#---------------------------------
+# promoteWaypointOnlyBranches
+#---------------------------------
+# Post-import pass: any branch collection that has at least one direct waypoint
+# and no sub-collections, routes, or tracks is promoted to node_type='group'.
+
+sub promoteWaypointOnlyBranches
+{
+	my ($dbh) = @_;
+	my $rows = $dbh->get_records(
+		"SELECT uuid FROM collections
+		 WHERE node_type = 'branch'
+		   AND EXISTS     (SELECT 1 FROM waypoints    w  WHERE w.collection_uuid  = collections.uuid)
+		   AND NOT EXISTS (SELECT 1 FROM collections  cc WHERE cc.parent_uuid     = collections.uuid)
+		   AND NOT EXISTS (SELECT 1 FROM routes       r  WHERE r.collection_uuid  = collections.uuid)
+		   AND NOT EXISTS (SELECT 1 FROM tracks       t  WHERE t.collection_uuid  = collections.uuid)",
+		[]);
+	my $n = 0;
+	for my $row (@$rows)
+	{
+		$dbh->do("UPDATE collections SET node_type='group' WHERE uuid=?", [$row->{uuid}]);
+		$n++;
+	}
+	display(0,1,"  promoted $n branch(es) to group") if $n;
+	return $n;
 }
 
 

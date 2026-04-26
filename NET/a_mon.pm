@@ -46,6 +46,8 @@ BEGIN
 		%SHARK_DEFAULTS
 		%SNIFFER_DEFAULTS
 
+		$MONITOR_API_BUILDS
+
     );
 }
 
@@ -148,6 +150,14 @@ my $MON_CMD					= $MON_HEADER | $MON_PARSE | $MON_PIECES;
 	# dont want to see dictionaries on command requests
 
 
+## Special variable for monitoring WPMGR API use of buildXXX() methods
+
+our $MONITOR_API_BUILDS		= $MON_REC | $MON_REC_DETAILS | $MON_PACK | $MON_PACK_CONTROL | $MON_PACK_UNKNOWN;
+	# Outside of the per-service monitor bit passing scheme, this variable
+	# controls whether to show debugging output while calling b_record::buildXXX()
+	# WRG methods directly from the WPMGR API call.
+	# 0 will turn the output off, or a variety of the monitoring bits may be
+	# used as indicated in the # following the =0; above.
 
 
 #======================================================================
@@ -182,10 +192,11 @@ my $SHARK_MON_TRACK 	= $MON_HEADER | $MON_RAW | $MON_MULTI | $MON_PARSE | $MON_P
     $MON_PACK_CONTROL |
     $MON_PACK_UNKNOWN;
 
+$SHARK_MON_TRACK = 0;
 
-my $SHARK_MON_WAYPOINT 	= $MON_ALL;
+my $SHARK_MON_WAYPOINT 	= 0;	# $MON_ALL;
 my $SHARK_MON_ROUTE 	= $MON_ALL;
-my $SHARK_MON_GROUP 	= $MON_ALL;
+my $SHARK_MON_GROUP 	= 0;	# $MON_ALL;
 
 my $ACTIVE_TRACK 		= 1;
 my $ACTIVE_WPMGR 		= 1;

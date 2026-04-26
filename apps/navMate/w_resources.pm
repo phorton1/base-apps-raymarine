@@ -18,7 +18,7 @@ BEGIN
 	our @EXPORT = qw(
 		$appName
 		$resources
-		$WIN_COLLECTIONS
+		$WIN_BROWSER
 		$CMD_OPEN_MAP
 		$CMD_IMPORT_KML
 		$CMD_UPLOAD_E80
@@ -28,19 +28,19 @@ BEGIN
 
 our $appName = "navMate";
 
-our $WIN_COLLECTIONS = 10001;
+our $WIN_BROWSER = 10001;
 our $CMD_OPEN_MAP    = 10002;
 our $CMD_IMPORT_KML  = 10003;
 our $CMD_UPLOAD_E80  = 10004;
 
 
 my $pane_data = {
-	$WIN_COLLECTIONS => ['Unused String1', 'content'],
+	$WIN_BROWSER => ['Unused String1', 'content'],
 };
 
 my $command_data = {
 	%{$resources->{command_data}},
-	$WIN_COLLECTIONS => ['Collections', 'Navigation data collections tree'],
+	$WIN_BROWSER => ['Browser', 'Navigation data browser'],
 	$CMD_OPEN_MAP    => ['Open Map',    'Open the Leaflet map in a browser'],
 	$CMD_IMPORT_KML  => ['Import KML',  'Delete and rebuild database from KML files'],
 	$CMD_UPLOAD_E80  => ['Upload to E80', 'Upload collection to E80 plotter'],
@@ -60,7 +60,7 @@ my $file_menu = [
 ];
 
 my $view_menu = [
-	$WIN_COLLECTIONS,
+	$WIN_BROWSER,
 	$CMD_OPEN_MAP,
 	$ID_SEPARATOR,
 	@{$resources->{view_menu}},

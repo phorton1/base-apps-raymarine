@@ -2,50 +2,29 @@
 # migrate/_import_kml.pm
 #-----------------------------------------
 # Called from winMain File->Import KML menu item.
-# run() imports all KML files listed in @KML_FILES and displays progress.
+# run() parses C:/junk/My Places.kml and imports every top-level Folder
+# and Document found there.  GE folder names become collection names directly.
 #
 # Folder hierarchy rules:
-#   - Each KML <Folder> becomes one collection (findCollection before
-#     insertCollection avoids same-name duplicates at the same level).
-#   - If the Document's sole top-level folder name matches the source
-#     file's long name, it is merged into the source collection (no
-#     redundant wrapper).
+#   - Each KML <Folder> or <Document> becomes one collection (findCollection
+#     before insertCollection avoids same-name duplicates at the same level).
 #   - Route import never creates new waypoints; each vertex is looked
 #     up by coordinate (findWaypointByLatLon) and linked by UUID.
+#   - After all sources are imported, promoteWaypointOnlyBranches() promotes
+#     any branch collection with only direct waypoints to node_type='group'.
 
 package _import_kml;
 use strict;
 use warnings;
 use XML::Simple;
 use Time::Local qw(timegm);
-use File::Basename;
 use Pub::Utils;
 use a_defs;
 use a_utils;
 use c_db;
 
 
-my @KML_FILES = (
-	'C:/junk/Navigation.kml',
-	'C:/junk/all_data_from_old_chartplotter.kml',
-	'C:/junk/MiscBocas.kml',
-	'C:/junk/Michelle 2010-2012.kml',
-	'C:/junk/Cartagena Trip End 2009.kml',
-	'C:/junk/Tooling Around Bocas 2009.kml',
-	'C:/junk/RhapsodyLogs - ends May 31, 2009.kml',
-	'C:/junk/MandalaLogs.kml',
-);
-
-my %SOURCE_NAMES = (
-	'Navigation.kml'                       => 'Navigation',
-	'all_data_from_old_chartplotter.kml'   => 'OldE80',
-	'MiscBocas.kml'                        => 'MiscBocas',
-	'Michelle 2010-2012.kml'               => 'Michelle',
-	'Tooling Around Bocas 2009.kml'        => 'Bocas2009',
-	'Cartagena Trip End 2009.kml'          => 'Cartagena2009',
-	'RhapsodyLogs - ends May 31, 2009.kml' => 'RhapsodyLogs',
-	'MandalaLogs.kml'                      => 'MandalaLogs',
-);
+my $MY_PLACES_KML = 'C:/junk/My Places.kml';
 
 my $xs = XML::Simple->new(
 	KeyAttr       => [],
@@ -71,80 +50,72 @@ sub run
 sub _run
 {
 	my ($dbh) = @_;
-	for my $path (@KML_FILES)
+	die "_import_kml: not found: $MY_PLACES_KML" unless -f $MY_PLACES_KML;
+	display(0,0,"importing $MY_PLACES_KML");
+	my $data = $xs->XMLin($MY_PLACES_KML);
+	my $root = $data->{Document}[0]
+		or die "no root Document in $MY_PLACES_KML";
+	my $style_colors = _buildStyleMap($root);
+
+	# My Places.kml wraps everything in a single "My Places" Folder.
+	# Descend into it so its children become the top-level sources.
+	my $top_folders = $root->{Folder} // [];
+	my $container   = (@$top_folders == 1 && ($top_folders->[0]{name}//'') =~ /^My Places/i)
+	                ? $top_folders->[0]
+	                : $root;
+
+	for my $folder (@{$container->{Folder} // []})
 	{
-		if (!-f $path)
-		{
-			warning(0,0,"_import_kml: not found: $path");
-			next;
-		}
-		display(0,0,"importing $path");
-		eval { _importFile($dbh, $path) };
-		error("_import_kml: $path failed: $@") if $@;
+		next if ($folder->{name} // '') =~ /\(no import\)/i;
+		eval { _importTopLevel($dbh, $folder, $style_colors) };
+		error("_import_kml: folder '" . ($folder->{name}//'?') . "' failed: $@") if $@;
 	}
+	for my $doc (@{$container->{Document} // []})
+	{
+		next if ($doc->{name} // '') =~ /\(no import\)/i;
+		eval { _importTopLevel($dbh, $doc, $style_colors) };
+		error("_import_kml: document '" . ($doc->{name}//'?') . "' failed: $@") if $@;
+	}
+
+	promoteWaypointOnlyBranches($dbh);
 }
 
 
 #---------------------------------
-# _importFile
+# _importTopLevel
 #---------------------------------
 
-sub _importFile
+sub _importTopLevel
 {
-	my ($dbh, $path) = @_;
-	my $kml_name    = basename($path);
-	my $source_file = $SOURCE_NAMES{$kml_name} // $kml_name;
-	my $data        = $xs->XMLin($path);
-	my $doc         = $data->{Document}[0]
-		or die "no Document element in $path";
+	my ($dbh, $item, $style_colors) = @_;
+	my $name = $item->{name} // '';
+	return if !$name || $name =~ /~$/;
 
-	my $top_coll     = insertCollection($dbh, $source_file, undef, '');
-	my $style_colors = _buildStyleMap($doc);
-
+	my $top_coll = insertCollection($dbh, $name, undef, $NODE_TYPE_BRANCH, '');
 	my $ctx = {
 		dbh          => $dbh,
 		coll_uuid    => $top_coll,
-		node_type    => 'branch',
-		source_file  => $source_file,
+		node_type    => $NODE_TYPE_BRANCH,
+		source_file  => $name,
 		style_colors => $style_colors,
 	};
 
-	for my $folder (@{$doc->{Folder} // []})
+	for my $sub (@{$item->{Folder}    // []}) { _walkFolder($sub, $ctx) }
+	for my $pm  (@{$item->{Placemark} // []}) { _importPlacemark($pm, $ctx) }
+	for my $doc (@{$item->{Document}  // []})
 	{
-		my $fname = $folder->{name} // '';
-		if (($SOURCE_NAMES{$fname . '.kml'} // '') eq $source_file)
-		{
-			# Merge top-level wrapper folder directly into $top_coll.
-			# Sub-folders first so route collections exist before their placemarks are processed.
-			for my $sub (@{$folder->{Folder} // []})
-			{
-				_walkFolder($sub, $ctx);
-			}
-			for my $pm (@{$folder->{Placemark} // []})
-			{
-				_importPlacemark($pm, $ctx);
-			}
-			for my $doc (@{$folder->{Document} // []})
-			{
-				for my $sub (@{$doc->{Folder} // []})    { _walkFolder($sub, $ctx) }
-				for my $pm  (@{$doc->{Placemark} // []}) { _importPlacemark($pm, $ctx) }
-			}
-		}
-		else
-		{
-			_walkFolder($folder, $ctx);
-		}
-	}
-	for my $pm (@{$doc->{Placemark} // []})
-	{
-		_importPlacemark($pm, $ctx);
+		my $doc_name = $doc->{name} // '';
+		next if !$doc_name || $doc_name =~ /~$/;
+		my $doc_uuid = findCollection($dbh, $doc_name, $top_coll)
+		            // insertCollection($dbh, $doc_name, $top_coll, $NODE_TYPE_BRANCH, '');
+		my $doc_ctx  = { %$ctx, coll_uuid => $doc_uuid };
+		for my $sub (@{$doc->{Folder}    // []}) { _walkFolder($sub, $doc_ctx) }
+		for my $pm  (@{$doc->{Placemark} // []}) { _importPlacemark($pm, $doc_ctx) }
 	}
 
-	my $n_relabeled = classifyOrphanWaypoints($dbh, $top_coll);
-	display(0,1,"  reclassified $n_relabeled waypoint(s) nav→label (no track endpoint match)")
-		if $n_relabeled;
-
-	display(0,0,"  done: $source_file");
+	my $n = classifyOrphanWaypoints($dbh, $top_coll);
+	display(0,1,"  reclassified $n waypoint(s) nav->label") if $n;
+	display(0,0,"  done: $name");
 }
 
 
@@ -159,32 +130,22 @@ sub _walkFolder
 	my $name = $folder->{name} // '';
 	return if $name =~ /~$/;
 
-	my $node_type = 'branch';
-	if ($name =~ /^(waypoints?|my\s+waypoints?|places?)$/i)
-	{
-		# groups if it contains sub-folders, group if it contains only waypoints directly
-		$node_type = @{$folder->{Folder} // []} ? 'groups' : 'group';
-	}
-	elsif ($name =~ /^groups?$/i)                      { $node_type = 'groups' }
-	elsif ($name =~ /^routes?$/i)                      { $node_type = 'routes' }
-	elsif ($name =~ /^(tracks?|soundings?)$/i)         { $node_type = 'tracks' }
-
-	# Named sub-folder inside a groups context → promote to group
-	if ($ctx->{node_type} eq 'groups' && $node_type eq 'branch')
-	{
-		$node_type = 'group';
-	}
+	my $node_type = $NODE_TYPE_BRANCH;
+	if    ($name =~ /^routes$/i)  { $node_type = 'routes' }
+	elsif ($name =~ /Route$/i)    { _importRouteFolder($folder, $ctx); return; }
+	elsif ($name =~ /^tracks?$/i) { $node_type = 'tracks' }
 
 	# Named sub-folder inside a routes context with no explicit type → one route
-	if ($ctx->{node_type} eq 'routes' && $node_type eq 'branch')
+	if ($ctx->{node_type} eq 'routes' && $node_type eq $NODE_TYPE_BRANCH)
 	{
 		_importRouteFolder($folder, $ctx);
 		return;
 	}
 
 	my $dbh = $ctx->{dbh};
+	my $db_type   = $node_type eq $NODE_TYPE_GROUP ? $NODE_TYPE_GROUP : $NODE_TYPE_BRANCH;
 	my $coll_uuid = findCollection($dbh, $name, $ctx->{coll_uuid})
-	             // insertCollection($dbh, $name, $ctx->{coll_uuid}, '');
+	             // insertCollection($dbh, $name, $ctx->{coll_uuid}, $db_type, '');
 
 	my $child_ctx = { %$ctx, coll_uuid => $coll_uuid, node_type => $node_type };
 
@@ -199,8 +160,13 @@ sub _walkFolder
 	}
 	for my $doc (@{$folder->{Document} // []})
 	{
-		for my $sub (@{$doc->{Folder} // []})    { _walkFolder($sub, $child_ctx) }
-		for my $pm  (@{$doc->{Placemark} // []}) { _importPlacemark($pm, $child_ctx) }
+		my $doc_name = $doc->{name} // '';
+		next if !$doc_name || $doc_name =~ /~$/;
+		my $doc_uuid = findCollection($dbh, $doc_name, $coll_uuid)
+		            // insertCollection($dbh, $doc_name, $coll_uuid, $NODE_TYPE_BRANCH, '');
+		my $doc_ctx  = { %$child_ctx, coll_uuid => $doc_uuid };
+		for my $sub (@{$doc->{Folder}    // []}) { _walkFolder($sub, $doc_ctx) }
+		for my $pm  (@{$doc->{Placemark} // []}) { _importPlacemark($pm, $doc_ctx) }
 	}
 }
 
@@ -344,7 +310,7 @@ sub _importRouteFolder
 			unless ($wp_uuid)
 			{
 				$sub_coll //= findCollection($dbh, $route_name, $ctx->{coll_uuid})
-				          // insertCollection($dbh, $route_name, $ctx->{coll_uuid}, '');
+				          // insertCollection($dbh, $route_name, $ctx->{coll_uuid}, $NODE_TYPE_GROUP, '');
 				$wp_uuid = insertWaypoint($dbh,
 					name            => $pm->{name},
 					lat             => $lat + 0,

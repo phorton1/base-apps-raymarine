@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #-------------------------------------------------------------------------
-# winCollections.pm
+# winBrowser.pm
 #-------------------------------------------------------------------------
 # Two-pane window: collection tree (left), detail text (right).
 #
@@ -12,7 +12,7 @@
 # Detail pane: branch nodes show child counts; leaf nodes show
 # type-specific fields.
 
-package winCollections;
+package winBrowser;
 use strict;
 use warnings;
 use threads;
@@ -80,6 +80,7 @@ sub _loadTopLevel
 {
 	my ($this) = @_;
 	my $tree = $this->{tree};
+	$tree->Freeze();
 	$tree->DeleteAllItems();
 	my $root = $tree->AddRoot('root');
 
@@ -90,6 +91,7 @@ sub _loadTopLevel
 		_addCollectionItem($dbh, $this, $root, $coll);
 	}
 	disconnectDB($dbh);
+	$tree->Thaw();
 }
 
 
@@ -193,17 +195,8 @@ sub _populateNode
 {
 	my ($dbh, $this, $parent_item, $coll) = @_;
 	my $coll_uuid = $coll->{uuid};
-	my $node_type = $coll->{node_type} // 'branch';
 
 	my $children = getCollectionChildren($dbh, $coll_uuid);
-
-	if ($node_type eq 'groups' && @$children)
-	{
-		my @floated = grep { ($_->{name} // '') =~ /^my\s+waypoints?$/i } @$children;
-		my @rest    = grep { ($_->{name} // '') !~ /^my\s+waypoints?$/i } @$children;
-		$children   = [@floated, @rest];
-	}
-
 	for my $child (@$children)
 	{
 		_addCollectionItem($dbh, $this, $parent_item, $child);
@@ -259,6 +252,7 @@ sub _showCollection
 	my $text   = '';
 	$text .= _fmt('uuid',        $coll->{uuid});
 	$text .= _fmt('name',        $coll->{name});
+	$text .= _fmt('node_type',   $coll->{node_type});
 	$text .= _fmt('parent_uuid', $coll->{parent_uuid});
 	$text .= _fmt('comment',     $coll->{comment});
 	$text .= "\n";

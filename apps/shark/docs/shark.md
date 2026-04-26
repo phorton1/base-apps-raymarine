@@ -11,10 +11,13 @@
 **shark** --
 **[Cables](ethernet_cables.md)**
 
-**shark** (`shark.pm`) is the main engineering application for probing and operating
-the SeatalkHS protocols. It is a **wxPerl** GUI application that starts a serial
-command interface, a RAYDP discovery listener, a tshark-based packet sniffer, an
-HTTP server for Google Earth waypoint serving, and wxPerl GUI panels for each service.
+**shark** (`apps/shark/shark.pm`) is the engineering application for probing and
+operating the SeatalkHS protocols. It is a **wxPerl** GUI application that uses the
+**NET library** (`NET/`) to connect to an E80 via RAYDP, WPMGR, TRACK, FILESYS, and
+other services. shark also starts a serial command interface, a tshark-based packet
+sniffer, and an HTTP server (`s_server.pm`, port 9882) for Google Earth waypoint
+serving. The HTTP server extends `NET/h_server.pm`, the shared base class also used
+by navMate.
 
 ## Feature Flags
 

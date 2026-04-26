@@ -307,21 +307,37 @@ sub parsePiece
 			$packet->{is_reply})
 		{
 			$$poffset += 4;	# skip biglen
-			my $num = unpack('V',substr($part,$$poffset,4));
-			$$poffset += 4;
-			return error("too many dict_uuids!!") if $num>1024;
-				# prevent runaway implementation bug endless loops
 
-			printConsole(2,$mon,$color,"dictionary($num)")
-				if $mon & $MON_PIECES;
 			$packet->{dict_uuids} ||= shared_clone([]);
 			my $dict_uuids = $packet->{dict_uuids};
-			for (my $i=0; $i<$num; $i++)
+			my $num;
+
+			if (!defined $packet->{dict_total})
 			{
+				$num = unpack('V',substr($part,$$poffset,4));
+				$$poffset += 4;
+				return error("too many dict_uuids!!") if $num>1024;
+				$packet->{dict_total} = $num;
+				printConsole(2,$mon,$color,"dictionary($num)")
+					if $mon & $MON_PIECES;
+			}
+			else
+			{
+				$num = $packet->{dict_total};
+			}
+
+			my $already = scalar(@$dict_uuids);
+			my $remaining = $num - $already;
+			my $available = int((length($part) - $$poffset) / 8);
+			my $to_read = $remaining < $available ? $remaining : $available;
+
+			for (my $i=0; $i<$to_read; $i++)
+			{
+				my $idx = $already + $i;
 				my $uuid = unpack('H*',substr($part,$$poffset,8));
 				$$poffset += 8;
 				push @$dict_uuids,$uuid;
-				printConsole(3,$mon,$color,"dict_uuid($i) = $uuid")
+				printConsole(3,$mon,$color,"dict_uuid($idx) = $uuid")
 					if $mon & $MON_DICT;
 			}
 		}

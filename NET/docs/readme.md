@@ -124,20 +124,30 @@ field-installable waterproof connector.
 
 ### Implementation Architecture
 
-The NET Perl implementation follows a layered naming convention (one letter
-prefix per layer):
+NET is a **standalone Perl library**. It has no application entry point of its own;
+two applications consume it:
 
-| Prefix | Layer        | Examples                                          |
-| ------ | ------------ | ------------------------------------------------- |
-| a_     | Definitions  | a_defs.pm — feature flags, shared constants       |
-| b_     | Base classes | b_sock.pm, b_parser.pm, b_probe.pm                |
-| c_     | RAYDP        | c_RAYDP.pm — discovery protocol                   |
-| d_     | Services     | d_WPMGR.pm, d_TRACK.pm, d_FILESYS.pm, d_DB.pm    |
-| e_     | APIs         | e_wp_api.pm, e_wp_defs.pm — WPMGR API and constants |
-| f_     | FSH bridge   | fshWriter.pm — writes FSH from live E80 data      |
-| w_     | wxPerl UI    | w_frame.pm, winShark, winRAYDP, winFILESYS, etc.  |
+- **shark** (`apps/shark/`) — the wxPerl engineering tool used to probe and operate the E80
+- **navMate** (`apps/navMate/`) — the navigation knowledge management application
 
-The main application entry point is **shark.pm**.
+NET modules follow a layered naming convention (one letter prefix per layer):
+
+| Prefix | Layer        | Examples                                                        |
+| ------ | ------------ | --------------------------------------------------------------- |
+| a_     | Definitions  | a_defs.pm — feature flags, shared constants                     |
+| b_     | Base classes | b_sock.pm — socket base; b_parser.pm; b_probe.pm; b_records.pm |
+| c_     | RAYDP        | c_RAYDP.pm — discovery protocol                                 |
+| d_     | Services     | d_WPMGR.pm, d_TRACK.pm, d_FILESYS.pm, d_DB.pm                  |
+| e_     | APIs         | e_wp_api.pm, e_wp_defs.pm — WPMGR API and constants             |
+| h_     | HTTP server  | h_server.pm — shared base HTTP server; shark and navMate both extend this |
+
+**`h_server.pm`** is the shared HTTP base class: `/api/db`, `/api/log`, `/api/command`,
+`/raysys.kml`, `handleCommand`, `showLocalDatabase`, and KML generation. shark's
+`s_server.pm` (port 9882) and navMate's `nmServer.pm` (port 9883) each extend it with
+app-specific endpoints.
+
+Supporting files in the NET/ root (not layered): `rayports.pm` (port/service_id table),
+`fshWriter.pm` (writes FSH files from live E80 data), `b_probe.pm` (file-driven probe system).
 
 ### Engineering Tool Documentation
 

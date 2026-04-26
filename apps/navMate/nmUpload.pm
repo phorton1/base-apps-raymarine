@@ -6,7 +6,9 @@
 #
 # Phase 1: waypoints (createNamedWaypoint — queued, WPMGR processes serially)
 # Phase 2: routes (buildRoute with all waypoints embedded — one NEW_ITEM per route)
-# Groups and tracks are not uploaded.
+# Phase 3: groups (inferred from sub-collections that directly own waypoints;
+#          group buffer is pre-populated with member UUIDs in one shot)
+# Tracks are not uploaded.
 
 package nmUpload;
 use strict;
@@ -49,6 +51,7 @@ sub uploadCollectionToE80
 
 	my %e80_wps    = map { $_ => 1 } keys %{$wpmgr->{waypoints} // {}};
 	my %e80_routes = map { $_ => 1 } keys %{$wpmgr->{routes}    // {}};
+	my %e80_groups = map { $_ => 1 } keys %{$wpmgr->{groups}    // {}};
 
 	display(0,0,"upload($coll_name): E80 has " .
 		scalar(keys %e80_wps) . " wps, " .
@@ -72,16 +75,19 @@ sub uploadCollectionToE80
 	}
 	display(0,0,"upload($coll_name): queued $wp_count waypoints");
 
-	# Phase 2: routes — build complete buffer with all waypoints embedded
+	# Phase 2: routes
+	# Large routes are split across multiple 498-byte BUFFER messages by buildBufferMsgs
+	# inside create_item; no size limit on the upload side.
 
 	my $route_count = 0;
 	for my $r (@{$wrgt->{routes}})
 	{
 		next if $e80_routes{$r->{uuid}};
-		my $wps      = getRouteWaypoints($dbh, $r->{uuid});
+		my $wps = getRouteWaypoints($dbh, $r->{uuid});
+		display(0,1,"uploading route($r->{name}) " . scalar(@$wps) . " wps");
+
 		my @wp_uuids = map { $_->{uuid}       } @$wps;
 		my @pts      = map { shared_clone({}) } @$wps;
-
 		my $buffer = buildRoute(0, {
 			name   => $r->{name},
 			bits   => 0,
@@ -90,15 +96,37 @@ sub uploadCollectionToE80
 			points => shared_clone(\@pts),
 		}, 0, 0);
 		my $data = unpack('H*', $buffer);
-
-		display(0,1,"uploading route($r->{name}) " . scalar(@$wps) . " wps");
 		$wpmgr->queueWPMGRCommand($API_NEW_ITEM, $WHAT_ROUTE,
 			$r->{name}, $r->{uuid}, $data);
 		$route_count++;
 	}
 
+	# Phase 3: groups
+	# Each sub-collection that directly owns waypoints becomes one E80 group.
+	# The group buffer is pre-populated with all member UUIDs so that a single
+	# NEW_ITEM creates the group and its membership in one round-trip.
+	# Phase 1 waypoints are queued before Phase 3 groups, so by the time the
+	# E80 processes the group command all referenced waypoints already exist.
+
+	my $groups = getCollectionGroups($dbh, $coll_uuid);
+	my $grp_count = 0;
+	for my $grp (@$groups)
+	{
+		next if $e80_groups{$grp->{uuid}};
+		my @wp_uuids = map { $_->{uuid} } @{$grp->{waypoints}};
+		display(0,1,"uploading group($grp->{name}) " . scalar(@wp_uuids) . " wps");
+		my $buffer = buildGroup(0, {
+			name  => $grp->{name},
+			uuids => shared_clone(\@wp_uuids),
+		}, 0, 0);
+		my $data = unpack('H*', $buffer);
+		$wpmgr->queueWPMGRCommand($API_NEW_ITEM, $WHAT_GROUP,
+			$grp->{name}, $grp->{uuid}, $data);
+		$grp_count++;
+	}
+
 	disconnectDB($dbh);
-	display(0,0,"upload($coll_name): queued $route_count routes");
+	display(0,0,"upload($coll_name): queued $route_count routes, $grp_count groups");
 }
 
 

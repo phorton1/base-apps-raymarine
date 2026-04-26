@@ -348,13 +348,32 @@ sub showThings
 	for my $uuid (@uuids)
 	{
 		my $thing = $hash->{$uuid};
-		c_print("    $uuid $thing->{name}\n");
-		if ($what eq 'tracks')
+		if ($what eq 'waypoints')
 		{
-			my $points    = $thing->{points};
-			my $num_pts   = $points ? scalar @$points : 0;
-			my $cnt       = $thing->{cnt1} || 0;
-			c_print("        num_points($num_pts)  expected($cnt)\n");
+			my $lat = sprintf('%9.4f', ($thing->{lat} || 0) / $SCALE_LATLON);
+			my $lon = sprintf('%10.4f', ($thing->{lon} || 0) / $SCALE_LATLON);
+			c_print("    $uuid  $lat  $lon  $thing->{name}\n");
+		}
+		elsif ($what eq 'routes')
+		{
+			my $nwps = $thing->{uuids} ? scalar(@{$thing->{uuids}}) : 0;
+			c_print("    $uuid  wps($nwps)  $thing->{name}\n");
+		}
+		elsif ($what eq 'groups')
+		{
+			my $nwps = $thing->{uuids} ? scalar(@{$thing->{uuids}}) : 0;
+			c_print("    $uuid  wps($nwps)  $thing->{name}\n");
+		}
+		else
+		{
+			c_print("    $uuid $thing->{name}\n");
+			if ($what eq 'tracks')
+			{
+				my $points  = $thing->{points};
+				my $num_pts = $points ? scalar @$points : 0;
+				my $cnt     = $thing->{cnt1} || 0;
+				c_print("        num_points($num_pts)  expected($cnt)\n");
+			}
 		}
 	}
 }
