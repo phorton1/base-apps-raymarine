@@ -30,7 +30,7 @@ use a_defs;
 use a_utils;
 use c_db;
 use nmServer;
-use s_serial;
+use apps::raymarine::NET::s_serial;
 use w_resources;
 use winMain;
 
@@ -51,7 +51,7 @@ sub _handleSerialCommand
 	dispatchNavMateCommand($lpart, $rpart);
 }
 
-my $serial = s_serial->new(\&_handleSerialCommand);
+my $serial = apps::raymarine::NET::s_serial->new(\&_handleSerialCommand);
 
 my $db_rc = c_db::openDB();
 if ($db_rc == -1)

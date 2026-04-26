@@ -1,9 +1,11 @@
 #---------------------------------------------
-# s_Serial.pm
+# s_serial.pm
 #---------------------------------------------
-# application serial port handler
+# Console keyboard input handler.
+# Reads Win32 console events in a detached thread and dispatches
+# complete command lines to the caller-supplied handler.
 
-package s_serial;
+package apps::raymarine::NET::s_serial;
 use strict;
 use warnings;
 use threads;

@@ -48,7 +48,7 @@ use apps::raymarine::NET::fshWriter;
 use apps::raymarine::NET::e_wp_api;
 use s_server;
 
-use s_serial;
+use apps::raymarine::NET::s_serial;
 use s_sniffer;
 use w_resources;
 use w_frame;
@@ -91,7 +91,7 @@ display(0,0,"shark.pm initializing");
 
 if ($WITH_SERIAL)
 {
-	my $serial = s_serial->new(\&handleSerialCommand);
+	my $serial = apps::raymarine::NET::s_serial->new(\&handleSerialCommand);
 	$serial->start();
 }
 
