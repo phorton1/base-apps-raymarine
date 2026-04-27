@@ -45,11 +45,16 @@ base, data model, and UI are the product. Everything else is a boundary adapter.
 
 ## Status
 
-navMate implementation is underway. Foundation (schema, CRUD, wx tree, embedded HTTP
-server, basic Leaflet rendering) is built. Current focus: data model refinement,
-import redesign from `My Places.kml`, and Leaflet renderer expansion (tracks,
-wp_type-based waypoint rendering, click-to-select detail). All 8 historical KML
-source folders have been fully characterized; import rules are defined.
+navMate implementation is underway. Foundation layers (schema, CRUD, wx panels, embedded
+HTTP server) are built. Upload to E80 via WPMGR is implemented (`nmUpload.pm`): waypoints,
+routes, and groups are uploaded from the collection tree context menu in `winBrowser.pm`.
+A companion E80-side panel (`winE80.pm`) is under development. Basic Leaflet rendering of
+routes and waypoints is partially built.
+
+Current focus: Leaflet renderer expansion (tracks, wp_type-based rendering,
+click-to-select detail), `winE80.pm` E80-side panel, and import redesign from
+`My Places.kml`. All 8 historical KML source folders have been fully characterized;
+import rules are defined.
 
 See the **[NET protocols documentation](../../NET/docs/readme.md)** and
 **[shark](../../apps/shark/docs/shark.md)** for the underlying infrastructure.

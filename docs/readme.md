@@ -20,8 +20,8 @@ protocol is also used by E120-series MFDs, the DSM300 sonar module, and other
 Raymarine hardware of the same generation.
 
 This protocol and file-format work is the foundation for **[navMate](../apps/navMate/docs/readme.md)**,
-a planned desktop application for lifelong, device-independent navigation data management.
-navMate is pre-implementation; its architecture and design are documented here.
+a desktop application for lifelong, device-independent navigation data management, currently
+in implementation. Its architecture, detailed design, and status are documented there.
 
 ## About This Work
 
@@ -79,8 +79,9 @@ reverse engineering for personal and educational purposes.
   enabling a Google Earth → RNS → E80 navigation data workflow.
 
 - **[navMate](../apps/navMate/docs/readme.md)** —
-  Planned desktop application for lifelong, device-independent navigation data
-  management (WRGT). Architecture and design documentation; pre-implementation.
+  Desktop application for lifelong, device-independent navigation data management (WRGT),
+  currently in implementation. Architecture, data model, UI model, and implementation
+  status documented.
 
 ## Credits
 

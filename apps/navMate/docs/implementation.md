@@ -24,7 +24,7 @@ See [Architecture — Code Organization](architecture.md#code-organization) for 
 full file list and naming conventions. In brief: lower layers use sparse alpha
 prefixes with underscore-delimited lowercase names (`a_defs.pm`, `a_utils.pm`,
 `c_db.pm`); application layer modules use camelCase (`nmServer.pm`, `winMain.pm`,
-`winCollections.pm`).
+`winBrowser.pm`).
 
 ## Phase Sequence
 
@@ -47,11 +47,13 @@ One-time import scripts, not production modules. Single source:
   against `C:\var\www\phorton\map_data\` index files; back-fill `ts_start`/`ts_end`;
   set `ts_source = 'phorton'`
 
-### Phase 3 — wx Panels (`winMain.pm`, `winCollections.pm`)  ✓ substantially done
+### Phase 3 — wx Panels (`winMain.pm`, `winBrowser.pm`)  ✓ substantially done
 
 - Main frame and collection tree with three-state checkboxes — built
 - Collection labels derived from content counts — in progress
 - Object detail panel (fixed-width font, full DB record) — in progress
+- Upload to E80 via WPMGR (`nmUpload.pm`): waypoints, routes, groups — built
+- E80-side panel (`winE80.pm`): view E80 state, fileClient-style differencing — in progress
 - Session state persistence (`nmSession.pm`) — planned
 
 ### Phase 4 — Leaflet Canvas (`nmServer.pm`, `_site/`)  in progress
