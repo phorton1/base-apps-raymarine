@@ -169,6 +169,78 @@ and assembles it into an FSH file, without requiring CF card access. It is
 currently a test implementation; its practical status and completeness
 should be verified against the current source.
 
+## Advances Beyond parsefsh
+
+The following differences from parsefsh's documented structures were identified during
+implementation against actual E80 `ARCHIVE.FSH` files. Each is either a structural
+correction, a newly discovered field, or a new capability.
+
+**Block header — `active` field** *(newly discovered)*
+
+A 16-bit field at offset 12 in the 14-byte block header is not documented in parsefsh:
+`0x4000` = block is in use; `0x0000` = block is deleted. This field is fundamental to
+both reading and writing, and to the archive model itself.
+
+A parser that does not filter on `active` will process deleted blocks as live data.
+
+A writer must set `active = 0x4000` on every block it emits, or the E80 will treat
+those blocks as free space. More critically: a writer that does not understand both
+values of `active` cannot implement the true archive update model at all. Updating an
+existing record — the way the E80 itself does — means appending a new block with
+`active = 0x4000` and writing `active = 0x0000` back into the superseded block's
+header. Without the ability to retire old blocks deliberately, a writer is limited to
+producing fresh files from scratch. It cannot extend a living archive, cannot round-trip
+with an E80 that has accumulated its own history, and cannot participate in the same
+file the E80 continues to write.
+
+See [Archive Semantics](#archive-semantics).
+
+**Waypoint record — 8-byte lead-in with 1e7 coordinates** *(structural correction)*
+
+parsefsh's `fsh_wpt_data` struct begins at byte +8 within the actual on-disk waypoint
+record. The record opens with two `int32_t` fields — latitude and longitude as
+degrees × 10,000,000 — that parsefsh's struct omits entirely. These integer coordinates
+are more accurate than the Mercator-derived lat/lon that parsefsh produces; the Mercator
+fields remain at the same relative offsets within the struct but are shifted +8 from
+their actual disk positions. See [Coordinate Systems](#coordinate-systems) and
+[Waypoint Structure](#waypoint-structure).
+
+**Route point structure (BLK_RTE)** *(entirely corrected)*
+
+parsefsh's route point layout was incorrect. The correct 10-byte `fsh_pt` structure:
+
+| Offset | Size | Type       | Field        | Notes |
+| ------ | ---- | ---------- | ------------ | ----- |
+| 0      | 2    | `int16_t`  | `bearing`    | Bearing from previous waypoint, radians × 10,000. To degrees: `(bearing / 10000) × (180 / π)` |
+| 2      | 4    | `uint32_t` | `leg_length` | Distance from previous waypoint, meters |
+| 6      | 4    | `uint32_t` | `tot_length` | Cumulative route distance, meters |
+
+**Route header — two newly discovered fields (BLK_RTE)**
+
+Two fields absent from parsefsh:
+
+- **`color`** — byte 7 of the first route header (`fsh_route21_header`). Color index:
+  0 = red, 1 = yellow, 2 = green, 3 = blue, 4 = magenta, 5 = black.
+- **`distance`** — bytes 16–19 of the second route header (`fsh_hdr2`), type `uint32_t`.
+  Total route distance in meters.
+
+**BLK_MTA — field `j` correction (byte 56)**
+
+parsefsh documents byte 56 of `fsh_track_meta` (field `j`) as "always 0". In actual
+E80 `ARCHIVE.FSH` files this byte is always **204** (0xCC). A writer that outputs 0
+will not match E80 output.
+
+**FSH writer** *(new capability)*
+
+This is the first known FSH writer. parsefsh is read-only. The writer constructs valid
+flob structure, pads to minimum file size (16 flobs / 1 MB), and uses BLK_ILL (`0xFFFF`)
+as a flob terminator. Written files contain only active blocks; there is no support for
+in-place update of an existing FSH file.
+
+*Known gap:* The inverse coordinate transform (lat/lon → Mercator northing/easting,
+required for encoding track points) uses a linear approximation rather than the correct
+ellipsoidal inverse. Read-back coordinates will not round-trip exactly.
+
 ---
 
 **Next:** [Home](../../docs/readme.md)

@@ -21,7 +21,7 @@ Routes are forward-looking planning artifacts. Tracks are historical voyage reco
 The historical dataset is almost entirely Tracks and Waypoints — Routes were not used
 historically and should not be assumed as the primary historical structure.
 
-**Groups** (named sets of waypoints used by the E80's WPMGR protocol) are a
+**Groups** (named sets of waypoints used by the E80's [WPMGR](../../../NET/docs/WPMGR.md) protocol) are a
 transport-layer concern, not a first-class storage type. Collections of waypoints in
 navMate are untyped folders. When pushing to an E80, group membership is inferred
 from the collection structure at sync time.
@@ -45,7 +45,7 @@ cannot serve as reliable identifiers across sync operations.
 navMate-created UUIDs use byte 1 = `0x4E` (`N` for navMate), which does not collide
 with E80-native UUIDs (byte 1 = `0xB2`) or RNS-created UUIDs (byte 1 = `0x82`).
 Bytes 4–5 hold a persistent counter from navMate's SQLite store; bytes 6–7 provide
-intra-tick uniqueness. The full UUID structure is documented in `NET/docs/WPMGR.md`.
+intra-tick uniqueness. The full UUID structure is documented in [WPMGR.md](../../../NET/docs/WPMGR.md).
 
 ## Schema
 

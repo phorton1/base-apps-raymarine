@@ -10,7 +10,7 @@
 ## Approach
 
 navMate is built bottom-up. Each layer is exercisable before the layers above it
-exist. The console window (inherited from the shark pattern) is wired in early —
+exist. The console window (inherited from the [shark](../../shark/docs/shark.md) pattern) is wired in early —
 it provides a callable interface to lower layers before any wx panel or Leaflet
 canvas exists.
 
@@ -52,7 +52,7 @@ One-time import scripts, not production modules. Single source:
 - Main frame and collection tree with three-state checkboxes — built
 - Collection labels derived from content counts — in progress
 - Object detail panel (fixed-width font, full DB record) — in progress
-- Upload to E80 via WPMGR (`nmUpload.pm`): waypoints, routes, groups — built
+- Upload to E80 via [WPMGR](../../../NET/docs/WPMGR.md) (`nmUpload.pm`): waypoints, routes, groups — built
 - E80-side panel (`winE80.pm`): view E80 state, fileClient-style differencing — in progress
 - Session state persistence (`nmSession.pm`) — planned
 
@@ -86,9 +86,9 @@ Requires the tree (Phase 3) and map (Phase 4) to be useful.
 ### Phase 7 — Transport (`j_transport.pm`)  planned
 
 - NET adapter wired in as a session-level, user-activated transport
-- E80 sync: UUID set reconciliation via WPMGR; incoming objects run through
+- E80 sync: UUID set reconciliation via [WPMGR](../../../NET/docs/WPMGR.md); incoming objects run through
   `c_match.pm` before insert
-- Working set push: waypoints/routes via RAYNET; tracks via FSH export
+- Working set push: waypoints/routes via [RAYNET](../../../NET/docs/RAYNET.md); tracks via FSH export
 
 ---
 

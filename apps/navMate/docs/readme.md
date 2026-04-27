@@ -56,8 +56,9 @@ click-to-select detail), `winE80.pm` E80-side panel, and import redesign from
 `My Places.kml`. All 8 historical KML source folders have been fully characterized;
 import rules are defined.
 
-See the **[NET protocols documentation](../../NET/docs/readme.md)** and
-**[shark](../../apps/shark/docs/shark.md)** for the underlying infrastructure.
+See the **[NET protocols documentation](../../NET/docs/readme.md)** for the
+underlying RAYNET protocol library, and **[shark](../../apps/shark/docs/shark.md)**
+for the companion engineering tool.
 
 ---
 

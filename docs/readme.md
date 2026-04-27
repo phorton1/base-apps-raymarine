@@ -4,6 +4,7 @@
 **[NET Protocols](../NET/docs/readme.md)** --
 **[FSH Format](../FSH/docs/readme.md)** --
 **[CSV Tool](../CSV/docs/readme.md)** --
+**[shark](../apps/shark/docs/shark.md)** --
 **[navMate](../apps/navMate/docs/readme.md)**
 
 This repository documents the results of a systematic reverse-engineering effort
@@ -31,8 +32,8 @@ Raymarine's published materials, not in any forum post, not in any open-source
 project, and not anywhere else on the internet that exhaustive searching could find.
 The only technical breadcrumb discovered was a handful of undocumented C++ lines
 buried inside an OpenCPN plugin for Raymarine radar (`RMRadar_pi`), which exposed
-enough to identify the discovery protocol. Everything else — the WPMGR, TRACK,
-FILESYS, and Database protocols; the complete port and service table — was derived
+enough to identify the discovery protocol. Everything else — the [WPMGR](../NET/docs/WPMGR.md), [TRACK](../NET/docs/TRACK.md),
+[FILESYS](../NET/docs/FILESYS.md), and Database protocols; the complete port and service table — was derived
 from scratch through packet capture, probing, and analysis.
 
 Raymarine does not publish developer documentation for SeatalkHS. This repository
@@ -78,6 +79,11 @@ reverse engineering for personal and educational purposes.
   Conversion from Google Earth KML to Raymarine RNS-compatible CSV format,
   enabling a Google Earth → RNS → E80 navigation data workflow.
 
+- **[shark](../apps/shark/docs/shark.md)** —
+  The wxPerl SeatalkHS engineering tool used to probe and operate the E80: serial command
+  vocabulary, feature flags, GUI panels, and the probe system for exploring unknown ports
+  and services.
+
 - **[navMate](../apps/navMate/docs/readme.md)** —
   Desktop application for lifelong, device-independent navigation data management (WRGT),
   currently in implementation. Architecture, data model, UI model, and implementation
@@ -93,7 +99,7 @@ reverse engineering for personal and educational purposes.
 - [**radar_pi**](https://github.com/douwefokkema/radar_pi) by Douwe Fokkema —
   OpenCPN plugin for Raymarine radar. The only public source found containing
   any SeatalkHS packet structure information. Provided the initial clue that
-  led to decoding the RAYDP discovery protocol.
+  led to decoding the [RAYDP](../NET/docs/RAYDP.md) discovery protocol.
 
 ## License
 

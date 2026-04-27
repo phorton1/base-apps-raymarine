@@ -1,19 +1,18 @@
 # shark — The SeatalkHS Engineering Tool
 
-**[Home](../../docs/readme.md)** --
-**[NET](readme.md)** --
-**[RAYNET](RAYNET.md)** --
-**[RAYDP](RAYDP.md)** --
-**[WPMGR](WPMGR.md)** --
-**[TRACK](TRACK.md)** --
-**[FILESYS](FILESYS.md)** --
-**[DBNAV](DBNAV.md)** --
+**[Home](../../../docs/readme.md)** --
+**[NET](../../../NET/docs/readme.md)** --
 **shark** --
-**[Cables](ethernet_cables.md)**
+**[winRAYDP](winRAYDP.md)** --
+**[winSniffer](winSniffer.md)** --
+**[winShark](winShark.md)** --
+**[winFILESYS](winFILESYS.md)** --
+**[winDBNAV](winDBNAV.md)** --
+**[Cables](../../../NET/docs/ethernet_cables.md)**
 
 **shark** (`apps/shark/shark.pm`) is the engineering application for probing and
 operating the SeatalkHS protocols. It is a **wxPerl** GUI application that uses the
-**NET library** (`NET/`) to connect to an E80 via RAYDP, WPMGR, TRACK, FILESYS, and
+**NET library** (`NET/`) to connect to an E80 via [RAYDP](../../../NET/docs/RAYDP.md), [WPMGR](../../../NET/docs/WPMGR.md), [TRACK](../../../NET/docs/TRACK.md), [FILESYS](../../../NET/docs/FILESYS.md), and
 other services. shark also starts a serial command interface, a tshark-based packet
 sniffer, and an HTTP server (`s_server.pm`, port 9882) for Google Earth waypoint
 serving. The HTTP server extends `NET/h_server.pm`, the shared base class also used
@@ -62,19 +61,19 @@ into a serial terminal and processed by `handleSerialCommand()`.
 | `i`                 | Call DB `uiInit()`                                  |
 | `fids`              | Show all known FIDs via `showFids()`                |
 
-**DBNAV:**
+**[DBNAV](../../../NET/docs/DBNAV.md):**
 
 | Command             | Description                                         |
 | ------------------- | --------------------------------------------------- |
 | `v`                 | Show current DBNAV field values                     |
 
-**FILESYS:**
+**[FILESYS](../../../NET/docs/FILESYS.md):**
 
 | Command                    | Description                                  |
 | -------------------------- | -------------------------------------------- |
 | `f <cmd> <path>`           | File command: cmd = DIR, SIZE, FILE, or ID   |
 
-**TRACK:**
+**[TRACK](../../../NET/docs/TRACK.md):**
 
 | Command                    | Description                                  |
 | -------------------------- | -------------------------------------------- |
@@ -92,7 +91,7 @@ into a serial terminal and processed by `handleSerialCommand()`.
 | `t erase <name>`           | Erase saved track by name                    |
 | `t rename <old> <new>`     | Rename a saved track                         |
 
-**WPMGR:**
+**[WPMGR](../../../NET/docs/WPMGR.md):**
 
 | Command                    | Description                                  |
 | -------------------------- | -------------------------------------------- |
@@ -133,11 +132,11 @@ into a serial terminal and processed by `handleSerialCommand()`.
 
 | Panel       | Description                                        |
 | ----------- | -------------------------------------------------- |
-| winShark    | Main shark output and console                      |
-| winSniffer  | tshark sniffer output                              |
-| winRAYDP    | RAYDP service discovery display                    |
-| winFILESYS  | FILESYS file browser                               |
-| winDBNAV    | Live navigation data display                       |
+| [winShark](winShark.md)    | Protocol monitoring control — per-port active/log/only checkboxes |
+| [winSniffer](winSniffer.md)  | tshark sniffer control — per-port active/log/only/self checkboxes and live packet counts |
+| [winRAYDP](winRAYDP.md)    | Live RAYDP service discovery — connect/spawn controls per advertised service |
+| [winFILESYS](winFILESYS.md)  | CF card file browser — directory navigation and file download |
+| [winDBNAV](winDBNAV.md)    | Live navigation data — decoded DBNAV multicast field values |
 
 ## Probe System
 
