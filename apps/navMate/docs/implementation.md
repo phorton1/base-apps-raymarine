@@ -31,7 +31,7 @@ prefixes with underscore-delimited lowercase names (`a_defs.pm`, `a_utils.pm`,
 ### Phase 1 — Foundation (`a_defs.pm`, `a_utils.pm`, `c_db.pm`)  ✓ done
 
 - UUID generation (byte 1 = `0x4E` for navMate-created objects)
-- SQLite schema creation — all tables: collections (untyped), waypoints (with
+- SQLite schema creation — all tables: collections (node_type: 'branch'/'group'), waypoints (with
   wp_type and color), routes, tracks, working sets
 - CRUD operations; console window for smoke-testing
 

@@ -21,10 +21,11 @@ Routes are forward-looking planning artifacts. Tracks are historical voyage reco
 The historical dataset is almost entirely Tracks and Waypoints — Routes were not used
 historically and should not be assumed as the primary historical structure.
 
-**Groups** (named sets of waypoints used by the E80's [WPMGR](../../../NET/docs/WPMGR.md) protocol) are a
-transport-layer concern, not a first-class storage type. Collections of waypoints in
-navMate are untyped folders. When pushing to an E80, group membership is inferred
-from the collection structure at sync time.
+**Groups** are a first-class storage type in navMate. A group is a waypoint-only leaf
+collection stored with `node_type='group'` in the collections table. Groups have no
+sub-collections, routes, or tracks — only direct waypoints. On upload, each group maps
+one-to-one to an E80 WPMGR group. Group membership is structural: a waypoint belongs
+to whichever group collection it resides in, not via a separate association table.
 
 ## Storage
 
@@ -62,18 +63,24 @@ collections (
   uuid          TEXT PRIMARY KEY,
   name          TEXT NOT NULL,
   parent_uuid   TEXT REFERENCES collections(uuid),  -- NULL = root-level node
+  node_type     TEXT NOT NULL DEFAULT 'branch',     -- 'branch' or 'group'
   comment       TEXT DEFAULT ''
 )
 ```
 
-Collections are untyped folders — they carry no node_type classification. What a
-collection contains (waypoints, routes, tracks, or child collections) is always
-queryable from the objects that reference it. The UI derives labels from content
-counts rather than from a declared type.
+Collections form the organizational hierarchy. Two `node_type` values are stored in
+the DB:
 
-Every WRT object belongs to exactly one collection via a non-null `collection_uuid`
-foreign key. Mixed-content collections (containing both waypoints and tracks, for
-example) are valid and common.
+| node_type | Meaning |
+|-----------|---------|
+| `'branch'` | General organizer — may hold any WRT objects and sub-collections |
+| `'group'`  | Waypoint-only leaf collection — maps one-to-one to an E80 WPMGR group on upload |
+
+A post-import pass (`promoteWaypointOnlyBranches`) promotes any `branch` that has
+waypoints and no sub-collections, routes, or tracks to `node_type='group'`.
+Mixed-content `branch` collections (waypoints alongside tracks or routes, for example)
+remain `branch`. Every WRT object belongs to exactly one collection via a non-null
+`collection_uuid` foreign key.
 
 ### waypoints
 
@@ -252,8 +259,8 @@ not inlined as route geometry. The same waypoint can appear in multiple routes.
 
 **The collection invariant.** Every waypoint, route, and track exists in exactly
 one collection. `collection_uuid` is `NOT NULL` on all three WRT tables. Collections
-are untyped — the E80's group concept (named waypoint sets for WPMGR) is inferred
-at sync time, not stored as a folder attribute.
+are typed via `node_type`: `'branch'` for general organizer folders, `'group'` for
+waypoint-only leaf collections that map to E80 WPMGR groups.
 
 ## Timestamp Sources
 
