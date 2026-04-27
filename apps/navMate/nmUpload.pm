@@ -28,6 +28,8 @@ BEGIN
 	our @EXPORT = qw(
 		isWPMGRConnected
 		uploadCollectionToE80
+		uploadRouteToE80
+		uploadWaypointToE80
 	);
 }
 
@@ -70,7 +72,8 @@ sub uploadCollectionToE80
 		$wpmgr->createNamedWaypoint(
 			$wp->{name}, $wp->{uuid},
 			$wp->{lat},  $wp->{lon},
-			$wp->{sym}  // 25);
+			$wp->{sym}  // 25,
+			$wp->{created_ts});
 		$wp_count++;
 	}
 	display(0,0,"upload($coll_name): queued $wp_count waypoints");
@@ -127,6 +130,89 @@ sub uploadCollectionToE80
 
 	disconnectDB($dbh);
 	display(0,0,"upload($coll_name): queued $route_count routes, $grp_count groups");
+}
+
+
+sub uploadRouteToE80
+{
+	my ($route_uuid, $route_name, $route_color) = @_;
+
+	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
+	unless ($wpmgr)
+	{
+		warning(0,0,"uploadRouteToE80: WPMGR not connected");
+		return;
+	}
+
+	my %e80_wps    = map { $_ => 1 } keys %{$wpmgr->{waypoints} // {}};
+	my %e80_routes = map { $_ => 1 } keys %{$wpmgr->{routes}    // {}};
+
+	if ($e80_routes{$route_uuid})
+	{
+		display(0,0,"uploadRouteToE80($route_name): already on E80, skipping");
+		return;
+	}
+
+	my $dbh = connectDB();
+	my $wps = getRouteWaypoints($dbh, $route_uuid);
+
+	my $wp_count = 0;
+	for my $wp (@$wps)
+	{
+		next if $e80_wps{$wp->{uuid}};
+		display(0,1,"uploading wp($wp->{name})");
+		$wpmgr->createNamedWaypoint(
+			$wp->{name}, $wp->{uuid},
+			$wp->{lat},  $wp->{lon},
+			$wp->{sym}  // 25,
+			$wp->{created_ts});
+		$wp_count++;
+	}
+
+	display(0,1,"uploading route($route_name) " . scalar(@$wps) . " wps");
+	my @wp_uuids = map { $_->{uuid}       } @$wps;
+	my @pts      = map { shared_clone({}) } @$wps;
+	my $buffer = buildRoute(0, {
+		name   => $route_name,
+		bits   => 0,
+		color  => ($route_color // 0) + 0,
+		uuids  => shared_clone(\@wp_uuids),
+		points => shared_clone(\@pts),
+	}, 0, 0);
+	my $data = unpack('H*', $buffer);
+	$wpmgr->queueWPMGRCommand($API_NEW_ITEM, $WHAT_ROUTE,
+		$route_name, $route_uuid, $data);
+
+	disconnectDB($dbh);
+	display(0,0,"uploadRouteToE80($route_name): queued $wp_count waypoints + route");
+}
+
+
+sub uploadWaypointToE80
+{
+	my ($wp) = @_;
+
+	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
+	unless ($wpmgr)
+	{
+		warning(0,0,"uploadWaypointToE80: WPMGR not connected");
+		return;
+	}
+
+	my %e80_wps = map { $_ => 1 } keys %{$wpmgr->{waypoints} // {}};
+	if ($e80_wps{$wp->{uuid}})
+	{
+		display(0,0,"uploadWaypointToE80($wp->{name}): already on E80, skipping");
+		return;
+	}
+
+	display(0,1,"uploading wp($wp->{name})");
+	$wpmgr->createNamedWaypoint(
+		$wp->{name}, $wp->{uuid},
+		$wp->{lat},  $wp->{lon},
+		$wp->{sym}  // 25,
+		$wp->{created_ts});
+	display(0,0,"uploadWaypointToE80($wp->{name}): queued");
 }
 
 

@@ -19,6 +19,7 @@ use Pub::WX::Frame;
 use w_resources;
 use nmServer;
 use winBrowser;
+use winE80;
 use _import_kml;
 use base qw(Pub::WX::Frame);
 
@@ -32,9 +33,10 @@ sub new
 
 	my $this = $class->SUPER::new($parent, $rect);
 
-	EVT_MENU($this, $WIN_BROWSER, \&onCommand);
-	EVT_MENU($this, $CMD_OPEN_MAP,    \&onCommand);
-	EVT_MENU($this, $CMD_IMPORT_KML,  \&onCommand);
+	EVT_MENU($this, $WIN_BROWSER,    \&onCommand);
+	EVT_MENU($this, $WIN_E80,        \&onCommand);
+	EVT_MENU($this, $CMD_OPEN_MAP,   \&onCommand);
+	EVT_MENU($this, $CMD_IMPORT_KML, \&onCommand);
 	EVT_IDLE($this, \&onIdle);
 
 	$this->createPane($WIN_BROWSER) if !$this->findPane($WIN_BROWSER);
@@ -46,6 +48,13 @@ sub new
 sub onIdle
 {
 	my ($this, $event) = @_;
+	my $v = apps::raymarine::NET::b_sock::getVersion();
+	if ($v != ($this->{_e80_version} // -1))
+	{
+		$this->{_e80_version} = $v;
+		my $e80 = $this->findPane($WIN_E80);
+		$e80->refresh() if $e80;
+	}
 }
 
 
@@ -56,6 +65,7 @@ sub createPane
 	$book ||= $this->{book};
 	display(0, 0, "winMain::createPane($id) book=" . _def($book) . "  data=" . _def($data));
 	return winBrowser->new($this, $book, $id, $data) if $id == $WIN_BROWSER;
+	return winE80->new($this, $book, $id, $data)     if $id == $WIN_E80;
 	return $this->SUPER::createPane($id, $book, $data);
 }
 
@@ -64,7 +74,7 @@ sub onCommand
 {
 	my ($this, $event) = @_;
 	my $id = $event->GetId();
-	if ($id == $WIN_BROWSER)
+	if ($id == $WIN_BROWSER || $id == $WIN_E80)
 	{
 		my $pane = $this->findPane($id);
 		$this->createPane($id) if !$pane;

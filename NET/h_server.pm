@@ -292,7 +292,9 @@ sub handleCommand
 					my ($k,$v) = split(/=/,$kv,2);
 					$changes{$k} = $v;
 				}
-				$changes{sym} += 0 if exists $changes{sym};
+				$changes{sym}  += 0 if exists $changes{sym};
+				$changes{date} += 0 if exists $changes{date};
+				$changes{time} += 0 if exists $changes{time};
 				$wpmgr->modifyWaypoint($item_name,\%changes);
 			}
 			else

@@ -239,11 +239,11 @@ sub deleteWaypoint
 
 sub createNamedWaypoint
 {
-	my ($this,$name,$uuid,$lat,$lon,$sym) = @_;
+	my ($this,$name,$uuid,$lat,$lon,$sym,$ts) = @_;
 	$sym //= 25;
+	$ts  //= timegm(localtime());
 	$this->showCommand("createNamedWaypoint($name) uuid($uuid)");
 	my $alt_coords = latLonToNorthEast($lat,$lon);
-	my $now = timegm(localtime());
 	my $buffer = buildWaypoint(0,{
 		name    => $name,
 		comment => '',
@@ -253,8 +253,8 @@ sub createNamedWaypoint
 		east    => $alt_coords->{east},
 		sym     => $sym,
 		depth   => 0,
-		date    => int($now / $SECS_PER_DAY),
-		time    => int($now % $SECS_PER_DAY),
+		date    => int($ts / $SECS_PER_DAY),
+		time    => int($ts % $SECS_PER_DAY),
 	},$TEMP_MON,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
 	return $this->queueWPMGRCommand($API_NEW_ITEM,$WHAT_WAYPOINT,$name,$uuid,$data);

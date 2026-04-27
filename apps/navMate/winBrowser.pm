@@ -588,10 +588,29 @@ sub onTreeRightClick
 	my $item_data = $this->{tree}->GetItemData($item);
 	return unless $item_data;
 	my $node = $item_data->GetData();
-	return unless ref $node eq 'HASH' && $node->{type} eq 'collection';
+	return unless ref $node eq 'HASH';
 	return unless isWPMGRConnected();
 
-	$this->{_upload_coll} = $node->{data};
+	my $type = $node->{type};
+	my $data = $node->{data};
+
+	if ($type eq 'collection')
+	{
+		$this->{_upload_target} = { kind => 'collection', data => $data };
+	}
+	elsif ($type eq 'object' && $data->{obj_type} eq 'route')
+	{
+		$this->{_upload_target} = { kind => 'route', data => $data };
+	}
+	elsif ($type eq 'object' && $data->{obj_type} eq 'waypoint')
+	{
+		$this->{_upload_target} = { kind => 'waypoint', data => $data };
+	}
+	else
+	{
+		return;
+	}
+
 	my $menu = Pub::WX::Menu::createMenu('collection_context_menu');
 	$this->PopupMenu($menu, [-1,-1]);
 }
@@ -600,9 +619,23 @@ sub onTreeRightClick
 sub _onUploadE80
 {
 	my ($this) = @_;
-	my $coll = $this->{_upload_coll};
-	return unless $coll;
-	uploadCollectionToE80($coll->{uuid}, $coll->{name});
+	my $target = $this->{_upload_target};
+	return unless $target;
+	my $kind = $target->{kind};
+	my $data = $target->{data};
+
+	if ($kind eq 'collection')
+	{
+		uploadCollectionToE80($data->{uuid}, $data->{name});
+	}
+	elsif ($kind eq 'route')
+	{
+		uploadRouteToE80($data->{uuid}, $data->{name}, $data->{color});
+	}
+	elsif ($kind eq 'waypoint')
+	{
+		uploadWaypointToE80($data);
+	}
 }
 
 
