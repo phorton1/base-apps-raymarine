@@ -60,6 +60,7 @@ if ($db_rc == -1)
 }
 nmServer::startNavMateServer();
 
+apps::raymarine::NET::a_defs::initServices(wpmgr => 1, track => 1);
 apps::raymarine::NET::c_RAYDP->new();
 $raydp->start();
 

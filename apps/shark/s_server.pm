@@ -34,6 +34,9 @@ use apps::raymarine::NET::a_utils;
 use apps::raymarine::NET::c_RAYDP;
 use apps::raymarine::NET::fshWriter;
 use apps::raymarine::NET::h_server;
+use s_harness;
+use tcpScanner;
+use udpScanner;
 use base qw(apps::raymarine::NET::h_server);
 
 
@@ -224,6 +227,88 @@ sub handleCommand
 	elsif ($lpart eq 'write')
 	{
 		apps::raymarine::NET::fshWriter::write();
+	}
+
+	# WPMGR debug commands (shark-only; require test harness or name translation)
+
+	elsif ($lpart =~ /^(create|route|wp|group|mod)$/)
+	{
+		my $wpmgr = $raydp->findImplementedService('WPMGR');
+		return unless $wpmgr;
+
+		if ($lpart eq 'create')
+		{
+			my ($what,$num) = split(/\s+/,$rpart);
+			$what = lc($what // '');
+			s_harness::createTestWaypoint($wpmgr,$num) if $what eq 'wp';
+			s_harness::createTestRoute($wpmgr,$num)    if $what eq 'route';
+			s_harness::createTestGroup($wpmgr,$num)    if $what eq 'group';
+		}
+		elsif ($lpart eq 'route')
+		{
+			my ($route_id,$op,$wp_id) = split(/\s+/,$rpart);
+			if ($op && ($op eq '+' || $op eq '-'))
+			{
+				my $route_uuid = s_harness::resolveUUID($wpmgr,'route',$route_id);
+				my $wp_uuid    = s_harness::resolveUUID($wpmgr,'waypoint',$wp_id);
+				$wpmgr->routeWaypoint($route_uuid,$wp_uuid,$op eq '+')
+					if $route_uuid && $wp_uuid;
+			}
+			else
+			{
+				$wpmgr->showItem('route',$rpart);
+			}
+		}
+		elsif ($lpart eq 'wp')
+		{
+			my ($wp_id,$group_id) = split(/\s+/,$rpart);
+			if (defined $group_id)
+			{
+				my $wp_uuid    = s_harness::resolveUUID($wpmgr,'waypoint',$wp_id);
+				my $group_uuid = (!$group_id || $group_id eq '0')
+					? 0
+					: s_harness::resolveUUID($wpmgr,'group',$group_id);
+				$wpmgr->setWaypointGroup($wp_uuid,$group_uuid) if $wp_uuid;
+			}
+			else
+			{
+				$wpmgr->showItem('waypoint',$rpart);
+			}
+		}
+		elsif ($lpart eq 'group')
+		{
+			$wpmgr->showItem('group',$rpart);
+		}
+		elsif ($lpart eq 'mod')
+		{
+			my ($what,$item_name,@kvs) = split(/\s+/,$rpart);
+			$what = lc($what) if $what;
+			if (!$what || !$item_name || !@kvs)
+			{
+				error("usage: mod <wp> <name> key=val [key=val ...]");
+			}
+			elsif ($what eq 'wp')
+			{
+				my $uuid = $wpmgr->findUUIDByName('waypoint',$item_name);
+				if ($uuid)
+				{
+					my %changes = (uuid => $uuid);
+					for my $kv (@kvs)
+					{
+						my ($k,$v) = split(/=/,$kv,2);
+						$changes{$k} = $v;
+					}
+					$changes{sym}  += 0 if exists $changes{sym};
+					$changes{date} += 0 if exists $changes{date};
+					$changes{time} += 0 if exists $changes{time};
+					$wpmgr->modifyWaypoint(\%changes);
+				}
+			}
+			else
+			{
+				error("mod: unknown type '$what'");
+			}
+		}
 	}
 
 	# Shared NET-layer commands

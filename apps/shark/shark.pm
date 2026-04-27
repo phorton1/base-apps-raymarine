@@ -67,7 +67,13 @@ my $WITH_HTTP_SERVER = 1;
 my $WITH_SNIFFER     = 1;
 my $WITH_TCP_SCANNER = 0;
 my $WITH_UDP_SCANNER = 0;
+
 my $WITH_WX          = 1;
+my $WITH_WPMGR       = 1;
+my $WITH_TRACK       = 1;
+my $WITH_FILESYS     = 1;
+my $WITH_DB          = 1;
+my $WITH_DBNAV       = 1;
 
 
 #-----------------------------------------
@@ -95,6 +101,13 @@ if ($WITH_SERIAL)
 	$serial->start();
 }
 
+apps::raymarine::NET::a_defs::initServices(
+	wpmgr   => $WITH_WPMGR,
+	track   => $WITH_TRACK,
+	filesys => $WITH_FILESYS,
+	db      => $WITH_DB,
+	dbnav   => $WITH_DBNAV,
+);
 apps::raymarine::NET::c_RAYDP->new();
 if ($WITH_RAYDP)
 {

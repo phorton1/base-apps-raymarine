@@ -17,10 +17,10 @@
 #   kml              - dump current KML to ring buffer
 #   t <args>         - TRACK trackUICommand
 #   q                - WPMGR queryWaypoints
-#   create/delete    - WPMGR create/delete waypoint|route|group
-#   wp/route/group   - WPMGR item ops
-#   mod              - WPMGR modifyWaypoint
-#   new              - WPMGR createNamed*
+#   new              - WPMGR create waypoint|route|group by name+uuid
+#   delete           - WPMGR delete waypoint|route|group by name
+#   find             - WPMGR look up UUID by type+name
+#   routewp          - WPMGR add/remove waypoint from route by name
 #
 # Subclasses override handleCommand to add app-specific commands,
 # calling SUPER::handleCommand for anything not handled.
@@ -219,7 +219,7 @@ sub handleCommand
 
 	# WPMGR
 
-	elsif ($lpart =~ /^(q|create|delete|wp|route|group|new|mod)$/)
+	elsif ($lpart =~ /^(q|new|delete|find|routewp)$/)
 	{
 		my $wpmgr = $raydp->findImplementedService('WPMGR');
 		return unless $wpmgr;
@@ -227,80 +227,6 @@ sub handleCommand
 		if ($lpart eq 'q')
 		{
 			$wpmgr->queryWaypoints();
-		}
-		elsif ($lpart eq 'create' || $lpart eq 'delete')
-		{
-			my ($what,@rest) = split(/\s+/,$rpart);
-			$what = lc($what // '');
-			my $num  = $rest[0];
-			my $name = join(' ',@rest);
-
-			$wpmgr->createWaypoint($num)                   if $lpart eq 'create' && $what eq 'wp';
-			$wpmgr->createRoute($num,@rest[1..$#rest])     if $lpart eq 'create' && $what eq 'route';
-			$wpmgr->createGroup($num)                      if $lpart eq 'create' && $what eq 'group';
-
-			$wpmgr->deleteWaypoint($name)                  if $lpart eq 'delete' && $what eq 'wp';
-			$wpmgr->deleteRoute($name)                     if $lpart eq 'delete' && $what eq 'route';
-			$wpmgr->deleteGroup($name)                     if $lpart eq 'delete' && $what eq 'group';
-		}
-		elsif ($lpart eq 'route')
-		{
-			my ($route_id,$op,$wp_id) = split(/\s+/,$rpart);
-			if ($op && ($op eq '+' || $op eq '-'))
-			{
-				my $route_name = $route_id =~ /^\d+$/ ? "testRoute$route_id"  : $route_id;
-				my $wp_name    = $wp_id    =~ /^\d+$/ ? "testWaypoint$wp_id"  : $wp_id;
-				$wpmgr->routeWaypoint($route_name,$wp_name,$op eq '+');
-			}
-			else
-			{
-				$wpmgr->showItem('route',$rpart);
-			}
-		}
-		elsif ($lpart eq 'wp')
-		{
-			my ($wp_id,$group_id) = split(/\s+/,$rpart);
-			if (defined $group_id)
-			{
-				my $wp_name    = $wp_id    =~ /^\d+$/ ? "testWaypoint$wp_id"  : $wp_id;
-				my $group_name = !$group_id || $group_id eq '0' ? 0 :
-				                 $group_id  =~ /^\d+$/ ? "testGroup$group_id" : $group_id;
-				$wpmgr->setWaypointGroup($wp_name,$group_name);
-			}
-			else
-			{
-				$wpmgr->showItem('waypoint',$rpart);
-			}
-		}
-		elsif ($lpart eq 'group')
-		{
-			$wpmgr->showItem('group',$rpart);
-		}
-		elsif ($lpart eq 'mod')
-		{
-			my ($what,$item_name,@kvs) = split(/\s+/,$rpart);
-			$what = lc($what) if $what;
-			if (!$what || !$item_name || !@kvs)
-			{
-				error("usage: mod <wp> <name> key=val [key=val ...]");
-			}
-			elsif ($what eq 'wp')
-			{
-				my %changes;
-				for my $kv (@kvs)
-				{
-					my ($k,$v) = split(/=/,$kv,2);
-					$changes{$k} = $v;
-				}
-				$changes{sym}  += 0 if exists $changes{sym};
-				$changes{date} += 0 if exists $changes{date};
-				$changes{time} += 0 if exists $changes{time};
-				$wpmgr->modifyWaypoint($item_name,\%changes);
-			}
-			else
-			{
-				error("mod: unknown type '$what'");
-			}
 		}
 		elsif ($lpart eq 'new')
 		{
@@ -314,23 +240,67 @@ sub handleCommand
 			{
 				my ($lat,$lon,$sym) = @rest;
 				return error("new wp requires lat and lon") if !defined($lat) || !defined($lon);
-				$wpmgr->createNamedWaypoint($name,$uuid,$lat+0,$lon+0,$sym);
+				my %h = (name => $name, uuid => $uuid, lat => $lat+0, lon => $lon+0);
+				$h{sym} = $sym+0 if defined $sym;
+				$wpmgr->createWaypoint(\%h);
 			}
 			elsif ($what eq 'group')
 			{
-				$wpmgr->createNamedGroup($name,$uuid);
+				$wpmgr->createGroup({name => $name, uuid => $uuid});
 			}
 			elsif ($what eq 'route')
 			{
 				my ($color) = @rest;
-				$wpmgr->createNamedRoute($name,$uuid,defined($color) ? $color+0 : undef);
+				my %h = (name => $name, uuid => $uuid);
+				$h{color} = $color+0 if defined $color;
+				$wpmgr->createRoute(\%h);
 			}
 			else
 			{
 				error("new: unknown type '$what'");
 			}
 		}
+		elsif ($lpart eq 'delete')
+		{
+			my ($what,@rest) = split(/\s+/,$rpart);
+			my $name = join(' ',@rest);
+			$what    = lc($what // '');
+			my $full = $what eq 'wp' ? 'waypoint' : $what;
+			my $uuid = $wpmgr->findUUIDByName($full,$name);
+			return error("delete: $full '$name' not found") unless $uuid;
+			$wpmgr->deleteWaypoint($uuid) if $what eq 'wp';
+			$wpmgr->deleteRoute($uuid)    if $what eq 'route';
+			$wpmgr->deleteGroup($uuid)    if $what eq 'group';
+			error("delete: unknown type '$what'") unless $what =~ /^(wp|route|group)$/;
+		}
+		elsif ($lpart eq 'find')
+		{
+			my ($what,@rest) = split(/\s+/,$rpart);
+			my $name = join(' ',@rest);
+			$what    = lc($what // '');
+			my $full = $what eq 'wp' ? 'waypoint' : $what;
+			my $uuid = $wpmgr->findUUIDByName($full,$name);
+			$uuid
+				? c_print("$full '$name' => $uuid\n")
+				: c_print("$full '$name' not found\n");
+		}
+		elsif ($lpart eq 'routewp')
+		{
+			my ($route_name,$op,$wp_name) = split(/\s+/,$rpart,3);
+			$op //= '';
+			unless ($route_name && ($op eq '+' || $op eq '-') && $wp_name)
+			{
+				error("usage: routewp <route> <+|-> <wp>");
+				return;
+			}
+			my $route_uuid = $wpmgr->findUUIDByName('route',$route_name);
+			my $wp_uuid    = $wpmgr->findUUIDByName('waypoint',$wp_name);
+			return error("routewp: route '$route_name' not found")    unless $route_uuid;
+			return error("routewp: waypoint '$wp_name' not found")    unless $wp_uuid;
+			$wpmgr->routeWaypoint($route_uuid,$wp_uuid,$op eq '+');
+		}
 	}	# WPMGR
+
 }
 
 

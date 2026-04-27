@@ -4,20 +4,16 @@
 # Upload navMate collection to E80 via WPMGR.
 # Skips any item whose UUID is already in E80 in-memory state.
 #
-# Phase 1: waypoints (createNamedWaypoint — queued, WPMGR processes serially)
-# Phase 2: routes (buildRoute with all waypoints embedded — one NEW_ITEM per route)
-# Phase 3: groups (inferred from sub-collections that directly own waypoints;
-#          group buffer is pre-populated with member UUIDs in one shot)
+# Phase 1: waypoints uploaded via createWaypoint hash API
+# Phase 2: routes uploaded via createRoute with embedded waypoint UUID list
+# Phase 3: groups uploaded via createGroup with embedded member UUID list
 # Tracks are not uploaded.
 
 package nmUpload;
 use strict;
 use warnings;
 use threads;
-use threads::shared;
 use Pub::Utils qw(display warning error);
-use apps::raymarine::NET::b_records;
-use apps::raymarine::NET::e_wp_defs;
 use apps::raymarine::NET::c_RAYDP;
 use c_db;
 
@@ -69,11 +65,12 @@ sub uploadCollectionToE80
 	{
 		next if $e80_wps{$wp->{uuid}};
 		display(0,1,"uploading wp($wp->{name})");
-		$wpmgr->createNamedWaypoint(
-			$wp->{name}, $wp->{uuid},
-			$wp->{lat},  $wp->{lon},
-			$wp->{sym}  // 25,
-			$wp->{created_ts});
+		$wpmgr->createWaypoint({
+			name => $wp->{name}, uuid => $wp->{uuid},
+			lat  => $wp->{lat},  lon  => $wp->{lon},
+			sym  => $wp->{sym}  // 25,
+			ts   => $wp->{created_ts},
+		});
 		$wp_count++;
 	}
 	display(0,0,"upload($coll_name): queued $wp_count waypoints");
@@ -89,18 +86,13 @@ sub uploadCollectionToE80
 		my $wps = getRouteWaypoints($dbh, $r->{uuid});
 		display(0,1,"uploading route($r->{name}) " . scalar(@$wps) . " wps");
 
-		my @wp_uuids = map { $_->{uuid}       } @$wps;
-		my @pts      = map { shared_clone({}) } @$wps;
-		my $buffer = buildRoute(0, {
-			name   => $r->{name},
-			bits   => 0,
-			color  => ($r->{color} // 0) + 0,
-			uuids  => shared_clone(\@wp_uuids),
-			points => shared_clone(\@pts),
-		}, 0, 0);
-		my $data = unpack('H*', $buffer);
-		$wpmgr->queueWPMGRCommand($API_NEW_ITEM, $WHAT_ROUTE,
-			$r->{name}, $r->{uuid}, $data);
+		my @wp_uuids = map { $_->{uuid} } @$wps;
+		$wpmgr->createRoute({
+			name      => $r->{name},
+			uuid      => $r->{uuid},
+			color     => ($r->{color} // 0) + 0,
+			waypoints => \@wp_uuids,
+		});
 		$route_count++;
 	}
 
@@ -118,13 +110,11 @@ sub uploadCollectionToE80
 		next if $e80_groups{$grp->{uuid}};
 		my @wp_uuids = map { $_->{uuid} } @{$grp->{waypoints}};
 		display(0,1,"uploading group($grp->{name}) " . scalar(@wp_uuids) . " wps");
-		my $buffer = buildGroup(0, {
-			name  => $grp->{name},
-			uuids => shared_clone(\@wp_uuids),
-		}, 0, 0);
-		my $data = unpack('H*', $buffer);
-		$wpmgr->queueWPMGRCommand($API_NEW_ITEM, $WHAT_GROUP,
-			$grp->{name}, $grp->{uuid}, $data);
+		$wpmgr->createGroup({
+			name    => $grp->{name},
+			uuid    => $grp->{uuid},
+			members => \@wp_uuids,
+		});
 		$grp_count++;
 	}
 
@@ -161,27 +151,23 @@ sub uploadRouteToE80
 	{
 		next if $e80_wps{$wp->{uuid}};
 		display(0,1,"uploading wp($wp->{name})");
-		$wpmgr->createNamedWaypoint(
-			$wp->{name}, $wp->{uuid},
-			$wp->{lat},  $wp->{lon},
-			$wp->{sym}  // 25,
-			$wp->{created_ts});
+		$wpmgr->createWaypoint({
+			name => $wp->{name}, uuid => $wp->{uuid},
+			lat  => $wp->{lat},  lon  => $wp->{lon},
+			sym  => $wp->{sym}  // 25,
+			ts   => $wp->{created_ts},
+		});
 		$wp_count++;
 	}
 
 	display(0,1,"uploading route($route_name) " . scalar(@$wps) . " wps");
-	my @wp_uuids = map { $_->{uuid}       } @$wps;
-	my @pts      = map { shared_clone({}) } @$wps;
-	my $buffer = buildRoute(0, {
-		name   => $route_name,
-		bits   => 0,
-		color  => ($route_color // 0) + 0,
-		uuids  => shared_clone(\@wp_uuids),
-		points => shared_clone(\@pts),
-	}, 0, 0);
-	my $data = unpack('H*', $buffer);
-	$wpmgr->queueWPMGRCommand($API_NEW_ITEM, $WHAT_ROUTE,
-		$route_name, $route_uuid, $data);
+	my @wp_uuids = map { $_->{uuid} } @$wps;
+	$wpmgr->createRoute({
+		name      => $route_name,
+		uuid      => $route_uuid,
+		color     => ($route_color // 0) + 0,
+		waypoints => \@wp_uuids,
+	});
 
 	disconnectDB($dbh);
 	display(0,0,"uploadRouteToE80($route_name): queued $wp_count waypoints + route");
@@ -207,11 +193,12 @@ sub uploadWaypointToE80
 	}
 
 	display(0,1,"uploading wp($wp->{name})");
-	$wpmgr->createNamedWaypoint(
-		$wp->{name}, $wp->{uuid},
-		$wp->{lat},  $wp->{lon},
-		$wp->{sym}  // 25,
-		$wp->{created_ts});
+	$wpmgr->createWaypoint({
+		name => $wp->{name}, uuid => $wp->{uuid},
+		lat  => $wp->{lat},  lon  => $wp->{lon},
+		sym  => $wp->{sym}  // 25,
+		ts   => $wp->{created_ts},
+	});
 	display(0,0,"uploadWaypointToE80($wp->{name}): queued");
 }
 

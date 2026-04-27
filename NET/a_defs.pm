@@ -11,14 +11,6 @@ use Socket qw(pack_sockaddr_in inet_aton);
 use Pub::Utils;
 
 
-# implemented service_ports that can be turned on and off
-
-our $WITH_TRACK 		= 1;
-our $WITH_WPMGR 		= 1;
-our $WITH_FILESYS 		= 0;
-our $WITH_DBNAV 		= 0;
-our $WITH_DB			= 0;
-
 
 our $AUTO_START_IMPLEMENTED_SERVICES = 1;
 	# RAYDP will automatically start service_ports marked as 'implemented'.
@@ -30,12 +22,8 @@ BEGIN
  	use Exporter qw( import );
     our @EXPORT = qw(
 
-		$WITH_TRACK
-		$WITH_WPMGR
-		$WITH_FILESYS
-		$WITH_DBNAV
-		$WITH_DB
 		$AUTO_START_IMPLEMENTED_SERVICES
+		initServices
 	
 		$LOCAL_IP
 
@@ -436,31 +424,35 @@ our %SERVICE_PORT_DEFS  = (
 
 
 
-mergeHash($SERVICE_PORT_DEFS{$SPORT_FILESYS},{
-	parser_class	=> 'apps::raymarine::NET::e_FILESYS',
-	implemented 	=> $WITH_FILESYS,
-	auto_connect 	=> 1,
-	auto_populate	=> 1 });
-mergeHash($SERVICE_PORT_DEFS{$SPORT_WPMGR},{
-	parser_class	=> 'apps::raymarine::NET::e_WPMGR',
-	implemented 	=> $WITH_WPMGR,
-	auto_connect 	=> 1,
-	auto_populate 	=> 1, });
-mergeHash($SERVICE_PORT_DEFS{$SPORT_TRACK},{
-	parser_class	=> 'apps::raymarine::NET::e_TRACK',
-	implemented 	=> $WITH_TRACK,
-	auto_connect 	=> 1,
-	auto_populate 	=> 1, });
-mergeHash($SERVICE_PORT_DEFS{$SPORT_DBNAV},{
-	parser_class	=> 'apps::raymarine::NET::e_DBNAV',
-	implemented 	=> $WITH_DBNAV,
-	auto_connect 	=> 1,
-	auto_populate 	=> 1 });
-mergeHash($SERVICE_PORT_DEFS{$SPORT_DB},{
-	parser_class	=> 'apps::raymarine::NET::e_DB',
-	implemented 	=> $WITH_DB,
-	auto_connect 	=> 1,
-	auto_populate 	=> 1 });
+sub initServices
+{
+	my (%want) = @_;
+	mergeHash($SERVICE_PORT_DEFS{$SPORT_FILESYS},{
+		parser_class	=> 'apps::raymarine::NET::e_FILESYS',
+		implemented 	=> $want{filesys} || 0,
+		auto_connect 	=> 1,
+		auto_populate	=> 1 });
+	mergeHash($SERVICE_PORT_DEFS{$SPORT_WPMGR},{
+		parser_class	=> 'apps::raymarine::NET::e_WPMGR',
+		implemented 	=> $want{wpmgr} || 0,
+		auto_connect 	=> 1,
+		auto_populate 	=> 1 });
+	mergeHash($SERVICE_PORT_DEFS{$SPORT_TRACK},{
+		parser_class	=> 'apps::raymarine::NET::e_TRACK',
+		implemented 	=> $want{track} || 0,
+		auto_connect 	=> 1,
+		auto_populate 	=> 1 });
+	mergeHash($SERVICE_PORT_DEFS{$SPORT_DBNAV},{
+		parser_class	=> 'apps::raymarine::NET::e_DBNAV',
+		implemented 	=> $want{dbnav} || 0,
+		auto_connect 	=> 1,
+		auto_populate 	=> 1 });
+	mergeHash($SERVICE_PORT_DEFS{$SPORT_DB},{
+		parser_class	=> 'apps::raymarine::NET::e_DB',
+		implemented 	=> $want{db} || 0,
+		auto_connect 	=> 1,
+		auto_populate 	=> 1 });
+}
 
 
 

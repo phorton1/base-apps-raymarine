@@ -308,6 +308,9 @@ sub create_item
 	my $data = $command->{data};
 	display($dbg,0,"create_item($what=$what_name) $uuid $name");
 
+	my $hash_name = lc($what_name).'s';
+	return error("create_item: $what_name($uuid) already in memory") if $this->{$hash_name}{$uuid};
+
 	# check the name
 
 	my $seq = $this->{next_seqnum}++;
@@ -353,6 +356,9 @@ sub modify_item
 	display($dbg,0,"modify_item($what=$what_name) $uuid $name");
 	display($dbg+1,1,"data=".unpack('H*',$data));
 
+	my $hash_name = lc($what_name).'s';
+	return error("modify_item: $what_name($uuid) not in memory") if !$this->{$hash_name}{$uuid};
+
 	my $request;
 	my $seq = $this->{next_seqnum}++;
 
@@ -388,12 +394,14 @@ sub delete_item
 	my $name = $command->{name};
 	display($dbg,0,"delete_item($what=$what_name) $uuid $name");
 
+	my $hash_name = lc($what_name).'s';
+	return error("delete_item: $what_name($uuid) not in memory") if !$this->{$hash_name}{$uuid};
+
 	my $seq = $this->{next_seqnum}++;
 	my $request = createMsg($seq,$DIRECTION_SEND,$CMD_UUID,$what,$uuid);
 	return 0 if !$this->sendRequest($seq,"delete $what_name",$request);
 	return 0 if !$this->waitReply(1);
 
-	my $hash_name = lc($what_name)."s";
 	delete $this->{$hash_name}->{$uuid};
 	$this->incVersion();		# notify UI
 	return 1;
