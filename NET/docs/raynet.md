@@ -9,13 +9,14 @@
 **[FILESYS](FILESYS.md)** --
 **[DBNAV](DBNAV.md)** --
 **[shark](../../apps/shark/docs/shark.md)** --
+**[navMate](../../apps/navMate/docs/readme.md)** --
 **[Cables](ethernet_cables.md)**
 
 **RAYNET** is the working name for Raymarine's **SeatalkHS** ethernet protocol
 suite. Raymarine does not publish technical documentation for these protocols;
 all content here was derived from packet capture and probing.
 
-**RAYDP** (Raymarine Discovery Protocol) is the service discovery protocol
+**[RAYDP](RAYDP.md)** (Raymarine Discovery Protocol) is the service discovery protocol
 within RAYNET — the multicast protocol at 224.0.0.1:5800 through which devices
 advertise their services. It was called **RAYSYS** for a time in this codebase
 to match the Raymarine "Sys" label in the E80 diagnostics dialog, but has been

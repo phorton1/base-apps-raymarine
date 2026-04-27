@@ -9,10 +9,11 @@
 **[FILESYS](FILESYS.md)** --
 **[DBNAV](DBNAV.md)** --
 **[shark](../../apps/shark/docs/shark.md)** --
+**[navMate](../../apps/navMate/docs/readme.md)** --
 **[Cables](ethernet_cables.md)**
 
 **RAYDP** (Raymarine Discovery Protocol) is the SeatalkHS service discovery
-protocol — the entry point into RAYNET. It operates as a multicast UDP broadcast
+protocol — the entry point into [RAYNET](RAYNET.md). It operates as a multicast UDP broadcast
 on **224.0.0.1:5800**. On the E80, this service is labeled "Sys" in the ethernet
 diagnostics Services dialog. The implementation class is `c_RAYDP.pm`.
 

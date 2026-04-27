@@ -9,6 +9,7 @@
 **[FILESYS](FILESYS.md)** --
 **DBNAV** --
 **[shark](../../apps/shark/docs/shark.md)** --
+**[navMate](../../apps/navMate/docs/readme.md)** --
 **[Cables](ethernet_cables.md)**
 
 Two related services provide access to the E80's navigation field database,

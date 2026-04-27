@@ -9,11 +9,13 @@
 **[FILESYS](FILESYS.md)** --
 **[DBNAV](DBNAV.md)** --
 **[shark](../../apps/shark/docs/shark.md)** --
+**[navMate](../../apps/navMate/docs/readme.md)** --
 **[Cables](ethernet_cables.md)**
 
 The NET folder contains Perl implementations of the Raymarine **SeatalkHS**
-ethernet protocols, along with the engineering tool (**shark**) used to explore
-them, and supporting documentation.
+ethernet protocols, along with the tools built on them — **[shark](../../apps/shark/docs/shark.md)** (the
+engineering tool) and **[navMate](../../apps/navMate/docs/readme.md)** (the navigation application) — and supporting
+documentation.
 
 Throughout this documentation and the implementation code, **RAYNET** is used
 as the working shorthand for the complete SeatalkHS ethernet protocol suite —
@@ -112,12 +114,15 @@ is running and the E80 is underway.
 
 ## Engineering Tools
 
-Working with the E80 over SeatalkHS requires physical ethernet access and
-the **shark** engineering application. Each E80 has its own fixed IP address — units do not use DHCP.
-The address is intrinsic to the hardware, varies across units, and is
-advertised in the RAYDP IDENT packet at startup. The specific address
-used in development is recorded in `NET/a_defs.pm`. The specific addresses used in development are recorded in
-`NET/a_defs.pm`. A standard **shielded** ethernet cable is required between
+Working with the E80 over SeatalkHS requires physical ethernet access.
+The **NET library** provides the programmatic API to the E80 independently
+of any application; **shark** (`apps/shark/`) is the engineering tool built
+on it for protocol probing and exploration, and **navMate** (`apps/navMate/`)
+— primarily a user-level navigation application — has grown into an adjunct
+tool that provides its own hands-on E80 access. Each E80 has its own fixed
+IP address — units do not use DHCP. The address is intrinsic to the hardware,
+varies across units, and is advertised in the RAYDP IDENT packet at startup.
+The specific addresses used in development are recorded in `NET/a_defs.pm`. A standard **shielded** ethernet cable is required between
 the laptop and the E80 (or a router that bridges them); see
 **[Cables](ethernet_cables.md)** for wiring details and the 3D-printed
 field-installable waterproof connector.
@@ -127,8 +132,8 @@ field-installable waterproof connector.
 NET is a **standalone Perl library**. It has no application entry point of its own;
 two applications consume it:
 
-- **shark** (`apps/shark/`) — the wxPerl engineering tool used to probe and operate the E80
-- **navMate** (`apps/navMate/`) — the navigation knowledge management application
+- **[shark](../../apps/shark/docs/shark.md)** (`apps/shark/`) — the wxPerl engineering tool used to probe and operate the E80
+- **[navMate](../../apps/navMate/docs/readme.md)** (`apps/navMate/`) — the navigation knowledge management application
 
 NET modules follow a layered naming convention (one letter prefix per layer):
 

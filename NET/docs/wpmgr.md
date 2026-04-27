@@ -9,6 +9,7 @@
 **[FILESYS](FILESYS.md)** --
 **[DBNAV](DBNAV.md)** --
 **[shark](../../apps/shark/docs/shark.md)** --
+**[navMate](../../apps/navMate/docs/readme.md)** --
 **[Cables](ethernet_cables.md)**
 
 **WPMGR** is the Waypoint Manager service — the protocol for reading and writing
