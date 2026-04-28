@@ -148,7 +148,7 @@ sub api_log
 	}
 	else
 	{
-		my $tail = defined($params->{tail}) ? int($params->{tail}) : 200;
+		my $tail = defined($params->{tail}) ? int($params->{tail}) : 2000;
 		($cur_seq,$entries,$overflow) = getOutputRingTail($tail);
 	}
 	return $this->api_json_response($request,{
@@ -219,7 +219,7 @@ sub handleCommand
 
 	# WPMGR
 
-	elsif ($lpart =~ /^(q|new|delete|find|routewp)$/)
+	elsif ($lpart =~ /^(q|new|delete|find|routewp|clear_e80)$/)
 	{
 		my $wpmgr = $raydp->findImplementedService('WPMGR');
 		return unless $wpmgr;
@@ -272,6 +272,25 @@ sub handleCommand
 			$wpmgr->deleteRoute($uuid)    if $what eq 'route';
 			$wpmgr->deleteGroup($uuid)    if $what eq 'group';
 			error("delete: unknown type '$what'") unless $what =~ /^(wp|route|group)$/;
+		}
+		elsif ($lpart eq 'clear_e80')
+		{
+			my @ops;
+			for my $uuid (keys %{$wpmgr->{routes} // {}})
+			{
+				push @ops, { type => 'del_route', uuid => $uuid };
+			}
+			for my $uuid (keys %{$wpmgr->{groups} // {}})
+			{
+				push @ops, { type => 'del_group', uuid => $uuid };
+			}
+			for my $uuid (keys %{$wpmgr->{waypoints} // {}})
+			{
+				push @ops, { type => 'del_wp', uuid => $uuid };
+			}
+			my $total = scalar @ops;
+			c_print("clear_e80: submitting $total delete ops\n");
+			$wpmgr->submitBatch(\@ops) if $total;
 		}
 		elsif ($lpart eq 'find')
 		{

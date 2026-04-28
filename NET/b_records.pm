@@ -618,9 +618,9 @@ sub buildRoute
 		my $pt = $$points[$i];
 
 		printConsole(3,$mon,$color,sprintf("point($i) = heading(%0.1f) leg(%0.1f) total(%0.1f)",
-			$pt->{bearing},
-			$pt->{legLength},
-			$pt->{totalLength}) )
+			$pt->{bearing}     // 0,
+			$pt->{legLength}   // 0,
+			$pt->{totalLength} // 0) )
 			if $mon & $MON_REC_DETAILS;
 
 		$buffer .= packRecord(

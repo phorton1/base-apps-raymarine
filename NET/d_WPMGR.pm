@@ -26,6 +26,7 @@ use Time::HiRes qw(sleep time);
 use Pub::Utils;
 use apps::raymarine::NET::a_defs;
 use apps::raymarine::NET::a_utils;
+use apps::raymarine::NET::a_mon;
 use apps::raymarine::NET::b_records;
 use apps::raymarine::NET::e_wp_defs;
 require apps::raymarine::NET::e_wp_api;
@@ -43,6 +44,12 @@ my $WITH_MOD_PROCESSING = 1;
 
 my $WPMGR_SERVICE_ID = 15;
 	# 15 = 0xf0 == 'F000' in streams
+
+my %BUFFER_CHUNK = (
+	$WHAT_WAYPOINT	=> 498,
+	$WHAT_ROUTE		=> 498,
+	$WHAT_GROUP		=> 498,
+);
 
 
 
@@ -88,14 +95,14 @@ sub apiCommandName
 	return 'NEW_ITEM'	if $cmd == $API_NEW_ITEM;
 	return 'DEL_ITEM'	if $cmd == $API_DEL_ITEM;
 	return 'MOD_ITEM'		if $cmd == $API_MOD_ITEM;
+	return 'DO_BATCH'	if $cmd == $API_DO_BATCH;
 	return "UNKNOWN API COMMAND";
 }
 
 
-
 sub queueWPMGRCommand
 {
-	my ($this,$api_command,$what,$name,$uuid,$data) = @_;
+	my ($this,$api_command,$what,$name,$uuid,$data,$progress) = @_;
 	$data ||= 0;
 	display_hash($dbg+2,0,"queueWPCommand($this)",$this);
 	
@@ -130,7 +137,7 @@ sub queueWPMGRCommand
 		name => $name,
 		uuid => $uuid,
 		data => $data });
-		# params => $params });
+	$command->{progress} = $progress if $progress;
 	push @{$this->{command_queue}},$command;
 
 	return 1;
@@ -173,11 +180,11 @@ sub buildBufferMsgs
 	# each with its own big_len prefix, exactly mirroring how the E80 itself
 	# chunks large route/group buffers on the receive side.
 {
-	my ($seq, $hex_data) = @_;
+	my ($seq, $hex_data, $what) = @_;
 	my $bin     = pack('H*', $hex_data);
 	my $payload = substr($bin, 4);		# strip the big_len prefix
 	my $msgs    = '';
-	my $CHUNK   = 498;
+	my $CHUNK   = $BUFFER_CHUNK{$what // 0} // 498;
 	my $offset  = 0;
 	while ($offset < length($payload))
 	{
@@ -332,13 +339,15 @@ sub create_item
 	$request =
 		createMsg($seq,$DIRECTION_SEND,$CMD_MODIFY,		$what,	$uuid).
 		createMsg($seq,$DIRECTION_INFO,$CMD_CONTEXT,	0,		$uuid.'03000000').	#.'00000000').
-		buildBufferMsgs($seq, $data).
+		buildBufferMsgs($seq, $data, $what).
 		createMsg($seq,$DIRECTION_INFO,$CMD_LIST,		0,		'00000000 00000000'); # $uuid);
 
 	return 0 if !$this->sendRequest($seq,"$name $what_name",$request);
 	my $ok = $this->waitReply(1);
-	$this->queueWPMGRCommand($API_GET_ITEM, $what, $name, $uuid, undef)
-		if $what != $WHAT_WAYPOINT;
+	if ($ok && $what != $WHAT_WAYPOINT)
+	{
+		$this->get_item({what=>$what, name=>$name, uuid=>$uuid});
+	}
 	return $ok;
 }
 
@@ -374,7 +383,7 @@ sub modify_item
 	$request =
 		createMsg($seq,$DIRECTION_SEND,$CMD_DATA,		$what,	'07000000'.$uuid).	# '15000000'.$uuid);
 		createMsg($seq,$DIRECTION_INFO,$CMD_CONTEXT,	0,		$uuid.'00000000').	#.'03000000').
-		buildBufferMsgs($seq, $data).
+		buildBufferMsgs($seq, $data, $what).
 		createMsg($seq,$DIRECTION_INFO,$CMD_LIST,		0,		$uuid);
 	return 0 if !$this->sendRequest($seq,"modify $what_name",$request);
 	return 0 if !$this->waitReply(1);
@@ -426,12 +435,165 @@ sub get_item
 
 
 
+sub do_batch
+	# Process an ordered list of WPMGR ops synchronously, one at a time,
+	# with full E80 handshaking between each.  Caller owns ordering:
+	# del routes before del groups, del groups before del waypoints.
+	# del_wp ops skip _removeFromGroup — caller guarantees group is gone.
+{
+	my ($this,$command) = @_;
+	my $ops  = $command->{ops};
+	my $prog = $command->{progress};
+	my $mon  = $MONITOR_API_BUILDS;
+	my $col  = $UTILS_COLOR_CYAN;
+
+	$this->{batch_active} = 1;
+	for my $op (@$ops)
+	{
+		last if $prog && $prog->{cancelled};
+
+		my $type = $op->{type};
+		my $uuid = $op->{uuid};
+		my ($rslt,$name,$what_label);
+
+		if ($type eq 'del_route')
+		{
+			my $item = $this->{routes}{$uuid};
+			if (!$item) { warning(0,0,"do_batch: route($uuid) not in memory"); next; }
+			$name       = $item->{name};
+			$what_label = 'Route';
+			$rslt = $this->delete_item({what=>$WHAT_ROUTE, uuid=>$uuid, name=>$name});
+		}
+		elsif ($type eq 'del_group')
+		{
+			my $item = $this->{groups}{$uuid};
+			if (!$item) { warning(0,0,"do_batch: group($uuid) not in memory"); next; }
+			$name       = $item->{name};
+			$what_label = 'Group';
+			$rslt = $this->delete_item({what=>$WHAT_GROUP, uuid=>$uuid, name=>$name});
+		}
+		elsif ($type eq 'del_wp')
+		{
+			my $item = $this->{waypoints}{$uuid};
+			if (!$item) { warning(0,0,"do_batch: wp($uuid) not in memory"); next; }
+			$name       = $item->{name};
+			$what_label = 'WP';
+			$rslt = $this->delete_item({what=>$WHAT_WAYPOINT, uuid=>$uuid, name=>$name});
+		}
+		elsif ($type eq 'new_wp')
+		{
+			$name       = $op->{name};
+			$what_label = 'WP';
+			my $lat = $op->{lat};
+			my $lon = $op->{lon};
+			my $ts  = $op->{ts} // 0;
+			my $alt = latLonToNorthEast($lat,$lon);
+			my $buffer = buildWaypoint(0,{
+				name    => $name,
+				comment => $op->{comment} // '',
+				lat     => int($lat * $SCALE_LATLON),
+				lon     => int($lon * $SCALE_LATLON),
+				north   => $alt->{north},
+				east    => $alt->{east},
+				sym     => $op->{sym}   // 25,
+				depth   => $op->{depth} // 0,
+				date    => int($ts / $SECS_PER_DAY),
+				time    => int($ts % $SECS_PER_DAY),
+			},$mon,$col);
+			$rslt = $this->create_item({
+				what => $WHAT_WAYPOINT,
+				uuid => $uuid,
+				name => $name,
+				data => unpack('H*',$buffer),
+			});
+		}
+		elsif ($type eq 'new_group')
+		{
+			$name       = $op->{name};
+			$what_label = 'Group';
+			my $buffer = buildGroup(0,{
+				name    => $name,
+				comment => $op->{comment} // '',
+				uuids   => shared_clone($op->{members} // []),
+			},$mon,$col);
+			$rslt = $this->create_item({
+				what => $WHAT_GROUP,
+				uuid => $uuid,
+				name => $name,
+				data => unpack('H*',$buffer),
+			});
+		}
+		elsif ($type eq 'new_route')
+		{
+			$name       = $op->{name};
+			$what_label = 'Route';
+			my $wps = $op->{waypoints} // [];
+			my @pts = map { shared_clone({}) } @$wps;
+			my $buffer = buildRoute(0,{
+				name    => $name,
+				comment => $op->{comment} // '',
+				bits    => 0,
+				color   => $op->{color} // 0,
+				uuids   => shared_clone($wps),
+				points  => shared_clone(\@pts),
+			},$mon,$col);
+			$rslt = $this->create_item({
+				what => $WHAT_ROUTE,
+				uuid => $uuid,
+				name => $name,
+				data => unpack('H*',$buffer),
+			});
+		}
+		else
+		{
+			warning(0,0,"do_batch: unknown op type '$type'");
+			next;
+		}
+
+		if ($prog)
+		{
+			if ($rslt)
+			{
+				$prog->{label} = "$what_label: $name" if defined $name;
+				$prog->{done}++;
+			}
+			else
+			{
+				$prog->{error}     = "batch $type failed: $name";
+				$prog->{cancelled} = 1;
+			}
+		}
+		elsif (!$rslt)
+		{
+			error("do_batch: $type($name) failed");
+		}
+	}
+	$this->{batch_active} = 0;
+	return 1;
+}
+
+
 sub handleCommand
 {
 	my ($this,$command) = @_;
 	my $api_command = $command->{api_command};
 	my $cmd_name = apiCommandName($api_command);
 	display($dbg,0,"$this->{name} handleCommand($api_command=$cmd_name) started");
+
+	my $prog = $command->{progress};
+	my $what_raw   = $NAV_WHAT{$command->{what} // 0} // '';
+	my $what_label = $what_raw eq 'WAYPOINT' ? 'WP' : ucfirst(lc($what_raw));
+
+	# Skip user-visible commands silently if this operation was cancelled
+	if ($prog && $prog->{cancelled} &&
+		($api_command == $API_NEW_ITEM ||
+		 $api_command == $API_DEL_ITEM ||
+		 $api_command == $API_MOD_ITEM))
+	{
+		$this->{command_rslt} = 1;
+		display($dbg,0,"$this->{name} handleCommand($api_command=$cmd_name) SKIPPED (cancelled)");
+		return;
+	}
 
 	my $rslt;
 
@@ -440,7 +602,21 @@ sub handleCommand
 	$rslt = $this->create_item($command) 	if $api_command == $API_NEW_ITEM;
 	$rslt = $this->delete_item($command) 	if $api_command == $API_DEL_ITEM;
 	$rslt = $this->modify_item($command) 	if $api_command == $API_MOD_ITEM;
+	$rslt = $this->do_batch($command) 		if $api_command == $API_DO_BATCH;
 
+	if ($prog && ($api_command == $API_NEW_ITEM || $api_command == $API_DEL_ITEM))
+	{
+		if ($rslt)
+		{
+			$prog->{label} = "$what_label: $command->{name}" if defined $command->{name};
+			$prog->{done}++;
+		}
+		else
+		{
+			$prog->{error}     = "$cmd_name($what_label) failed: $command->{name}";
+			$prog->{cancelled} = 1;
+		}
+	}
 	error("API $cmd_name failed") if !$rslt;
 
 	$this->{command_rslt} = $rslt;
@@ -503,7 +679,7 @@ sub handleEvent
 				$this->incVersion();
 			}
 		}
-		else	# enque a GET_ITEM command for th emod
+		elsif (!$this->{batch_active})
 		{
 			warning($dbg_mods,0,"enquing mod($mod->{what}) uuid($mod->{uuid})");
 			$this->queueWPMGRCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef);

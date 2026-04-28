@@ -75,7 +75,7 @@ sub _removeFromGroup
 		$group = $this->{groups}->{$try_uuid};
 		if ($group) { $group_uuid = $try_uuid; last; }
 	}
-	return error("_removeFromGroup: group for WP($wp_uuid) not in memory") if !$group;
+	return 1 if !$group;    # group already deleted from E80; no cleanup needed
 
 	my @new_uuids = grep { $_ ne $wp_uuid } @{$group->{uuids}};
 	$group->{uuids} = shared_clone(\@new_uuids);
@@ -99,8 +99,9 @@ sub createWaypoint
 	my $lon     = $hash->{lon};
 	my $sym     = $hash->{sym}     // 25;
 	my $ts      = $hash->{ts}      // timegm(localtime());
-	my $comment = $hash->{comment} // '';
-	my $depth   = $hash->{depth}   // 0;
+	my $comment  = $hash->{comment}  // '';
+	my $depth    = $hash->{depth}    // 0;
+	my $progress = $hash->{progress};
 	$this->showCommand("createWaypoint($name) uuid($uuid)");
 	my $alt_coords = latLonToNorthEast($lat,$lon);
 	my $buffer = buildWaypoint(0,{
@@ -116,7 +117,7 @@ sub createWaypoint
 		time    => int($ts % $SECS_PER_DAY),
 	},$TEMP_MON,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
-	return $this->queueWPMGRCommand($API_NEW_ITEM,$WHAT_WAYPOINT,$name,$uuid,$data);
+	return $this->queueWPMGRCommand($API_NEW_ITEM,$WHAT_WAYPOINT,$name,$uuid,$data,$progress);
 }
 
 
@@ -139,14 +140,16 @@ sub modifyWaypoint
 
 
 sub deleteWaypoint
+	# $waypoint_only: skip _removeFromGroup when caller guarantees
+	# the waypoint's group has already been deleted (e.g. batch delete).
 {
-	my ($this,$uuid) = @_;
+	my ($this,$uuid,$progress,$waypoint_only) = @_;
 	my $wp = $this->{waypoints}{$uuid};
 	return error("deleteWaypoint: uuid($uuid) not in memory") if !$wp;
 	my $name = $wp->{name};
 	$this->showCommand("deleteWaypoint($name) uuid($uuid)");
-	return if !$this->_removeFromGroup($uuid);
-	return $this->queueWPMGRCommand($API_DEL_ITEM,$WHAT_WAYPOINT,$name,$uuid,0);
+	return if !$waypoint_only && !$this->_removeFromGroup($uuid);
+	return $this->queueWPMGRCommand($API_DEL_ITEM,$WHAT_WAYPOINT,$name,$uuid,0,$progress);
 }
 
 
@@ -160,7 +163,8 @@ sub createGroup
 	my $name    = $hash->{name};
 	my $uuid    = $hash->{uuid};
 	my $comment = $hash->{comment} // '';
-	my $members = $hash->{members} // [];
+	my $members  = $hash->{members}  // [];
+	my $progress = $hash->{progress};
 	$this->showCommand("createGroup($name) uuid($uuid) members(".scalar(@$members).")");
 	my $buffer = buildGroup(0,{
 		name    => $name,
@@ -168,7 +172,7 @@ sub createGroup
 		uuids   => shared_clone($members),
 	},$TEMP_MON,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
-	return $this->queueWPMGRCommand($API_NEW_ITEM,$WHAT_GROUP,$name,$uuid,$data);
+	return $this->queueWPMGRCommand($API_NEW_ITEM,$WHAT_GROUP,$name,$uuid,$data,$progress);
 }
 
 
@@ -196,12 +200,12 @@ sub modifyGroup
 
 sub deleteGroup
 {
-	my ($this,$uuid) = @_;
+	my ($this,$uuid,$progress) = @_;
 	my $group = $this->{groups}{$uuid};
 	return error("deleteGroup: uuid($uuid) not in memory") if !$group;
 	my $name = $group->{name};
 	$this->showCommand("deleteGroup($name) uuid($uuid)");
-	return $this->queueWPMGRCommand($API_DEL_ITEM,$WHAT_GROUP,$name,$uuid,0);
+	return $this->queueWPMGRCommand($API_DEL_ITEM,$WHAT_GROUP,$name,$uuid,0,$progress);
 }
 
 
@@ -257,6 +261,7 @@ sub createRoute
 	my $comment   = $hash->{comment}   // '';
 	my $color     = $hash->{color}     // $next_color++ % $NUM_ROUTE_COLORS;
 	my $waypoints = $hash->{waypoints} // [];
+	my $progress  = $hash->{progress};
 	$this->showCommand("createRoute($name) uuid($uuid) wps(".scalar(@$waypoints).")");
 	my @pts = map { shared_clone({}) } @$waypoints;
 	my $buffer = buildRoute(0,{
@@ -268,7 +273,7 @@ sub createRoute
 		points  => shared_clone(\@pts),
 	},$TEMP_MON,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
-	return $this->queueWPMGRCommand($API_NEW_ITEM,$WHAT_ROUTE,$name,$uuid,$data);
+	return $this->queueWPMGRCommand($API_NEW_ITEM,$WHAT_ROUTE,$name,$uuid,$data,$progress);
 }
 
 
@@ -299,12 +304,12 @@ sub modifyRoute
 
 sub deleteRoute
 {
-	my ($this,$uuid) = @_;
+	my ($this,$uuid,$progress) = @_;
 	my $route = $this->{routes}{$uuid};
 	return error("deleteRoute: uuid($uuid) not in memory") if !$route;
 	my $name = $route->{name};
 	$this->showCommand("deleteRoute($name) uuid($uuid)");
-	return $this->queueWPMGRCommand($API_DEL_ITEM,$WHAT_ROUTE,$name,$uuid,0);
+	return $this->queueWPMGRCommand($API_DEL_ITEM,$WHAT_ROUTE,$name,$uuid,0,$progress);
 }
 
 
@@ -350,6 +355,29 @@ sub routeWaypoint
 	return $this->queueWPMGRCommand($API_GET_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,undef);
 }
 
+
+
+sub submitBatch
+	# Queue a single DO_BATCH command carrying an ordered list of ops.
+	# Each op executes synchronously in commandThread with full E80 handshaking.
+	# Caller is responsible for correct ordering of ops.
+	# Op types: del_route, del_group, del_wp, new_wp, new_group, new_route.
+{
+	my ($this,$ops,$progress) = @_;
+	return error("Not started") if !$this->{started};
+	return error("Not running") if !$this->{running};
+	my $command = shared_clone({
+		api_command => $API_DO_BATCH,
+		what        => 0,
+		name        => 'batch',
+		uuid        => '',
+		data        => 0,
+		ops         => shared_clone($ops),
+	});
+	$command->{progress} = $progress if $progress;
+	push @{$this->{command_queue}}, $command;
+	return 1;
+}
 
 #--------------------------------------
 # Query / display

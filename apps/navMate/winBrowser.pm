@@ -24,6 +24,7 @@ use Wx::Event qw(
 	EVT_TREE_ITEM_RIGHT_CLICK
 	EVT_LEFT_DCLICK
 	EVT_MENU);
+use Pub::WX::Dialogs;
 use POSIX qw(strftime);
 use Pub::Utils qw(display warning error);
 use Pub::WX::Window;
@@ -619,22 +620,39 @@ sub onTreeRightClick
 sub _onUploadE80
 {
 	my ($this) = @_;
+	my $prog = $this->{_progress_data};
+	return if $prog && $prog->{active};
+
 	my $target = $this->{_upload_target};
 	return unless $target;
 	my $kind = $target->{kind};
 	my $data = $target->{data};
 
+	my $prog_data = Pub::WX::ProgressDialog::newProgressData(0);
+
+	my $total = 0;
 	if ($kind eq 'collection')
 	{
-		uploadCollectionToE80($data->{uuid}, $data->{name});
+		$total = uploadCollectionToE80($data->{uuid}, $data->{name}, $prog_data);
 	}
 	elsif ($kind eq 'route')
 	{
-		uploadRouteToE80($data->{uuid}, $data->{name}, $data->{color});
+		$total = uploadRouteToE80($data->{uuid}, $data->{name}, $data->{color}, $prog_data);
 	}
 	elsif ($kind eq 'waypoint')
 	{
-		uploadWaypointToE80($data);
+		$total = uploadWaypointToE80($data, $prog_data);
+	}
+
+	if ($total > 0)
+	{
+		$this->{_progress_data} = $prog_data;
+		Pub::WX::ProgressDialog->new(
+			$this->{frame},
+			'Upload to E80',
+			1,
+			$prog_data,
+			'Uploading...');
 	}
 }
 

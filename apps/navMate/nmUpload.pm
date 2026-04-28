@@ -1,12 +1,16 @@
 #---------------------------------------------
 # nmUpload.pm
 #---------------------------------------------
-# Upload navMate collection to E80 via WPMGR.
+# Upload navMate collection to E80 via WPMGR submitBatch.
 # Skips any item whose UUID is already in E80 in-memory state.
+# Returns the number of ops submitted (0 if nothing to do).
 #
-# Phase 1: waypoints uploaded via createWaypoint hash API
-# Phase 2: routes uploaded via createRoute with embedded waypoint UUID list
-# Phase 3: groups uploaded via createGroup with embedded member UUID list
+# uploadCollectionToE80 and uploadRouteToE80 build an ordered ops list and
+# call submitBatch once.  All ops execute serially in commandThread with full
+# E80 handshaking between each, so ordering is guaranteed:
+#   Phase 1: waypoints (must exist on E80 before routes/groups reference them)
+#   Phase 2: routes
+#   Phase 3: groups
 # Tracks are not uploaded.
 
 package nmUpload;
@@ -38,100 +42,100 @@ sub isWPMGRConnected
 
 sub uploadCollectionToE80
 {
-	my ($coll_uuid, $coll_name) = @_;
+	my ($coll_uuid, $coll_name, $prog_data) = @_;
 
 	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
 	unless ($wpmgr)
 	{
 		warning(0,0,"uploadCollectionToE80: WPMGR not connected");
-		return;
+		return 0;
 	}
 
 	my %e80_wps    = map { $_ => 1 } keys %{$wpmgr->{waypoints} // {}};
 	my %e80_routes = map { $_ => 1 } keys %{$wpmgr->{routes}    // {}};
 	my %e80_groups = map { $_ => 1 } keys %{$wpmgr->{groups}    // {}};
 
-	display(0,0,"upload($coll_name): E80 has " .
-		scalar(keys %e80_wps) . " wps, " .
-		scalar(keys %e80_routes) . " routes");
+	my $dbh    = connectDB();
+	my $wrgt   = getCollectionWRGTs($dbh, $coll_uuid);
+	my $groups = getCollectionGroups($dbh, $coll_uuid);
 
-	my $dbh  = connectDB();
-	my $wrgt = getCollectionWRGTs($dbh, $coll_uuid);
+	my @wps      = grep { !$e80_wps{$_->{uuid}}    } @{$wrgt->{waypoints}};
+	my @groups_q = grep { !$e80_groups{$_->{uuid}} } @$groups;
 
-	# Phase 1: waypoints
-
-	my $wp_count = 0;
-	for my $wp (@{$wrgt->{waypoints}})
-	{
-		next if $e80_wps{$wp->{uuid}};
-		display(0,1,"uploading wp($wp->{name})");
-		$wpmgr->createWaypoint({
-			name => $wp->{name}, uuid => $wp->{uuid},
-			lat  => $wp->{lat},  lon  => $wp->{lon},
-			sym  => $wp->{sym}  // 25,
-			ts   => $wp->{created_ts},
-		});
-		$wp_count++;
-	}
-	display(0,0,"upload($coll_name): queued $wp_count waypoints");
-
-	# Phase 2: routes
-	# Large routes are split across multiple 498-byte BUFFER messages by buildBufferMsgs
-	# inside create_item; no size limit on the upload side.
-
-	my $route_count = 0;
+	my @routes_q;
 	for my $r (@{$wrgt->{routes}})
 	{
 		next if $e80_routes{$r->{uuid}};
-		my $wps = getRouteWaypoints($dbh, $r->{uuid});
-		display(0,1,"uploading route($r->{name}) " . scalar(@$wps) . " wps");
+		my $route_wps = getRouteWaypoints($dbh, $r->{uuid});
+		push @routes_q, { route => $r, wps => $route_wps };
+	}
+	disconnectDB($dbh);
 
-		my @wp_uuids = map { $_->{uuid} } @$wps;
-		$wpmgr->createRoute({
-			name      => $r->{name},
+	my @ops;
+
+	for my $wp (@wps)
+	{
+		push @ops, {
+			type    => 'new_wp',
+			uuid    => $wp->{uuid},
+			name    => $wp->{name},
+			lat     => $wp->{lat},
+			lon     => $wp->{lon},
+			sym     => $wp->{sym} // 25,
+			ts      => $wp->{created_ts} // 0,
+			comment => $wp->{comment} // '',
+		};
+	}
+
+	for my $entry (@routes_q)
+	{
+		my $r        = $entry->{route};
+		my @wp_uuids = map { $_->{uuid} } @{$entry->{wps}};
+		push @ops, {
+			type      => 'new_route',
 			uuid      => $r->{uuid},
+			name      => $r->{name},
 			color     => ($r->{color} // 0) + 0,
 			waypoints => \@wp_uuids,
-		});
-		$route_count++;
+		};
 	}
 
-	# Phase 3: groups
-	# Each sub-collection that directly owns waypoints becomes one E80 group.
-	# The group buffer is pre-populated with all member UUIDs so that a single
-	# NEW_ITEM creates the group and its membership in one round-trip.
-	# Phase 1 waypoints are queued before Phase 3 groups, so by the time the
-	# E80 processes the group command all referenced waypoints already exist.
-
-	my $groups = getCollectionGroups($dbh, $coll_uuid);
-	my $grp_count = 0;
-	for my $grp (@$groups)
+	for my $grp (@groups_q)
 	{
-		next if $e80_groups{$grp->{uuid}};
 		my @wp_uuids = map { $_->{uuid} } @{$grp->{waypoints}};
-		display(0,1,"uploading group($grp->{name}) " . scalar(@wp_uuids) . " wps");
-		$wpmgr->createGroup({
-			name    => $grp->{name},
+		push @ops, {
+			type    => 'new_group',
 			uuid    => $grp->{uuid},
+			name    => $grp->{name},
 			members => \@wp_uuids,
-		});
-		$grp_count++;
+		};
 	}
 
-	disconnectDB($dbh);
-	display(0,0,"upload($coll_name): queued $route_count routes, $grp_count groups");
+	my $total = scalar @ops;
+	display(0,0,"upload($coll_name): $total ops (".
+		scalar(@wps)." wps, ".scalar(@routes_q)." routes, ".scalar(@groups_q)." groups)");
+	return 0 unless $total;
+
+	if ($prog_data)
+	{
+		$prog_data->{total}  = $total;
+		$prog_data->{active} = 1;
+	}
+
+	$wpmgr->submitBatch(\@ops, $prog_data);
+	return $total;
 }
 
 
 sub uploadRouteToE80
 {
-	my ($route_uuid, $route_name, $route_color) = @_;
+	my ($route_uuid, $route_name, $route_color, $prog_data) = @_;
 
 	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
 	unless ($wpmgr)
 	{
 		warning(0,0,"uploadRouteToE80: WPMGR not connected");
-		return;
+		return 0;
 	}
 
 	my %e80_wps    = map { $_ => 1 } keys %{$wpmgr->{waypoints} // {}};
@@ -140,66 +144,86 @@ sub uploadRouteToE80
 	if ($e80_routes{$route_uuid})
 	{
 		display(0,0,"uploadRouteToE80($route_name): already on E80, skipping");
-		return;
+		return 0;
 	}
 
 	my $dbh = connectDB();
 	my $wps = getRouteWaypoints($dbh, $route_uuid);
+	disconnectDB($dbh);
 
-	my $wp_count = 0;
-	for my $wp (@$wps)
+	my @ops;
+	for my $wp (grep { !$e80_wps{$_->{uuid}} } @$wps)
 	{
-		next if $e80_wps{$wp->{uuid}};
-		display(0,1,"uploading wp($wp->{name})");
-		$wpmgr->createWaypoint({
-			name => $wp->{name}, uuid => $wp->{uuid},
-			lat  => $wp->{lat},  lon  => $wp->{lon},
-			sym  => $wp->{sym}  // 25,
-			ts   => $wp->{created_ts},
-		});
-		$wp_count++;
+		push @ops, {
+			type    => 'new_wp',
+			uuid    => $wp->{uuid},
+			name    => $wp->{name},
+			lat     => $wp->{lat},
+			lon     => $wp->{lon},
+			sym     => $wp->{sym} // 25,
+			ts      => $wp->{created_ts} // 0,
+			comment => $wp->{comment} // '',
+		};
 	}
 
-	display(0,1,"uploading route($route_name) " . scalar(@$wps) . " wps");
 	my @wp_uuids = map { $_->{uuid} } @$wps;
-	$wpmgr->createRoute({
-		name      => $route_name,
+	push @ops, {
+		type      => 'new_route',
 		uuid      => $route_uuid,
+		name      => $route_name,
 		color     => ($route_color // 0) + 0,
 		waypoints => \@wp_uuids,
-	});
+	};
 
-	disconnectDB($dbh);
-	display(0,0,"uploadRouteToE80($route_name): queued $wp_count waypoints + route");
+	my $total = scalar @ops;
+	display(0,0,"uploadRouteToE80($route_name): $total ops");
+
+	if ($prog_data)
+	{
+		$prog_data->{total}  = $total;
+		$prog_data->{active} = 1;
+	}
+
+	$wpmgr->submitBatch(\@ops, $prog_data);
+	return $total;
 }
 
 
 sub uploadWaypointToE80
 {
-	my ($wp) = @_;
+	my ($wp, $prog_data) = @_;
 
 	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
 	unless ($wpmgr)
 	{
 		warning(0,0,"uploadWaypointToE80: WPMGR not connected");
-		return;
+		return 0;
 	}
 
 	my %e80_wps = map { $_ => 1 } keys %{$wpmgr->{waypoints} // {}};
 	if ($e80_wps{$wp->{uuid}})
 	{
 		display(0,0,"uploadWaypointToE80($wp->{name}): already on E80, skipping");
-		return;
+		return 0;
+	}
+
+	if ($prog_data)
+	{
+		$prog_data->{total}  = 1;
+		$prog_data->{active} = 1;
 	}
 
 	display(0,1,"uploading wp($wp->{name})");
 	$wpmgr->createWaypoint({
-		name => $wp->{name}, uuid => $wp->{uuid},
-		lat  => $wp->{lat},  lon  => $wp->{lon},
-		sym  => $wp->{sym}  // 25,
-		ts   => $wp->{created_ts},
+		name     => $wp->{name}, uuid => $wp->{uuid},
+		lat      => $wp->{lat},  lon  => $wp->{lon},
+		sym      => $wp->{sym}  // 25,
+		ts       => $wp->{created_ts},
+		progress => $prog_data,
 	});
+
 	display(0,0,"uploadWaypointToE80($wp->{name}): queued");
+	return 1;
 }
 
 
