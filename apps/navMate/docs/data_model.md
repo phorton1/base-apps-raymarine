@@ -9,23 +9,25 @@
 
 ## Core Objects — WRT
 
-navMate manages three first-class navigation objects, collectively referred to as
-**WRT** (Waypoints, Routes, Tracks):
+navMate manages four first-class navigation objects, collectively referred to as
+**WRTG** (Waypoints, Routes, Tracks, Groups):
 
 - **Waypoint** — a named geographic point with position, type, and optional metadata.
 - **Route** — an ordered sequence of waypoints defining a planned path.
 - **Track** — a recorded sequence of positions representing a path actually travelled;
   the primary historical record.
+- **Group** — a waypoint-only collection that maps one-to-one to an E80 WPMGR group
+  on upload; the organizational unit for waypoint sets pushed to the chartplotter.
 
 Routes are forward-looking planning artifacts. Tracks are historical voyage records.
 The historical dataset is almost entirely Tracks and Waypoints — Routes were not used
 historically and should not be assumed as the primary historical structure.
 
-**Groups** are a first-class storage type in navMate. A group is a waypoint-only leaf
-collection stored with `node_type='group'` in the collections table. Groups have no
-sub-collections, routes, or tracks — only direct waypoints. On upload, each group maps
-one-to-one to an E80 WPMGR group. Group membership is structural: a waypoint belongs
-to whichever group collection it resides in, not via a separate association table.
+A group is a waypoint-only leaf collection stored with `node_type='group'` in the
+collections table. Groups have no sub-collections, routes, or tracks — only direct
+waypoints. On upload, each group maps one-to-one to an E80 WPMGR group. Group
+membership is structural: a waypoint belongs to whichever group collection it resides
+in, not via a separate association table.
 
 ## Storage
 
