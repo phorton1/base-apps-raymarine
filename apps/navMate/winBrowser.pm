@@ -30,6 +30,7 @@ use Pub::Utils qw(display warning error);
 use Pub::WX::Window;
 use Pub::WX::Menu;
 use c_db;
+use a_utils;
 use nmServer;
 use nmUpload;
 use nmClipboard;
@@ -53,7 +54,7 @@ sub new
 		wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxTR_MULTIPLE);
 
 	$this->{detail} = Wx::TextCtrl->new($this, -1, '', wxDefaultPosition, wxDefaultSize,
-		wxTE_MULTILINE | wxTE_READONLY);
+		wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
 
 	my $font = Wx::Font->new(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
 	$this->{detail}->SetFont($font);
@@ -238,7 +239,7 @@ sub _populateRoutePoints
 			Wx::TreeItemData->new({
 				type       => 'route_point',
 				route_uuid => $route->{uuid},
-				position   => $i + 1,
+				position   => $wp->{position},
 				uuid       => $wp->{uuid},
 				data       => $wp,
 			}));
@@ -355,8 +356,8 @@ sub _showObject
 		$text .= _fmt('uuid',            $w->{uuid});
 		$text .= _fmt('name',            $w->{name});
 		$text .= _fmt('comment',         $w->{comment});
-		$text .= _fmt('lat',             sprintf("%.6f", $w->{lat}));
-		$text .= _fmt('lon',             sprintf("%.6f", $w->{lon}));
+		$text .= _fmt('lat',             formatLatLon($w->{lat}, 1));
+		$text .= _fmt('lon',             formatLatLon($w->{lon}, 0));
 		$text .= _fmt('wp_type',         $w->{wp_type});
 		$text .= _fmt('color',           $w->{color});
 		$text .= _fmt('sym',             $w->{sym});
@@ -378,8 +379,10 @@ sub _showObject
 		$text .= "\n";
 		for my $i (0 .. $#$wps)
 		{
-			$text .= sprintf("  %2d. %-24s  %.5f, %.5f\n",
-				$i + 1, $wps->[$i]{name} // '', $wps->[$i]{lat}, $wps->[$i]{lon});
+			my $wp = $wps->[$i];
+			$text .= sprintf("  %2d. %s\n", $i + 1, $wp->{name} // '');
+			$text .= sprintf("      %s\n", formatLatLon($wp->{lat}, 1));
+			$text .= sprintf("      %s\n", formatLatLon($wp->{lon}, 0));
 		}
 	}
 
@@ -396,8 +399,8 @@ sub _showRoutePoint
 	$text .= _fmt('route_uuid', $node->{route_uuid});
 	$text .= _fmt('uuid',       $node->{uuid});
 	$text .= _fmt('name',       $wp->{name});
-	$text .= _fmt('lat',        sprintf('%.6f', $wp->{lat} // 0));
-	$text .= _fmt('lon',        sprintf('%.6f', $wp->{lon} // 0));
+	$text .= _fmt('lat',        formatLatLon($wp->{lat} // 0, 1));
+	$text .= _fmt('lon',        formatLatLon($wp->{lon} // 0, 0));
 	$this->{detail}->SetValue($text);
 }
 

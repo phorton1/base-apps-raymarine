@@ -20,6 +20,7 @@ BEGIN
 		showNewBranch
 		showNewGroup
 		showNewRoute
+		showNewWaypoint
 	);
 }
 
@@ -49,6 +50,18 @@ sub showNewRoute
 		{ key => 'name',    label => 'Name:',    required => 1              },
 		{ key => 'comment', label => 'Comment:'                             },
 		{ key => 'color',   label => 'Color:',   default  => '0xff000000'  },
+	]);
+}
+
+sub showNewWaypoint
+{
+	my ($parent) = @_;
+	return _showDialog($parent, 'New Waypoint', [
+		{ key => 'name',    label => 'Name:',       required => 1 },
+		{ key => 'lat',     label => 'Latitude:',   required => 1 },
+		{ key => 'lon',     label => 'Longitude:',  required => 1 },
+		{ key => 'sym',     label => 'Symbol:',     default  => '0' },
+		{ key => 'comment', label => 'Comment:'                    },
 	]);
 }
 

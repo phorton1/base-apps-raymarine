@@ -37,6 +37,8 @@ use nmOps;
 use w_resources;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
+our $dbg_wine80 = 0;
+
 
 sub new
 {
@@ -48,7 +50,7 @@ sub new
 		wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxTR_MULTIPLE);
 
 	$this->{detail} = Wx::TextCtrl->new($this, -1, '', wxDefaultPosition, wxDefaultSize,
-		wxTE_MULTILINE | wxTE_READONLY);
+		wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
 
 	my $font = Wx::Font->new(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
 	$this->{detail}->SetFont($font);
@@ -101,6 +103,7 @@ sub refresh
 {
 	my ($this) = @_;
 	return unless $this->{_e80_loaded};
+	display($dbg_wine80+1,0,"winE80::refresh triggered");
 	if ($this->{tree}->GetCount() > 0)
 	{
 		_captureExpandedInto($this);
@@ -127,6 +130,12 @@ sub _buildAndRestore
 		$this->{_e80_loaded} = 0;
 		return;
 	}
+
+	my $wps    = $wpmgr->{waypoints} // {};
+	my $groups = $wpmgr->{groups}    // {};
+	my $routes = $wpmgr->{routes}    // {};
+	display($dbg_wine80,0,"winE80::_buildAndRestore wps=".scalar(keys %$wps).
+		" groups=".scalar(keys %$groups)." routes=".scalar(keys %$routes));
 
 	my $root = $tree->AddRoot('E80');
 	_buildGroups($this, $tree, $root, $wpmgr);
@@ -179,8 +188,10 @@ sub _buildGroups
 	              keys %$groups)
 	{
 		my $grp = $groups->{$uuid};
-		my @member_uuids = sort { lc($wps->{$a}{name} // '') cmp lc($wps->{$b}{name} // '') }
-		                   @{$grp->{uuids} // []};
+		my @member_uuids = sort {
+			my $wa = $wps->{$a}; my $wb = $wps->{$b};
+			lc($wa ? ($wa->{name} // '') : '') cmp lc($wb ? ($wb->{name} // '') : '')
+		} @{$grp->{uuids} // []};
 		my $n = scalar @member_uuids;
 		my $grp_item = $tree->AppendItem($hdr, "$grp->{name} ($n wps)", -1, -1,
 			Wx::TreeItemData->new({ type => 'group', uuid => $uuid, data => $grp }));
@@ -201,7 +212,8 @@ sub _buildGroups
 sub _buildRoutes
 {
 	my ($this, $tree, $root, $wpmgr) = @_;
-	my $routes = $wpmgr->{routes} // {};
+	my $routes = $wpmgr->{routes}    // {};
+	my $wps    = $wpmgr->{waypoints} // {};
 
 	my $hdr = $tree->AppendItem($root, 'Routes', -1, -1,
 		Wx::TreeItemData->new({ type => 'header', kind => 'routes' }));
@@ -211,8 +223,21 @@ sub _buildRoutes
 	{
 		my $r = $routes->{$uuid};
 		my $n = $r->{num_wpts} // scalar(@{$r->{uuids} // []});
-		$tree->AppendItem($hdr, "$r->{name} ($n pts)", -1, -1,
+		my $route_item = $tree->AppendItem($hdr, "$r->{name} ($n pts)", -1, -1,
 			Wx::TreeItemData->new({ type => 'route', uuid => $uuid, data => $r }));
+
+		for my $wp_uuid (@{$r->{uuids} // []})
+		{
+			my $wp    = $wps->{$wp_uuid};
+			my $label = $wp ? ($wp->{name} // $wp_uuid) : "($wp_uuid)";
+			$tree->AppendItem($route_item, $label, -1, -1,
+				Wx::TreeItemData->new({
+					type       => 'route_point',
+					uuid       => $wp_uuid,
+					route_uuid => $uuid,
+					data       => $wp,
+				}));
+		}
 	}
 
 	return $hdr;
@@ -268,7 +293,7 @@ sub onTreeSelect
 	{
 		$text = "Synthesized node: waypoints not assigned to any named group.";
 	}
-	elsif ($type eq 'waypoint' && $node->{data})
+	elsif (($type eq 'waypoint' || $type eq 'route_point') && $node->{data})
 	{
 		$text = wpmgrRecordToText($node->{data}, 'WAYPOINT', 2, 0, undef, $wpmgr);
 	}
@@ -390,8 +415,9 @@ sub _nodeKey
 	my ($node) = @_;
 	return undef unless ref $node eq 'HASH';
 	my $t = $node->{type} // '';
-	return "header:$node->{kind}" if $t eq 'header';
-	return 'my_waypoints'         if $t eq 'my_waypoints';
+	return "header:$node->{kind}"                    if $t eq 'header';
+	return 'my_waypoints'                            if $t eq 'my_waypoints';
+	return "rp:$node->{route_uuid}:$node->{uuid}"   if $t eq 'route_point';
 	return $node->{uuid};
 }
 

@@ -126,7 +126,7 @@ my @ALL_DELETE_CMDS = (
 	$CMD_REMOVE_ROUTEPOINT,
 	$CMD_DELETE_WAYPOINT,    $CMD_DELETE_WAYPOINT_RPS,
 	$CMD_DELETE_GROUP,       $CMD_DELETE_GROUP_WPS,   $CMD_DELETE_GROUP_NUCLEAR,
-	$CMD_DELETE_ROUTE,       $CMD_DELETE_ROUTE_WPS,   $CMD_DELETE_ROUTE_NUCLEAR,
+	$CMD_DELETE_ROUTE,       $CMD_DELETE_ROUTE_WPS,
 	$CMD_DELETE_TRACK,
 	$CMD_DELETE_BRANCH,
 );
@@ -209,7 +209,7 @@ sub _analyzeNodes
 		}
 		else  # e80
 		{
-			$c{wp}++     if $t eq 'waypoint';
+			$c{wp}++     if $t eq 'waypoint' || $t eq 'route_point';
 			$c{route}++  if $t eq 'route';
 			$c{track}++  if $t eq 'track';
 			$c{group}++  if $t eq 'group' || $t eq 'my_waypoints';
@@ -294,9 +294,8 @@ sub getDeleteMenuItems
 			) if $ot eq 'waypoint';
 
 			return (
-				{ id => $CMD_DELETE_ROUTE,         label => 'Delete Route'                           },
-				{ id => $CMD_DELETE_ROUTE_WPS,     label => 'Delete Route + Waypoints'               },
-				{ id => $CMD_DELETE_ROUTE_NUCLEAR, label => 'Delete Route + Waypoints + RoutePoints' },
+				{ id => $CMD_DELETE_ROUTE,     label => 'Delete Route'             },
+				{ id => $CMD_DELETE_ROUTE_WPS, label => 'Delete Route + Waypoints' },
 			) if $ot eq 'route';
 
 			return ({ id => $CMD_DELETE_TRACK, label => 'Delete Track' })
@@ -317,14 +316,19 @@ sub getDeleteMenuItems
 	else  # e80
 	{
 		return (
+			{ id => $CMD_REMOVE_ROUTEPOINT,   label => 'Remove RoutePoint'             },
+			{ id => $CMD_DELETE_WAYPOINT,     label => 'Delete Waypoint'               },
+			{ id => $CMD_DELETE_WAYPOINT_RPS, label => 'Delete Waypoint + RoutePoints' },
+		) if $t eq 'route_point';
+
+		return (
 			{ id => $CMD_DELETE_WAYPOINT,     label => 'Delete Waypoint'               },
 			{ id => $CMD_DELETE_WAYPOINT_RPS, label => 'Delete Waypoint + RoutePoints' },
 		) if $t eq 'waypoint';
 
 		return (
-			{ id => $CMD_DELETE_ROUTE,         label => 'Delete Route'                           },
-			{ id => $CMD_DELETE_ROUTE_WPS,     label => 'Delete Route + Waypoints'               },
-			{ id => $CMD_DELETE_ROUTE_NUCLEAR, label => 'Delete Route + Waypoints + RoutePoints' },
+			{ id => $CMD_DELETE_ROUTE,     label => 'Delete Route'             },
+			{ id => $CMD_DELETE_ROUTE_WPS, label => 'Delete Route + Waypoints' },
 		) if $t eq 'route';
 
 		return (
@@ -423,7 +427,7 @@ sub canPaste
 	{
 		return 1 if $panel eq 'browser';
 		return 1 if $panel eq 'e80'
-			&& $t =~ /^(header|my_waypoints|group|route|waypoint)$/;
+			&& $t =~ /^(header|my_waypoints|group|route|waypoint|route_point)$/;
 	}
 	elsif ($intent =~ /^groups?$/)
 	{
@@ -479,11 +483,6 @@ sub onContextMenuCommand
 
 	if (grep { $cmd_id == $_ } @ALL_NEW_CMDS)
 	{
-		if ($cmd_id == $CMD_NEW_WAYPOINT)
-		{
-			display(0,0,"nmClipboard: NEW_WAYPOINT stub - panel=$panel");
-			return;
-		}
 		nmOps::doNew($cmd_id, $panel, $right_click_node, $tree);
 		return;
 	}

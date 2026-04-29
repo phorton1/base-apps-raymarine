@@ -123,7 +123,7 @@ my $DESTROY_TIMEOUT				= 3;
 my $DEFAULT_CONNECT_TIMEOUT 	= 2;
 my $DEFAULT_RECONNECT_INTERVAL	= 10;
 my $DEFAULT_READ_TIME 			= 0.1;
-my $DEFAULT_COMMAND_TIMEOUT 	= 10;
+our $command_timeout :shared	= 10;
 
 
 my $global_version:shared = 1;
@@ -260,7 +260,7 @@ sub init
     $this->{CONNECT_TIMEOUT}    ||= $DEFAULT_CONNECT_TIMEOUT;
     $this->{RECONNECT_INTERVAL} ||= $DEFAULT_RECONNECT_INTERVAL;
     $this->{READ_TIME}          ||= $DEFAULT_READ_TIME;
-    $this->{COMMAND_TIMEOUT}    ||= $DEFAULT_COMMAND_TIMEOUT;
+    $this->{COMMAND_TIMEOUT}    ||= $command_timeout;
     $this->{buffer}             = '';
     $this->{connect_time}       = 0;
     $this->{stop_time}          = 0;
@@ -504,13 +504,17 @@ sub waitReply
 					display($dbg_wait,1,"$name waitReply($seq,$wait_name) returning OK reply");
 					return $reply;
 				}
+				else
+				{
+					warning(0,0,"$name waitReply($seq,$wait_name): OUT-OF-BAND seq($reply->{seq_num}) consumed");
+				}
 			}
 			else
 			{
 				warning($dbg_wait,"$this->{name} empty reply in waitReply: "._def($reply));
 			}
 		}
-		if (time() > $start + $this->{COMMAND_TIMEOUT})
+		if (time() > $start + $command_timeout)
 		{
 			error("$name Command($seq,$wait_name) timed out");
 			$this->{wait_seq} = 0;

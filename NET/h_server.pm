@@ -373,6 +373,21 @@ sub handleCommand
 		}
 	}
 
+	# b_sock command timeout (runtime settable for diagnostics)
+
+	elsif ($lpart eq 'timeout')
+	{
+		if ($rpart =~ /^\d+$/)
+		{
+			$apps::raymarine::NET::b_sock::command_timeout = $rpart + 0;
+			display(0,0,"b_sock::command_timeout set to $apps::raymarine::NET::b_sock::command_timeout");
+		}
+		else
+		{
+			display(0,0,"b_sock::command_timeout = $apps::raymarine::NET::b_sock::command_timeout");
+		}
+	}
+
 	# Help
 
 	elsif ($lpart eq '?' || $lpart eq 'help')
@@ -413,6 +428,7 @@ sub commandHelp
 		[ 'routewp <route> <+|-> <wp>',               'add/remove waypoint from route'        ],
 		[ 'clear_e80',                                'delete all E80 waypoints/routes/groups'],
 		[ 'mon_<wp|route|group|track> [in|out] <hex>', 'set monitor bits'                      ],
+		[ 'timeout [N]',                               'get/set b_sock command timeout (seconds)'],
 		[ '?|help',                                   'show this help'                        ],
 	];
 }

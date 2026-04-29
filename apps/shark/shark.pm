@@ -67,13 +67,13 @@ my $WITH_HTTP_SERVER = 1;
 my $WITH_SNIFFER     = 1;
 my $WITH_TCP_SCANNER = 0;
 my $WITH_UDP_SCANNER = 0;
-
 my $WITH_WX          = 1;
-my $WITH_WPMGR       = 1;
-my $WITH_TRACK       = 1;
-my $WITH_FILESYS     = 1;
-my $WITH_DB          = 1;
-my $WITH_DBNAV       = 1;
+
+my $WITH_WPMGR       = 0;
+my $WITH_TRACK       = 0;
+my $WITH_FILESYS     = 0;
+my $WITH_DB          = 0;
+my $WITH_DBNAV       = 0;
 
 
 #-----------------------------------------

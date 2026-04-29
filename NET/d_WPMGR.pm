@@ -578,17 +578,58 @@ sub do_batch
 		}
 		elsif ($type eq 'mod_group')
 		{
-			# add wp_uuid to an existing group's member list
 			my $group = $this->{groups}{$uuid};
 			if (!$group) { warning(0,0,"do_batch: group($uuid) not in memory"); next; }
 			$name       = $group->{name};
 			$what_label = 'Group';
 			my $wp_uuid = $op->{wp_uuid};
-			share($wp_uuid);
-			push @{$group->{uuids}}, $wp_uuid;
+			if ($op->{remove})
+			{
+				my @new = grep { $_ ne $wp_uuid } @{$group->{uuids}};
+				$group->{uuids} = shared_clone(\@new);
+			}
+			else
+			{
+				share($wp_uuid);
+				push @{$group->{uuids}}, $wp_uuid;
+			}
 			my $buffer = buildGroup(0,$group,$MONITOR_API_BUILDS,$UTILS_COLOR_CYAN);
 			$rslt = $this->modify_item({
 				what => $WHAT_GROUP,
+				uuid => $uuid,
+				name => $name,
+				data => unpack('H*',$buffer),
+			});
+		}
+		elsif ($type eq 'mod_route')
+		{
+			# remove wp_uuid from route's uuid+points lists (first occurrence)
+			my $route = $this->{routes}{$uuid};
+			if (!$route) { warning(0,0,"do_batch: route($uuid) not in memory"); next; }
+			$name       = $route->{name};
+			$what_label = 'Route';
+			my $wp_uuid = $op->{wp_uuid};
+			my $uuids   = $route->{uuids}  // [];
+			my $points  = $route->{points} // [];
+			my $idx     = undef;
+			for my $i (0 .. $#$uuids)
+			{
+				if ($uuids->[$i] eq $wp_uuid) { $idx = $i; last; }
+			}
+			if (!defined $idx)
+			{
+				warning(0,0,"do_batch mod_route: wp($wp_uuid) not in route($uuid)");
+				next;
+			}
+			my @new_uuids  = @$uuids;
+			my @new_points = @$points;
+			splice @new_uuids,  $idx, 1;
+			splice @new_points, $idx, 1;
+			@$uuids  = @new_uuids;
+			@$points = @new_points;
+			my $buffer = buildRoute(0,$route,$MONITOR_API_BUILDS,$UTILS_COLOR_CYAN);
+			$rslt = $this->modify_item({
+				what => $WHAT_ROUTE,
 				uuid => $uuid,
 				name => $name,
 				data => unpack('H*',$buffer),

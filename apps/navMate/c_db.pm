@@ -52,6 +52,9 @@ BEGIN
 		deleteWaypoint
 		deleteTrack
 		getWaypointRouteRefCount
+		getWaypointRoutes
+		getGroupWaypoints
+		removeRoutePoint
 		promoteNavWaypoints
 		promoteWaypointOnlyBranches
 		isDBReady
@@ -792,10 +795,28 @@ sub getRouteWaypoints
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_records(
-		"SELECT w.uuid, w.name, w.lat, w.lon
+		"SELECT w.uuid, w.name, w.lat, w.lon, rw.position
 		 FROM route_waypoints rw JOIN waypoints w ON rw.wp_uuid=w.uuid
 		 WHERE rw.route_uuid=? ORDER BY rw.position",
 		[$uuid]);
+}
+
+
+#---------------------------------
+# removeRoutePoint
+#---------------------------------
+# Removes one waypoint occurrence from a route by DB position value,
+# then decrements all higher positions to keep the sequence contiguous.
+
+sub removeRoutePoint
+{
+	my ($dbh, $route_uuid, $position) = @_;
+	$dbh->do(
+		"DELETE FROM route_waypoints WHERE route_uuid=? AND position=?",
+		[$route_uuid, $position]);
+	$dbh->do(
+		"UPDATE route_waypoints SET position=position-1 WHERE route_uuid=? AND position>?",
+		[$route_uuid, $position]);
 }
 
 
@@ -856,6 +877,36 @@ sub getWaypointRouteRefCount
 		"SELECT COUNT(*) AS n FROM route_waypoints WHERE wp_uuid=?",
 		[$uuid]);
 	return $rec ? $rec->{n} + 0 : 0;
+}
+
+
+#---------------------------------
+# getWaypointRoutes
+#---------------------------------
+# Returns [{route_uuid, route_name, position}] for every route containing $wp_uuid.
+
+sub getWaypointRoutes
+{
+	my ($dbh, $wp_uuid) = @_;
+	return $dbh->get_records(
+		"SELECT rw.route_uuid, r.name AS route_name, rw.position
+		 FROM route_waypoints rw JOIN routes r ON rw.route_uuid=r.uuid
+		 WHERE rw.wp_uuid=? ORDER BY r.name",
+		[$wp_uuid]);
+}
+
+
+#---------------------------------
+# getGroupWaypoints
+#---------------------------------
+# Returns [{uuid, name}] for all waypoints directly in a group collection.
+
+sub getGroupWaypoints
+{
+	my ($dbh, $collection_uuid) = @_;
+	return $dbh->get_records(
+		"SELECT uuid, name FROM waypoints WHERE collection_uuid=? ORDER BY rowid",
+		[$collection_uuid]);
 }
 
 
