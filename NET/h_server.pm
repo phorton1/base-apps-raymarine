@@ -21,6 +21,8 @@
 #   delete           - WPMGR delete waypoint|route|group by name
 #   find             - WPMGR look up UUID by type+name
 #   routewp          - WPMGR add/remove waypoint from route by name
+#   mon_<wp|route|group|track> [in|out] <hex> - set monitor bits
+#   ?|help           - list all commands and parameters
 #
 # Subclasses override handleCommand to add app-specific commands,
 # calling SUPER::handleCommand for anything not handled.
@@ -320,6 +322,99 @@ sub handleCommand
 		}
 	}	# WPMGR
 
+	# MON bits
+
+	elsif ($lpart =~ /^mon_(wp|route|group|track)$/)
+	{
+		my $what = $1;
+
+		my ($first, $rest) = split(/\s+/, $rpart, 2);
+		my ($dir, $val_str);
+		if (($first // '') =~ /^(in|out)$/i)
+		{
+			$dir     = lc($first);
+			$val_str = $rest // '';
+		}
+		else
+		{
+			$dir     = 'both';
+			$val_str = $first // '';
+		}
+
+		$val_str =~ s/^\s+|\s+$//g;
+		$val_str =~ s/^0x//i;
+		unless ($val_str =~ /^[0-9a-fA-F]+$/)
+		{
+			error(0,0,"mon_$what: invalid value '$val_str'");
+			return;
+		}
+		my $val = hex($val_str) | $MON_SRC_SHARK;
+
+		if ($what eq 'track')
+		{
+			my $tmd = $SHARK_DEFAULTS{$SPORT_TRACK};
+			$tmd->{mon_in}  = $val if $dir eq 'both' || $dir eq 'in';
+			$tmd->{mon_out} = $val if $dir eq 'both' || $dir eq 'out';
+			my $track = $raydp->findImplementedService('TRACK', 1);
+			warning(0,0,"mon_track: TRACK not connected") unless $track;
+			c_print("mon_track dir($dir) = 0x".sprintf('%x', $val & ~$MON_SRC_SHARK)."\n");
+		}
+		else
+		{
+			my $idx = $what eq 'wp'    ? $MON_WHAT_WAYPOINT :
+			          $what eq 'route' ? $MON_WHAT_ROUTE    :
+			                             $MON_WHAT_GROUP;
+			my $wmd = $SHARK_DEFAULTS{$SPORT_WPMGR};
+			$wmd->{mon_ins}[$idx]  = $val if $dir eq 'both' || $dir eq 'in';
+			$wmd->{mon_outs}[$idx] = $val if $dir eq 'both' || $dir eq 'out';
+			my $wpmgr = $raydp->findImplementedService('WPMGR', 1);
+			warning(0,0,"mon_$what: WPMGR not connected") unless $wpmgr;
+			c_print("mon_$what dir($dir) = 0x".sprintf('%x', $val & ~$MON_SRC_SHARK)."\n");
+		}
+	}
+
+	# Help
+
+	elsif ($lpart eq '?' || $lpart eq 'help')
+	{
+		my $entries = $this->commandHelp();
+		my $max_sig = 0;
+		for my $e (@$entries)
+		{
+			my $len = length($e->[0]);
+			$max_sig = $len if $len > $max_sig;
+		}
+		c_print("Commands:\n");
+		for my $e (@$entries)
+		{
+			c_print(sprintf("  %-*s  %s\n", $max_sig, $e->[0], $e->[1]));
+		}
+	}
+
+}
+
+
+#==================================================================================
+# commandHelp — [signature, description] pairs for ?/help command
+#==================================================================================
+
+sub commandHelp
+{
+	my ($this) = @_;
+	return [
+		[ 'wakeup',                                   'wake up E80'                           ],
+		[ 'db',                                       'show E80 in-memory database'           ],
+		[ 'kml',                                      'dump RAYSYS KML to console'            ],
+		[ 't <args>',                                 'TRACK trackUICommand'                  ],
+		[ 'q',                                        'WPMGR query waypoints'                 ],
+		[ 'new <wp|group|route> <name> <uuid> [...]', 'create object on E80'                  ],
+		[ 'delete <wp|route|group> <name>',           'delete object from E80 by name'        ],
+		[ 'find <wp|route|group> <name>',             'look up UUID by type+name'             ],
+		[ 'routewp <route> <+|-> <wp>',               'add/remove waypoint from route'        ],
+		[ 'clear_e80',                                'delete all E80 waypoints/routes/groups'],
+		[ 'mon_<wp|route|group|track> [in|out] <hex>', 'set monitor bits'                      ],
+		[ '?|help',                                   'show this help'                        ],
+	];
 }
 
 

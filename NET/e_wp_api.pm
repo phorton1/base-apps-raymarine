@@ -361,7 +361,7 @@ sub submitBatch
 	# Queue a single DO_BATCH command carrying an ordered list of ops.
 	# Each op executes synchronously in commandThread with full E80 handshaking.
 	# Caller is responsible for correct ordering of ops.
-	# Op types: del_route, del_group, del_wp, new_wp, new_group, new_route.
+	# Op types: del_route, del_group, del_wp, new_wp, new_group, new_route, mod_group.
 {
 	my ($this,$ops,$progress) = @_;
 	return error("Not started") if !$this->{started};

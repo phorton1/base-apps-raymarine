@@ -47,6 +47,11 @@ BEGIN
 		getRoutePoints
 		getRouteWaypoints
 		rawQuery
+		deleteCollection
+		deleteRoute
+		deleteWaypoint
+		deleteTrack
+		getWaypointRouteRefCount
 		promoteNavWaypoints
 		promoteWaypointOnlyBranches
 		isDBReady
@@ -54,7 +59,7 @@ BEGIN
 }
 
 
-my $db_path = "$data_dir/navMate.db";
+my $db_path = $NAVMATE_DATABASE;
 
 our $db_ready :shared = 0;
 
@@ -759,7 +764,7 @@ sub getTrackPoints
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_records(
-		"SELECT lat, lon FROM track_points WHERE track_uuid=? ORDER BY position",
+		"SELECT lat, lon, depth_cm, temp_k, ts FROM track_points WHERE track_uuid=? ORDER BY position",
 		[$uuid]);
 }
 
@@ -791,6 +796,66 @@ sub getRouteWaypoints
 		 FROM route_waypoints rw JOIN waypoints w ON rw.wp_uuid=w.uuid
 		 WHERE rw.route_uuid=? ORDER BY rw.position",
 		[$uuid]);
+}
+
+
+#---------------------------------
+# deleteCollection
+#---------------------------------
+
+sub deleteCollection
+{
+	my ($dbh, $uuid) = @_;
+	$dbh->do("DELETE FROM collections WHERE uuid=?", [$uuid]);
+}
+
+
+#---------------------------------
+# deleteRoute
+#---------------------------------
+
+sub deleteRoute
+{
+	my ($dbh, $uuid) = @_;
+	$dbh->do("DELETE FROM route_waypoints WHERE route_uuid=?", [$uuid]);
+	$dbh->do("DELETE FROM routes WHERE uuid=?", [$uuid]);
+}
+
+
+#---------------------------------
+# deleteWaypoint
+#---------------------------------
+
+sub deleteWaypoint
+{
+	my ($dbh, $uuid) = @_;
+	$dbh->do("DELETE FROM waypoints WHERE uuid=?", [$uuid]);
+}
+
+
+#---------------------------------
+# deleteTrack
+#---------------------------------
+
+sub deleteTrack
+{
+	my ($dbh, $uuid) = @_;
+	$dbh->do("DELETE FROM track_points WHERE track_uuid=?", [$uuid]);
+	$dbh->do("DELETE FROM tracks WHERE uuid=?", [$uuid]);
+}
+
+
+#---------------------------------
+# getWaypointRouteRefCount
+#---------------------------------
+
+sub getWaypointRouteRefCount
+{
+	my ($dbh, $uuid) = @_;
+	my $rec = $dbh->get_record(
+		"SELECT COUNT(*) AS n FROM route_waypoints WHERE wp_uuid=?",
+		[$uuid]);
+	return $rec ? $rec->{n} + 0 : 0;
 }
 
 

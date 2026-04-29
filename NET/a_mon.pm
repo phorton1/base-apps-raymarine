@@ -152,7 +152,7 @@ my $MON_CMD					= $MON_HEADER | $MON_PARSE | $MON_PIECES;
 
 ## Special variable for monitoring WPMGR API use of buildXXX() methods
 
-our $MONITOR_API_BUILDS		= $MON_REC | $MON_REC_DETAILS | $MON_PACK | $MON_PACK_CONTROL | $MON_PACK_UNKNOWN;
+our $MONITOR_API_BUILDS :shared = $MON_REC | $MON_REC_DETAILS | $MON_PACK | $MON_PACK_CONTROL | $MON_PACK_UNKNOWN;
 	# Outside of the per-service monitor bit passing scheme, this variable
 	# controls whether to show debugging output while calling b_record::buildXXX()
 	# WRG methods directly from the WPMGR API call.

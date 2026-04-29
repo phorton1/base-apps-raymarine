@@ -42,7 +42,7 @@ sub isWPMGRConnected
 
 sub uploadCollectionToE80
 {
-	my ($coll_uuid, $coll_name, $prog_data) = @_;
+	my ($coll_uuid, $coll_name, $progress_data) = @_;
 
 	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
 	unless ($wpmgr)
@@ -116,20 +116,20 @@ sub uploadCollectionToE80
 		scalar(@wps)." wps, ".scalar(@routes_q)." routes, ".scalar(@groups_q)." groups)");
 	return 0 unless $total;
 
-	if ($prog_data)
+	if ($progress_data)
 	{
-		$prog_data->{total}  = $total;
-		$prog_data->{active} = 1;
+		$progress_data->{total}  = $total;
+		$progress_data->{active} = 1;
 	}
 
-	$wpmgr->submitBatch(\@ops, $prog_data);
+	$wpmgr->submitBatch(\@ops, $progress_data);
 	return $total;
 }
 
 
 sub uploadRouteToE80
 {
-	my ($route_uuid, $route_name, $route_color, $prog_data) = @_;
+	my ($route_uuid, $route_name, $route_color, $progress_data) = @_;
 
 	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
 	unless ($wpmgr)
@@ -178,20 +178,20 @@ sub uploadRouteToE80
 	my $total = scalar @ops;
 	display(0,0,"uploadRouteToE80($route_name): $total ops");
 
-	if ($prog_data)
+	if ($progress_data)
 	{
-		$prog_data->{total}  = $total;
-		$prog_data->{active} = 1;
+		$progress_data->{total}  = $total;
+		$progress_data->{active} = 1;
 	}
 
-	$wpmgr->submitBatch(\@ops, $prog_data);
+	$wpmgr->submitBatch(\@ops, $progress_data);
 	return $total;
 }
 
 
 sub uploadWaypointToE80
 {
-	my ($wp, $prog_data) = @_;
+	my ($wp, $progress_data) = @_;
 
 	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
 	unless ($wpmgr)
@@ -207,10 +207,10 @@ sub uploadWaypointToE80
 		return 0;
 	}
 
-	if ($prog_data)
+	if ($progress_data)
 	{
-		$prog_data->{total}  = 1;
-		$prog_data->{active} = 1;
+		$progress_data->{total}  = 1;
+		$progress_data->{active} = 1;
 	}
 
 	display(0,1,"uploading wp($wp->{name})");
@@ -219,7 +219,7 @@ sub uploadWaypointToE80
 		lat      => $wp->{lat},  lon  => $wp->{lon},
 		sym      => $wp->{sym}  // 25,
 		ts       => $wp->{created_ts},
-		progress => $prog_data,
+		progress => $progress_data,
 	});
 
 	display(0,0,"uploadWaypointToE80($wp->{name}): queued");

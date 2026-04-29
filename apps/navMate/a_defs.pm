@@ -15,6 +15,8 @@ BEGIN
 	use Exporter qw( import );
 	our @EXPORT = qw(
 
+		$NAVMATE_DATABASE
+
 		$SCHEMA_VERSION
 
 		$WP_TYPE_NAV
@@ -36,6 +38,8 @@ BEGIN
 	);
 }
 
+
+our $NAVMATE_DATABASE = 'C:/dat/Rhapsody/navMate.db';
 
 # Schema version: integer part = breaking change (reimport required),
 # decimal part = non-breaking change (advisory).

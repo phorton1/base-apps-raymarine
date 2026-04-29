@@ -32,6 +32,8 @@ my $dbg_mods 	= -1;
 my $WITH_EVENT_PROCESSING	= 1;
 my $WITH_MOD_PROCESSING 	= 1;
 
+our $query_in_progress :shared = 0;
+
 
 BEGIN
 {
@@ -156,11 +158,11 @@ sub trackUICommand
 
 sub queueTRACKCommand
 {
-	my ($this,$api_command,$uuid,$extra,$gen_error) = @_;
+	my ($this,$api_command,$uuid,$extra,$gen_error,$progress) = @_;
 	$uuid ||= '';
 	$extra ||= '';
 	$gen_error ||= '';
-	
+
 	display_hash($dbg+2,0,"queueTRACKCommand($this)",$this);
 
 	return error("No 'this' in queueTRACKCommand") if !$this;
@@ -191,8 +193,16 @@ sub queueTRACKCommand
 		uuid => $uuid,
 		extra => $extra,
 		gen_error => $gen_error, });
+	$command->{progress} = $progress if $progress;
 	push @{$this->{command_queue}},$command;
 	return 1;
+}
+
+
+sub queueRefresh
+{
+	my ($this, $progress) = @_;
+	return $this->queueTRACKCommand($API_GET_TRACKS, 0, '', '', $progress);
 }
 
 
@@ -449,10 +459,19 @@ sub onConnect
 
 
 sub get_tracks
-	# get all track_mts uuids, then all tracks
+	# get all track_mts uuids, then all tracks.
+	# Clears in-memory state first so stale items (deleted on E80) don't persist.
 {
-	my ($this) = @_;
+	my ($this, $command) = @_;
 	c_print("get_tracks()\n");
+
+	$this->{tracks}              = shared_clone({});
+	$this->{current_track_uuid}  = '';
+
+	my $progress = (ref($command) eq 'HASH') ? $command->{progress} : undef;
+	$this->{_active_progress} = $progress;
+
+	$query_in_progress++;
 
 	my $seq;
 	my $request;
@@ -469,7 +488,13 @@ sub get_tracks
 
 		$seq = $this->{next_seqnum}++;
 		$request = createMsg($seq,$TRACK_CMD_GET_STATE,0,0);
-		return 0 if !$this->sendRequest($seq,"get_state",$request);
+		if (!$this->sendRequest($seq,"get_state",$request))
+		{
+			$this->{_active_progress} = undef;
+			if ($progress && exists $progress->{workers}) { $progress->{workers}--; }
+			$query_in_progress--;
+			return 0;
+		}
 		$reply = $this->waitReply(0);
 			# GET_STATE does not return a success code
 			# so it is sufficient to wait for matching {seq} only
@@ -482,7 +507,13 @@ sub get_tracks
 		{
 			$seq = $this->{next_seqnum}++;
 			$request = createMsg($seq,$TRACK_CMD_GET_CUR2,0,0);
-			return 0 if !$this->sendRequest($seq,"get_cur2",$request);
+			if (!$this->sendRequest($seq,"get_cur2",$request))
+			{
+				$this->{_active_progress} = undef;
+				if ($progress && exists $progress->{workers}) { $progress->{workers}--; }
+				$query_in_progress--;
+				return 0;
+			}
 			$reply = $this->waitReply(1);
 
 			if ($reply)
@@ -506,13 +537,29 @@ sub get_tracks
 
 	$seq = $this->{next_seqnum}++;
 	$request = createMsg($seq,$TRACK_CMD_GET_DICT,0,0);
-	return 0 if !$this->sendRequest($seq,"get_dict",$request);
+	if (!$this->sendRequest($seq,"get_dict",$request))
+	{
+		$this->{_active_progress} = undef;
+		if ($progress && exists $progress->{workers}) { $progress->{workers}--; }
+		$query_in_progress--;
+		return 0;
+	}
 	$reply = $this->waitReply(1);
-	return 0 if !$reply;
-	
-	# enqueue from dictionary
+	if (!$reply)
+	{
+		$this->{_active_progress} = undef;
+		if ($progress && exists $progress->{workers}) { $progress->{workers}--; }
+		$query_in_progress--;
+		return 0;
+	}
+
+	# enqueue from dictionary; add one count per queued get_track so the
+	# flag stays non-zero until the last track is received
 
 	my $uuids = $reply->{dict_uuids};
+	$query_in_progress += scalar(@$uuids);
+	$progress->{total} += scalar(@$uuids) if $progress;
+
 	my $num = 0;
 	for my $uuid (@$uuids)
 	{
@@ -523,6 +570,15 @@ sub get_tracks
 
 	my $tracks = $this->{tracks};
 	display($dbg+1,1,"keys(tracks) = ".join(" ",keys %$tracks));
+	$query_in_progress--;	# get_tracks itself done; N get_track calls still pending
+
+	# If no saved tracks at all, close out progress here (get_track won't run)
+	if (!@$uuids && $progress && exists $progress->{workers})
+	{
+		$progress->{workers}--;
+		$this->{_active_progress} = undef;
+	}
+
 	return 1;
 
 }	# get_tracks()
@@ -565,6 +621,20 @@ sub get_track
 	$item->{version} = $this->incVersion();
 
 	warning($dbg_got,0,"got track($uuid) = '$item->{name}'");
+	$query_in_progress-- if $query_in_progress > 0;
+
+	my $progress = $this->{_active_progress};
+	if ($progress)
+	{
+		$progress->{label} = $item->{name} // '';
+		$progress->{done}++;
+		if ($query_in_progress == 0)
+		{
+			$progress->{workers}-- if exists $progress->{workers};
+			$this->{_active_progress} = undef;
+		}
+	}
+
 	return 1;
 
 }   # get_track()

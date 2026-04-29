@@ -321,6 +321,35 @@ sub handleCommand
 
 
 #==================================================================================
+# commandHelp — shark-specific [sig, desc] pairs (prepended to inherited list)
+#==================================================================================
+
+sub commandHelp
+{
+	my ($this) = @_;
+	my @mine = (
+		[ 'i',                           'DB service uiInit'                   ],
+		[ 'fids',                        'DB parser showFids'                  ],
+		[ 'v',                           'DBNAV showValues'                    ],
+		[ 'f <cmd> <path>',              'FILESYS fileCommand'                 ],
+		[ 's',                           'clear shark.log'                     ],
+		[ 'r',                           'clear rns.log'                       ],
+		[ 'log <msg>',                   'mark both log files'                 ],
+		[ 'scan [lo hi]',                'TCP port scan'                       ],
+		[ 'udp [lo hi]',                 'UDP port scan'                       ],
+		[ 'p <svc> [args]',              'probe a service'                     ],
+		[ 'write',                       'fshWriter::write'                    ],
+		[ 'create <wp|route|group> <n>', 'create N test objects of given type' ],
+		[ 'route <id> [<+|-> <wp>]',     'add/remove waypoint or show route'   ],
+		[ 'wp <id> [group_id]',          'set waypoint group or show waypoint' ],
+		[ 'group <id>',                  'show group item'                     ],
+		[ 'mod <wp> <name> k=v [...]',   'modify waypoint fields'              ],
+	);
+	return [ @mine, @{$this->SUPER::commandHelp()} ];
+}
+
+
+#==================================================================================
 # /api/colormap
 #==================================================================================
 

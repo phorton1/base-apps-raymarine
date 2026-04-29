@@ -42,6 +42,8 @@ my $dbg_mods = 0;
 
 my $WITH_MOD_PROCESSING = 1;
 
+our $query_in_progress :shared = 0;
+
 my $WPMGR_SERVICE_ID = 15;
 	# 15 = 0xf0 == 'F000' in streams
 
@@ -257,7 +259,7 @@ sub update_item_request
 
 sub query_one
 {
-	my ($this,$what) = @_;
+	my ($this, $what, $progress) = @_;
 	my $what_name = $NAV_WHAT{$what};
 	display($dbg,0,"query_one($what_name)");
 
@@ -275,32 +277,63 @@ sub query_one
 		if !$reply->{is_dict} || !$reply->{dict_uuids};
 	my $uuids = $reply->{dict_uuids};
 
+	$progress->{total} += scalar(@$uuids) if $progress;
+
+	my $hash_name = lc($what_name)."s";
+	my $hash = $this->{$hash_name};
 	my $num = 0;
 	for my $uuid (@$uuids)
 	{
 		$seq = $this->{next_seqnum}++;
 		$request = createMsg($seq,$DIRECTION_SEND,$CMD_ITEM,$what,$uuid);
 		return 0 if !$this->update_item_request($seq,$what,"query($num)",$uuid,$request);
+		if ($progress)
+		{
+			$progress->{label} = $hash->{$uuid}{name} // '';
+			$progress->{done}++;
+		}
 		$num++;
 	}
 
-	my $hash_name = lc($what_name)."s";
-	my $hash = $this->{$hash_name};
 	display($dbg+1,1,"keys($hash_name) = ".join(" ",keys %$hash));
 	return 1;
 }
 
 
 sub do_query
-	# get all Waypoints, Routes, and Groups from the E80
+	# get all Waypoints, Routes, and Groups from the E80.
+	# Clears in-memory state first so stale items (deleted on E80) don't persist.
 {
-	my ($this) = @_;
+	my ($this, $command) = @_;
 	c_print("do_query()\n");
 
-	return 0 if !$this->query_one($WHAT_WAYPOINT);
-	return 0 if !$this->query_one($WHAT_ROUTE);
-	return 0 if !$this->query_one($WHAT_GROUP);
-	return 1;
+	$this->{waypoints} = shared_clone({});
+	$this->{routes}    = shared_clone({});
+	$this->{groups}    = shared_clone({});
+
+	my $progress = (ref($command) eq 'HASH') ? $command->{progress} : undef;
+
+	$query_in_progress++;
+	my $ok =
+		$this->query_one($WHAT_WAYPOINT, $progress) &&
+		$this->query_one($WHAT_ROUTE,    $progress) &&
+		$this->query_one($WHAT_GROUP,    $progress);
+	$query_in_progress--;
+
+	if ($progress && exists $progress->{workers})
+	{
+		$progress->{error} = 'WPMGR query failed' if !$ok;
+		$progress->{workers}--;
+	}
+
+	return $ok ? 1 : 0;
+}
+
+
+sub queueRefresh
+{
+	my ($this, $progress) = @_;
+	return $this->queueWPMGRCommand($API_DO_QUERY, 0, 'refresh', 0, '', $progress);
 }
 
 
@@ -443,14 +476,13 @@ sub do_batch
 {
 	my ($this,$command) = @_;
 	my $ops  = $command->{ops};
-	my $prog = $command->{progress};
+	my $progress = $command->{progress};
 	my $mon  = $MONITOR_API_BUILDS;
 	my $col  = $UTILS_COLOR_CYAN;
 
-	$this->{batch_active} = 1;
 	for my $op (@$ops)
 	{
-		last if $prog && $prog->{cancelled};
+		last if $progress && $progress->{cancelled};
 
 		my $type = $op->{type};
 		my $uuid = $op->{uuid};
@@ -544,23 +576,41 @@ sub do_batch
 				data => unpack('H*',$buffer),
 			});
 		}
+		elsif ($type eq 'mod_group')
+		{
+			# add wp_uuid to an existing group's member list
+			my $group = $this->{groups}{$uuid};
+			if (!$group) { warning(0,0,"do_batch: group($uuid) not in memory"); next; }
+			$name       = $group->{name};
+			$what_label = 'Group';
+			my $wp_uuid = $op->{wp_uuid};
+			share($wp_uuid);
+			push @{$group->{uuids}}, $wp_uuid;
+			my $buffer = buildGroup(0,$group,$MONITOR_API_BUILDS,$UTILS_COLOR_CYAN);
+			$rslt = $this->modify_item({
+				what => $WHAT_GROUP,
+				uuid => $uuid,
+				name => $name,
+				data => unpack('H*',$buffer),
+			});
+		}
 		else
 		{
 			warning(0,0,"do_batch: unknown op type '$type'");
 			next;
 		}
 
-		if ($prog)
+		if ($progress)
 		{
 			if ($rslt)
 			{
-				$prog->{label} = "$what_label: $name" if defined $name;
-				$prog->{done}++;
+				$progress->{label} = "$what_label: $name" if defined $name;
+				$progress->{done}++;
 			}
 			else
 			{
-				$prog->{error}     = "batch $type failed: $name";
-				$prog->{cancelled} = 1;
+				$progress->{error}     = "batch $type failed: $name";
+				$progress->{cancelled} = 1;
 			}
 		}
 		elsif (!$rslt)
@@ -568,7 +618,6 @@ sub do_batch
 			error("do_batch: $type($name) failed");
 		}
 	}
-	$this->{batch_active} = 0;
 	return 1;
 }
 
@@ -580,12 +629,12 @@ sub handleCommand
 	my $cmd_name = apiCommandName($api_command);
 	display($dbg,0,"$this->{name} handleCommand($api_command=$cmd_name) started");
 
-	my $prog = $command->{progress};
+	my $progress = $command->{progress};
 	my $what_raw   = $NAV_WHAT{$command->{what} // 0} // '';
 	my $what_label = $what_raw eq 'WAYPOINT' ? 'WP' : ucfirst(lc($what_raw));
 
 	# Skip user-visible commands silently if this operation was cancelled
-	if ($prog && $prog->{cancelled} &&
+	if ($progress && $progress->{cancelled} &&
 		($api_command == $API_NEW_ITEM ||
 		 $api_command == $API_DEL_ITEM ||
 		 $api_command == $API_MOD_ITEM))
@@ -604,17 +653,17 @@ sub handleCommand
 	$rslt = $this->modify_item($command) 	if $api_command == $API_MOD_ITEM;
 	$rslt = $this->do_batch($command) 		if $api_command == $API_DO_BATCH;
 
-	if ($prog && ($api_command == $API_NEW_ITEM || $api_command == $API_DEL_ITEM))
+	if ($progress && ($api_command == $API_NEW_ITEM || $api_command == $API_DEL_ITEM))
 	{
 		if ($rslt)
 		{
-			$prog->{label} = "$what_label: $command->{name}" if defined $command->{name};
-			$prog->{done}++;
+			$progress->{label} = "$what_label: $command->{name}" if defined $command->{name};
+			$progress->{done}++;
 		}
 		else
 		{
-			$prog->{error}     = "$cmd_name($what_label) failed: $command->{name}";
-			$prog->{cancelled} = 1;
+			$progress->{error}     = "$cmd_name($what_label) failed: $command->{name}";
+			$progress->{cancelled} = 1;
 		}
 	}
 	error("API $cmd_name failed") if !$rslt;
@@ -679,7 +728,7 @@ sub handleEvent
 				$this->incVersion();
 			}
 		}
-		elsif (!$this->{batch_active})
+		else
 		{
 			warning($dbg_mods,0,"enquing mod($mod->{what}) uuid($mod->{uuid})");
 			$this->queueWPMGRCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef);

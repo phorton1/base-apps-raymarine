@@ -32,6 +32,8 @@ use Pub::WX::Menu;
 use c_db;
 use nmServer;
 use nmUpload;
+use nmClipboard;
+use nmOps;
 use w_resources;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
@@ -48,7 +50,7 @@ sub new
 	$this->MyWindow($frame, $book, $id, 'Browser', $data);
 
 	$this->{tree} = Wx::TreeCtrl->new($this, -1, wxDefaultPosition, wxDefaultSize,
-		wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT);
+		wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxTR_MULTIPLE);
 
 	$this->{detail} = Wx::TextCtrl->new($this, -1, '', wxDefaultPosition, wxDefaultSize,
 		wxTE_MULTILINE | wxTE_READONLY);
@@ -56,18 +58,30 @@ sub new
 	my $font = Wx::Font->new(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
 	$this->{detail}->SetFont($font);
 
-	my $sash = ($data && ref($data) eq 'HASH' && $data->{sash}) ? $data->{sash} : 0;
+	my $sash = ($data && ref($data) eq 'HASH' && $data->{sash}) ? $data->{sash} : 250;
 	$this->SplitVertically($this->{tree}, $this->{detail}, $sash);
-	$this->SetSashGravity(0.5);
+	$this->SetSashGravity(0);
 
-	_loadTopLevel($this);
+	my %init_expanded;
+	if ($data && ref($data) eq 'HASH' && $data->{expanded})
+	{
+		$init_expanded{$_} = 1 for split(/,/, $data->{expanded});
+	}
+	$this->{_expanded_uuids} = \%init_expanded;
+	$this->{_selected_uuids} = {};
 
+	# Bind events BEFORE _loadTopLevel so that Expand() calls in _restoreExpanded
+	# fire EVT_TREE_ITEM_EXPANDING synchronously with the handler already active.
 	EVT_TREE_SEL_CHANGED($this,        $this->{tree}, \&onTreeSelect);
 	EVT_TREE_ITEM_EXPANDING($this,     $this->{tree}, \&onTreeExpanding);
 	EVT_TREE_ITEM_RIGHT_CLICK($this,   $this->{tree}, \&onTreeRightClick);
 	EVT_LEFT_DCLICK($this->{tree}, sub { _onTreeDblClick($this, @_) });
 
-	EVT_MENU($this, $CMD_UPLOAD_E80, \&_onUploadE80);
+	EVT_MENU($this, $CMD_UPLOAD_E80, \&_onUploadE80);   # vestigial
+	EVT_MENU($this, $_, \&_onContextMenuCommand)
+		for (allCopyCmds(), $CMD_PASTE, allDeleteCmds(), allNewCmds());
+
+	_loadTopLevel($this);
 
 	return $this;
 }
@@ -94,12 +108,23 @@ sub _loadTopLevel
 	}
 	disconnectDB($dbh);
 	$tree->Thaw();
+
+	# Expand/select restoration must run outside Freeze so that Expand() fires
+	# EVT_TREE_ITEM_EXPANDING synchronously, allowing onTreeExpanding to replace
+	# dummy children before the recursion descends into them.
+	_restoreExpanded($tree, $root, $this->{_expanded_uuids});
+	_restoreSelected($tree, $root, $this->{_selected_uuids});
 }
 
 
 sub refresh
 {
 	my ($this) = @_;
+	if ($this->{tree}->GetCount() > 0)
+	{
+		_captureExpandedInto($this);
+		_captureSelectedInto($this);
+	}
 	$this->{detail}->SetValue('');
 	_loadTopLevel($this);
 }
@@ -147,22 +172,23 @@ sub _addObjectItem
 {
 	my ($dbh, $this, $parent, $obj) = @_;
 	my $label;
+	my $n = 0;
 	if ($obj->{obj_type} eq 'route')
 	{
-		my $n = getRouteWaypointCount($dbh, $obj->{uuid});
+		$n     = getRouteWaypointCount($dbh, $obj->{uuid});
 		$label = "$obj->{name} ($n pts)";
 	}
 	elsif ($obj->{obj_type} eq 'track')
 	{
-		my $n = $obj->{point_count} // 0;
-		$label = "[track] $obj->{name} ($n pts)";
+		$label = "[track] $obj->{name} (${\($obj->{point_count} // 0)} pts)";
 	}
 	else
 	{
 		$label = "[waypoint] $obj->{name}";
 	}
-	$this->{tree}->AppendItem($parent, $label, -1, -1,
+	my $item = $this->{tree}->AppendItem($parent, $label, -1, -1,
 		Wx::TreeItemData->new({ type => 'object', data => $obj }));
+	$this->{tree}->AppendItem($item, $DUMMY) if $obj->{obj_type} eq 'route' && $n > 0;
 }
 
 
@@ -185,11 +211,38 @@ sub onTreeExpanding
 	my $item_data = $tree->GetItemData($item);
 	return unless $item_data;
 	my $node = $item_data->GetData();
-	return unless ref $node eq 'HASH' && $node->{type} eq 'collection';
+	return unless ref $node eq 'HASH';
 
 	my $dbh = connectDB();
-	_populateNode($dbh, $this, $item, $node->{data});
+	if ($node->{type} eq 'collection')
+	{
+		_populateNode($dbh, $this, $item, $node->{data});
+	}
+	elsif ($node->{type} eq 'object' && ($node->{data}{obj_type} // '') eq 'route')
+	{
+		_populateRoutePoints($dbh, $this, $item, $node->{data});
+	}
 	disconnectDB($dbh);
+}
+
+
+sub _populateRoutePoints
+{
+	my ($dbh, $this, $parent_item, $route) = @_;
+	my $wps = getRouteWaypoints($dbh, $route->{uuid});
+	for my $i (0 .. $#$wps)
+	{
+		my $wp    = $wps->[$i];
+		my $label = sprintf('%d. %s', $i + 1, $wp->{name} // '');
+		$this->{tree}->AppendItem($parent_item, $label, -1, -1,
+			Wx::TreeItemData->new({
+				type       => 'route_point',
+				route_uuid => $route->{uuid},
+				position   => $i + 1,
+				uuid       => $wp->{uuid},
+				data       => $wp,
+			}));
+	}
 }
 
 
@@ -234,6 +287,10 @@ sub onTreeSelect
 	elsif ($node->{type} eq 'object')
 	{
 		_showObject($dbh, $this, $node->{data});
+	}
+	elsif ($node->{type} eq 'route_point')
+	{
+		_showRoutePoint($this, $node);
 	}
 	disconnectDB($dbh);
 }
@@ -330,6 +387,21 @@ sub _showObject
 }
 
 
+sub _showRoutePoint
+{
+	my ($this, $node) = @_;
+	my $wp   = $node->{data};
+	my $text = '';
+	$text .= _fmt('position',   $node->{position});
+	$text .= _fmt('route_uuid', $node->{route_uuid});
+	$text .= _fmt('uuid',       $node->{uuid});
+	$text .= _fmt('name',       $wp->{name});
+	$text .= _fmt('lat',        sprintf('%.6f', $wp->{lat} // 0));
+	$text .= _fmt('lon',        sprintf('%.6f', $wp->{lon} // 0));
+	$this->{detail}->SetValue($text);
+}
+
+
 #---------------------------------
 # double-click → render in Leaflet
 #---------------------------------
@@ -362,6 +434,10 @@ sub _onTreeDblClick
 	elsif ($node->{type} eq 'object')
 	{
 		_renderObject($dbh, $this, $node->{data});
+	}
+	elsif ($node->{type} eq 'route_point')
+	{
+		_renderObject($dbh, $this, { obj_type => 'waypoint', uuid => $node->{uuid} });
 	}
 	disconnectDB($dbh);
 }
@@ -590,68 +666,105 @@ sub onTreeRightClick
 	return unless $item_data;
 	my $node = $item_data->GetData();
 	return unless ref $node eq 'HASH';
-	return unless isWPMGRConnected();
 
-	my $type = $node->{type};
-	my $data = $node->{data};
-
-	if ($type eq 'collection')
-	{
-		$this->{_upload_target} = { kind => 'collection', data => $data };
-	}
-	elsif ($type eq 'object' && $data->{obj_type} eq 'route')
-	{
-		$this->{_upload_target} = { kind => 'route', data => $data };
-	}
-	elsif ($type eq 'object' && $data->{obj_type} eq 'waypoint')
-	{
-		$this->{_upload_target} = { kind => 'waypoint', data => $data };
-	}
-	else
-	{
-		return;
-	}
-
-	my $menu = Pub::WX::Menu::createMenu('collection_context_menu');
+	$this->{_right_click_node} = $node;
+	my $menu = _buildContextMenu($this, $node);
 	$this->PopupMenu($menu, [-1,-1]);
+}
+
+
+sub _buildContextMenu
+{
+	my ($this, $right_click_node) = @_;
+	my $tree = $this->{tree};
+
+	my @nodes;
+	for my $item ($tree->GetSelections())
+	{
+		my $d = $tree->GetItemData($item);
+		next unless $d;
+		my $n = $d->GetData();
+		push @nodes, $n if ref $n eq 'HASH';
+	}
+
+	my $menu = Wx::Menu->new();
+
+	my @copy_items = getCopyMenuItems('browser', @nodes);
+	$menu->Append($_->{id}, $_->{label}) for @copy_items;
+	$menu->AppendSeparator()             if @copy_items;
+
+	$menu->Append($CMD_PASTE, 'Paste');
+	$menu->Enable($CMD_PASTE, canPaste($right_click_node, 'browser') ? 1 : 0);
+
+	my @delete_items = getDeleteMenuItems('browser', $right_click_node);
+	if (@delete_items)
+	{
+		$menu->AppendSeparator();
+		$menu->Append($_->{id}, $_->{label}) for @delete_items;
+	}
+
+	my @new_items = getNewMenuItems('browser', $right_click_node);
+	if (@new_items)
+	{
+		$menu->AppendSeparator();
+		$menu->Append($_->{id}, $_->{label}) for @new_items;
+	}
+
+	my $node_type = $right_click_node->{type} // '';
+	if ($node_type eq 'collection')
+	{
+		$this->{_upload_target} = { kind => 'collection', data => $right_click_node->{data} };
+		$menu->AppendSeparator();
+		$menu->Append($CMD_UPLOAD_E80, 'Upload to E80');
+	}
+
+	return $menu;
+}
+
+
+sub _onContextMenuCommand
+{
+	my ($this, $event) = @_;
+	onContextMenuCommand(
+		$event->GetId(), 'browser', $this->{_right_click_node}, $this->{tree});
 }
 
 
 sub _onUploadE80
 {
 	my ($this) = @_;
-	my $prog = $this->{_progress_data};
-	return if $prog && $prog->{active};
+	my $progress = $this->{_progress_data};
+	return if $progress && $progress->{active};
 
 	my $target = $this->{_upload_target};
 	return unless $target;
 	my $kind = $target->{kind};
 	my $data = $target->{data};
 
-	my $prog_data = Pub::WX::ProgressDialog::newProgressData(0);
+	my $progress_data = Pub::WX::ProgressDialog::newProgressData(0);
 
 	my $total = 0;
 	if ($kind eq 'collection')
 	{
-		$total = uploadCollectionToE80($data->{uuid}, $data->{name}, $prog_data);
+		$total = uploadCollectionToE80($data->{uuid}, $data->{name}, $progress_data);
 	}
 	elsif ($kind eq 'route')
 	{
-		$total = uploadRouteToE80($data->{uuid}, $data->{name}, $data->{color}, $prog_data);
+		$total = uploadRouteToE80($data->{uuid}, $data->{name}, $data->{color}, $progress_data);
 	}
 	elsif ($kind eq 'waypoint')
 	{
-		$total = uploadWaypointToE80($data, $prog_data);
+		$total = uploadWaypointToE80($data, $progress_data);
 	}
 
 	if ($total > 0)
 	{
-		$this->{_progress_data} = $prog_data;
+		$this->{_progress_data} = $progress_data;
 		Pub::WX::ProgressDialog->new(
 			$this->{frame},
 			'Upload to E80',
 			1,
-			$prog_data,
+			$progress_data,
 			'Uploading...');
 	}
 }
@@ -664,7 +777,130 @@ sub _onUploadE80
 sub getDataForIniFile
 {
 	my ($this) = @_;
-	return { sash => $this->GetSashPosition() };
+	_captureExpandedInto($this) if $this->{tree}->GetCount() > 0;
+	return {
+		sash     => $this->GetSashPosition(),
+		expanded => join(',', sort keys %{$this->{_expanded_uuids}}),
+	};
+}
+
+
+#---------------------------------
+# tree state — expand / select
+#---------------------------------
+
+sub _nodeKey
+{
+	my ($node) = @_;
+	return undef unless ref $node eq 'HASH';
+	return $node->{uuid} // ($node->{data} // {})->{uuid};
+}
+
+
+sub _captureExpandedInto
+{
+	my ($this) = @_;
+	my %keys;
+	my $tree = $this->{tree};
+	my $root = $tree->GetRootItem();
+	if ($root && $root->IsOk())
+	{
+		my ($child, $cookie) = $tree->GetFirstChild($root);
+		while ($child && $child->IsOk())
+		{
+			_walkExpandedCapture($tree, $child, \%keys);
+			($child, $cookie) = $tree->GetNextChild($root, $cookie);
+		}
+	}
+	$this->{_expanded_uuids} = \%keys;
+}
+
+sub _walkExpandedCapture
+{
+	my ($tree, $item, $result) = @_;
+	return unless $item->IsOk();
+	return unless $tree->IsExpanded($item);
+	my $d = $tree->GetItemData($item);
+	if ($d)
+	{
+		my $node = $d->GetData();
+		if (ref $node eq 'HASH')
+		{
+			my $key = _nodeKey($node);
+			$result->{$key} = 1 if $key;
+		}
+	}
+	my ($child, $cookie) = $tree->GetFirstChild($item);
+	while ($child && $child->IsOk())
+	{
+		_walkExpandedCapture($tree, $child, $result);
+		($child, $cookie) = $tree->GetNextChild($item, $cookie);
+	}
+}
+
+
+sub _captureSelectedInto
+{
+	my ($this) = @_;
+	my %keys;
+	for my $item ($this->{tree}->GetSelections())
+	{
+		my $d = $this->{tree}->GetItemData($item);
+		next unless $d;
+		my $node = $d->GetData();
+		next unless ref $node eq 'HASH';
+		my $key = _nodeKey($node);
+		$keys{$key} = 1 if $key;
+	}
+	$this->{_selected_uuids} = \%keys;
+}
+
+
+sub _restoreExpanded
+{
+	my ($tree, $item, $expanded) = @_;
+	return unless $item && $item->IsOk();
+	my $d = $tree->GetItemData($item);
+	if ($d)
+	{
+		my $node = $d->GetData();
+		if (ref $node eq 'HASH')
+		{
+			my $key = _nodeKey($node);
+			# Expand fires onTreeExpanding synchronously, populating children
+			# before the recursion below descends into them.
+			$tree->Expand($item) if $key && $expanded->{$key};
+		}
+	}
+	my ($child, $cookie) = $tree->GetFirstChild($item);
+	while ($child && $child->IsOk())
+	{
+		_restoreExpanded($tree, $child, $expanded);
+		($child, $cookie) = $tree->GetNextChild($item, $cookie);
+	}
+}
+
+
+sub _restoreSelected
+{
+	my ($tree, $item, $selected) = @_;
+	return unless $item && $item->IsOk();
+	my $d = $tree->GetItemData($item);
+	if ($d)
+	{
+		my $node = $d->GetData();
+		if (ref $node eq 'HASH')
+		{
+			my $key = _nodeKey($node);
+			$tree->SelectItem($item, 1) if $key && $selected->{$key};
+		}
+	}
+	my ($child, $cookie) = $tree->GetFirstChild($item);
+	while ($child && $child->IsOk())
+	{
+		_restoreSelected($tree, $child, $selected);
+		($child, $cookie) = $tree->GetNextChild($item, $cookie);
+	}
 }
 
 
