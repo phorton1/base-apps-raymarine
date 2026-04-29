@@ -57,6 +57,7 @@ use udpScanner;
 use base 'Wx::App';
 
 $ini_file = "$temp_dir/$appName.ini";
+$appClientName = 'shark';
 
 
 my $dbg_shark = 0;

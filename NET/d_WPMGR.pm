@@ -439,6 +439,16 @@ sub delete_item
 	my $hash_name = lc($what_name).'s';
 	return error("delete_item: $what_name($uuid) not in memory") if !$this->{$hash_name}{$uuid};
 
+	if (0)
+	{
+		# hypothetical fix for MRD problem to prime the E80 before deleting the big michelle route
+		# did not fix the problem; code left temporarily as reminder that we tried it.
+		my $seq = $this->{next_seqnum}++;
+		my $request = createMsg($seq,$DIRECTION_SEND,$CMD_FIND,$what,name16_hex($name));
+		return 0 if !$this->sendRequest($seq,"find $what_name",$request);
+		return 0 if !$this->waitReply(1);
+	}
+
 	my $seq = $this->{next_seqnum}++;
 	my $request = createMsg($seq,$DIRECTION_SEND,$CMD_UUID,$what,$uuid);
 	return 0 if !$this->sendRequest($seq,"delete $what_name",$request);

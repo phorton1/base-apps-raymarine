@@ -8,7 +8,7 @@
 #   /test            - sanity check
 #   /raysys.kml      - E80 WGRT state as Google Earth KML
 #   /api/db          - WPMGR + TRACK in-memory state as JSON
-#   /api/log         - console ring buffer (?tail=N or ?since=seq)
+#   /api/log         - console ring buffer (?tail=N or ?since=seq or ?since=mark)
 #   /api/command     - dispatch a NET-layer command (?cmd=...)
 #
 # Shared command dispatch (handleCommand virtual method):
@@ -55,6 +55,7 @@ my $NETWORK_LINK = "http://localhost:$SERVER_PORT/raysys.kml";
 my $server_version        :shared = -1;
 my $server_kml            :shared = '';
 my $server_cache_filename          = "$temp_dir/server_cache.kml";
+my $mark_seq              :shared = 0;
 
 
 BEGIN
@@ -146,7 +147,8 @@ sub api_log
 	my ($cur_seq, $entries, $overflow);
 	if (defined $params->{since})
 	{
-		($cur_seq,$entries,$overflow) = getOutputRingSince(int($params->{since}));
+		my $since = $params->{since} eq 'mark' ? $mark_seq : int($params->{since});
+		($cur_seq,$entries,$overflow) = getOutputRingSince($since);
 	}
 	else
 	{
@@ -386,6 +388,14 @@ sub handleCommand
 		{
 			display(0,0,"b_sock::command_timeout = $apps::raymarine::NET::b_sock::command_timeout");
 		}
+	}
+
+	# Mark — snapshot current ring-buffer seq for ?since=mark queries
+
+	elsif ($lpart eq 'mark')
+	{
+		display(0,0,"=== MARK" . ($rpart ? ": $rpart" : '') . " ===");
+		$mark_seq = getOutputRingSeq();
 	}
 
 	# Help

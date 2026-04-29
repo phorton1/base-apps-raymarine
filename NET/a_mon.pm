@@ -146,8 +146,10 @@ our $MON_SELF_SNIFFED		= 0x2000000;		# put on packets that are self sniffed
 
 # some common combinations
 
+my $MON_MIN 			 	= $MON_HEADER | $MON_PARSE;
 my $MON_CMD					= $MON_HEADER | $MON_PARSE | $MON_PIECES;
 	# dont want to see dictionaries on command requests
+
 
 
 ## Special variable for monitoring WPMGR API use of buildXXX() methods
@@ -194,9 +196,9 @@ my $SHARK_MON_TRACK 	= $MON_HEADER | $MON_RAW | $MON_MULTI | $MON_PARSE | $MON_P
 
 $SHARK_MON_TRACK = 0;
 
-my $SHARK_MON_WAYPOINT 	= 0;	# $MON_ALL;
-my $SHARK_MON_ROUTE 	= 0;	# $MON_ALL;
-my $SHARK_MON_GROUP 	= $MON_CMD;	# 0;	# $MON_ALL;
+my $SHARK_MON_WAYPOINT 	= 0;	# $MON_MIN;	# $MON_ALL;
+my $SHARK_MON_ROUTE 	= $MON_ALL;	# $MON_ALL;
+my $SHARK_MON_GROUP 	= 0;	# $MON_ALL;
 
 my $ACTIVE_TRACK 		= 1;
 my $ACTIVE_WPMGR 		= 1;
@@ -309,27 +311,32 @@ for my $port (keys %SERVICE_PORT_DEFS)
 my $SNIFF_MON_FILESYS	= 0;	# $MON_HEADER | $MON_RAW | $MON_PARSE | $MON_PIECES;
 my $SNIFF_MON_DBNAV		= 0;	# $MON_ALL;
 my $SNIFF_MON_TRACK 	= 0;	# $MON_ALL;
-my $SNIFF_MON_WAYPOINT 	= 0;	# $MON_ALL;
+my $SNIFF_MON_WAYPOINT 	= 0;	# $MON_MIN;
 my $SNIFF_MON_ROUTE 	= $MON_ALL;
-my $SNIFF_MON_GROUP 	= 0; #	$MON_ALL;
+my $SNIFF_MON_GROUP 	= 0;	# $MON_MIN;
 
 
 mergeHash($SNIFFER_DEFAULTS{$SPORT_FILESYS},{
+	parser_class	=> 'apps::raymarine::NET::e_FILESYS',
 	mon_in			=> 0, # 2026-04-12 turned off for chart analysis: $SNIFF_MON_FILESYS,
 	mon_out 		=> $SNIFF_MON_FILESYS,
 	in_color		=> $UTILS_COLOR_BROWN,
 	out_color		=> $UTILS_COLOR_LIGHT_MAGENTA, });
 mergeHash($SNIFFER_DEFAULTS{$SPORT_DBNAV},{
+	parser_class	=> 'apps::raymarine::NET::e_DBNAV',
 	mon_in			=> $SNIFF_MON_DBNAV,
 	mon_out 		=> $SNIFF_MON_DBNAV,
 	in_color		=> $UTILS_COLOR_GREEN,
 	out_color		=> $UTILS_COLOR_MAGENTA, });
 mergeHash($SNIFFER_DEFAULTS{$SPORT_TRACK},{
+	parser_class	=> 'apps::raymarine::NET::e_TRACK',
 	mon_in			=> $SNIFF_MON_TRACK,
 	mon_out 		=> $SNIFF_MON_TRACK,
 	in_color		=> $UTILS_COLOR_CYAN,
 	out_color		=> $UTILS_COLOR_BLUE, });
 mergeHash($SNIFFER_DEFAULTS{$SPORT_WPMGR},{
+	parser_class	=> 'apps::raymarine::NET::e_WPMGR',
+	active => 1,
 	mon_ins => shared_clone([
 		$SNIFF_MON_WAYPOINT,
 		$SNIFF_MON_ROUTE,

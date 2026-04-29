@@ -194,7 +194,7 @@ sub parsePacket
 			{
 				warning($dbg_dangling,0,"insufficent len($len) offset($offset) packet_len($packet_len) dangling: ".unpack('H*',substr($payload,$offset)));
 				$packet->{payload} = $len_bytes . substr($payload,$offset);
-				$this->{dangling_packet} = $packet;
+				$this->{dangling_packet} = shared_clone($packet);
 				return undef;
 			}
 
@@ -206,7 +206,7 @@ sub parsePacket
 		{
 			warning(0,0,"dangling packet bytes offset($offset) packet_len($packet_len)=".unpack('H*',substr($payload,$offset)));
 			$packet->{payload} = substr($payload,$offset);
-			$this->{dangling_packet} = $packet;
+			$this->{dangling_packet} = shared_clone($packet);
 			return undef;
 		}
 	}

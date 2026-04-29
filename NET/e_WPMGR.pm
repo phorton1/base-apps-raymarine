@@ -115,7 +115,7 @@ sub parseMessage
 
 	my $mon = $packet->{mon};
 	my $color = $packet->{color};
-	printConsole(1,$mon,$color,"$dir_name $cmd_name $what_name")
+	printConsole(0,$mon,$color,"$dir_name $cmd_name $what_name")
 		if $mon & $MON_PARSE;
 
 	if ($W || !defined($packet->{what}) || $D != $DIRECTION_INFO)

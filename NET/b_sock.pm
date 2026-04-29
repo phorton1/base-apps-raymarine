@@ -93,7 +93,7 @@ use IO::Socket::Multicast;
 use Pub::Utils;
 use apps::raymarine::NET::a_defs;
 use apps::raymarine::NET::a_mon;
-use apps::raymarine::NET::a_utils qw(parse_dwords setConsoleColor);
+use apps::raymarine::NET::a_utils qw(parse_dwords setConsoleColor $appClientName);
 
 
 
@@ -542,7 +542,7 @@ sub make_packet
 		is_reply 	=> $is_reply,
 		is_sniffer	=> 0,
 		is_shark	=> 1,
-		client_name => "$this->{name}(shark)",
+		client_name => "$this->{name}($appClientName)",
 		server_name => "$this->{name}($this->{device_id})",
 
 		proto		=> $this->{proto},

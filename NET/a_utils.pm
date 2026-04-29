@@ -69,6 +69,8 @@ BEGIN
 		@WPICON_TABLE
 		%WPICON_BY_NAME
 
+		$appClientName
+
     );
 }
 
@@ -81,6 +83,7 @@ BEGIN
 # main
 #--------------------------------
 
+our $appClientName = 'app';
 our $appGroup = 'raymarine';
 	# same data and temp directories for
 	# shark and raynet (to become 'raynet')

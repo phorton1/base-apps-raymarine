@@ -37,6 +37,7 @@ use winMain;
 use base 'Wx::App';
 
 $ini_file = "$temp_dir/$appName.ini";
+$appClientName = 'navMate';
 
 
 #---------------------------------
