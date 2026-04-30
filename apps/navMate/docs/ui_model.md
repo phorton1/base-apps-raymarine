@@ -9,101 +9,265 @@
 
 ## Overview
 
-navMate runs three UI surfaces simultaneously within a single process. Each is
-suited to a distinct class of task; they are not alternatives. The surfaces are
-described architecturally in [Architecture](architecture.md); this document covers
-the behavioral and interaction model.
+navMate runs three UI surfaces within a single process:
 
-## Collection Tree (wx panel)
+- **winBrowser** — navMate database tree: browse, edit, and upload collections
+- **winE80** — live E80 device tree: view and delete routes, groups, and waypoints
+- **Leaflet canvas** — geographic map view *(planned; not yet implemented)*
 
-The collection hierarchy is presented as a wx tree control. Each node carries a
-checkbox with three states — checked, unchecked, and partial (some children
-checked):
+winBrowser and winE80 are the operative UI. They open as separate panels inside
+the main notebook frame and together form a two-window transfer interface: items
+can be uploaded from Browser → E80, and items can be deleted from either side
+independently. The Leaflet canvas is a planned third surface; the architectural
+design is described below but it does not exist yet.
 
-- Checking a collection checks all descendants
-- Unchecking a collection unchecks all descendants
-- A collection shows partial state when some but not all descendants are checked
+---
 
-**Collection labels** — derived from content counts, not from a declared type:
-`"Name (N track/tracks)"`, `"Name (N waypoint/waypoints)"`, `"Name (N route/routes)"`,
-`"Name (N folder/folders)"`, or a combined count for mixed-content collections.
+## winBrowser — Collection Tree
 
-**Visibility** — the checked state drives what appears on the Leaflet canvas.
-An unchecked collection hides all of its content regardless of depth.
+`winBrowser.pm` presents the navMate SQLite database as a lazily-loaded wx tree.
+Top-level nodes are root collections; child nodes are loaded on first expand
+(`EVT_TREE_ITEM_EXPANDING`). A right-click context menu provides all edit and
+transfer operations.
 
-**Working set membership** — tree nodes may carry a secondary indicator (distinct
-from the visibility checkbox) showing whether items belong to the current working
-set. The exact visual treatment is open.
+### Tree Node Types
 
-## Leaflet Canvas
+| `type` | Description |
+|---|---|
+| `collection` | Folder or group in the navMate hierarchy |
+| `object` | Waypoint, route, or track (determined by `obj_type`) |
+| `route_point` | An ordered waypoint within a route |
 
-The Leaflet canvas is the primary geographic surface. It renders:
+`collection` nodes carry `node_type` from the schema (`branch`, `group`, `routes`,
+`tracks`, etc.). Context menu items vary by `node_type`.
 
-- **Waypoints** — rendering depends on `wp_type`:
-  - `nav`: hollow colored circle; color from `waypoints.color` (hex); name in click-detail panel
-  - `label`: text div at coordinate; no circle; the name is the label text
-  - `sounding`: depth number at coordinate; red when depth is critical (depth_cm < ~200 cm / 6 ft)
-- **Routes** — dashed, thicker polyline connecting ordered waypoints; waypoint positions
-  shown as small markers along the line; visually distinct from tracks
-- **Tracks** — solid colored polyline; color from `tracks.color`
+### Layout
 
-What is rendered is controlled by the collection tree checkbox state. Collections
-themselves are not rendered. For performance, tracks belonging to the currently
-selected or visible collection are rendered rather than all tracks globally.
+Both winBrowser and winE80 are `Wx::SplitterWindow` with a wx tree on the left
+and a read-only monospaced text detail pane on the right. Selecting a tree node
+populates the detail pane. Multi-select (`wxTR_MULTIPLE`) is supported in both
+windows; Ctrl+click and Shift+click work normally.
 
-**Click-to-select** — clicking a waypoint, route, or track opens a persistent detail
-panel showing the object's full record. Hover tooltips (name on mouseover) are also
-present but are secondary. The detail panel does not require a hover; it persists
-until a new item is clicked or the panel is dismissed.
+### winBrowser Context Menu
 
-### Two Layers: Active and Working Set
+| Node | Copy | Delete | New | Other |
+|---|---|---|---|---|
+| `collection` (branch) | All / Groups / Routes / Waypoints / Tracks | Delete Branch | Branch / Group / Route / Waypoint | Upload to E80 |
+| `collection` (group) | Group / Waypoints | Delete Group / +WPs / +WPs+RPs | Branch / Group / Route / Waypoint | Upload to E80 |
+| `object` (waypoint) | Waypoint | Delete Waypoint / +RoutePoints | — | — |
+| `object` (route) | Route / Waypoints | Delete Route / +Waypoints | — | — |
+| `object` (track) | Track | Delete Track | — | — |
+| `route_point` | — | Remove RoutePoint | — | — |
 
-The canvas operates two conceptually distinct layers simultaneously:
+**Upload to E80** — available on any `collection` node; calls
+`nmUpload::uploadCollectionToE80` with a shared progress dialog. Uploads all
+waypoints, routes, and groups in the collection.
 
-**Active layer** — everything currently visible, determined by the tree checkboxes
-and the map viewport. The "what I am looking at" view.
+**Paste** is always shown in the menu and enabled via `nmClipboard::canPaste`.
 
-**Working set layer** — the current working set rendered as a distinct overlay,
-visually distinguished from the active layer (color, opacity, or outline treatment
-TBD). Shows what will be pushed to the connected device.
+---
 
-Both layers are visible at the same time. The working set layer does not replace
-the active layer; it annotates it.
+## winE80 — Live E80 View
 
-### Selection Operations
+`winE80.pm` is a read-only live view of the E80's WPMGR and TRACK in-memory
+state. The tree is rebuilt whenever the global NET version counter increments
+(meaning any WPMGR or TRACK item changed), with expansion and selection state
+preserved across rebuilds.
 
-The Leaflet canvas supports multiple selection modalities, all producing the same
-result: a set of selected WRT UUIDs.
+### Tree Structure
 
-- **Individual click** — selects a single waypoint, route, or track
-- **Rectangle drag** — selects all visible WRT objects within the drawn bounds
-- **Lasso** — selects all visible WRT objects within a drawn polygon
-- **Multi-select** — modifier key extends the current selection
+```
+Groups
+    My Waypoints           ← synthesized; waypoints not in any named group
+        waypoint ...
+    GroupName (N wps)
+        waypoint ...
+Routes
+    RouteName (N pts)
+        route_point ...    ← ordered waypoints in the route
+Tracks (N)
+    TrackName (N pts)
+```
 
-Selected items can then be added to the current working set, removed from it,
-moved to a different collection, or operated on via context menu or toolbar.
+**My Waypoints** is synthesized: there is no UUID for it on the E80. winE80
+constructs it from `$wpmgr->{waypoints}` entries absent from every named group's
+`uuids` list. The `my_waypoints` node has no `uuid` field.
 
-### Typical Working Set Workflow
+**Route children** — each route expands to `route_point` nodes, each carrying
+both `uuid` (the waypoint UUID) and `route_uuid` (the parent route).
 
-1. Browse the collection tree, check regions of interest → active layer populates
-2. Draw a rectangle or lasso on the canvas → items are selected
+**Detail pane** — uses `wpmgrRecordToText($item, $kind, 2, 0, undef, $wpmgr)`
+at `detail_level=0`, which shows all semantic fields and suppresses structural
+and hex fields.
+
+**Refresh cycle** — triggered from `winMain::onIdle` when `getVersion()` changes,
+gated by `$pending_commands == 0` so the tree does not rebuild while WPMGR
+commands are still in flight.
+
+### winE80 Context Menu — Delete Operations
+
+All E80 deletes show a modal progress dialog. The dialog tracks the primary
+DEL_ITEM operation plus the GET_ITEM commands that the E80 automatically generates
+(one per modified waypoint or route point) as MODIFY events after the delete.
+
+| Node | Delete options |
+|---|---|
+| `waypoint` | Delete Waypoint / Delete Waypoint + RoutePoints |
+| `route_point` | Remove RoutePoint / Delete Waypoint / Delete Waypoint + RoutePoints |
+| `route` | Delete Route / Delete Route + Waypoints |
+| `group` | Delete Group / Delete Group + Waypoints / Delete Group + Waypoints + RoutePoints† |
+| `my_waypoints` | Delete My Waypoints / Delete My Waypoints + RoutePoints† |
+| `track` | Delete Track |
+
+**†** Nuclear options (those that also remove route memberships) are shown only
+when the group's waypoints actually appear in at least one route. They are
+suppressed otherwise.
+
+**Route-first ordering** — "Delete Route + Waypoints" deletes the route before
+the waypoints. The E80 rejects deleting a waypoint that is still a member of a
+route; the route delete clears all routepoint associations first.
+
+**Tracks** — the TRACK service is read-only on the E80. Tracks are visible in
+the tree but no delete or modify operations exist for them.
+
+### winE80 Context Menu — Copy, Paste, New
+
+The same `nmClipboard` machinery as winBrowser:
+
+- **Copy** — copies the right-clicked node into the clipboard as a copy intent
+  (waypoint, track, etc.); paste to Browser is then enabled
+- **Paste** — enabled when `canPaste` returns true for the clipboard intent and
+  the target node type; currently only waypoint paste to E80 is implemented
+- **New** — New Group and New Waypoint are offered on group-area nodes; New Route
+  on the Routes header; not offered on tracks nodes (read-only)
+- **Refresh E80** — forces an immediate tree rebuild regardless of version
+
+---
+
+## Context Operations — Clipboard Layer
+
+`nmClipboard.pm` is the shared clipboard and context-menu generation layer used
+by both windows. Neither window directly inspects node types for menu decisions;
+all routing goes through nmClipboard.
+
+### Clipboard State
+
+```
+$clipboard = {
+    intent  => 'waypoint' | 'waypoints' | 'route' | 'routes' |
+               'track'    | 'tracks'    | 'group' | 'groups' | 'all',
+    source  => 'browser' | 'e80',
+    items   => [ { type => '...', uuid => '...', data => {...} }, ... ]
+}
+```
+
+### Menu Generation
+
+| Function | Purpose |
+|---|---|
+| `getCopyMenuItems($panel, @nodes)` | Copy items appropriate to the current selection |
+| `getDeleteMenuItems($panel, $node, $has_route_members)` | Delete items; nuclear option gated on `$has_route_members` |
+| `getNewMenuItems($panel, $node)` | New-object items; tracks nodes return empty |
+| `canPaste($node, $panel)` | True when clipboard intent is compatible with the drop target |
+
+`_analyzeNodes` categorizes the tree selection into type counts (`wp`, `route`,
+`track`, `group`, `branch`, `header`); menu generation uses those counts to
+decide which Copy options are available.
+
+### Operation Dispatch
+
+`onContextMenuCommand($cmd_id, $panel, $node, $tree)` in `nmClipboard.pm`
+dispatches to:
+
+- `nmOps::doCopy` — sets `$clipboard` via `nmClipboard::setCopy`
+- `nmOps::doDelete` — routes to the correct `_delete*` or `_remove*` function in
+  `nmOpsE80.pm` (E80 leg) or `nmOpsDB.pm` (browser leg)
+- `nmOps::doPaste` — routes to `_paste*` functions
+- `nmOps::doNew` — routes to `_new*` functions
+
+The clipboard status is reflected in the application status bar via
+`nmClipboard::getClipboardText`.
+
+### Implemented vs. Planned
+
+**Implemented:**
+- Copy: waypoint (single), track (single) — from either panel
+- Paste waypoint: to browser, to E80 (creates in named group or My Waypoints)
+- Paste track: to browser
+- All delete operations listed in the winBrowser and winE80 tables above
+
+**Not yet implemented (shows "not yet implemented" dialog):**
+- Copy: group, groups, route, routes, all
+- Paste: route, group, tracks to E80, and all multi-item variants
+
+### Cut Semantics
+
+Cut is Copy with deferred delete. The source item is not deleted at cut time;
+it is deleted after each item is successfully created in the destination.
+Items that are skipped or fail to paste remain in the source.
+
+---
+
+## Leaflet Canvas *(planned)*
+
+The Leaflet canvas is the planned primary geographic surface. It is not yet
+implemented; the wx tree windows are the operative UI for all geographic context.
+
+### Intended Rendering
+
+- **Waypoints** — point markers; `wp_type` determines symbol:
+  - `nav`: hollow colored circle; color from `waypoints.color`
+  - `label`: text div at coordinate; the name is the visible label
+  - `sounding`: depth number; red when `depth_cm` below critical threshold
+- **Routes** — dashed polyline connecting ordered waypoints
+- **Tracks** — solid colored polyline
+
+Collections are not rendered in Leaflet; they exist only in the browser tree.
+
+### Intended Visibility Model
+
+A wx tree panel alongside the Leaflet canvas will present collections with
+three-state checkboxes (checked / unchecked / partial). Checkbox state drives
+what appears on the canvas:
+
+- Checking a collection checks all descendants (and shows them)
+- Unchecking a collection hides all descendants regardless of depth
+- Partial state when some but not all descendants are checked
+
+### Intended Two-Layer Canvas
+
+**Active layer** — everything currently visible per checkbox state and viewport.
+
+**Working set layer** — the current working set as a distinct visual overlay on
+top of the active layer (color, opacity, or outline treatment TBD). Shows what
+is selected for push to the connected device.
+
+### Intended Selection Workflow
+
+1. Browse the collection tree; check regions of interest → active layer populates
+2. Draw a rectangle or lasso → items within bounds are selected
 3. "Add to working set" → selected items appear in the working set layer
-4. Inspect the working set layer, remove individual items that don't belong
-5. Push working set to E80 (RAYNET for waypoints/routes; FSH export for tracks)
+4. Inspect the working set layer; remove any items that don't belong
+5. Upload working set to E80 (waypoints/routes via RAYNET; tracks via FSH export)
+
+---
 
 ## Session State
 
-UI state that persists between navMate invocations is stored separately from the
-main SQLite database:
+UI state that persists between navMate invocations is stored in an ini-format
+settings file alongside the main database (not in the database itself).
 
-- Which collection tree nodes are checked (visibility state)
-- Which working set is currently active
+**Currently persisted:**
+- winE80 expanded node keys — stored as a comma-joined string of node keys
+  (UUIDs, `header:groups`, `header:routes`, `header:tracks`, `my_waypoints`, etc.)
+- winE80 sash position (tree / detail split)
+- winBrowser sash position
+
+**Planned (not yet persisted):**
+- Collection tree checkbox states (visibility)
+- Currently active working set
 - Last Leaflet viewport (center coordinates and zoom level)
-- Panel layout and window geometry
-
-This is ephemeral presentation state, not application data. It lives in a settings
-file (format TBD: ini, JSON, or small companion SQLite) alongside the main
-database.
+- Full window geometry and panel layout
 
 ---
 
