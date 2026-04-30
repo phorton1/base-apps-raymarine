@@ -43,6 +43,7 @@ my $dbg_mods = 0;
 my $WITH_MOD_PROCESSING = 1;
 
 our $query_in_progress :shared = 0;
+our $batch_in_progress :shared = 0;
 
 my $WPMGR_SERVICE_ID = 15;
 	# 15 = 0xf0 == 'F000' in streams
@@ -104,7 +105,7 @@ sub apiCommandName
 
 sub queueWPMGRCommand
 {
-	my ($this,$api_command,$what,$name,$uuid,$data,$progress) = @_;
+	my ($this,$api_command,$what,$name,$uuid,$data,$progress,$front) = @_;
 	$data ||= 0;
 	display_hash($dbg+2,0,"queueWPCommand($this)",$this);
 	
@@ -140,7 +141,16 @@ sub queueWPMGRCommand
 		uuid => $uuid,
 		data => $data });
 	$command->{progress} = $progress if $progress;
-	push @{$this->{command_queue}},$command;
+	if ($front)
+	{
+		my @q = @{$this->{command_queue}};
+		unshift @q, $command;
+		$this->{command_queue} = shared_clone(\@q);
+	}
+	else
+	{
+		push @{$this->{command_queue}}, $command;
+	}
 
 	return 1;
 }
@@ -376,12 +386,7 @@ sub create_item
 		createMsg($seq,$DIRECTION_INFO,$CMD_LIST,		0,		'00000000 00000000'); # $uuid);
 
 	return 0 if !$this->sendRequest($seq,"$name $what_name",$request);
-	my $ok = $this->waitReply(1);
-	if ($ok && $what != $WHAT_WAYPOINT)
-	{
-		$this->get_item({what=>$what, name=>$name, uuid=>$uuid});
-	}
-	return $ok;
+	return $this->waitReply(1);
 }
 
 
@@ -420,8 +425,6 @@ sub modify_item
 		createMsg($seq,$DIRECTION_INFO,$CMD_LIST,		0,		$uuid);
 	return 0 if !$this->sendRequest($seq,"modify $what_name",$request);
 	return 0 if !$this->waitReply(1);
-		# Reply contains MOD events; handleEvent() processes them and queues
-		# GET_ITEM for each changed item ($WITH_MOD_PROCESSING=1).
 	return 1;
 }
 
@@ -470,8 +473,6 @@ sub get_item
 	display($dbg,0,"get_item($what=$what_name) $uuid $name");
 
 	my $seq = $this->{next_seqnum}++;
-
-
 	my $request = createMsg($seq,$DIRECTION_SEND,$CMD_ITEM,$what,$uuid);
 	return $this->update_item_request($seq,$what,'get',$uuid,$request);
 }
@@ -481,8 +482,8 @@ sub get_item
 sub do_batch
 	# Process an ordered list of WPMGR ops synchronously, one at a time,
 	# with full E80 handshaking between each.  Caller owns ordering:
-	# del routes before del groups, del groups before del waypoints.
-	# del_wp ops skip _removeFromGroup — caller guarantees group is gone.
+	# del waypoints before del groups, del groups before del routes.
+	# del_wp does not auto-remove from group; use mod_group(remove) before del_wp if group survives.
 {
 	my ($this,$command) = @_;
 	my $ops  = $command->{ops};
@@ -490,6 +491,7 @@ sub do_batch
 	my $mon  = $MONITOR_API_BUILDS;
 	my $col  = $UTILS_COLOR_CYAN;
 
+	$batch_in_progress = 1;
 	for my $op (@$ops)
 	{
 		last if $progress && $progress->{cancelled};
@@ -669,7 +671,66 @@ sub do_batch
 			error("do_batch: $type($name) failed");
 		}
 	}
+	sleep(0.030);
+	$this->drainPendingGetItems($progress);
+	$batch_in_progress = 0;
 	return 1;
+}
+
+
+sub waitEventBoundary
+	# After waitReply returns, consume replies until EVENT(0001) (evt_close=1).
+	# All MODIFYs arrive before EVENT(0001) per E80 protocol, so handleEvent
+	# has already queued all GET_ITEMs for this op by the time we return.
+{
+	my ($this) = @_;
+	my $start = time();
+	while ($this->{connected} && $this->{running} &&
+	       !$this->{shutdown} && !$this->{destroyed})
+	{
+		my $replies = $this->{replies};
+		if (@$replies)
+		{
+			my $reply = shift @$replies;
+			if ($reply)
+			{
+				return 1 if $reply->{evt_close};
+				warning(0,0,"waitEventBoundary: unexpected seq($reply->{seq_num})")
+					if $reply->{seq_num};
+			}
+		}
+		return error("waitEventBoundary timed out") if time() > $start + 10;
+		sleep(0.01);
+	}
+	return error("waitEventBoundary died");
+}
+
+
+sub drainPendingGetItems
+{
+	my ($this, $progress) = @_;
+	my $n = 0;
+	while (1)
+	{
+		my @copy  = @{$this->{command_queue}};
+		my $chunk = 0;
+		$chunk++ while $chunk < @copy && $copy[$chunk]{api_command} == $API_GET_ITEM;
+		last if !$chunk;
+
+		if ($progress)
+		{
+			$progress->{total} += $chunk;
+			$progress->{label}  = 'syncing...';
+		}
+		for (1..$chunk)
+		{
+			my $cmd = shift @{$this->{command_queue}};
+			$this->get_item($cmd);
+			$progress->{done}++ if $progress;
+			$n++;
+		}
+	}
+	display(0,0,"drainPendingGetItems: $n items") if $n;
 }
 
 
@@ -768,7 +829,7 @@ sub handleEvent
 
 		# delete it, or ..
 
-		if ($mod->{bits} == 1)
+		if ($mod->{bits} & 1)
 		{
 			my $hash = $this->{$hash_name};
 			my $exists = $hash->{$mod->{uuid}};
@@ -782,7 +843,7 @@ sub handleEvent
 		else
 		{
 			warning($dbg_mods,0,"enquing mod($mod->{what}) uuid($mod->{uuid})");
-			$this->queueWPMGRCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef);
+			$this->queueWPMGRCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef,undef,1);
 		}
 
 	}	# for each mod

@@ -309,6 +309,18 @@ sub handleCommand
 		return unless $track;
 		$track->trackUICommand($rpart);
 	}
+	elsif ($lpart eq 't_uuid')
+	{
+		my $track = $raydp->findImplementedService('TRACK');
+		return unless $track;
+		my ($uuid, @rest) = split(/\s+/, $rpart);
+		my $op = join(' ', @rest);
+		return error("t_uuid: usage: t_uuid <uuid> <erase|mta|rename <new_name>>")
+			unless $uuid && $op;
+		$track->queueTRACKCommand(
+			$apps::raymarine::NET::d_TRACK::API_GENERAL_CMD,
+			$uuid, $op);
+	}
 
 	# WPMGR
 
@@ -483,7 +495,7 @@ sub handleCommand
 
 	elsif ($lpart eq 'mark')
 	{
-		display(0,0,"=== MARK" . ($rpart ? ": $rpart" : '') . " ===");
+		display(0,0,"------------------------------ MARK" . ($rpart ? ": $rpart" : '') . " ------------------------------");
 		$mark_seq = getOutputRingSeq();
 	}
 
@@ -519,7 +531,8 @@ sub commandHelp
 		[ 'wakeup',                                   'wake up E80'                           ],
 		[ 'db',                                       'show E80 in-memory database'           ],
 		[ 'kml',                                      'dump RAYSYS KML to console'            ],
-		[ 't <args>',                                 'TRACK trackUICommand'                  ],
+		[ 't <args>',                                 'TRACK general command by name'         ],
+		[ 't_uuid <uuid> <erase|mta|rename <name>>', 'TRACK general command by UUID'          ],
 		[ 'q',                                        'WPMGR query waypoints'                 ],
 		[ 'new <wp|group|route> <name> <uuid> [...]', 'create object on E80'                  ],
 		[ 'delete <wp|route|group> <name>',           'delete object from E80 by name'        ],
