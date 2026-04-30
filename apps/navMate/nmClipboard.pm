@@ -335,7 +335,15 @@ sub getDeleteMenuItems
 			{ id => $CMD_DELETE_GROUP,         label => 'Delete Group'                           },
 			{ id => $CMD_DELETE_GROUP_WPS,     label => 'Delete Group + Waypoints'               },
 			{ id => $CMD_DELETE_GROUP_NUCLEAR, label => 'Delete Group + Waypoints + RoutePoints' },
-		) if $t eq 'group' || $t eq 'my_waypoints';
+		) if $t eq 'group';
+
+		return (
+			{ id => $CMD_DELETE_GROUP_WPS,     label => 'Delete My Waypoints'               },
+			{ id => $CMD_DELETE_GROUP_NUCLEAR, label => 'Delete My Waypoints + RoutePoints' },
+		) if $t eq 'my_waypoints';
+
+		return ({ id => $CMD_DELETE_TRACK, label => 'Delete Track' })
+			if $t eq 'track';
 	}
 
 	return ();

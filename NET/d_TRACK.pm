@@ -118,15 +118,17 @@ sub destroy
 # API
 #---------------------------------------
 
-our $API_NONE 			= 0;
-our $API_GET_TRACKS		= 1;
-our $API_GET_TRACK		= 2;
-our $API_GENERAL_CMD	= 3;
+our $API_NONE 				= 0;
+our $API_GET_TRACKS			= 1;
+our $API_GET_TRACK			= 2;
+our $API_GENERAL_CMD_NAME	= 3;
+our $API_GENERAL_CMD		= 4;
 
 my %API_COMMAND_NAME = (
-	$API_GET_TRACKS	 => 'GET_TRACKS',
-	$API_GET_TRACK	 => 'GET_TRACK',
-	$API_GENERAL_CMD  => 'GENERAL_COMMAND' );
+	$API_GET_TRACKS		   => 'GET_TRACKS',
+	$API_GET_TRACK		   => 'GET_TRACK',
+	$API_GENERAL_CMD_NAME  => 'GENERAL_COMMAND_NAME',
+	$API_GENERAL_CMD       => 'GENERAL_COMMAND' );
 
 
 
@@ -151,7 +153,7 @@ sub trackUICommand
 	my ($this,$rpart) = @_;
 	$this->showCommand("trackUICommand($rpart)");
 	return $rpart ?
-		queueTRACKCommand($this,$API_GENERAL_CMD,0,$rpart) :
+		queueTRACKCommand($this,$API_GENERAL_CMD_NAME,0,$rpart) :
 		queueTRACKCommand($this,$API_GET_TRACKS,0);
 }
 
@@ -637,11 +639,11 @@ sub get_track
 
 
 
-sub do_general
+sub do_general_name
 {
 	my ($this,$command) = @_;
 	my $rpart = $command->{extra} || '';
-	display($dbg,0,"do_general($rpart)");
+	display($dbg,0,"do_general_name($rpart)");
 
 	my $cmd = -1;
 	my $seq = $this->{next_seqnum}++;
@@ -754,7 +756,7 @@ sub do_general
 
 	else
 	{
-		return error("do_general: unrecognized command '$rpart'");
+		return error("do_general_name: unrecognized command '$rpart'");
 	}
 
 	# Send the request
@@ -781,9 +783,49 @@ sub do_general
 
 	return 1;
 
+}	# do_general_name()
+
+
+sub do_general
+	# UUID-based general commands.  $command->{uuid} is the target track.
+	# $command->{extra} is the operation: 'erase', 'mta', 'rename <new_name>'.
+{
+	my ($this,$command) = @_;
+	my $uuid  = $command->{uuid} || '';
+	my $rpart = $command->{extra} || '';
+	display($dbg,0,"do_general(uuid=$uuid rpart=$rpart)");
+
+	return error("do_general: no uuid") unless $uuid;
+
+	my $seq   = $this->{next_seqnum}++;
+	my $cmd;
+	my $param         = 0;
+	my $expect_reply  = 0;
+
+	if ($rpart eq 'erase')
+	{
+		$cmd = $TRACK_CMD_ERASE;
+	}
+	elsif ($rpart eq 'mta')
+	{
+		$cmd = $TRACK_CMD_GET_MTA;
+		$expect_reply = 1;
+	}
+	elsif ($rpart =~ /^rename\s+(.+)$/)
+	{
+		$cmd   = $TRACK_CMD_RENAME;
+		$param = pack('H*',name16_hex($1));
+	}
+	else
+	{
+		return error("do_general: unrecognized command '$rpart'");
+	}
+
+	my $request = createMsg($seq,$cmd,$uuid,$param);
+	return 0 if !$this->sendRequest($seq,"do_general/$rpart",$request);
+	return $expect_reply ? $this->waitReply(1) : 1;
+
 }	# do_general()
-
-
 
 
 sub handleCommand
@@ -794,9 +836,10 @@ sub handleCommand
 	display($dbg,0,"$this->{name} handleCommand($api_command=$cmd_name) started");
 
 	my $rslt;
-	$rslt = $this->get_tracks($command) if $api_command == $API_GET_TRACKS;
-	$rslt = $this->get_track($command) 	if $api_command == $API_GET_TRACK;
-	$rslt = $this->do_general($command) if $api_command == $API_GENERAL_CMD;
+	$rslt = $this->get_tracks($command)    if $api_command == $API_GET_TRACKS;
+	$rslt = $this->get_track($command)     if $api_command == $API_GET_TRACK;
+	$rslt = $this->do_general_name($command) if $api_command == $API_GENERAL_CMD_NAME;
+	$rslt = $this->do_general($command)    if $api_command == $API_GENERAL_CMD;
 
 	error("API $cmd_name failed") if !$rslt;
 	display($dbg,0,"$this->{name} handleCommand($api_command=$cmd_name) finished");
@@ -852,7 +895,7 @@ sub handleEvent
 		if ($mask != 1)
 		{
 			warning($dbg_events,1,"enquing GET_CUR2");
-			$this->queueTRACKCommand($API_GENERAL_CMD,0,'cur2');
+			$this->queueTRACKCommand($API_GENERAL_CMD_NAME,0,'cur2');
 		}
 	}
 

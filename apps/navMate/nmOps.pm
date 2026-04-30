@@ -368,7 +368,9 @@ sub doDelete
 	}
 	elsif ($cmd_id == $nmClipboard::CMD_DELETE_TRACK)
 	{
-		_deleteBrowserTrack($node, $tree);
+		$panel eq 'browser'
+			? _deleteBrowserTrack($node, $tree)
+			: _deleteE80Track($node, $tree);
 	}
 	elsif ($cmd_id == $nmClipboard::CMD_DELETE_BRANCH)
 	{
@@ -593,6 +595,32 @@ sub _deleteBrowserTrack
 }
 
 
+sub _deleteE80Track
+{
+	my ($node, $tree) = @_;
+
+	my $track = _track();
+	unless ($track)
+	{
+		Wx::MessageBox("E80 not connected.", "Delete Track", wxOK | wxICON_WARNING, $tree);
+		return;
+	}
+
+	my $uuid = $node->{uuid};
+	my $name = $node->{data}{name} // $uuid;
+	my $pts  = $node->{data}{cnt1} // 0;
+	my $pts_str = $pts ? " ($pts points)" : '';
+
+	my $rc = Wx::MessageBox("Delete track '$name'$pts_str from E80?", "Confirm Delete",
+		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
+	return unless $rc == wxYES;
+
+	$track->queueTRACKCommand(
+		$apps::raymarine::NET::d_TRACK::API_GENERAL_CMD,
+		$uuid, 'erase');
+}
+
+
 sub _deleteE80Group
 {
 	my ($node, $tree) = @_;
@@ -702,6 +730,40 @@ sub _appendE80WPDeleteOps
 	my $g = _e80WPGroup($wpmgr, $wp_uuid);
 	push @$ops, {type => 'mod_group', uuid => $g, wp_uuid => $wp_uuid, remove => 1} if $g;
 	push @$ops, {type => 'del_wp', uuid => $wp_uuid};
+}
+
+
+sub _treeFindItem
+{
+	my ($tree, $item, $target) = @_;
+	return undef unless $item && $item->IsOk();
+	my $d = $tree->GetItemData($item);
+	return $item if $d && $d->GetData() == $target;
+	my ($child, $cookie) = $tree->GetFirstChild($item);
+	while ($child && $child->IsOk())
+	{
+		my $found = _treeFindItem($tree, $child, $target);
+		return $found if $found;
+		($child, $cookie) = $tree->GetNextChild($item, $cookie);
+	}
+	return undef;
+}
+
+
+sub _treeChildNodes
+{
+	my ($tree, $node) = @_;
+	my $item = _treeFindItem($tree, $tree->GetRootItem(), $node);
+	return [] unless $item && $item->IsOk();
+	my @children;
+	my ($child, $cookie) = $tree->GetFirstChild($item);
+	while ($child && $child->IsOk())
+	{
+		my $d = $tree->GetItemData($child);
+		push @children, $d->GetData() if $d;
+		($child, $cookie) = $tree->GetNextChild($item, $cookie);
+	}
+	return \@children;
 }
 
 
@@ -868,8 +930,9 @@ sub _deleteE80RouteAndWPs
 		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
 	return unless $rc == wxYES;
 	display($dbg_e80_ops,0,"nmOps::_deleteE80RouteAndWPs '$name' n=$n cross_refs=$cross_refs");
-	my @ops = ({type => 'del_route', uuid => $uuid});
+	my @ops;
 	_appendE80WPDeleteOps(\@ops, $wpmgr, $_, $uuid) for @$all_wps;
+	push @ops, {type => 'del_route', uuid => $uuid};
 	display($dbg_e80_ops+1,0,"nmOps::_deleteE80RouteAndWPs total ops=".scalar(@ops));
 	_e80BatchSubmit($wpmgr, \@ops, "Delete Route + Waypoints");
 }
@@ -921,8 +984,35 @@ sub _deleteE80GroupAndWPs
 	my ($node, $tree) = @_;
 	if (($node->{type} // '') eq 'my_waypoints')
 	{
-		Wx::MessageBox("'My Waypoints' is synthesized and cannot be deleted.",
-			"Delete Group + Waypoints", wxOK | wxICON_INFORMATION, $tree);
+		my $wpmgr = _wpmgr();
+		unless ($wpmgr)
+		{
+			Wx::MessageBox("WPMGR not connected.", "Delete My Waypoints",
+				wxOK | wxICON_ERROR, $tree);
+			return;
+		}
+		my @members = map { $_->{uuid} } @{_treeChildNodes($tree, $node)};
+		unless (@members)
+		{
+			Wx::MessageBox("My Waypoints is empty.", "Delete My Waypoints",
+				wxOK | wxICON_INFORMATION, $tree);
+			return;
+		}
+		if (grep { _e80WPRoutes($wpmgr, $_) } @members)
+		{
+			Wx::MessageBox(
+				"My Waypoints has waypoints in routes — use 'Delete My Waypoints + RoutePoints'.",
+				"Delete My Waypoints", wxOK | wxICON_WARNING, $tree);
+			return;
+		}
+		my $n  = scalar @members;
+		my $rc = Wx::MessageBox(
+			"Delete all $n ungrouped waypoint(s) from E80? Cannot be undone.",
+			"Delete My Waypoints", wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
+		return unless $rc == wxYES;
+		my @ops;
+		push @ops, {type => 'del_wp', uuid => $_} for @members;
+		_e80BatchSubmit($wpmgr, \@ops, "Delete My Waypoints");
 		return;
 	}
 	my $wpmgr = _wpmgr();
@@ -955,8 +1045,9 @@ sub _deleteE80GroupAndWPs
 		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
 	return unless $rc == wxYES;
 	display($dbg_e80_ops,0,"nmOps::_deleteE80GroupAndWPs '$name' n=$n");
-	my @ops = ({type => 'del_group', uuid => $uuid});
+	my @ops;
 	push @ops, {type => 'del_wp', uuid => $_} for @$members;
+	push @ops, {type => 'del_group', uuid => $uuid};
 	_e80BatchSubmit($wpmgr, \@ops, "Delete Group + Waypoints");
 }
 
@@ -1007,8 +1098,29 @@ sub _deleteE80GroupNuclear
 	my ($node, $tree) = @_;
 	if (($node->{type} // '') eq 'my_waypoints')
 	{
-		Wx::MessageBox("'My Waypoints' is synthesized and cannot be deleted.",
-			"Delete Group + Waypoints + RoutePoints", wxOK | wxICON_INFORMATION, $tree);
+		my $wpmgr = _wpmgr();
+		unless ($wpmgr)
+		{
+			Wx::MessageBox("WPMGR not connected.", "Delete My Waypoints + RoutePoints",
+				wxOK | wxICON_ERROR, $tree);
+			return;
+		}
+		my @members = map { $_->{uuid} } @{_treeChildNodes($tree, $node)};
+		unless (@members)
+		{
+			Wx::MessageBox("My Waypoints is empty.", "Delete My Waypoints + RoutePoints",
+				wxOK | wxICON_INFORMATION, $tree);
+			return;
+		}
+		my $n  = scalar @members;
+		my $rc = Wx::MessageBox(
+			"Delete all $n ungrouped waypoint(s) from E80, removing from any routes? Cannot be undone.",
+			"Delete My Waypoints + RoutePoints",
+			wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
+		return unless $rc == wxYES;
+		my @ops;
+		_appendE80WPDeleteOps(\@ops, $wpmgr, $_) for @members;
+		_e80BatchSubmit($wpmgr, \@ops, "Delete My Waypoints + RoutePoints");
 		return;
 	}
 	my $wpmgr = _wpmgr();
@@ -1029,13 +1141,14 @@ sub _deleteE80GroupNuclear
 		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
 	return unless $rc == wxYES;
 	display($dbg_e80_ops,0,"nmOps::_deleteE80GroupNuclear '$name' n=$n");
-	my @ops = ({type => 'del_group', uuid => $uuid});
+	my @ops;
 	for my $wp_uuid (@$members)
 	{
 		push @ops, {type => 'mod_route', uuid => $_, wp_uuid => $wp_uuid}
 			for _e80WPRoutes($wpmgr, $wp_uuid);
 		push @ops, {type => 'del_wp', uuid => $wp_uuid};
 	}
+	push @ops, {type => 'del_group', uuid => $uuid};
 	display($dbg_e80_ops+1,0,"nmOps::_deleteE80GroupNuclear total ops=".scalar(@ops));
 	_e80BatchSubmit($wpmgr, \@ops, "Delete Group + Waypoints + RoutePoints");
 }
