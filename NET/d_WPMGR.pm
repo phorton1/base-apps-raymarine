@@ -43,7 +43,8 @@ my $dbg_mods = 0;
 my $WITH_MOD_PROCESSING = 1;
 
 our $query_in_progress :shared = 0;
-our $batch_in_progress :shared = 0;
+our $pending_commands  :shared = 0;
+my $del_prog = shared_clone({progress => undef});
 
 my $WPMGR_SERVICE_ID = 15;
 	# 15 = 0xf0 == 'F000' in streams
@@ -90,6 +91,9 @@ sub destroy
 # API
 #--------------------------------------
 
+sub getPendingCommands { return $pending_commands; }
+
+
 sub apiCommandName
 {
 	my ($cmd) = @_;
@@ -98,7 +102,6 @@ sub apiCommandName
 	return 'NEW_ITEM'	if $cmd == $API_NEW_ITEM;
 	return 'DEL_ITEM'	if $cmd == $API_DEL_ITEM;
 	return 'MOD_ITEM'		if $cmd == $API_MOD_ITEM;
-	return 'DO_BATCH'	if $cmd == $API_DO_BATCH;
 	return "UNKNOWN API COMMAND";
 }
 
@@ -141,6 +144,11 @@ sub queueWPMGRCommand
 		uuid => $uuid,
 		data => $data });
 	$command->{progress} = $progress if $progress;
+	$del_prog->{progress} = $progress
+		if $progress && $progress->{_track_get_items} &&
+		   $api_command == $API_DEL_ITEM &&
+		   ($what == $WHAT_ROUTE || $what == $WHAT_GROUP);
+	$pending_commands++;
 	if ($front)
 	{
 		my @q = @{$this->{command_queue}};
@@ -479,259 +487,10 @@ sub get_item
 
 
 
-sub do_batch
-	# Process an ordered list of WPMGR ops synchronously, one at a time,
-	# with full E80 handshaking between each.  Caller owns ordering:
-	# del waypoints before del groups, del groups before del routes.
-	# del_wp does not auto-remove from group; use mod_group(remove) before del_wp if group survives.
-{
-	my ($this,$command) = @_;
-	my $ops  = $command->{ops};
-	my $progress = $command->{progress};
-	my $mon  = $MONITOR_API_BUILDS;
-	my $col  = $UTILS_COLOR_CYAN;
-
-	$batch_in_progress = 1;
-	for my $op (@$ops)
-	{
-		last if $progress && $progress->{cancelled};
-
-		my $type = $op->{type};
-		my $uuid = $op->{uuid};
-		my ($rslt,$name,$what_label);
-
-		if ($type eq 'del_route')
-		{
-			my $item = $this->{routes}{$uuid};
-			if (!$item) { warning(0,0,"do_batch: route($uuid) not in memory"); next; }
-			$name       = $item->{name};
-			$what_label = 'Route';
-			$rslt = $this->delete_item({what=>$WHAT_ROUTE, uuid=>$uuid, name=>$name});
-		}
-		elsif ($type eq 'del_group')
-		{
-			my $item = $this->{groups}{$uuid};
-			if (!$item) { warning(0,0,"do_batch: group($uuid) not in memory"); next; }
-			$name       = $item->{name};
-			$what_label = 'Group';
-			$rslt = $this->delete_item({what=>$WHAT_GROUP, uuid=>$uuid, name=>$name});
-		}
-		elsif ($type eq 'del_wp')
-		{
-			my $item = $this->{waypoints}{$uuid};
-			if (!$item) { warning(0,0,"do_batch: wp($uuid) not in memory"); next; }
-			$name       = $item->{name};
-			$what_label = 'WP';
-			$rslt = $this->delete_item({what=>$WHAT_WAYPOINT, uuid=>$uuid, name=>$name});
-		}
-		elsif ($type eq 'new_wp')
-		{
-			$name       = $op->{name};
-			$what_label = 'WP';
-			my $lat = $op->{lat};
-			my $lon = $op->{lon};
-			my $ts  = $op->{ts} // 0;
-			my $alt = latLonToNorthEast($lat,$lon);
-			my $buffer = buildWaypoint(0,{
-				name    => $name,
-				comment => $op->{comment} // '',
-				lat     => int($lat * $SCALE_LATLON),
-				lon     => int($lon * $SCALE_LATLON),
-				north   => $alt->{north},
-				east    => $alt->{east},
-				sym     => $op->{sym}   // 25,
-				depth   => $op->{depth} // 0,
-				date    => int($ts / $SECS_PER_DAY),
-				time    => int($ts % $SECS_PER_DAY),
-			},$mon,$col);
-			$rslt = $this->create_item({
-				what => $WHAT_WAYPOINT,
-				uuid => $uuid,
-				name => $name,
-				data => unpack('H*',$buffer),
-			});
-		}
-		elsif ($type eq 'new_group')
-		{
-			$name       = $op->{name};
-			$what_label = 'Group';
-			my $buffer = buildGroup(0,{
-				name    => $name,
-				comment => $op->{comment} // '',
-				uuids   => shared_clone($op->{members} // []),
-			},$mon,$col);
-			$rslt = $this->create_item({
-				what => $WHAT_GROUP,
-				uuid => $uuid,
-				name => $name,
-				data => unpack('H*',$buffer),
-			});
-		}
-		elsif ($type eq 'new_route')
-		{
-			$name       = $op->{name};
-			$what_label = 'Route';
-			my $wps = $op->{waypoints} // [];
-			my @pts = map { shared_clone({}) } @$wps;
-			my $buffer = buildRoute(0,{
-				name    => $name,
-				comment => $op->{comment} // '',
-				bits    => 0,
-				color   => $op->{color} // 0,
-				uuids   => shared_clone($wps),
-				points  => shared_clone(\@pts),
-			},$mon,$col);
-			$rslt = $this->create_item({
-				what => $WHAT_ROUTE,
-				uuid => $uuid,
-				name => $name,
-				data => unpack('H*',$buffer),
-			});
-		}
-		elsif ($type eq 'mod_group')
-		{
-			my $group = $this->{groups}{$uuid};
-			if (!$group) { warning(0,0,"do_batch: group($uuid) not in memory"); next; }
-			$name       = $group->{name};
-			$what_label = 'Group';
-			my $wp_uuid = $op->{wp_uuid};
-			if ($op->{remove})
-			{
-				my @new = grep { $_ ne $wp_uuid } @{$group->{uuids}};
-				$group->{uuids} = shared_clone(\@new);
-			}
-			else
-			{
-				share($wp_uuid);
-				push @{$group->{uuids}}, $wp_uuid;
-			}
-			my $buffer = buildGroup(0,$group,$MONITOR_API_BUILDS,$UTILS_COLOR_CYAN);
-			$rslt = $this->modify_item({
-				what => $WHAT_GROUP,
-				uuid => $uuid,
-				name => $name,
-				data => unpack('H*',$buffer),
-			});
-		}
-		elsif ($type eq 'mod_route')
-		{
-			# remove wp_uuid from route's uuid+points lists (first occurrence)
-			my $route = $this->{routes}{$uuid};
-			if (!$route) { warning(0,0,"do_batch: route($uuid) not in memory"); next; }
-			$name       = $route->{name};
-			$what_label = 'Route';
-			my $wp_uuid = $op->{wp_uuid};
-			my $uuids   = $route->{uuids}  // [];
-			my $points  = $route->{points} // [];
-			my $idx     = undef;
-			for my $i (0 .. $#$uuids)
-			{
-				if ($uuids->[$i] eq $wp_uuid) { $idx = $i; last; }
-			}
-			if (!defined $idx)
-			{
-				warning(0,0,"do_batch mod_route: wp($wp_uuid) not in route($uuid)");
-				next;
-			}
-			my @new_uuids  = @$uuids;
-			my @new_points = @$points;
-			splice @new_uuids,  $idx, 1;
-			splice @new_points, $idx, 1;
-			@$uuids  = @new_uuids;
-			@$points = @new_points;
-			my $buffer = buildRoute(0,$route,$MONITOR_API_BUILDS,$UTILS_COLOR_CYAN);
-			$rslt = $this->modify_item({
-				what => $WHAT_ROUTE,
-				uuid => $uuid,
-				name => $name,
-				data => unpack('H*',$buffer),
-			});
-		}
-		else
-		{
-			warning(0,0,"do_batch: unknown op type '$type'");
-			next;
-		}
-
-		if ($progress)
-		{
-			if ($rslt)
-			{
-				$progress->{label} = "$what_label: $name" if defined $name;
-				$progress->{done}++;
-			}
-			else
-			{
-				$progress->{error}     = "batch $type failed: $name";
-				$progress->{cancelled} = 1;
-			}
-		}
-		elsif (!$rslt)
-		{
-			error("do_batch: $type($name) failed");
-		}
-	}
-	sleep(0.030);
-	$this->drainPendingGetItems($progress);
-	$batch_in_progress = 0;
-	return 1;
-}
 
 
-sub waitEventBoundary
-	# After waitReply returns, consume replies until EVENT(0001) (evt_close=1).
-	# All MODIFYs arrive before EVENT(0001) per E80 protocol, so handleEvent
-	# has already queued all GET_ITEMs for this op by the time we return.
-{
-	my ($this) = @_;
-	my $start = time();
-	while ($this->{connected} && $this->{running} &&
-	       !$this->{shutdown} && !$this->{destroyed})
-	{
-		my $replies = $this->{replies};
-		if (@$replies)
-		{
-			my $reply = shift @$replies;
-			if ($reply)
-			{
-				return 1 if $reply->{evt_close};
-				warning(0,0,"waitEventBoundary: unexpected seq($reply->{seq_num})")
-					if $reply->{seq_num};
-			}
-		}
-		return error("waitEventBoundary timed out") if time() > $start + 10;
-		sleep(0.01);
-	}
-	return error("waitEventBoundary died");
-}
 
 
-sub drainPendingGetItems
-{
-	my ($this, $progress) = @_;
-	my $n = 0;
-	while (1)
-	{
-		my @copy  = @{$this->{command_queue}};
-		my $chunk = 0;
-		$chunk++ while $chunk < @copy && $copy[$chunk]{api_command} == $API_GET_ITEM;
-		last if !$chunk;
-
-		if ($progress)
-		{
-			$progress->{total} += $chunk;
-			$progress->{label}  = 'syncing...';
-		}
-		for (1..$chunk)
-		{
-			my $cmd = shift @{$this->{command_queue}};
-			$this->get_item($cmd);
-			$progress->{done}++ if $progress;
-			$n++;
-		}
-	}
-	display(0,0,"drainPendingGetItems: $n items") if $n;
-}
 
 
 sub handleCommand
@@ -752,6 +511,7 @@ sub handleCommand
 		 $api_command == $API_MOD_ITEM))
 	{
 		$this->{command_rslt} = 1;
+		$pending_commands--;
 		display($dbg,0,"$this->{name} handleCommand($api_command=$cmd_name) SKIPPED (cancelled)");
 		return;
 	}
@@ -763,13 +523,18 @@ sub handleCommand
 	$rslt = $this->create_item($command) 	if $api_command == $API_NEW_ITEM;
 	$rslt = $this->delete_item($command) 	if $api_command == $API_DEL_ITEM;
 	$rslt = $this->modify_item($command) 	if $api_command == $API_MOD_ITEM;
-	$rslt = $this->do_batch($command) 		if $api_command == $API_DO_BATCH;
 
-	if ($progress && ($api_command == $API_NEW_ITEM || $api_command == $API_DEL_ITEM))
+	if ($progress && ($api_command == $API_NEW_ITEM ||
+	                  $api_command == $API_DEL_ITEM ||
+	                  $api_command == $API_MOD_ITEM ||
+	                  $api_command == $API_GET_ITEM))
 	{
 		if ($rslt)
 		{
-			$progress->{label} = "$what_label: $command->{name}" if defined $command->{name};
+			if ($api_command != $API_GET_ITEM)
+			{
+				$progress->{label} = "$what_label: $command->{name}" if defined $command->{name};
+			}
 			$progress->{done}++;
 		}
 		else
@@ -778,9 +543,12 @@ sub handleCommand
 			$progress->{cancelled} = 1;
 		}
 	}
+
+
 	error("API $cmd_name failed") if !$rslt;
 
 	$this->{command_rslt} = $rslt;
+	$pending_commands--;
 		
 	display($dbg,0,"$this->{name} handleCommand($api_command=$cmd_name) finished");
 }
@@ -843,7 +611,7 @@ sub handleEvent
 		else
 		{
 			warning($dbg_mods,0,"enquing mod($mod->{what}) uuid($mod->{uuid})");
-			$this->queueWPMGRCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef,undef,1);
+			$this->queueWPMGRCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef,$del_prog->{progress},1);
 		}
 
 	}	# for each mod

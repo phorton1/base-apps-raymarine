@@ -380,22 +380,14 @@ sub handleCommand
 		}
 		elsif ($lpart eq 'clear_e80')
 		{
-			my @ops;
-			for my $uuid (keys %{$wpmgr->{routes} // {}})
-			{
-				push @ops, { type => 'del_route', uuid => $uuid };
-			}
-			for my $uuid (keys %{$wpmgr->{groups} // {}})
-			{
-				push @ops, { type => 'del_group', uuid => $uuid };
-			}
-			for my $uuid (keys %{$wpmgr->{waypoints} // {}})
-			{
-				push @ops, { type => 'del_wp', uuid => $uuid };
-			}
-			my $total = scalar @ops;
+			my $nr = scalar keys %{$wpmgr->{routes}    // {}};
+			my $ng = scalar keys %{$wpmgr->{groups}    // {}};
+			my $nw = scalar keys %{$wpmgr->{waypoints} // {}};
+			my $total = $nr + $ng + $nw;
 			c_print("clear_e80: submitting $total delete ops\n");
-			$wpmgr->submitBatch(\@ops) if $total;
+			$wpmgr->deleteRoute($_,    undef)    for keys %{$wpmgr->{routes}    // {}};
+			$wpmgr->deleteGroup($_,    undef)    for keys %{$wpmgr->{groups}    // {}};
+			$wpmgr->deleteWaypoint($_, undef, 1) for keys %{$wpmgr->{waypoints} // {}};
 		}
 		elsif ($lpart eq 'find')
 		{

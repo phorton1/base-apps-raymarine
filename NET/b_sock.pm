@@ -815,9 +815,13 @@ sub sockThread
 											  ($reply->{uuid}?" uuid($reply->{uuid})":'').
 											  ($reply->{item}?" name($reply->{item}->{name})":''));
 									}
+									$reply = $this->handleEvent($reply);
+									push @{$this->{replies}}, $reply if $reply;
 								}
-								$reply = $this->handleEvent($reply);
-								push @{$this->{replies}}, $reply if $reply;
+								else
+								{
+									$this->handleEvent($reply);
+								}
 							}
 						}
 					}
@@ -848,9 +852,13 @@ sub sockThread
 											  ($reply->{uuid}?"    out of band uuid($reply->{uuid})":'').
 											  ($reply->{item}?" name($reply->{item}->{name})":'') );
 									}
+									$reply = $this->handleEvent($reply);
+									push @{$this->{replies}},$reply if $reply;
 								}
-								$reply = $this->handleEvent($reply);
-								push @{$this->{replies}},$reply if $reply;
+								else
+								{
+									$this->handleEvent($reply);
+								}
 							}
 						}
 					}

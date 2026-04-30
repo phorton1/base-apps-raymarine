@@ -41,6 +41,7 @@ sub resetTransaction
 		is_dict    => 0,
 		is_event   => 0,
 		evt_mask   => 0,
+		evt_close  => 0,
 		uuid       => '',
 		success    => 0,
 		item       => undef,
@@ -250,6 +251,7 @@ sub parsePiece
 		$mask |= 1;
 		$mask <<= $value * 4;
 		$this->{tx}{evt_mask} |= $mask;
+		$this->{tx}{evt_close} = 1 if $value == 1;
 	}
 	elsif ($piece eq 'mod_bits')
 	{

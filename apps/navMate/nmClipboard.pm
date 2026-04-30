@@ -276,7 +276,7 @@ sub getNewMenuItems
 
 sub getDeleteMenuItems
 {
-	my ($panel, $right_click_node) = @_;
+	my ($panel, $right_click_node, $has_route_members) = @_;
 	my $t  = $right_click_node->{type}  // '';
 	my $ot = ($right_click_node->{data} // {})->{obj_type}  // '';
 	my $nt = ($right_click_node->{data} // {})->{node_type} // '';
@@ -332,14 +332,18 @@ sub getDeleteMenuItems
 		) if $t eq 'route';
 
 		return (
-			{ id => $CMD_DELETE_GROUP,         label => 'Delete Group'                           },
-			{ id => $CMD_DELETE_GROUP_WPS,     label => 'Delete Group + Waypoints'               },
-			{ id => $CMD_DELETE_GROUP_NUCLEAR, label => 'Delete Group + Waypoints + RoutePoints' },
+			{ id => $CMD_DELETE_GROUP,     label => 'Delete Group'             },
+			{ id => $CMD_DELETE_GROUP_WPS, label => 'Delete Group + Waypoints' },
+			($has_route_members
+				? { id => $CMD_DELETE_GROUP_NUCLEAR, label => 'Delete Group + Waypoints + RoutePoints' }
+				: ()),
 		) if $t eq 'group';
 
 		return (
-			{ id => $CMD_DELETE_GROUP_WPS,     label => 'Delete My Waypoints'               },
-			{ id => $CMD_DELETE_GROUP_NUCLEAR, label => 'Delete My Waypoints + RoutePoints' },
+			{ id => $CMD_DELETE_GROUP_WPS, label => 'Delete My Waypoints' },
+			($has_route_members
+				? { id => $CMD_DELETE_GROUP_NUCLEAR, label => 'Delete My Waypoints + RoutePoints' }
+				: ()),
 		) if $t eq 'my_waypoints';
 
 		return ({ id => $CMD_DELETE_TRACK, label => 'Delete Track' })

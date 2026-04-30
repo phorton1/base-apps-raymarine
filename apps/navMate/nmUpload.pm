@@ -1,13 +1,12 @@
 #---------------------------------------------
 # nmUpload.pm
 #---------------------------------------------
-# Upload navMate collection to E80 via WPMGR submitBatch.
+# Upload navMate collection to E80 via direct WPMGR API calls.
 # Skips any item whose UUID is already in E80 in-memory state.
-# Returns the number of ops submitted (0 if nothing to do).
+# Returns the number of items submitted (0 if nothing to do).
 #
-# uploadCollectionToE80 and uploadRouteToE80 build an ordered ops list and
-# call submitBatch once.  All ops execute serially in commandThread with full
-# E80 handshaking between each, so ordering is guaranteed:
+# uploadCollectionToE80 and uploadRouteToE80 call individual API functions
+# directly with $progress threaded through, in guaranteed order:
 #   Phase 1: waypoints (must exist on E80 before routes/groups reference them)
 #   Phase 2: routes
 #   Phase 3: groups
@@ -71,47 +70,7 @@ sub uploadCollectionToE80
 	}
 	disconnectDB($dbh);
 
-	my @ops;
-
-	for my $wp (@wps)
-	{
-		push @ops, {
-			type    => 'new_wp',
-			uuid    => $wp->{uuid},
-			name    => $wp->{name},
-			lat     => $wp->{lat},
-			lon     => $wp->{lon},
-			sym     => $wp->{sym} // 25,
-			ts      => $wp->{created_ts} // 0,
-			comment => $wp->{comment} // '',
-		};
-	}
-
-	for my $entry (@routes_q)
-	{
-		my $r        = $entry->{route};
-		my @wp_uuids = map { $_->{uuid} } @{$entry->{wps}};
-		push @ops, {
-			type      => 'new_route',
-			uuid      => $r->{uuid},
-			name      => $r->{name},
-			color     => ($r->{color} // 0) + 0,
-			waypoints => \@wp_uuids,
-		};
-	}
-
-	for my $grp (@groups_q)
-	{
-		my @wp_uuids = map { $_->{uuid} } @{$grp->{waypoints}};
-		push @ops, {
-			type    => 'new_group',
-			uuid    => $grp->{uuid},
-			name    => $grp->{name},
-			members => \@wp_uuids,
-		};
-	}
-
-	my $total = scalar @ops;
+	my $total = scalar(@wps) + scalar(@routes_q) + scalar(@groups_q);
 	display(0,0,"upload($coll_name): $total ops (".
 		scalar(@wps)." wps, ".scalar(@routes_q)." routes, ".scalar(@groups_q)." groups)");
 	return 0 unless $total;
@@ -122,7 +81,44 @@ sub uploadCollectionToE80
 		$progress_data->{active} = 1;
 	}
 
-	$wpmgr->submitBatch(\@ops, $progress_data);
+	for my $wp (@wps)
+	{
+		$wpmgr->createWaypoint({
+			name     => $wp->{name},
+			uuid     => $wp->{uuid},
+			lat      => $wp->{lat},
+			lon      => $wp->{lon},
+			sym      => $wp->{sym} // 25,
+			ts       => $wp->{created_ts} // 0,
+			comment  => $wp->{comment} // '',
+			progress => $progress_data,
+		});
+	}
+
+	for my $entry (@routes_q)
+	{
+		my $r        = $entry->{route};
+		my @wp_uuids = map { $_->{uuid} } @{$entry->{wps}};
+		$wpmgr->createRoute({
+			name      => $r->{name},
+			uuid      => $r->{uuid},
+			color     => ($r->{color} // 0) + 0,
+			waypoints => \@wp_uuids,
+			progress  => $progress_data,
+		});
+	}
+
+	for my $grp (@groups_q)
+	{
+		my @wp_uuids = map { $_->{uuid} } @{$grp->{waypoints}};
+		$wpmgr->createGroup({
+			name     => $grp->{name},
+			uuid     => $grp->{uuid},
+			members  => \@wp_uuids,
+			progress => $progress_data,
+		});
+	}
+
 	return $total;
 }
 
@@ -151,31 +147,8 @@ sub uploadRouteToE80
 	my $wps = getRouteWaypoints($dbh, $route_uuid);
 	disconnectDB($dbh);
 
-	my @ops;
-	for my $wp (grep { !$e80_wps{$_->{uuid}} } @$wps)
-	{
-		push @ops, {
-			type    => 'new_wp',
-			uuid    => $wp->{uuid},
-			name    => $wp->{name},
-			lat     => $wp->{lat},
-			lon     => $wp->{lon},
-			sym     => $wp->{sym} // 25,
-			ts      => $wp->{created_ts} // 0,
-			comment => $wp->{comment} // '',
-		};
-	}
-
-	my @wp_uuids = map { $_->{uuid} } @$wps;
-	push @ops, {
-		type      => 'new_route',
-		uuid      => $route_uuid,
-		name      => $route_name,
-		color     => ($route_color // 0) + 0,
-		waypoints => \@wp_uuids,
-	};
-
-	my $total = scalar @ops;
+	my @new_wps  = grep { !$e80_wps{$_->{uuid}} } @$wps;
+	my $total    = scalar(@new_wps) + 1;
 	display(0,0,"uploadRouteToE80($route_name): $total ops");
 
 	if ($progress_data)
@@ -184,7 +157,29 @@ sub uploadRouteToE80
 		$progress_data->{active} = 1;
 	}
 
-	$wpmgr->submitBatch(\@ops, $progress_data);
+	for my $wp (@new_wps)
+	{
+		$wpmgr->createWaypoint({
+			name     => $wp->{name},
+			uuid     => $wp->{uuid},
+			lat      => $wp->{lat},
+			lon      => $wp->{lon},
+			sym      => $wp->{sym} // 25,
+			ts       => $wp->{created_ts} // 0,
+			comment  => $wp->{comment} // '',
+			progress => $progress_data,
+		});
+	}
+
+	my @wp_uuids = map { $_->{uuid} } @$wps;
+	$wpmgr->createRoute({
+		name      => $route_name,
+		uuid      => $route_uuid,
+		color     => ($route_color // 0) + 0,
+		waypoints => \@wp_uuids,
+		progress  => $progress_data,
+	});
+
 	return $total;
 }
 

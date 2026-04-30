@@ -165,7 +165,14 @@ sub onIdle
 		my $v = apps::raymarine::NET::b_sock::getVersion();
 		if ($v != ($this->{_e80_version} // -1))
 		{
-			$this->{_e80_version} = $v;
+			$this->{_e80_version}    = $v;
+			$this->{_e80_dirty_time} = time();
+		}
+		elsif ($this->{_e80_dirty_time} &&
+		       !apps::raymarine::NET::d_WPMGR::getPendingCommands() &&
+		       time() > $this->{_e80_dirty_time} + 0.20)
+		{
+			$this->{_e80_dirty_time} = 0;
 			my $e80 = $this->findPane($WIN_E80);
 			$e80->refresh() if $e80;
 		}

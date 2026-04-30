@@ -24,7 +24,6 @@ BEGIN
 		$API_NEW_ITEM
 		$API_DEL_ITEM
 		$API_MOD_ITEM
-		$API_DO_BATCH
 
 		%NAV_WHAT
 		%NAV_COMMAND
@@ -62,7 +61,6 @@ our $API_GET_ITEM	= 2;
 our $API_NEW_ITEM 	= 3;
 our $API_DEL_ITEM 	= 4;
 our $API_MOD_ITEM		= 5;
-our $API_DO_BATCH		= 6;
 
 
 our $WHAT_WAYPOINT	= 0x00;
