@@ -146,7 +146,7 @@ our $MON_SELF_SNIFFED		= 0x2000000;		# put on packets that are self sniffed
 
 # some common combinations
 
-my $MON_MIN 			 	= $MON_HEADER | $MON_PARSE;
+my $MON_MIN 			 	= $MON_HEADER | $MON_RAW | $MON_PARSE;
 my $MON_CMD					= $MON_HEADER | $MON_PARSE | $MON_PIECES;
 	# dont want to see dictionaries on command requests
 
@@ -154,7 +154,7 @@ my $MON_CMD					= $MON_HEADER | $MON_PARSE | $MON_PIECES;
 
 ## Special variable for monitoring WPMGR API use of buildXXX() methods
 
-our $MONITOR_API_BUILDS :shared = $MON_REC | $MON_REC_DETAILS | $MON_PACK | $MON_PACK_CONTROL | $MON_PACK_UNKNOWN;
+our $MONITOR_API_BUILDS :shared = 0; #$MON_REC | $MON_REC_DETAILS | $MON_PACK | $MON_PACK_CONTROL | $MON_PACK_UNKNOWN;
 	# Outside of the per-service monitor bit passing scheme, this variable
 	# controls whether to show debugging output while calling b_record::buildXXX()
 	# WRG methods directly from the WPMGR API call.
@@ -194,9 +194,9 @@ my $SHARK_MON_TRACK 	= $MON_HEADER | $MON_RAW | $MON_MULTI | $MON_PARSE | $MON_P
     $MON_PACK_CONTROL |
     $MON_PACK_UNKNOWN;
 
-my $SHARK_MON_WAYPOINT 	= $MON_ALL;
-my $SHARK_MON_ROUTE 	= $MON_ALL;
-my $SHARK_MON_GROUP 	= $MON_ALL;
+my $SHARK_MON_WAYPOINT 	= $MON_MIN;  # $MON_ALL;
+my $SHARK_MON_ROUTE 	= $MON_MIN;  # $MON_ALL;
+my $SHARK_MON_GROUP 	= $MON_MIN;  # $MON_ALL;
 
 my $ACTIVE_TRACK 		= 1;
 my $ACTIVE_WPMGR 		= 1;
