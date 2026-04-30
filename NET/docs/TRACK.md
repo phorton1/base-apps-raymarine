@@ -135,6 +135,25 @@ These limitations are inherent to the TRACK protocol as observed:
 - Track points cannot be modified
 - ERASE_TRACK and RENAME operate on saved tracks only — not the Current Track
 
+## Implementation Notes
+
+**Stream-based parser:** Like WPMGR, TRACK uses the stream-based message model
+implemented in `b_sock.pm`. Each TCP message is dispatched to `e_TRACK.pm` via
+`dispatchRecvMsg()` independently. Per-transaction state lives in `$this->{tx}`.
+
+The multi-buffer terminal condition for GET_TRACK and GET_CUR2 is handled via a
+`buffer_complete` flag on the parser object. It is set by `parsePiece('buffer')`
+when the `is_track` context is active, and checked in `parseMessage` after all
+pieces are parsed. The `expect_trk` flag distinguishes GET_TRACK (saved track,
+two-buffer MTA+TRK sequence) from GET_MTA (single-buffer response).
+
+**Known issue — GET_CUR2 returns 0 points:** When GET_CUR2 is triggered by a
+STOP or TRACK_CHANGED event, the MTA reports the correct point count but the
+track point buffer comes back empty. The `buffer_complete` / `expect_trk` logic
+in `e_TRACK.pm` does not yet correctly handle the GET_CUR2 wire sequence. The
+track lifecycle (start/stop/name/save) works correctly; only the live
+current-track point-readback is affected.
+
 ## Early Discovery Notes
 
 Annotated hex captures from the discovery of the GET_DICT command and the MTA

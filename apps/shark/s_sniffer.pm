@@ -196,10 +196,6 @@ sub sniffer_thread
 				$addr = "$src_ip:$src_port-$dst_ip:$dst_port";
 				$this->{buffers}->{$addr} ||= '';
 				$this->{buffers}->{$addr} .= $bytes;
-				next if length($this->{buffers}->{$addr}) <= 2;
-
-				$payload = $this->{buffers}->{$addr};
-				$this->{buffers}->{$addr} = '';
 			}
 			else
 			{
@@ -407,9 +403,32 @@ sub sniffer_thread
 			#
 			# and are only added by me for clarity in debugging
 			
-			if (1)
+			if ($proto eq 'tcp')
 			{
-				# my $packet = a_packet->new({
+				while (length($this->{buffers}->{$addr}) >= 2)
+				{
+					my $msg_len = unpack('v', substr($this->{buffers}->{$addr}, 0, 2));
+					if ($msg_len == 0 || $msg_len > 8192)
+					{
+						warning($dbg_sniff, 0, "sniffer($addr) stream misalign msg_len($msg_len) dropping byte");
+						$this->{buffers}->{$addr} = substr($this->{buffers}->{$addr}, 1);
+						next;
+					}
+					last if length($this->{buffers}->{$addr}) < 2 + $msg_len;
+					my $msg = substr($this->{buffers}->{$addr}, 2, $msg_len);
+					$this->{buffers}->{$addr} = substr($this->{buffers}->{$addr}, 2 + $msg_len);
+					if ($is_reply)
+					{
+						$parser->dispatchTCPRecvMsg($msg);
+					}
+					else
+					{
+						$parser->dispatchTCPSendMsg(pack('v', $msg_len) . $msg);
+					}
+				}
+			}
+			else
+			{
 				my $packet = shared_clone({
 					is_sniffer	=> 1,
 					is_shark	=> $is_shark,
@@ -427,7 +446,7 @@ sub sniffer_thread
 					client_name => $client_name,
 					server_name => $server_name,
 					payload	    => $payload, });
-				$parser->doParse($packet);
+				$parser->doParseUDP($packet);
 			}
 		}
 		else

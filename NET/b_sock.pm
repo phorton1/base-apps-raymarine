@@ -206,8 +206,8 @@ sub sendUDP
 		}
 		else
 		{
-			my $packet = $this->make_packet(0,$payload);
-			$this->{parser}->doParse($packet);
+			my $packet = $this->makeUDPPacket(0,$payload);
+			$this->{parser}->doParseUDP($packet);
 		}
 	}
 
@@ -535,7 +535,7 @@ sub waitReply
 # sockThread
 #======================================================================================
 
-sub make_packet
+sub makeUDPPacket
 {
 	my ($this,$is_reply,$payload) = @_;
 	my $packet = shared_clone({
@@ -697,6 +697,8 @@ sub sockThread
 				display($dbg_thread,2,"$name $this->{local} CONNECTED to socket($this->{remote})");
 				$sel = IO::Select->new($sock);
 				$this->onConnect();
+				$this->{parser}->resetTransaction()
+					if $this->{proto} eq 'tcp';
 			}
 			else
 			{
@@ -719,8 +721,15 @@ sub sockThread
 			if ($sel->can_write() && @{$this->{out_queue}})
 			{
 				my $payload = shift @{$this->{out_queue}};
-				my $packet = $this->make_packet(0,$payload);
-				$this->{parser}->doParse($packet);
+				if ($this->{proto} eq 'tcp')
+				{
+					$this->{parser}->dispatchTCPSendMsg($payload);
+				}
+				else
+				{
+					my $packet = $this->makeUDPPacket(0,$payload);
+					$this->{parser}->doParseUDP($packet);
+				}
 
 				my $rslt = $this->{proto} eq 'mcast' ?
 					$sock->mcast_send($payload, "$this->{ip}:$this->{port}") :
@@ -774,40 +783,76 @@ sub sockThread
 					# print "ip:addr=$sender_ip:$port\n";
 
 					$this->{buffer} .= $buf;
-					my $buflen = length($this->{buffer});
-					if ($buflen > 2)
+					if ($this->{proto} eq 'tcp')
 					{
-						my $client_buffer = $this->{buffer};
-						$this->{buffer} = '';
-
-						my $packet = $this->make_packet(1,$client_buffer);
-						my $reply =	$this->{parser}->doParse($packet);
-						display($dbg_thread+1,0,"sockThread got parsePacket reply="._def($reply))
-							if $this->{name} ne 'RAYDP';
-
-						if ($this->{is_probe})
+						while (length($this->{buffer}) >= 2)
 						{
-							$this->{probe_wait} = 0;
-						}
-						elsif ($reply)
-						{
-							if ($reply->{seq_num})	# it's not an 'eventish' kind of thing
+							my $msg_len = unpack('v', substr($this->{buffer}, 0, 2));
+							if ($msg_len == 0 || $msg_len > 8192)
 							{
-								if ($reply->{seq_num} != $this->{wait_seq})
-								{
-									error("continuing $this->{name} with OUT OF BAND SEQUENCED REPLY seq_num($reply->{seq_num}) expected($this->{wait_seq})\n".
-										  ($reply->{uuid}?"    out of band uuid($reply->{uuid})":'').
-										  ($reply->{item}?" name($reply->{item}->{name})":'') );
-								}
+								warning(0, 0, "$this->{name} stream misalign msg_len($msg_len) dropping byte");
+								$this->{buffer} = substr($this->{buffer}, 1);
+								next;
+							}
+							last if length($this->{buffer}) < 2 + $msg_len;
+							my $msg = substr($this->{buffer}, 2, $msg_len);
+							$this->{buffer} = substr($this->{buffer}, 2 + $msg_len);
+
+							if ($this->{is_probe})
+							{
+								$this->{probe_wait} = 0;
+								next;
 							}
 
-							$reply = $this->handleEvent($reply);
-								# derived classes that handle events (WPMGR, TRACK) should
-								# define handleEvent methods on reply packets, and return
-								# the packet, or undef if it is completely handled.
-							push @{$this->{replies}},$reply if $reply;
+							my $reply = $this->{parser}->dispatchTCPRecvMsg($msg);
+							if ($reply)
+							{
+								if ($reply->{seq_num})
+								{
+									if ($reply->{seq_num} != $this->{wait_seq})
+									{
+										error("$this->{name} OUT OF BAND seq($reply->{seq_num}) expected($this->{wait_seq})".
+											  ($reply->{uuid}?" uuid($reply->{uuid})":'').
+											  ($reply->{item}?" name($reply->{item}->{name})":''));
+									}
+								}
+								$reply = $this->handleEvent($reply);
+								push @{$this->{replies}}, $reply if $reply;
+							}
 						}
+					}
+					else
+					{
+						my $buflen = length($this->{buffer});
+						if ($buflen > 2)
+						{
+							my $client_buffer = $this->{buffer};
+							$this->{buffer} = '';
 
+							my $packet = $this->makeUDPPacket(1,$client_buffer);
+							my $reply =	$this->{parser}->doParseUDP($packet);
+							display($dbg_thread+1,0,"sockThread got parsePacket reply="._def($reply))
+								if $this->{name} ne 'RAYDP';
+
+							if ($this->{is_probe})
+							{
+								$this->{probe_wait} = 0;
+							}
+							elsif ($reply)
+							{
+								if ($reply->{seq_num})
+								{
+									if ($reply->{seq_num} != $this->{wait_seq})
+									{
+										error("continuing $this->{name} with OUT OF BAND SEQUENCED REPLY seq_num($reply->{seq_num}) expected($this->{wait_seq})\n".
+											  ($reply->{uuid}?"    out of band uuid($reply->{uuid})":'').
+											  ($reply->{item}?" name($reply->{item}->{name})":'') );
+									}
+								}
+								$reply = $this->handleEvent($reply);
+								push @{$this->{replies}},$reply if $reply;
+							}
+						}
 					}
 				}	# got a buffer
 

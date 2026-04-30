@@ -73,15 +73,16 @@ The *command word* will be discussed in more detail, but,
 terminologically, within the command word is **the command**
 which is the low order nibble of the command word.
 
-- A **request** is a series one or more *messages*
-  sent from the client to WPMGR, always in two packets.
+- A **request** is a series of one or more *messages*
+  sent from the client to WPMGR. The E80 is typically
+  observed to receive these as two TCP segments.
 - A **reply** is a series of one or more messages
-  sent from WPMGR to the client in response to a request,
-  always in two packets.
-- An **event** is a series of one ore more messages
-  sent from WPMGR to the client, always sent in a
-  single packet, though several events may happen
-  in rapid succession.
+  sent from WPMGR to the client in response to a request.
+  The E80 is typically observed to send replies as two TCP segments.
+- An **event** is one or more messages sent from WPMGR to the
+  client without a preceding request. Events are typically
+  observed as a single TCP segment; several may arrive in
+  rapid succession.
 
 Here is an example request sent from the client to WPMGR
 
@@ -100,15 +101,15 @@ In this example
 
 ### Series of Messages
 
-As mentioned above, *requests* and *replies* are typically
-sent in two packets.  The first packet will contain the length
-of the first *message* within the command or reply, and then
-the remainder of the packet, whose length is known from TCP,
-will consist of additional dword(length)-message pairs that
-are parsed until the end of the packet.
+WPMGR messages are framed as `<length><body>` pairs within a TCP stream,
+as described in [RAYNET](RAYNET.md). The E80 is typically observed to send
+the leading length word as the first TCP segment and subsequent messages
+in a second segment — but message extraction cannot rely on this; each
+length word determines where the next boundary lies within the accumulated
+stream buffer.
 
-Here is a *reply* from WPMGR to RNS, in two packets, that consists
-of four messages. The start of each message is labelled with a >.
+Here is a *reply* from WPMGR to RNS, observed as two TCP segments, that
+consists of four messages. The start of each message is labelled with a >.
 
 	WPMGR --> >0c00
 	WPMGR -->  06000f00  24000000  00000400 >14000002  0f002400  0000db82  99b8f567  e68e0100
@@ -354,6 +355,15 @@ state (e.g. toggling unrelated Wi-Fi, rebooting). If the E80 goes down, the
 thread detects a TCP send failure and will successfully close and re-open the
 socket once the E80 reboots or reconnects. Implemented services use
 `EXIT_ON_CLOSE=0` for exactly this reason.
+
+**Stream-based parser:** WPMGR messages are extracted from the TCP stream by a
+persistent accumulator in `b_sock.pm`. Each complete message is dispatched to
+`e_WPMGR.pm` via `dispatchRecvMsg()` independently. Per-transaction state lives
+in `$this->{tx}` on the parser object and survives across multiple `recv()` calls.
+`resetTransaction()` clears this state at connection establishment and at the start
+of each new request (detected by `DIRECTION_SEND`). This design correctly handles
+large multi-message replies — such as deleting a route with many waypoints — where
+the E80's reply spans multiple TCP segments.
 
 ## Early Discovery Notes
 

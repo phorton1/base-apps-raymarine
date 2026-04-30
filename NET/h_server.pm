@@ -10,6 +10,7 @@
 #   /api/db          - WPMGR + TRACK in-memory state as JSON
 #   /api/log         - console ring buffer (?tail=N or ?since=seq or ?since=mark)
 #   /api/command     - dispatch a NET-layer command (?cmd=...)
+#   /api/item        - WPMGR item ops via JSON POST body (op, uuid, name, ...)
 #
 # Shared command dispatch (handleCommand virtual method):
 #   wakeup           - wake up E80
@@ -33,7 +34,7 @@ use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(time);
-use JSON::PP qw(encode_json);
+use JSON::PP qw(encode_json decode_json);
 use Pub::Utils;
 use Pub::ServerUtils;
 use Pub::HTTP::ServerBase;
@@ -101,6 +102,7 @@ sub handle_request
 	elsif ($uri eq '/api/db')      { return $this->api_db($request)      }
 	elsif ($uri eq '/api/log')     { return $this->api_log($request)     }
 	elsif ($uri eq '/api/command') { return $this->api_command($request) }
+	elsif ($uri eq '/api/item')    { return $this->api_item($request)    }
 
 	return $this->SUPER::handle_request($client,$request);
 }
@@ -179,6 +181,93 @@ sub api_command
 		$ok = 1;
 	}
 	return $this->api_json_response($request,{ok => $ok, cmd => $cmd});
+}
+
+
+sub api_item
+	# POST /api/item  Content-Type: application/json
+	# Atomic WPMGR item create/delete, bypassing the text command chain.
+	# Body fields: op, uuid, name, and op-specific extras:
+	#   new_wp    — lat, lon, sym(opt), depth(opt), comment(opt)
+	#   new_route — waypoints (arrayref of wp UUIDs), color(opt), comment(opt)
+	#   new_group — members (arrayref of wp UUIDs), comment(opt)
+	#   del_wp | del_route | del_group — uuid only
+{
+	my ($this, $request) = @_;
+	my $h = $request->getPostJSON();
+	return $this->api_json_response($request,{error => 'missing or invalid JSON body'}) unless $h;
+
+	my $op   = $h->{op}   // '';
+	my $uuid = $h->{uuid} // '';
+	my $name = $h->{name} // '';
+
+	my $wpmgr = $raydp->findImplementedService('WPMGR');
+	return $this->api_json_response($request,{error => 'WPMGR not available'}) unless $wpmgr;
+
+	if ($op eq 'new_wp')
+	{
+		return $this->api_json_response($request,{error => 'new_wp requires uuid, name, lat, lon'})
+			unless $uuid && $name && defined($h->{lat}) && defined($h->{lon});
+		$wpmgr->createWaypoint({
+			uuid    => $uuid,
+			name    => $name,
+			lat     => $h->{lat} + 0,
+			lon     => $h->{lon} + 0,
+			sym     => ($h->{sym}     // 25) + 0,
+			depth   => ($h->{depth}   // 0)  + 0,
+			comment => $h->{comment}  // '',
+		});
+	}
+	elsif ($op eq 'new_route')
+	{
+		return $this->api_json_response($request,{error => 'new_route requires uuid and name'})
+			unless $uuid && $name;
+		$wpmgr->createRoute({
+			uuid      => $uuid,
+			name      => $name,
+			comment   => $h->{comment}   // '',
+			color     => ($h->{color}    // 0) + 0,
+			waypoints => $h->{waypoints} // shared_clone([]),
+		});
+	}
+	elsif ($op eq 'new_group')
+	{
+		return $this->api_json_response($request,{error => 'new_group requires uuid and name'})
+			unless $uuid && $name;
+		$wpmgr->createGroup({
+			uuid    => $uuid,
+			name    => $name,
+			comment => $h->{comment} // '',
+			members => $h->{members} // shared_clone([]),
+		});
+	}
+	elsif ($op eq 'del_wp')
+	{
+		return $this->api_json_response($request,{error => 'del_wp requires uuid'}) unless $uuid;
+		my $wp = $wpmgr->{waypoints}{$uuid};
+		return $this->api_json_response($request,{error => "del_wp: uuid($uuid) not in memory"}) unless $wp;
+		$wpmgr->deleteWaypoint($uuid);
+	}
+	elsif ($op eq 'del_route')
+	{
+		return $this->api_json_response($request,{error => 'del_route requires uuid'}) unless $uuid;
+		my $rt = $wpmgr->{routes}{$uuid};
+		return $this->api_json_response($request,{error => "del_route: uuid($uuid) not in memory"}) unless $rt;
+		$wpmgr->deleteRoute($uuid);
+	}
+	elsif ($op eq 'del_group')
+	{
+		return $this->api_json_response($request,{error => 'del_group requires uuid'}) unless $uuid;
+		my $grp = $wpmgr->{groups}{$uuid};
+		return $this->api_json_response($request,{error => "del_group: uuid($uuid) not in memory"}) unless $grp;
+		$wpmgr->deleteGroup($uuid);
+	}
+	else
+	{
+		return $this->api_json_response($request,{error => "unknown op '$op'"});
+	}
+
+	return $this->api_json_response($request,{ok => 1, op => $op, uuid => $uuid});
 }
 
 

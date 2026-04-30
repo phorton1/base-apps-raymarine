@@ -154,6 +154,17 @@ app-specific endpoints.
 Supporting files in the NET/ root (not layered): `rayports.pm` (port/service_id table),
 `fshWriter.pm` (writes FSH files from live E80 data), `b_probe.pm` (file-driven probe system).
 
+**TCP stream parsing:** All TCP-based services (WPMGR, TRACK, Database, Sniffer) use a
+**stream-based message extraction model** in `b_sock.pm`. Each TCP connection maintains a
+persistent byte buffer; incoming data is appended and complete `<length>+body` messages
+are extracted one at a time as their full size becomes available. Per-transaction state
+lives on the parser object (`$this->{tx}`) and persists across `recv()` calls. This
+model correctly handles large replies that span multiple TCP segments — the original
+design treated each `recv()` result as one complete message, which silently dropped
+state mid-transaction on large operations. The reference implementation is `e_FILESYS.pm`,
+which was forced into the correct pattern by UDP's datagram model. UDP services (FILESYS,
+DBNAV, RAYDP) are unaffected and continue to use the `doParse` path.
+
 ### Engineering Tool Documentation
 
 - **[shark](../../apps/shark/docs/shark.md)** —

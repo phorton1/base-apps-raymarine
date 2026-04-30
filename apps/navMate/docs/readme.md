@@ -51,6 +51,11 @@ routes, and groups are uploaded from the collection tree context menu in `winBro
 A companion E80-side panel (`winE80.pm`) is under development. Basic Leaflet rendering of
 routes and waypoints is partially built.
 
+The underlying **NET transport layer** was redesigned in 2026-04 from a per-`recv()`
+packet model to a **stream-based message extraction model** (see
+[NET documentation](../../NET/docs/readme.md)). Upload to E80 — including delete of
+routes with many waypoints — is confirmed working end-to-end.
+
 Current focus: Leaflet renderer expansion (tracks, wp_type-based rendering,
 click-to-select detail), `winE80.pm` E80-side panel, and import redesign from
 `My Places.kml`. All 8 historical KML source folders have been fully characterized;

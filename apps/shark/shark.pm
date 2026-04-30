@@ -70,9 +70,9 @@ my $WITH_TCP_SCANNER = 0;
 my $WITH_UDP_SCANNER = 0;
 my $WITH_WX          = 1;
 
-my $WITH_WPMGR       = 0;
-my $WITH_TRACK       = 0;
-my $WITH_FILESYS     = 0;
+my $WITH_WPMGR       = 1;
+my $WITH_TRACK       = 1;
+my $WITH_FILESYS     = 1;
 my $WITH_DB          = 0;
 my $WITH_DBNAV       = 0;
 
@@ -95,12 +95,6 @@ sub handleSerialCommand
 
 display(0,0,"shark.pm initializing");
 
-
-if ($WITH_SERIAL)
-{
-	my $serial = apps::raymarine::NET::s_serial->new(\&handleSerialCommand);
-	$serial->start();
-}
 
 apps::raymarine::NET::a_defs::initServices(
 	wpmgr   => $WITH_WPMGR,
@@ -126,6 +120,12 @@ if ($WITH_UDP_SCANNER)
 
 
 startHTTPServer() if $WITH_HTTP_SERVER;
+
+if ($WITH_SERIAL)
+{
+	my $serial = apps::raymarine::NET::s_serial->new(\&handleSerialCommand);
+	$serial->start();
+}
 
 # the sniffer is started last because it has a blocking
 # read in the thread which, for some reason, will cause

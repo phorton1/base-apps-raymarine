@@ -92,20 +92,28 @@ the internet packet.
 	<message> == internet packet with implied length
 
 
-#### tcp Messages are sent and received in groups
+#### tcp Messages are length-prefixed within a byte stream
 
 **tcp Requests and Replies** consist of at least one Message
-but may contain several Messages, where each message
-is preceded by a &lt;length> word that allows for deserializing
-the Reply or Request into an ordered array of Messages.
-tcp Requests are generally sent in a single internet packet,
-but are typically received in two internet packets, the first
-consisting of the <length> word of the first message in the
-following packet, and the second containing the first message,
-possibly followed by more &lt;length>&lt;message> pairs.
+but may contain several Messages. Each message is preceded by a
+**&lt;length> word** giving the message body size in bytes,
+yielding a concatenated stream of length-prefixed messages:
 
-	<length0>
-	<message0><length1><message1>...<lengthN><messageN>
+	<length0><message0><length1><message1>...<lengthN><messageN>
+
+TCP delivers this as a continuous **byte stream**, not as discrete packets.
+The E80 is typically observed to send the leading `<length>` word as the
+first TCP segment and the remaining messages in a second segment — but this
+is an E80 behavioral pattern, not a TCP guarantee. Message boundaries do
+not correspond to `recv()` call boundaries.
+
+The correct implementation uses a **persistent per-connection stream
+accumulator**: incoming bytes are appended to a buffer; complete
+`<length>+body` units are extracted from the front one at a time as
+their full size becomes available; each extracted message is dispatched
+independently. Per-transaction state lives on the parser object
+(`$this->{tx}`) and persists across individual message dispatches.
+See `b_sock.pm` and `a_parser.pm` for the implementation.
 
 
 ## Message Structure

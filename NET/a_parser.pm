@@ -10,32 +10,9 @@
 #   More complicated classes (i.e. WPMGR) implement their own
 #   	applyMonDefs routine
 #
-# FRAMING
-#
-# Big issues with 'Framing' TCP stream into logical message groups that
-# constitute a 'semantic' unit.  Noticed especially with big Tracks when
-# I switched to the Raymarine Router.
-#
-# (a) we do implicit framing in b_sock and sniffer when we built a packet
-#     that is AT LEAST bigger than two bytes (the presumed initial {msg_len}.
-# (b) discovered that there can be "dangling" bytes at the end of a packet
-#     once it is decomposed into messages.
-# (c) implemented "dangling_packet" scheme to return undef until the
-#     packet ends exactly on a message boundary.
-# (d) had to also change e_Track to append, rather than mergeHash
-#     points into the accumulating record after noticing the E80
-#     sent multiple trk "info Buffers" in a single message group.
-# (e) may have similar issues with big Routes, Groups, or Dictionaries
-#     as I have never tested the limits of those parser/services.
-#
-# I am hoping this weird, implicit, framing is sufficient, as otherwise
-# it implies big architectural changes if the derived parsers have to
-# "figure out" what consitutes a complete message group (semantic unit).
-#
-# In self defense, I added a big 'OUT OF BAND' error message in bsock
-# if we get a sequenced reply and no-one is waiting for it, or it is
-# not the one the parser is waiting for, which would imply a problem
-# with the framing or my basic understanding of the protocol vs tcp.
+# TCP framing is now handled by b_sock and s_sniffer via the stream
+# extraction while-loop. dispatchTCPRecvMsg/dispatchTCPSendMsg are the TCP
+# entry points; doParseUDP/parsePacket serve UDP-only paths.
 
 
 
@@ -53,7 +30,6 @@ use apps::raymarine::NET::a_utils;
 
 
 my $dbg_parse = 0;
-my $dbg_dangling = 1;
 
 
 
@@ -108,26 +84,62 @@ sub applyMonDefs
 
 
 
-sub doParse
-	# doParse() is called by b_sock and sniffer, and
-	# does the applyMonDefs() before calling derived
-	# classes' parsePacket methods.
+sub doParseUDP
+	# UDP-only path: b_sock and sniffer call dispatchTCPRecvMsg/dispatchTCPSendMsg for TCP.
 {
 	my ($this,$packet) = @_;
-	if ($this->{dangling_packet})
-	{
-		warning($dbg_dangling,0,"using dangling packet");
-		$this->{dangling_packet}->{payload} .= $packet->{payload};
-		$packet = $this->{dangling_packet};
-		$this->{dangling_packet} = undef;
-	}
-	else
-	{
-		$packet->{mon} = 0;
-		$packet->{color} = 0;
-		$this->applyMonDefs($packet);
-	}
+	$packet->{mon} = 0;
+	$packet->{color} = 0;
+	$this->applyMonDefs($packet);
 	return $this->parsePacket($packet);
+}
+
+
+sub dispatchTCPSendMsg
+	# called by b_sock for each outgoing TCP message (display/monitoring only)
+{
+	my ($this, $payload) = @_;
+	return if length($payload) < 2;
+	my $msg_len = unpack('v', substr($payload, 0, 2));
+	my $msg     = substr($payload, 2, $msg_len);
+	my $cmd_word = unpack('v', substr($msg, 0, 2));
+	$this->resetTransaction() if ($cmd_word & 0xf00) == $DIRECTION_SEND;
+	my $packet = {
+		is_reply   => 0,
+		is_sniffer => $this->{mon_defs}{is_sniffer} // 0,
+		is_shark   => $this->{mon_defs}{is_shark}   // 1,
+		proto      => 'tcp',
+		payload    => $msg,
+		mon        => 0,
+		color      => 0,
+	};
+	$this->applyMonDefs($packet);
+	$this->parseMessage($packet, $msg_len, $msg);
+}
+
+
+sub dispatchTCPRecvMsg
+	# called by b_sock for each incoming TCP message; returns undef or completed reply
+{
+	my ($this, $msg) = @_;
+	my $msg_len = length($msg);
+	my $packet  = {
+		is_reply   => 1,
+		is_sniffer => $this->{mon_defs}{is_sniffer} // 0,
+		is_shark   => $this->{mon_defs}{is_shark}   // 1,
+		proto      => 'tcp',
+		payload    => $msg,
+		mon        => 0,
+		color      => 0,
+	};
+	$this->applyMonDefs($packet);
+	return $this->parseMessage($packet, $msg_len, $msg);
+}
+
+
+sub resetTransaction
+	# base class no-op; derived classes override to clear inter-message state
+{
 }
 
 
@@ -179,41 +191,9 @@ sub parsePacket
 		# print parse_dwords(' debug ',$packet->{payload},1);
 	}
 	
-	# Parse the message(s) in the packet
+	# Parse the message
 
-	if ($packet->{proto} eq 'tcp')
-	{
-		my $offset = 0;
-		while ($packet && $packet_len - $offset >= 2)
-		{
-			my $len_bytes = substr($payload,$offset,2);
-			$offset += 2;
-
-			my $len = unpack('v',$len_bytes);
-			if ($offset + $len > $packet_len)
-			{
-				warning($dbg_dangling,0,"insufficent len($len) offset($offset) packet_len($packet_len) dangling: ".unpack('H*',substr($payload,$offset)));
-				$packet->{payload} = $len_bytes . substr($payload,$offset);
-				$this->{dangling_packet} = shared_clone($packet);
-				return undef;
-			}
-
-			my $part = substr($payload,$offset,$len);
-			$packet = $this->parseMessage($packet,$len,$part);
-			$offset += $len;
-		}
-		if ($offset != $packet_len)
-		{
-			warning(0,0,"dangling packet bytes offset($offset) packet_len($packet_len)=".unpack('H*',substr($payload,$offset)));
-			$packet->{payload} = substr($payload,$offset);
-			$this->{dangling_packet} = shared_clone($packet);
-			return undef;
-		}
-	}
-	else
-	{
-		$packet = $this->parseMessage($packet,length($payload),$payload);
-	}
+	$packet = $this->parseMessage($packet,length($payload),$payload);
 
 	if ($packet)
 	{
@@ -283,47 +263,36 @@ sub parseMessage
 
 
 sub parsePiece
-	# Only certain derived classes (WPMGR, TRACK) at this time
-	# 	use "pieces" and "rules".
-	#
-	# The base class parsePiece method knows the
-	# simplest most common msg parameter types
-	# but not much about inter-message relationships
-	#
-	# I debate whether or not any 'buffer' parsing should
-	# take place in the base class, though there is commonality
-	# between d_WPMGR and d_TRACK with regards to is_dict buffers.
-	#
-	# So this base class uses the 'is_dict' state member, without
-	# knowing how it got there.
+	# State fields go to $this->{tx} when available (TCP stream model),
+	# otherwise fall back to $packet (UDP/legacy doParseUDP path).
 {
 	my ($this,$packet,$piece,$part,$poffset) = @_;
-	my $mon = $packet->{mon};
+	my $mon   = $packet->{mon};
 	my $color = $packet->{color};
-	
+	my $state = exists($this->{tx}) ? $this->{tx} : $packet;
+
 	if ($piece eq 'buffer')
 	{
-		if ($packet->{is_dict} &&
-			$packet->{is_reply})
+		if ($state->{is_dict} && $packet->{is_reply})
 		{
 			$$poffset += 4;	# skip biglen
 
-			$packet->{dict_uuids} ||= shared_clone([]);
-			my $dict_uuids = $packet->{dict_uuids};
+			$state->{dict_uuids} ||= shared_clone([]);
+			my $dict_uuids = $state->{dict_uuids};
 			my $num;
 
-			if (!defined $packet->{dict_total})
+			if (!defined $state->{dict_total})
 			{
 				$num = unpack('V',substr($part,$$poffset,4));
 				$$poffset += 4;
 				return error("too many dict_uuids!!") if $num>1024;
-				$packet->{dict_total} = $num;
+				$state->{dict_total} = $num;
 				printConsole(2,$mon,$color,"dictionary($num)")
 					if $mon & $MON_PIECES;
 			}
 			else
 			{
-				$num = $packet->{dict_total};
+				$num = $state->{dict_total};
 			}
 
 			my $already = scalar(@$dict_uuids);
@@ -348,13 +317,13 @@ sub parsePiece
 		$$poffset += 4;
 		display($dbg_parse+3,1,"seq_num=$seq_num");
 		printConsole(2,$mon,$color,"seq_num = $seq_num")
-			if $mon & $MON_PARSE;	# note that is MON_PARSE, not MON_PIECE
-		$packet->{seq_num} ||= $seq_num;
+			if $mon & $MON_PARSE;
+		$state->{seq_num} ||= $seq_num;
 	}
 	elsif ($piece eq 'uuid')
 	{
 		my $uuid = unpack('H*',substr($part,$$poffset,8));
-		$packet->{uuid} = $uuid;
+		$state->{uuid} = $uuid;
 		$$poffset += 8;
 		printConsole(2,$mon,$color,"$piece = $uuid")
 			if $mon & $MON_PIECES;
@@ -362,7 +331,7 @@ sub parsePiece
 	elsif ($piece eq 'name16')
 	{
 		my $name = unpack('Z*',substr($part,$$poffset,17));
-		$packet->{name} = $name;
+		$state->{name} = $name;
 		$$poffset += 17;
 		printConsole(2,$mon,$color,"name = $name")
 			if $mon & $MON_PIECES;
@@ -371,56 +340,42 @@ sub parsePiece
 	{
 		my $status = unpack('H*',substr($part,$$poffset,4));
 		my $ok = $status eq $SUCCESS_SIG ? 1 : 0;
-		$packet->{success} = $ok;
+		$state->{success} = $ok;
 		$$poffset += 4;
 		printConsole(2,$mon,$color,"$piece = $ok")
 			if $mon & $MON_PIECES;
 	}
-
-	# implemented in base class with 'some' knowledge
-	# of derived classes, but without setting any special state
-
-	elsif ($piece =~ /byte|stopable/)		# one byte (flag on wpmgr events)
+	elsif ($piece =~ /byte|stopable/)
 	{
 		my $byte = unpack('C',substr($part,$$poffset++,1));
-		$packet->{$piece} = $byte;
+		$state->{$piece} = $byte;
 		printConsole(2,$mon,$color,"$piece = $byte")
 			if $mon & $MON_PIECES;
 	}
-	elsif ($piece eq 'bits')				# one word (flag on wpmgr changed events)
+	elsif ($piece eq 'bits')
 	{
 		my $word = unpack('v',substr($part,$$poffset,2));
-		$packet->{$piece} = $word;
+		$state->{$piece} = $word;
 		$$poffset += 2;
 		printConsole(2,$mon,$color,"$piece = $word")
 			if $mon & $MON_PIECES;
 	}
-	elsif ($piece =~ /is_dict|is_point/)	# generic boolean value
+	elsif ($piece =~ /is_dict|is_point/)
 	{
-		# state only to the degree that the $pieces are
-		# defined in the rules of derived classes, yet
-		# there is no special handling here
 		display($dbg_parse + 1,1,"$piece = 1");
-		$packet->{$piece} = 1;
+		$state->{$piece} = 1;
 		printConsole(2,$mon,$color,"$piece = 1")
 			if $mon & $MON_PIECES;
 	}
-
-	# DERIVED CLASSES MUST EXPLICITLY HANDLE OTHER PIECES THAT CHANGE STATE
-	# This class will parse any remaiing pieces into dwords without
-	# changing any state.
-
 	else
 	{
 		my $str = substr($part,$$poffset,4);
 		my $value = unpack('V',$str);
-		$packet->{$piece} = $value;
+		$state->{$piece} = $value;
 		$$poffset += 4;
 
-		# I prefer to SEE non-counters in hex
-
 		my $show_value = $value;
-		$show_value = sprintf("0x%02x",$value)	# ." = (".unpack('H*',$str).")"
+		$show_value = sprintf("0x%02x",$value)
 			if $piece !~ /db_count|db_version|evt_flag/;
 
 		printConsole(2,$mon,$color,"$piece = $show_value")

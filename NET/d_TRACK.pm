@@ -342,53 +342,49 @@ our %TRACK_REQUEST_NAME = (
 
 our %TRACK_PARSE_RULES = (
 
-	# Replies
+	# Replies — simple single-reply commands are terminal=1; multi-message headers are terminal=0
 
-	$DIRECTION_RECV | $TRACK_REPLY_CONTEXT 		=>	[ 'seq','success', 'is_point' ],	# header for get nth track point
-	$DIRECTION_RECV | $TRACK_REPLY_BUFFER 		=>	[ 'seq','success' ],				# header for get 'mta' current track
-	$DIRECTION_RECV | $TRACK_REPLY_END 			=>	[ 'seq','success' ],				# header for get 'full' current track
-	$DIRECTION_RECV	| $TRACK_REPLY_CURRENT		=>  [ 'seq','success' ],				# reply to 0x04=SAVE
-	$DIRECTION_RECV | $TRACK_REPLY_TRACK 		=>	[ 'seq','success' ],				# header for track replies
-	$DIRECTION_RECV | $TRACK_REPLY_MTA 			=>	[ 'seq','success' ],				# header for mta replies
-	$DIRECTION_RECV	| $TRACK_REPLY_ERASED		=>  [ 'seq','success' ],				# reply to 0x07=ERASE
-	$DIRECTION_RECV | $TRACK_REPLY_DICT 		=>	[ 'seq','success', 'is_dict'],		# header for dictionary replies
-	$DIRECTION_RECV	| $TRACK_REPLY_STATE		=>  [ 'seq','stopable',],				# reply to 0x0d Tracking state inquiry
-	$DIRECTION_RECV	| $TRACK_REPLY_NAMED		=>  [ 'seq','success' ],				# confirms name set (in an event packet) with sequence number
-	$DIRECTION_RECV	| $TRACK_REPLY_RENAMED		=>  [ 'seq','success' ],				# confirms name change (as RECV with RECV CHANGED)
+	$DIRECTION_RECV | $TRACK_REPLY_CONTEXT  => { pieces => ['seq','success','is_point'], terminal => 0 },  # header: INFO_BUFFER follows
+	$DIRECTION_RECV | $TRACK_REPLY_BUFFER   => { pieces => ['seq','success'],            terminal => 0 },  # header: GET_CUR MTA; INFO_BUFFER follows
+	$DIRECTION_RECV | $TRACK_REPLY_END      => { pieces => ['seq','success'],            terminal => 0 },  # header: GET_CUR2 full; INFO_BUFFER+END follow
+	$DIRECTION_RECV | $TRACK_REPLY_CURRENT  => { pieces => ['seq','success'],            terminal => 1 },  # SAVE reply
+	$DIRECTION_RECV | $TRACK_REPLY_TRACK    => { pieces => ['seq','success'],            terminal => 0 },  # header: GET_TRACK; INFO messages follow
+	$DIRECTION_RECV | $TRACK_REPLY_MTA      => { pieces => ['seq','success'],            terminal => 0 },  # header: GET_MTA; INFO_BUFFER follows
+	$DIRECTION_RECV | $TRACK_REPLY_ERASED   => { pieces => ['seq','success'],            terminal => 1 },  # ERASE reply
+	$DIRECTION_RECV | $TRACK_REPLY_DICT     => { pieces => ['seq','success','is_dict'],  terminal => 0 },  # header: GET_DICT; INFO_BUFFER+END follow
+	$DIRECTION_RECV | $TRACK_REPLY_STATE    => { pieces => ['seq','stopable'],           terminal => 1 },  # GET_STATE reply
+	$DIRECTION_RECV | $TRACK_REPLY_NAMED    => { pieces => ['seq','success'],            terminal => 1 },  # SET_NAME reply
+	$DIRECTION_RECV | $TRACK_REPLY_RENAMED  => { pieces => ['seq','success'],            terminal => 1 },  # RENAME reply
 
-	# events (no sequence numbers)
+	# Events — unsolicited, no seq_num
 
-	$DIRECTION_RECV	| $TRACK_REPLY_CHANGED		=> 	[ 'uuid','byte' ],					# no sequence number
-	$DIRECTION_RECV	| $TRACK_REPLY_EVENT		=> 	[ 'byte' ],							# no sequence number
+	$DIRECTION_RECV | $TRACK_REPLY_CHANGED  => { pieces => ['uuid','byte'],              terminal => 1, is_event => 1 },
+	$DIRECTION_RECV | $TRACK_REPLY_EVENT    => { pieces => ['byte'],                     terminal => 1, is_event => 1 },
 
-	# infos
+	# INFO messages — terminal handled dynamically via buffer_complete flag in parsePiece
 
-	$DIRECTION_INFO	| $TRACK_REPLY_CONTEXT  	=>	[ 'seq','uuid','context_bits' ],	# uuid context for the reply; bits 01n
-	$DIRECTION_INFO	| $TRACK_REPLY_BUFFER		=> 	[ 'seq','buffer' ],					# dictionary, MTA, or Track depending on state
-	$DIRECTION_INFO	| $TRACK_REPLY_END			=> 	[ 'seq','track_uuid' ],				# sets is_track=1 and regular uuid
-	$DIRECTION_INFO	| $TRACK_REPLY_RENAMED		=>  [ 'seq','success' ],				# confirms name change (in an event packet) with sequence number
+	$DIRECTION_INFO | $TRACK_REPLY_CONTEXT  => { pieces => ['seq','uuid','context_bits'], terminal => 0 },
+	$DIRECTION_INFO | $TRACK_REPLY_BUFFER   => { pieces => ['seq','buffer'],              terminal => 0 },  # buffer_complete set by parsePiece
+	$DIRECTION_INFO | $TRACK_REPLY_END      => { pieces => ['seq','track_uuid'],          terminal => 0 },  # buffer_complete set by parsePiece for dict
+	$DIRECTION_INFO | $TRACK_REPLY_RENAMED  => { pieces => ['seq','success'],             terminal => 0 },
 
-	# Requests
+	# Requests — terminal=0 (monitored by dispatchTCPSendMsg, never returned as reply)
 
-	$DIRECTION_SEND | $TRACK_CMD_GET_NTH		=> 	[ 'seq','point_number' ],
-	$DIRECTION_SEND | $TRACK_CMD_SET_NAME		=> 	[ 'seq','name16' ],
-	$DIRECTION_SEND | $TRACK_CMD_GET_CUR2		=> 	[ 'seq' ],
-	$DIRECTION_SEND | $TRACK_CMD_GET_CUR		=> 	[ 'seq' ],
-	$DIRECTION_SEND | $TRACK_CMD_SAVE			=> 	[],									# no sequence number
-	$DIRECTION_SEND | $TRACK_CMD_GET_TRACK 		=> 	[ 'seq','uuid', ],
-	$DIRECTION_SEND | $TRACK_CMD_GET_MTA		=> 	[ 'seq','uuid', ],
-	$DIRECTION_SEND | $TRACK_CMD_ERASE			=> 	[ 'seq','uuid', ],
-	$DIRECTION_SEND | $TRACK_CMD_RENAME			=> 	[ 'seq','uuid', 'name16' ],
-	$DIRECTION_SEND | $TRACK_CMD_START			=> 	[],									# no sequence number
-	$DIRECTION_SEND | $TRACK_CMD_STOP			=> 	[],									# no sequence number
-	$DIRECTION_SEND | $TRACK_CMD_DISCARD		=> 	[],									# no sequence number
-	$DIRECTION_SEND | $TRACK_CMD_GET_DICT		=> 	[ 'seq' ],
-	$DIRECTION_SEND | $TRACK_CMD_GET_STATE		=> 	[ 'seq' ],
-    # $DIRECTION_SEND | $TRACK_CMD_USELESS_E	=> 	[ 'seq' ],
-    # $DIRECTION_SEND | $TRACK_CMD_NOREPLY_F	=> 	[ 'seq' ],
-	$DIRECTION_SEND | $TRACK_CMD_BUMP_NAME		=> 	[ 'seq','name16' ],
-	# $DIRECTION_SEND | $TRACK_CMD_NO_REPLY_11	=>  [ 'seq' ],
-
+	$DIRECTION_SEND | $TRACK_CMD_GET_NTH    => { pieces => ['seq','point_number'], terminal => 0 },
+	$DIRECTION_SEND | $TRACK_CMD_SET_NAME   => { pieces => ['seq','name16'],       terminal => 0 },
+	$DIRECTION_SEND | $TRACK_CMD_GET_CUR2   => { pieces => ['seq'],                terminal => 0 },
+	$DIRECTION_SEND | $TRACK_CMD_GET_CUR    => { pieces => ['seq'],                terminal => 0 },
+	$DIRECTION_SEND | $TRACK_CMD_SAVE       => { pieces => [],                     terminal => 0 },
+	$DIRECTION_SEND | $TRACK_CMD_GET_TRACK  => { pieces => ['seq','uuid'],         terminal => 0 },
+	$DIRECTION_SEND | $TRACK_CMD_GET_MTA    => { pieces => ['seq','uuid'],         terminal => 0 },
+	$DIRECTION_SEND | $TRACK_CMD_ERASE      => { pieces => ['seq','uuid'],         terminal => 0 },
+	$DIRECTION_SEND | $TRACK_CMD_RENAME     => { pieces => ['seq','uuid','name16'],terminal => 0 },
+	$DIRECTION_SEND | $TRACK_CMD_START      => { pieces => [],                     terminal => 0 },
+	$DIRECTION_SEND | $TRACK_CMD_STOP       => { pieces => [],                     terminal => 0 },
+	$DIRECTION_SEND | $TRACK_CMD_DISCARD    => { pieces => [],                     terminal => 0 },
+	$DIRECTION_SEND | $TRACK_CMD_GET_DICT   => { pieces => ['seq'],                terminal => 0 },
+	$DIRECTION_SEND | $TRACK_CMD_GET_STATE  => { pieces => ['seq'],                terminal => 0 },
+	$DIRECTION_SEND | $TRACK_CMD_BUMP_NAME  => { pieces => ['seq','name16'],       terminal => 0 },
 
 );
 
@@ -749,6 +745,16 @@ sub do_general
 
 		display($dbg,1,"renaming (".lc($old_name).")=$uuid to '$new_name'");
 		$param = pack('H*',name16_hex($new_name));
+	}
+
+	elsif ($rpart eq 'dict')
+	{
+		return $this->get_tracks($command);
+	}
+
+	else
+	{
+		return error("do_general: unrecognized command '$rpart'");
 	}
 
 	# Send the request

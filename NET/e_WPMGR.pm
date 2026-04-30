@@ -27,7 +27,30 @@ sub newParser
 	display($dbg_ewp,0,"apps::raymarine::NET::e_WPMGR::newParser($mon_defs->{name}) is_shark($mon_defs->{is_shark}) is_sniffer($mon_defs->{is_sniffer})");
 	my $this = $class->SUPER::newParser($mon_defs);
 	bless $this,$class;
+	$this->resetTransaction();
 	return $this;
+}
+
+
+sub resetTransaction
+{
+	my ($this) = @_;
+	$this->{tx} = shared_clone({
+		seq_num    => 0,
+		what       => 0,
+		is_dict    => 0,
+		is_event   => 0,
+		evt_mask   => 0,
+		uuid       => '',
+		success    => 0,
+		item       => undef,
+		item_buf   => '',
+		item_total => undef,
+		dict_uuids => undef,
+		dict_total => undef,
+		mods       => undef,
+		name       => '',
+	});
 }
 
 
@@ -36,9 +59,15 @@ sub applyMonDefs
 	my ($this,$packet) = @_;
 	display($dbg_ewp+1,0,"apps::raymarine::NET::e_WPMGR::applyMonDefs()");
 
-	# skip the 0th message word(length)
-	my $cmd_word = unpack('v',substr($packet->{payload},2,2));
+	# payload is now the msg body (no length prefix); cmd_word is at offset 0
+	my $cmd_word = unpack('v',substr($packet->{payload},0,2));
+	my $D = $cmd_word & 0xf00;
 	my $W = $cmd_word & 0xf0;
+	# for INFO messages where W==0, use established tx context
+	if (!$W && $D == $DIRECTION_INFO)
+	{
+		$W = $this->{tx}{what} // 0;
+	}
 
 	$packet->{name} = $NAV_WHAT{$W};
 	
@@ -76,29 +105,9 @@ sub applyMonDefs
 
 
 
-sub parsePacket
-	# Calls base clase AFTER figuring out what mon_ins/outs,
-	# colors to use, and applying them to the packet
-{
-	my ($this,$packet) = @_;
-		# the packet namespace is crowded and it is crucial
-		# that no base class names are overwritten by derived classes
-	mergeHash($packet,{
-		is_dict 	=> 0,
-		seq_num 	=> 0,
-		is_event 	=> 0,
-		uuid		=> '' });
-	display($dbg_ewp+1,0,"apps::raymarine::NET::e_WPMGR::parsePacket()");
-	return $this->SUPER::parsePacket($packet);
-}
-
-
-
 sub parseMessage
-	# Calls base_clase BEFORE doing WPMGR specific stuff,
-	# which particularly involves maintaing the 'what' context
-	# across messages, knowing what messages have sequence numbers,
-	# and checking twice for rules,
+	# Per-message dispatch for TCP stream model.
+	# Returns undef for intermediate messages, shared reply hash for terminal.
 {
 	my ($this,$packet,$len,$part) = @_;
 	display($dbg_ewp+2,0,"apps::raymarine::NET::e_WPMGR::parseMessage($len)");
@@ -109,45 +118,50 @@ sub parseMessage
 	my $W = $cmd_word & 0xf0;
 	my $C = $cmd_word & 0xf;
 
-	my $dir_name = $DIRECTION_NAME{$D};
+	my $dir_name  = $DIRECTION_NAME{$D};
 	my $what_name = $NAV_WHAT{$W};
-	my $cmd_name = $NAV_COMMAND{$C};
+	my $cmd_name  = $NAV_COMMAND{$C};
 
-	my $mon = $packet->{mon};
+	my $mon   = $packet->{mon};
 	my $color = $packet->{color};
 	printConsole(0,$mon,$color,"$dir_name $cmd_name $what_name")
 		if $mon & $MON_PARSE;
 
-	if ($W || !defined($packet->{what}) || $D != $DIRECTION_INFO)
+	# update 'what' context; W==0 on INFO means keep current context
+	if ($W || !defined($this->{tx}{what}) || $D != $DIRECTION_INFO)
 	{
-		if (!defined($packet->{what}) || $packet->{what} != $W)
-		{
-			$packet->{what} = $W;
-		}
+		$this->{tx}{what} = $W;
 	}
-
-	# find rule, first by full command word, then by $dir | $cmd
 
 	my $rule = $WPMGR_PARSE_RULES{$cmd_word};
-	$rule = $WPMGR_PARSE_RULES{ $D | $C } if !$rule;
+	$rule = $WPMGR_PARSE_RULES{$D | $C} if !$rule;
 	if ($rule)
 	{
-		my $offset = 4;	# skip cmd_word and sid
-		for my $piece (@$rule)
+		my $offset = 4;
+		for my $piece (@{$rule->{pieces}})
 		{
-			$this->parsePiece(
-				$packet,
-				$piece,
-				$part,
-				\$offset);
+			$this->parsePiece($packet,$piece,$part,\$offset);
+		}
+
+		# RECV_DATA: terminal only when success==0 (item not found)
+		if ($D == $DIRECTION_RECV && $C == $CMD_DATA && !$this->{tx}{success})
+		{
+			return shared_clone({%{$this->{tx}}});
+		}
+
+		if ($rule->{terminal})
+		{
+			my $reply = shared_clone({%{$this->{tx}}});
+			$reply->{seq_num} = 0 if $rule->{is_event};
+			return $reply;
 		}
 	}
-	else # NO RULE!
+	else
 	{
 		error("NO RULE FOR $dir_name | $cmd_name | $what_name");
 	}
 
-	return $packet;
+	return undef;
 }
 
 
@@ -155,17 +169,15 @@ sub parseMessage
 
 
 sub parsePiece
-	# Parses pieces that are specific to WPMGR, especially
-	# those that change the state of inter-message parsing
-	# or rely on previous messages (state).
+	# State fields use $this->{tx}; $packet carries only display info (mon, color).
 {
 	my ($this,$packet,$piece,$part,$poffset) = @_;
-	my $mon = $packet->{mon};
+	my $mon   = $packet->{mon};
 	my $color = $packet->{color};
 
-	if ($piece eq 'buffer' && !$packet->{is_dict})
+	if ($piece eq 'buffer' && !$this->{tx}{is_dict})
 	{
-		my $what = $packet->{what};
+		my $what   = $this->{tx}{what};
 		my $buffer = substr($part,$$poffset);
 
 		printConsole(2,$mon,$color,"buffer piece($NAV_WHAT{$what})")
@@ -173,32 +185,28 @@ sub parsePiece
 
 		if ($what == $WHAT_ROUTE)
 		{
-			# Routes can span multiple BUFFER packets (one per 512-byte TCP chunk).
-			# Each chunk: 4-byte big_len (this chunk's payload size) + payload bytes.
-			# Accumulate payload across chunks; call parseRoute once complete.
-
 			my $big_len = unpack('V', substr($buffer, 0, 4));
 
-			if (!defined $packet->{item_total})
+			if (!defined $this->{tx}{item_total})
 			{
-				$packet->{item_buf} = substr($buffer, 4, $big_len);
-				my $name_len = unpack('C', substr($packet->{item_buf}, 2, 1));
-				my $cmt_len  = unpack('C', substr($packet->{item_buf}, 3, 1));
-				my $num_wpts = unpack('v', substr($packet->{item_buf}, 4, 2));
-				$packet->{item_total} = 8 + $name_len + $cmt_len + $num_wpts * 18 + 46;
+				$this->{tx}{item_buf} = substr($buffer, 4, $big_len);
+				my $name_len = unpack('C', substr($this->{tx}{item_buf}, 2, 1));
+				my $cmt_len  = unpack('C', substr($this->{tx}{item_buf}, 3, 1));
+				my $num_wpts = unpack('v', substr($this->{tx}{item_buf}, 4, 2));
+				$this->{tx}{item_total} = 8 + $name_len + $cmt_len + $num_wpts * 18 + 46;
 			}
 			else
 			{
-				$packet->{item_buf} .= substr($buffer, 4, $big_len);
+				$this->{tx}{item_buf} .= substr($buffer, 4, $big_len);
 			}
 
-			if (length($packet->{item_buf}) >= $packet->{item_total})
+			if (length($this->{tx}{item_buf}) >= $this->{tx}{item_total})
 			{
-				my $total = length($packet->{item_buf});
-				my $item = parseRoute(0, pack('V',$total) . $packet->{item_buf}, $mon, $color);
-				$packet->{item} = shared_clone($item) if $item;
-				delete $packet->{item_buf};
-				delete $packet->{item_total};
+				my $total = length($this->{tx}{item_buf});
+				my $item = parseRoute(0, pack('V',$total) . $this->{tx}{item_buf}, $mon, $color);
+				$this->{tx}{item} = shared_clone($item) if $item;
+				delete $this->{tx}{item_buf};
+				delete $this->{tx}{item_total};
 			}
 		}
 		else
@@ -206,15 +214,11 @@ sub parsePiece
 			my $item;
 			$item = parseWaypoint(0,$buffer,$mon,$color) if $what == $WHAT_WAYPOINT;
 			$item = parseGroup(0,$buffer,$mon,$color)    if $what == $WHAT_GROUP;
-			$packet->{item} = shared_clone($item);
+			$this->{tx}{item} = shared_clone($item);
 		}
 	}
 	elsif ($piece eq 'context_bits')
 	{
-		# context_bits is the only way that WPMGR knows
-		# that the buffer contains a dictionary, which
-		# buffer will then be parsed by the base class.
-
 		my $str = substr($part,$$poffset,4);
 		my $value = unpack('V',$str);
 		$$poffset += 4;
@@ -224,15 +228,12 @@ sub parsePiece
 
 		if ($value & 0x10)
 		{
-			$packet->{is_dict} = 1;
-			$packet->{dict_uuids} = shared_clone([]);
+			$this->{tx}{is_dict}    = 1;
+			$this->{tx}{dict_uuids} = shared_clone([]);
 			printConsole(2,$mon,$color,"is_dict = 1")
 				if $mon & $MON_PIECES;
 		}
 	}
-
-	# WPMGR event handling and [mods] are a beast of their own.
-
 	elsif ($piece eq 'evt_flag')
 	{
 		my $str = substr($part,$$poffset,4);
@@ -242,22 +243,16 @@ sub parsePiece
 		printConsole(2,$mon,$color,sprintf("evt_flag(%04x) is_event=1",$value))
 			if $mon & $MON_PIECES;
 
-		$packet->{is_event} = 1;
-		$packet->{evt_mask} ||= 0;
-			# Since all replies are atomic, the is_event from init_context()
-			# is only used to set the initial record to zero. is_event is
-			# never normalized back into the context.
+		$this->{tx}{is_event} = 1;
+		$this->{tx}{evt_mask} ||= 0;
 
-		my $mask = $packet->{what};
-		$mask |= 1;					# add in specific 1=waypoints
-		$mask <<= $value * 4;		# shift closing flags to high nibble
-		$packet->{evt_mask} |= $mask;
+		my $mask = $this->{tx}{what};
+		$mask |= 1;
+		$mask <<= $value * 4;
+		$this->{tx}{evt_mask} |= $mask;
 	}
 	elsif ($piece eq 'mod_bits')
 	{
-		# Developes a list of 'mods' about records the E80 has
-		# told us we need to delete, or get as a result of our request.
-
 		my $str = substr($part,$$poffset,4);
 		my $value = unpack('V',$str);
 		$$poffset += 4;
@@ -265,24 +260,19 @@ sub parsePiece
 		printConsole(2,$mon,$color,sprintf("mod_bits(%04x)",$value))
 			if $mon & $MON_PIECES;
 
-		my $what = $packet->{what};
-		my $uuid = $packet->{uuid};
-		my $mods = $packet->{mods} = shared_clone([]) if !exists($packet->{mods});
+		my $what = $this->{tx}{what};
+		my $uuid = $this->{tx}{uuid};
+		$this->{tx}{mods} ||= shared_clone([]);
 		my $mod = shared_clone({
 			what => $what,
 			uuid => $uuid,
 			bits => $value });
-		push @$mods,$mod;
+		push @{$this->{tx}{mods}},$mod;
 	}
-
-	# Call the base class to handle many common piece types
-
 	else
 	{
 		return $this->SUPER::parsePiece($packet,$piece,$part,$poffset)
 	}
-
-	# return 1 to indicate no errors
 
 	return 1;
 }
