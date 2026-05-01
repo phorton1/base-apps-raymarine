@@ -370,4 +370,33 @@ sub _pasteTrackToBrowser
 }
 
 
+#----------------------------------------------------
+# Cut — source deletion after successful paste
+#----------------------------------------------------
+
+sub _cutBrowserWaypoint
+{
+	my ($uuid, $tree) = @_;
+	display(0,0,"nmOps::_cutBrowserWaypoint: not yet implemented");
+}
+
+sub _cutBrowserGroup
+{
+	my ($uuid, $tree) = @_;
+	display(0,0,"nmOps::_cutBrowserGroup: not yet implemented");
+}
+
+sub _cutBrowserRoute
+{
+	my ($uuid, $tree) = @_;
+	display(0,0,"nmOps::_cutBrowserRoute: not yet implemented");
+}
+
+sub _cutBrowserTrack
+{
+	my ($uuid, $tree) = @_;
+	display(0,0,"nmOps::_cutBrowserTrack: not yet implemented");
+}
+
+
 1;

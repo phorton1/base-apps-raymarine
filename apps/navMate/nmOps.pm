@@ -32,6 +32,7 @@ BEGIN
 		doNew
 		doDelete
 		doCopy
+		doCut
 		doPaste
 		doRefresh
 	);
@@ -264,8 +265,7 @@ sub _copyWaypoint
 
 
 sub _copyTrack
-{
-	my ($intent, $panel, $node, $tree) = @_;
+{	my ($intent, $panel, $node, $tree) = @_;
 
 	if ($panel eq 'e80')
 	{
@@ -295,6 +295,31 @@ sub _copyTrack
 			uuid => $uuid,
 			data => $track,
 		}]);
+	}
+}
+
+
+#----------------------------------------------------
+# doCut
+#----------------------------------------------------
+
+sub doCut
+{
+	my ($intent, $panel, $node, $tree) = @_;
+
+	if ($intent =~ /^waypoints?$/)
+	{
+		_copyWaypoint($intent, $panel, $node, $tree);
+		$nmClipboard::clipboard->{cut} = 1 if $nmClipboard::clipboard;
+	}
+	elsif ($intent =~ /^tracks?$/)
+	{
+		_copyTrack($intent, $panel, $node, $tree);
+		$nmClipboard::clipboard->{cut} = 1 if $nmClipboard::clipboard;
+	}
+	else
+	{
+		display(0,0,"nmOps::doCut: intent '$intent' not yet implemented");
 	}
 }
 

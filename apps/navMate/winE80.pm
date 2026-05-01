@@ -62,7 +62,7 @@ sub new
 	EVT_TREE_SEL_CHANGED($this,      $this->{tree}, \&onTreeSelect);
 	EVT_TREE_ITEM_RIGHT_CLICK($this, $this->{tree}, \&onTreeRightClick);
 	EVT_MENU($this, $_, \&_onContextMenuCommand)
-		for (allCopyCmds(), $CMD_PASTE, allDeleteCmds(), allNewCmds());
+		for (allCopyCmds(), allCutCmds(), $CMD_PASTE, allDeleteCmds(), allNewCmds());
 	EVT_MENU($this, $CMD_REFRESH_E80, sub { doRefresh($_[0]) });
 
 	$this->{_expanded_keys} = {

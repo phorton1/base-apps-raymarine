@@ -80,7 +80,7 @@ sub new
 
 	EVT_MENU($this, $CMD_UPLOAD_E80, \&_onUploadE80);   # vestigial
 	EVT_MENU($this, $_, \&_onContextMenuCommand)
-		for (allCopyCmds(), $CMD_PASTE, allDeleteCmds(), allNewCmds());
+		for (allCopyCmds(), allCutCmds(), $CMD_PASTE, allDeleteCmds(), allNewCmds());
 
 	_loadTopLevel($this);
 

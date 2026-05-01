@@ -505,4 +505,27 @@ sub _pasteWaypointToE80
 }
 
 
+#----------------------------------------------------
+# Cut — source deletion after successful paste
+#----------------------------------------------------
+
+sub _cutE80Waypoint
+{
+	my ($uuid, $tree) = @_;
+	display(0,0,"nmOps::_cutE80Waypoint: not yet implemented");
+}
+
+sub _cutE80Group
+{
+	my ($uuid, $tree) = @_;
+	display(0,0,"nmOps::_cutE80Group: not yet implemented");
+}
+
+sub _cutE80Route
+{
+	my ($uuid, $tree) = @_;
+	display(0,0,"nmOps::_cutE80Route: not yet implemented");
+}
+
+
 1;

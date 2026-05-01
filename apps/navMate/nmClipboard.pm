@@ -37,6 +37,16 @@ BEGIN
 		$CMD_COPY_TRACKS
 		$CMD_COPY_ALL
 
+		$CMD_CUT_WAYPOINT
+		$CMD_CUT_WAYPOINTS
+		$CMD_CUT_GROUP
+		$CMD_CUT_GROUPS
+		$CMD_CUT_ROUTE
+		$CMD_CUT_ROUTES
+		$CMD_CUT_TRACK
+		$CMD_CUT_TRACKS
+		$CMD_CUT_ALL
+
 		$CMD_PASTE
 
 		$CMD_DELETE_WAYPOINT
@@ -54,13 +64,16 @@ BEGIN
 		$CMD_NEW_BRANCH
 
 		allCopyCmds
+		allCutCmds
 		allNewCmds
 		allDeleteCmds
 		getNewMenuItems
 		getDeleteMenuItems
 		getCopyMenuItems
+		getCutMenuItems
 		canPaste
 		setCopy
+		setCut
 		clearClipboard
 		getClipboardText
 		onContextMenuCommand
@@ -79,6 +92,16 @@ our $CMD_COPY_TRACK     = 10040;
 our $CMD_COPY_TRACKS    = 10041;
 our $CMD_COPY_ALL       = 10099;
 
+our $CMD_CUT_WAYPOINT  = 10110;
+our $CMD_CUT_WAYPOINTS = 10111;
+our $CMD_CUT_GROUP     = 10120;
+our $CMD_CUT_GROUPS    = 10121;
+our $CMD_CUT_ROUTE     = 10130;
+our $CMD_CUT_ROUTES    = 10131;
+our $CMD_CUT_TRACK     = 10140;
+our $CMD_CUT_TRACKS    = 10141;
+our $CMD_CUT_ALL       = 10199;
+
 our $CMD_PASTE          = 10300;
 
 our $CMD_DELETE_WAYPOINT   = 10410;
@@ -96,7 +119,7 @@ our $CMD_NEW_ROUTE      = 10530;
 our $CMD_NEW_BRANCH     = 10550;
 
 
-my %CMD_INTENT = (
+my %CMD_COPY_INTENT = (
 	$CMD_COPY_WAYPOINT  => 'waypoint',
 	$CMD_COPY_WAYPOINTS => 'waypoints',
 	$CMD_COPY_GROUP     => 'group',
@@ -108,12 +131,32 @@ my %CMD_INTENT = (
 	$CMD_COPY_ALL       => 'all',
 );
 
+my %CMD_CUT_INTENT = (
+	$CMD_CUT_WAYPOINT  => 'waypoint',
+	$CMD_CUT_WAYPOINTS => 'waypoints',
+	$CMD_CUT_GROUP     => 'group',
+	$CMD_CUT_GROUPS    => 'groups',
+	$CMD_CUT_ROUTE     => 'route',
+	$CMD_CUT_ROUTES    => 'routes',
+	$CMD_CUT_TRACK     => 'track',
+	$CMD_CUT_TRACKS    => 'tracks',
+	$CMD_CUT_ALL       => 'all',
+);
+
 my @ALL_COPY_CMDS = (
 	$CMD_COPY_WAYPOINT,  $CMD_COPY_WAYPOINTS,
 	$CMD_COPY_GROUP,     $CMD_COPY_GROUPS,
 	$CMD_COPY_ROUTE,     $CMD_COPY_ROUTES,
 	$CMD_COPY_TRACK,     $CMD_COPY_TRACKS,
 	$CMD_COPY_ALL,
+);
+
+my @ALL_CUT_CMDS = (
+	$CMD_CUT_WAYPOINT,  $CMD_CUT_WAYPOINTS,
+	$CMD_CUT_GROUP,     $CMD_CUT_GROUPS,
+	$CMD_CUT_ROUTE,     $CMD_CUT_ROUTES,
+	$CMD_CUT_TRACK,     $CMD_CUT_TRACKS,
+	$CMD_CUT_ALL,
 );
 
 my @ALL_NEW_CMDS = (
@@ -139,6 +182,7 @@ our $clipboard = undef;
 #----------------------------------------------------
 
 sub allCopyCmds   { return @ALL_COPY_CMDS   }
+sub allCutCmds    { return @ALL_CUT_CMDS    }
 sub allNewCmds    { return @ALL_NEW_CMDS    }
 sub allDeleteCmds { return @ALL_DELETE_CMDS }
 
@@ -154,6 +198,13 @@ sub setCopy
 	_updateStatusBar();
 }
 
+sub setCut
+{
+	my ($intent, $source, $items) = @_;
+	$clipboard = { intent => $intent, source => $source, items => $items // [], cut => 1 };
+	_updateStatusBar();
+}
+
 sub clearClipboard
 {
 	$clipboard = undef;
@@ -163,9 +214,10 @@ sub clearClipboard
 sub getClipboardText
 {
 	return '' if !$clipboard;
-	my $n   = scalar @{$clipboard->{items}};
-	my $src = $clipboard->{source} eq 'browser' ? 'B' : 'E80';
-	return "[$src] $clipboard->{intent} ($n)";
+	my $n    = scalar @{$clipboard->{items}};
+	my $src  = $clipboard->{source} eq 'browser' ? 'B' : 'E80';
+	my $verb = $clipboard->{cut} ? "cut:$clipboard->{intent}" : $clipboard->{intent};
+	return "[$src] $verb ($n)";
 }
 
 sub _updateStatusBar
@@ -402,6 +454,69 @@ sub getCopyMenuItems
 
 
 #----------------------------------------------------
+# getCutMenuItems
+#----------------------------------------------------
+# Returns list of { id => $CMD_ID, label => '...' }.
+# Cut options mirror copy options; empty list means no cut is available.
+
+sub getCutMenuItems
+{
+	my ($panel, @nodes) = @_;
+	return () if !@nodes;
+
+	my %c = _analyzeNodes($panel, @nodes);
+
+	my $only_wp    = $c{wp}    && !$c{route} && !$c{track} && !$c{group} && !$c{branch} && !$c{header};
+	my $only_route = $c{route} && !$c{wp}    && !$c{track} && !$c{group} && !$c{branch} && !$c{header};
+	my $only_track = $c{track} && !$c{wp}    && !$c{route} && !$c{group} && !$c{branch} && !$c{header};
+	my $only_group = $c{group} && !$c{wp}    && !$c{route} && !$c{track} && !$c{branch} && !$c{header};
+
+	my @items;
+
+	if ($only_wp)
+	{
+		push @items, $c{wp} == 1
+			? { id => $CMD_CUT_WAYPOINT,  label => 'Cut Waypoint'  }
+			: { id => $CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
+	}
+	elsif ($only_track)
+	{
+		push @items, $c{track} == 1
+			? { id => $CMD_CUT_TRACK,  label => 'Cut Track'  }
+			: { id => $CMD_CUT_TRACKS, label => 'Cut Tracks' };
+	}
+	elsif ($only_route)
+	{
+		push @items, $c{route} == 1
+			? { id => $CMD_CUT_ROUTE,  label => 'Cut Route'  }
+			: { id => $CMD_CUT_ROUTES, label => 'Cut Routes' };
+		push @items, { id => $CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
+	}
+	elsif ($only_group)
+	{
+		push @items, $c{group} == 1
+			? { id => $CMD_CUT_GROUP,  label => 'Cut Group'  }
+			: { id => $CMD_CUT_GROUPS, label => 'Cut Groups' };
+		push @items, { id => $CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
+	}
+	elsif ($c{branch} || $c{header})
+	{
+		push @items, { id => $CMD_CUT_ALL,       label => 'Cut All'       };
+		push @items, { id => $CMD_CUT_GROUPS,    label => 'Cut Groups'    };
+		push @items, { id => $CMD_CUT_ROUTES,    label => 'Cut Routes'    };
+		push @items, { id => $CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
+		push @items, { id => $CMD_CUT_TRACKS,    label => 'Cut Tracks'    };
+	}
+	elsif ($c{wp})
+	{
+		push @items, { id => $CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
+	}
+
+	return @items;
+}
+
+
+#----------------------------------------------------
 # canPaste
 #----------------------------------------------------
 # Paste is always shown in the menu but enabled only when
@@ -469,10 +584,17 @@ sub onContextMenuCommand
 		return;
 	}
 
-	my $intent = $CMD_INTENT{$cmd_id};
-	if ($intent)
+	my $copy_intent = $CMD_COPY_INTENT{$cmd_id};
+	if ($copy_intent)
 	{
-		nmOps::doCopy($intent, $panel, $right_click_node, $tree);
+		nmOps::doCopy($copy_intent, $panel, $right_click_node, $tree);
+		return;
+	}
+
+	my $cut_intent = $CMD_CUT_INTENT{$cmd_id};
+	if ($cut_intent)
+	{
+		nmOps::doCut($cut_intent, $panel, $right_click_node, $tree);
 		return;
 	}
 
