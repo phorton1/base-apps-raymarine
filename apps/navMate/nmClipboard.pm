@@ -29,30 +29,29 @@ BEGIN
 
 		$CMD_COPY_WAYPOINT
 		$CMD_COPY_WAYPOINTS
-		$CMD_COPY_TRACK
-		$CMD_COPY_TRACKS
 		$CMD_COPY_GROUP
 		$CMD_COPY_GROUPS
 		$CMD_COPY_ROUTE
 		$CMD_COPY_ROUTES
+		$CMD_COPY_TRACK
+		$CMD_COPY_TRACKS
 		$CMD_COPY_ALL
+
 		$CMD_PASTE
-		$CMD_DELETE
-		$CMD_REMOVE_ROUTEPOINT
+
 		$CMD_DELETE_WAYPOINT
-		$CMD_DELETE_WAYPOINT_RPS
 		$CMD_DELETE_GROUP
 		$CMD_DELETE_GROUP_WPS
-		$CMD_DELETE_GROUP_NUCLEAR
 		$CMD_DELETE_ROUTE
-		$CMD_DELETE_ROUTE_WPS
-		$CMD_DELETE_ROUTE_NUCLEAR
+		$CMD_REMOVE_ROUTEPOINT
 		$CMD_DELETE_TRACK
 		$CMD_DELETE_BRANCH
-		$CMD_NEW_BRANCH
+		$CMD_DELETE_ALL
+
+		$CMD_NEW_WAYPOINT
 		$CMD_NEW_GROUP
 		$CMD_NEW_ROUTE
-		$CMD_NEW_WAYPOINT
+		$CMD_NEW_BRANCH
 
 		allCopyCmds
 		allNewCmds
@@ -72,63 +71,64 @@ BEGIN
 
 our $CMD_COPY_WAYPOINT  = 10010;
 our $CMD_COPY_WAYPOINTS = 10011;
-our $CMD_COPY_TRACK     = 10012;
-our $CMD_COPY_TRACKS    = 10013;
-our $CMD_COPY_GROUP     = 10014;
-our $CMD_COPY_GROUPS    = 10015;
-our $CMD_COPY_ROUTE     = 10016;
-our $CMD_COPY_ROUTES    = 10017;
-our $CMD_COPY_ALL       = 10018;
-our $CMD_PASTE          = 10019;
-our $CMD_DELETE         = 10020;
-our $CMD_NEW_BRANCH     = 10021;
-our $CMD_NEW_GROUP      = 10022;
-our $CMD_NEW_ROUTE      = 10023;
-our $CMD_NEW_WAYPOINT   = 10024;
+our $CMD_COPY_GROUP     = 10020;
+our $CMD_COPY_GROUPS    = 10021;
+our $CMD_COPY_ROUTE     = 10030;
+our $CMD_COPY_ROUTES    = 10031;
+our $CMD_COPY_TRACK     = 10040;
+our $CMD_COPY_TRACKS    = 10041;
+our $CMD_COPY_ALL       = 10099;
 
-our $CMD_REMOVE_ROUTEPOINT    = 10025;
-our $CMD_DELETE_WAYPOINT      = 10026;
-our $CMD_DELETE_WAYPOINT_RPS  = 10027;
-our $CMD_DELETE_GROUP         = 10028;
-our $CMD_DELETE_GROUP_WPS     = 10029;
-our $CMD_DELETE_GROUP_NUCLEAR = 10030;
-our $CMD_DELETE_ROUTE         = 10031;
-our $CMD_DELETE_ROUTE_WPS     = 10032;
-our $CMD_DELETE_ROUTE_NUCLEAR = 10033;
-our $CMD_DELETE_TRACK         = 10034;
-our $CMD_DELETE_BRANCH        = 10035;
+our $CMD_PASTE          = 10300;
+
+our $CMD_DELETE_WAYPOINT   = 10410;
+our $CMD_DELETE_GROUP      = 10420;
+our $CMD_DELETE_GROUP_WPS  = 10421;
+our $CMD_DELETE_ROUTE      = 10430;
+our $CMD_REMOVE_ROUTEPOINT = 10431;
+our $CMD_DELETE_TRACK      = 10440;
+our $CMD_DELETE_BRANCH     = 10450;
+our $CMD_DELETE_ALL        = 10499;
+
+our $CMD_NEW_WAYPOINT   = 10510;
+our $CMD_NEW_GROUP      = 10520;
+our $CMD_NEW_ROUTE      = 10530;
+our $CMD_NEW_BRANCH     = 10550;
+
 
 my %CMD_INTENT = (
 	$CMD_COPY_WAYPOINT  => 'waypoint',
 	$CMD_COPY_WAYPOINTS => 'waypoints',
-	$CMD_COPY_TRACK     => 'track',
-	$CMD_COPY_TRACKS    => 'tracks',
 	$CMD_COPY_GROUP     => 'group',
 	$CMD_COPY_GROUPS    => 'groups',
 	$CMD_COPY_ROUTE     => 'route',
 	$CMD_COPY_ROUTES    => 'routes',
+	$CMD_COPY_TRACK     => 'track',
+	$CMD_COPY_TRACKS    => 'tracks',
 	$CMD_COPY_ALL       => 'all',
 );
 
 my @ALL_COPY_CMDS = (
 	$CMD_COPY_WAYPOINT,  $CMD_COPY_WAYPOINTS,
-	$CMD_COPY_TRACK,     $CMD_COPY_TRACKS,
 	$CMD_COPY_GROUP,     $CMD_COPY_GROUPS,
 	$CMD_COPY_ROUTE,     $CMD_COPY_ROUTES,
+	$CMD_COPY_TRACK,     $CMD_COPY_TRACKS,
 	$CMD_COPY_ALL,
 );
 
 my @ALL_NEW_CMDS = (
-	$CMD_NEW_BRANCH, $CMD_NEW_GROUP, $CMD_NEW_ROUTE, $CMD_NEW_WAYPOINT,
+	$CMD_NEW_WAYPOINT, $CMD_NEW_GROUP, $CMD_NEW_ROUTE, $CMD_NEW_BRANCH,
 );
 
 my @ALL_DELETE_CMDS = (
+	$CMD_DELETE_WAYPOINT,
+	$CMD_DELETE_GROUP,
+	$CMD_DELETE_GROUP_WPS,
+	$CMD_DELETE_ROUTE,
 	$CMD_REMOVE_ROUTEPOINT,
-	$CMD_DELETE_WAYPOINT,    $CMD_DELETE_WAYPOINT_RPS,
-	$CMD_DELETE_GROUP,       $CMD_DELETE_GROUP_WPS,   $CMD_DELETE_GROUP_NUCLEAR,
-	$CMD_DELETE_ROUTE,       $CMD_DELETE_ROUTE_WPS,
 	$CMD_DELETE_TRACK,
 	$CMD_DELETE_BRANCH,
+	$CMD_DELETE_ALL,
 );
 
 our $clipboard = undef;
@@ -276,7 +276,7 @@ sub getNewMenuItems
 
 sub getDeleteMenuItems
 {
-	my ($panel, $right_click_node, $has_route_members) = @_;
+	my ($panel, $right_click_node) = @_;
 	my $t  = $right_click_node->{type}  // '';
 	my $ot = ($right_click_node->{data} // {})->{obj_type}  // '';
 	my $nt = ($right_click_node->{data} // {})->{node_type} // '';
@@ -288,15 +288,11 @@ sub getDeleteMenuItems
 
 		if ($t eq 'object')
 		{
-			return (
-				{ id => $CMD_DELETE_WAYPOINT,     label => 'Delete Waypoint'                    },
-				{ id => $CMD_DELETE_WAYPOINT_RPS, label => 'Delete Waypoint + RoutePoints'      },
-			) if $ot eq 'waypoint';
+			return ({ id => $CMD_DELETE_WAYPOINT, label => 'Delete Waypoint' })
+				if $ot eq 'waypoint';
 
-			return (
-				{ id => $CMD_DELETE_ROUTE,     label => 'Delete Route'             },
-				{ id => $CMD_DELETE_ROUTE_WPS, label => 'Delete Route + Waypoints' },
-			) if $ot eq 'route';
+			return ({ id => $CMD_DELETE_ROUTE, label => 'Delete Route' })
+				if $ot eq 'route';
 
 			return ({ id => $CMD_DELETE_TRACK, label => 'Delete Track' })
 				if $ot eq 'track';
@@ -305,9 +301,8 @@ sub getDeleteMenuItems
 		if ($t eq 'collection')
 		{
 			return (
-				{ id => $CMD_DELETE_GROUP,         label => 'Delete Group'                           },
-				{ id => $CMD_DELETE_GROUP_WPS,     label => 'Delete Group + Waypoints'               },
-				{ id => $CMD_DELETE_GROUP_NUCLEAR, label => 'Delete Group + Waypoints + RoutePoints' },
+				{ id => $CMD_DELETE_GROUP,     label => 'Delete Group'             },
+				{ id => $CMD_DELETE_GROUP_WPS, label => 'Delete Group + Waypoints' },
 			) if $nt eq 'group';
 
 			return ({ id => $CMD_DELETE_BRANCH, label => 'Delete Branch' });
@@ -316,35 +311,23 @@ sub getDeleteMenuItems
 	else  # e80
 	{
 		return (
-			{ id => $CMD_REMOVE_ROUTEPOINT,   label => 'Remove RoutePoint'             },
-			{ id => $CMD_DELETE_WAYPOINT,     label => 'Delete Waypoint'               },
-			{ id => $CMD_DELETE_WAYPOINT_RPS, label => 'Delete Waypoint + RoutePoints' },
+			{ id => $CMD_REMOVE_ROUTEPOINT, label => 'Remove RoutePoint' },
+			{ id => $CMD_DELETE_WAYPOINT,   label => 'Delete Waypoint'   },
 		) if $t eq 'route_point';
 
-		return (
-			{ id => $CMD_DELETE_WAYPOINT,     label => 'Delete Waypoint'               },
-			{ id => $CMD_DELETE_WAYPOINT_RPS, label => 'Delete Waypoint + RoutePoints' },
-		) if $t eq 'waypoint';
+		return ({ id => $CMD_DELETE_WAYPOINT, label => 'Delete Waypoint' })
+			if $t eq 'waypoint';
 
-		return (
-			{ id => $CMD_DELETE_ROUTE,     label => 'Delete Route'             },
-			{ id => $CMD_DELETE_ROUTE_WPS, label => 'Delete Route + Waypoints' },
-		) if $t eq 'route';
+		return ({ id => $CMD_DELETE_ROUTE, label => 'Delete Route' })
+			if $t eq 'route';
 
 		return (
 			{ id => $CMD_DELETE_GROUP,     label => 'Delete Group'             },
 			{ id => $CMD_DELETE_GROUP_WPS, label => 'Delete Group + Waypoints' },
-			($has_route_members
-				? { id => $CMD_DELETE_GROUP_NUCLEAR, label => 'Delete Group + Waypoints + RoutePoints' }
-				: ()),
 		) if $t eq 'group';
 
-		return (
-			{ id => $CMD_DELETE_GROUP_WPS, label => 'Delete My Waypoints' },
-			($has_route_members
-				? { id => $CMD_DELETE_GROUP_NUCLEAR, label => 'Delete My Waypoints + RoutePoints' }
-				: ()),
-		) if $t eq 'my_waypoints';
+		return ({ id => $CMD_DELETE_GROUP_WPS, label => 'Delete Group + Waypoints' })
+			if $t eq 'my_waypoints';
 
 		return ({ id => $CMD_DELETE_TRACK, label => 'Delete Track' })
 			if $t eq 'track';

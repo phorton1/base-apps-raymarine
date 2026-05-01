@@ -172,12 +172,6 @@ sub doDelete
 			? _deleteBrowserWaypoint($node, $tree)
 			: _deleteE80Waypoint($node, $tree);
 	}
-	elsif ($cmd_id == $nmClipboard::CMD_DELETE_WAYPOINT_RPS)
-	{
-		$panel eq 'browser'
-			? _deleteBrowserWaypointAndRPs($node, $tree)
-			: _deleteE80WaypointAndRPs($node, $tree);
-	}
 	elsif ($cmd_id == $nmClipboard::CMD_DELETE_TRACK)
 	{
 		$panel eq 'browser'
@@ -200,23 +194,11 @@ sub doDelete
 			? _deleteBrowserGroupAndWPs($node, $tree)
 			: _deleteE80GroupAndWPs($node, $tree);
 	}
-	elsif ($cmd_id == $nmClipboard::CMD_DELETE_GROUP_NUCLEAR)
-	{
-		$panel eq 'browser'
-			? _deleteBrowserGroupNuclear($node, $tree)
-			: _deleteE80GroupNuclear($node, $tree);
-	}
 	elsif ($cmd_id == $nmClipboard::CMD_DELETE_ROUTE)
 	{
 		$panel eq 'browser'
 			? _deleteBrowserRoute($node, $tree)
 			: _deleteE80Route($node, $tree);
-	}
-	elsif ($cmd_id == $nmClipboard::CMD_DELETE_ROUTE_WPS)
-	{
-		$panel eq 'browser'
-			? _deleteBrowserRouteAndWPs($node, $tree)
-			: _deleteE80RouteAndWPs($node, $tree);
 	}
 	else
 	{

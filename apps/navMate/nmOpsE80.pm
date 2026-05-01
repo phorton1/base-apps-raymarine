@@ -138,27 +138,6 @@ sub _e80DeleteWP
 # New items
 #----------------------------------------------------
 
-sub _newE80Group
-{
-	my ($node, $tree) = @_;
-
-	my $wpmgr = _wpmgr();
-	unless ($wpmgr)
-	{
-		Wx::MessageBox("WPMGR not connected.", "New Group", wxOK | wxICON_ERROR, $tree);
-		return;
-	}
-
-	my $data = nmDialogs::showNewGroup($tree);
-	return unless defined $data;
-
-	my $uuid = _newNavUUID();
-	return unless $uuid;
-
-	$wpmgr->createGroup({ name => $data->{name}, uuid => $uuid, comment => $data->{comment}, members => [] });
-}
-
-
 sub _newE80Waypoint
 {
 	my ($node, $tree) = @_;
@@ -213,6 +192,27 @@ sub _newE80Waypoint
 }
 
 
+sub _newE80Group
+{
+	my ($node, $tree) = @_;
+
+	my $wpmgr = _wpmgr();
+	unless ($wpmgr)
+	{
+		Wx::MessageBox("WPMGR not connected.", "New Group", wxOK | wxICON_ERROR, $tree);
+		return;
+	}
+
+	my $data = nmDialogs::showNewGroup($tree);
+	return unless defined $data;
+
+	my $uuid = _newNavUUID();
+	return unless $uuid;
+
+	$wpmgr->createGroup({ name => $data->{name}, uuid => $uuid, comment => $data->{comment}, members => [] });
+}
+
+
 sub _newE80Route
 {
 	my ($node, $tree) = @_;
@@ -244,32 +244,6 @@ sub _newE80Route
 # Remove / Delete
 #----------------------------------------------------
 
-sub _removeE80RoutePoint
-{
-	my ($node, $tree) = @_;
-
-	my $wpmgr = _wpmgr();
-	unless ($wpmgr)
-	{
-		Wx::MessageBox("WPMGR not connected.", "Remove RoutePoint", wxOK | wxICON_ERROR, $tree);
-		return;
-	}
-
-	my $wp         = $node->{data};
-	my $name       = $wp ? ($wp->{name} // $node->{uuid}) : $node->{uuid};
-	my $route_uuid = $node->{route_uuid};
-	my $route      = $wpmgr->{routes}{$route_uuid};
-	my $route_name = $route ? ($route->{name} // $route_uuid) : $route_uuid;
-
-	my $rc = Wx::MessageBox("Remove '$name' from route '$route_name'?", "Remove RoutePoint",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return unless $rc == wxYES;
-
-	my @new_uuids = grep { $_ ne $node->{uuid} } @{$route->{uuids} // []};
-	$wpmgr->modifyRoute({uuid => $route_uuid, waypoints => \@new_uuids});
-}
-
-
 sub _deleteE80Waypoint
 {
 	my ($node, $tree) = @_;
@@ -289,32 +263,6 @@ sub _deleteE80Waypoint
 	return unless $rc == wxYES;
 
 	$wpmgr->deleteWaypoint($uuid);
-}
-
-
-sub _deleteE80Track
-{
-	my ($node, $tree) = @_;
-
-	my $track = _track();
-	unless ($track)
-	{
-		Wx::MessageBox("E80 not connected.", "Delete Track", wxOK | wxICON_WARNING, $tree);
-		return;
-	}
-
-	my $uuid    = $node->{uuid};
-	my $name    = $node->{data}{name} // $uuid;
-	my $pts     = $node->{data}{cnt1} // 0;
-	my $pts_str = $pts ? " ($pts points)" : '';
-
-	my $rc = Wx::MessageBox("Delete track '$name'$pts_str from E80?", "Confirm Delete",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return unless $rc == wxYES;
-
-	$track->queueTRACKCommand(
-		$apps::raymarine::NET::d_TRACK::API_GENERAL_CMD,
-		$uuid, 'erase');
 }
 
 
@@ -353,6 +301,110 @@ sub _deleteE80Group
 }
 
 
+sub _deleteE80GroupAndWPs
+{
+	my ($node, $tree) = @_;
+	if (($node->{type} // '') eq 'my_waypoints')
+	{
+		my $wpmgr = _wpmgr();
+		unless ($wpmgr)
+		{
+			Wx::MessageBox("WPMGR not connected.", "Delete Group + Waypoints",
+				wxOK | wxICON_ERROR, $tree);
+			return;
+		}
+		my @members = map { $_->{uuid} } @{_treeChildNodes($tree, $node)};
+		unless (@members)
+		{
+			Wx::MessageBox("My Waypoints is empty.", "Delete Group + Waypoints",
+				wxOK | wxICON_INFORMATION, $tree);
+			return;
+		}
+		if (grep { _e80WPRoutes($wpmgr, $_) } @members)
+		{
+			Wx::MessageBox(
+				"My Waypoints has waypoints in routes — remove them from routes first.",
+				"Delete Group + Waypoints", wxOK | wxICON_WARNING, $tree);
+			return;
+		}
+		my $n  = scalar @members;
+		my $rc = Wx::MessageBox(
+			"Delete all $n ungrouped waypoint(s) from E80? Cannot be undone.",
+			"Delete Group + Waypoints", wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
+		return unless $rc == wxYES;
+		my $progress = _openE80Progress("Delete Group + Waypoints", scalar @members);
+		$wpmgr->deleteWaypoint($_, $progress, 1) for @members;
+		return;
+	}
+	my $wpmgr = _wpmgr();
+	unless ($wpmgr)
+	{
+		Wx::MessageBox("WPMGR not connected.", "Delete Group + Waypoints",
+			wxOK | wxICON_ERROR, $tree);
+		return;
+	}
+	my $uuid    = $node->{uuid};
+	my $name    = $node->{data}{name};
+	my $members = $node->{data}{uuids} // [];
+	my $in_route = 0;
+	for my $wp_uuid (@$members)
+	{
+		if (_e80WPRoutes($wpmgr, $wp_uuid)) { $in_route = 1; last; }
+	}
+	if ($in_route)
+	{
+		Wx::MessageBox(
+			"Group '$name' has waypoints used in routes — remove them from routes first.",
+			"Delete Group + Waypoints", wxOK | wxICON_WARNING, $tree);
+		return;
+	}
+	my $n   = scalar @$members;
+	my $msg = $n > 0
+		? "Delete group '$name' and its $n waypoint(s) from E80? Cannot be undone."
+		: "Delete group '$name' from E80? Cannot be undone.";
+	my $rc = Wx::MessageBox($msg, "Delete Group + Waypoints",
+		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
+	return unless $rc == wxYES;
+	display($dbg_e80_ops,0,"nmOps::_deleteE80GroupAndWPs '$name' n=$n");
+	my $total = 2 * scalar(@$members) + 1;
+	my $progress = _openE80Progress("Delete Group + Waypoints", $total);
+	for my $wp_uuid (@$members)
+	{
+		my $group = $wpmgr->{groups}{$uuid};
+		my @new   = grep { $_ ne $wp_uuid } @{$group->{uuids} // []};
+		$wpmgr->modifyGroup({uuid => $uuid, members => \@new, progress => $progress});
+		$wpmgr->deleteWaypoint($wp_uuid, $progress, 1);
+	}
+	$wpmgr->deleteGroup($uuid, $progress);
+}
+
+
+sub _removeE80RoutePoint
+{
+	my ($node, $tree) = @_;
+
+	my $wpmgr = _wpmgr();
+	unless ($wpmgr)
+	{
+		Wx::MessageBox("WPMGR not connected.", "Remove RoutePoint", wxOK | wxICON_ERROR, $tree);
+		return;
+	}
+
+	my $wp         = $node->{data};
+	my $name       = $wp ? ($wp->{name} // $node->{uuid}) : $node->{uuid};
+	my $route_uuid = $node->{route_uuid};
+	my $route      = $wpmgr->{routes}{$route_uuid};
+	my $route_name = $route ? ($route->{name} // $route_uuid) : $route_uuid;
+
+	my $rc = Wx::MessageBox("Remove '$name' from route '$route_name'?", "Remove RoutePoint",
+		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
+	return unless $rc == wxYES;
+
+	my @new_uuids = grep { $_ ne $node->{uuid} } @{$route->{uuids} // []};
+	$wpmgr->modifyRoute({uuid => $route_uuid, waypoints => \@new_uuids});
+}
+
+
 sub _deleteE80Route
 {
 	my ($node, $tree) = @_;
@@ -381,206 +433,29 @@ sub _deleteE80Route
 }
 
 
-sub _deleteE80WaypointAndRPs
+sub _deleteE80Track
 {
 	my ($node, $tree) = @_;
-	my $wpmgr = _wpmgr();
-	unless ($wpmgr)
+
+	my $track = _track();
+	unless ($track)
 	{
-		Wx::MessageBox("WPMGR not connected.", "Delete Waypoint + RoutePoints",
-			wxOK | wxICON_ERROR, $tree);
+		Wx::MessageBox("E80 not connected.", "Delete Track", wxOK | wxICON_WARNING, $tree);
 		return;
 	}
-	my $uuid = $node->{uuid};
-	my $name = $node->{data}{name};
-	my $nr   = scalar _e80WPRoutes($wpmgr, $uuid);
-	my $msg  = $nr > 0
-		? "Delete waypoint '$name' from E80 and remove it from $nr route(s)? Cannot be undone."
-		: "Delete waypoint '$name' from E80? Cannot be undone.";
-	my $rc = Wx::MessageBox($msg, "Delete Waypoint + RoutePoints",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return unless $rc == wxYES;
-	my $total = _e80CountWPDeleteOps($wpmgr, $uuid, undef);
-	my $progress = _openE80Progress("Delete Waypoint + RoutePoints", $total);
-	_e80DeleteWP($wpmgr, $uuid, undef, $progress);
-}
 
-
-sub _deleteE80RouteAndWPs
-{
-	my ($node, $tree) = @_;
-	my $wpmgr = _wpmgr();
-	unless ($wpmgr)
-	{
-		Wx::MessageBox("WPMGR not connected.", "Delete Route + Waypoints",
-			wxOK | wxICON_ERROR, $tree);
-		return;
-	}
-	my $uuid       = $node->{uuid};
-	my $name       = $node->{data}{name};
-	my $all_wps    = $node->{data}{uuids} // [];
-	my $n          = scalar @$all_wps;
-	my $cross_refs = scalar grep { _e80WPRoutes($wpmgr, $_, $uuid) } @$all_wps;
-	my $msg;
-	if ($n == 0)
-	{
-		$msg = "Delete route '$name' from E80? Cannot be undone.";
-	}
-	elsif ($cross_refs > 0)
-	{
-		$msg = "Delete route '$name' and its $n waypoint(s) from E80? " .
-		       "($cross_refs also appear in other routes and will be removed from them.) Cannot be undone.";
-	}
-	else
-	{
-		$msg = "Delete route '$name' and its $n waypoint(s) from E80? Cannot be undone.";
-	}
-	my $rc = Wx::MessageBox($msg, "Delete Route + Waypoints",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return unless $rc == wxYES;
-	display($dbg_e80_ops,0,"nmOps::_deleteE80RouteAndWPs '$name' n=$n cross_refs=$cross_refs");
-	my $total = 1;
-	$total += _e80CountWPDeleteOps($wpmgr, $_, $uuid) for @$all_wps;
-	display($dbg_e80_ops+1,0,"nmOps::_deleteE80RouteAndWPs total ops=$total");
-	my $progress = _openE80Progress("Delete Route + Waypoints", $total);
-	$wpmgr->deleteRoute($uuid, $progress);
-	_e80DeleteWP($wpmgr, $_, $uuid, $progress) for @$all_wps;
-}
-
-
-sub _deleteE80GroupAndWPs
-{
-	my ($node, $tree) = @_;
-	if (($node->{type} // '') eq 'my_waypoints')
-	{
-		my $wpmgr = _wpmgr();
-		unless ($wpmgr)
-		{
-			Wx::MessageBox("WPMGR not connected.", "Delete My Waypoints",
-				wxOK | wxICON_ERROR, $tree);
-			return;
-		}
-		my @members = map { $_->{uuid} } @{_treeChildNodes($tree, $node)};
-		unless (@members)
-		{
-			Wx::MessageBox("My Waypoints is empty.", "Delete My Waypoints",
-				wxOK | wxICON_INFORMATION, $tree);
-			return;
-		}
-		if (grep { _e80WPRoutes($wpmgr, $_) } @members)
-		{
-			Wx::MessageBox(
-				"My Waypoints has waypoints in routes — use 'Delete My Waypoints + RoutePoints'.",
-				"Delete My Waypoints", wxOK | wxICON_WARNING, $tree);
-			return;
-		}
-		my $n  = scalar @members;
-		my $rc = Wx::MessageBox(
-			"Delete all $n ungrouped waypoint(s) from E80? Cannot be undone.",
-			"Delete My Waypoints", wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-		return unless $rc == wxYES;
-		my $progress = _openE80Progress("Delete My Waypoints", scalar @members);
-		$wpmgr->deleteWaypoint($_, $progress, 1) for @members;
-		return;
-	}
-	my $wpmgr = _wpmgr();
-	unless ($wpmgr)
-	{
-		Wx::MessageBox("WPMGR not connected.", "Delete Group + Waypoints",
-			wxOK | wxICON_ERROR, $tree);
-		return;
-	}
 	my $uuid    = $node->{uuid};
-	my $name    = $node->{data}{name};
-	my $members = $node->{data}{uuids} // [];
-	my $in_route = 0;
-	for my $wp_uuid (@$members)
-	{
-		if (_e80WPRoutes($wpmgr, $wp_uuid)) { $in_route = 1; last; }
-	}
-	if ($in_route)
-	{
-		Wx::MessageBox(
-			"Group '$name' has waypoints used in routes — use 'Delete Group + Waypoints + RoutePoints'.",
-			"Delete Group + Waypoints", wxOK | wxICON_WARNING, $tree);
-		return;
-	}
-	my $n   = scalar @$members;
-	my $msg = $n > 0
-		? "Delete group '$name' and its $n waypoint(s) from E80? Cannot be undone."
-		: "Delete group '$name' from E80? Cannot be undone.";
-	my $rc = Wx::MessageBox($msg, "Delete Group + Waypoints",
+	my $name    = $node->{data}{name} // $uuid;
+	my $pts     = $node->{data}{cnt1} // 0;
+	my $pts_str = $pts ? " ($pts points)" : '';
+
+	my $rc = Wx::MessageBox("Delete track '$name'$pts_str from E80?", "Confirm Delete",
 		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
 	return unless $rc == wxYES;
-	display($dbg_e80_ops,0,"nmOps::_deleteE80GroupAndWPs '$name' n=$n");
-	my $total = 2 * scalar(@$members) + 1;
-	my $progress = _openE80Progress("Delete Group + Waypoints", $total);
-	for my $wp_uuid (@$members)
-	{
-		my $group = $wpmgr->{groups}{$uuid};
-		my @new   = grep { $_ ne $wp_uuid } @{$group->{uuids} // []};
-		$wpmgr->modifyGroup({uuid => $uuid, members => \@new, progress => $progress});
-		$wpmgr->deleteWaypoint($wp_uuid, $progress, 1);
-	}
-	$wpmgr->deleteGroup($uuid, $progress);
-}
 
-
-sub _deleteE80GroupNuclear
-{
-	my ($node, $tree) = @_;
-	if (($node->{type} // '') eq 'my_waypoints')
-	{
-		my $wpmgr = _wpmgr();
-		unless ($wpmgr)
-		{
-			Wx::MessageBox("WPMGR not connected.", "Delete My Waypoints + RoutePoints",
-				wxOK | wxICON_ERROR, $tree);
-			return;
-		}
-		my @members = map { $_->{uuid} } @{_treeChildNodes($tree, $node)};
-		unless (@members)
-		{
-			Wx::MessageBox("My Waypoints is empty.", "Delete My Waypoints + RoutePoints",
-				wxOK | wxICON_INFORMATION, $tree);
-			return;
-		}
-		my $n  = scalar @members;
-		my $rc = Wx::MessageBox(
-			"Delete all $n ungrouped waypoint(s) from E80, removing from any routes? Cannot be undone.",
-			"Delete My Waypoints + RoutePoints",
-			wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-		return unless $rc == wxYES;
-		my $total = 0;
-		$total += _e80CountWPDeleteOps($wpmgr, $_, undef) for @members;
-		my $progress = _openE80Progress("Delete My Waypoints + RoutePoints", $total);
-		_e80DeleteWP($wpmgr, $_, undef, $progress) for @members;
-		return;
-	}
-	my $wpmgr = _wpmgr();
-	unless ($wpmgr)
-	{
-		Wx::MessageBox("WPMGR not connected.", "Delete Group + Waypoints + RoutePoints",
-			wxOK | wxICON_ERROR, $tree);
-		return;
-	}
-	my $uuid    = $node->{uuid};
-	my $name    = $node->{data}{name};
-	my $members = $node->{data}{uuids} // [];
-	my $n       = scalar @$members;
-	my $msg = $n > 0
-		? "Delete group '$name' and its $n waypoint(s) from E80, removing them from any routes? Cannot be undone."
-		: "Delete group '$name' from E80? Cannot be undone.";
-	my $rc = Wx::MessageBox($msg, "Delete Group + Waypoints + RoutePoints",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return unless $rc == wxYES;
-	display($dbg_e80_ops,0,"nmOps::_deleteE80GroupNuclear '$name' n=$n");
-	my $total = 1;
-	$total += _e80CountWPDeleteOps($wpmgr, $_, undef) for @$members;
-	display($dbg_e80_ops+1,0,"nmOps::_deleteE80GroupNuclear total ops=$total");
-	my $progress = _openE80Progress("Delete Group + Waypoints + RoutePoints", $total);
-	_e80DeleteWP($wpmgr, $_, undef, $progress) for @$members;
-	$wpmgr->deleteGroup($uuid, $progress);
+	$track->queueTRACKCommand(
+		$apps::raymarine::NET::d_TRACK::API_GENERAL_CMD,
+		$uuid, 'erase');
 }
 
 

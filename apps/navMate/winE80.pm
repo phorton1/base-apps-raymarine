@@ -362,39 +362,7 @@ sub _buildContextMenu
 	$menu->Append($CMD_PASTE, 'Paste');
 	$menu->Enable($CMD_PASTE, canPaste($right_click_node, 'e80') ? 1 : 0);
 
-	my $has_route_members = 0;
-	my $rctype = $right_click_node->{type} // '';
-	if ($rctype eq 'group' || $rctype eq 'my_waypoints')
-	{
-		my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
-		if ($wpmgr)
-		{
-			my @members;
-			if ($rctype eq 'group')
-			{
-				@members = @{$right_click_node->{data}{uuids} // []};
-			}
-			else
-			{
-				my %grouped;
-				$grouped{$_} = 1
-					for map { @{$_->{uuids} // []} } values %{$wpmgr->{groups}};
-				@members = grep { !$grouped{$_} } keys %{$wpmgr->{waypoints}};
-			}
-			OUTER: for my $wp_uuid (@members)
-			{
-				for my $r_uuid (keys %{$wpmgr->{routes}})
-				{
-					if (grep { $_ eq $wp_uuid } @{$wpmgr->{routes}{$r_uuid}{uuids} // []})
-					{
-						$has_route_members = 1;
-						last OUTER;
-					}
-				}
-			}
-		}
-	}
-	my @delete_items = getDeleteMenuItems('e80', $right_click_node, $has_route_members);
+	my @delete_items = getDeleteMenuItems('e80', $right_click_node);
 	if (@delete_items)
 	{
 		$menu->AppendSeparator();

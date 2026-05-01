@@ -112,20 +112,16 @@ DEL_ITEM operation plus the GET_ITEM commands that the E80 automatically generat
 
 | Node | Delete options |
 |---|---|
-| `waypoint` | Delete Waypoint / Delete Waypoint + RoutePoints |
-| `route_point` | Remove RoutePoint / Delete Waypoint / Delete Waypoint + RoutePoints |
-| `route` | Delete Route / Delete Route + Waypoints |
-| `group` | Delete Group / Delete Group + Waypoints / Delete Group + Waypoints + RoutePoints† |
-| `my_waypoints` | Delete My Waypoints / Delete My Waypoints + RoutePoints† |
+| `waypoint` | Delete Waypoint |
+| `route_point` | Remove RoutePoint / Delete Waypoint |
+| `route` | Delete Route |
+| `group` | Delete Group / Delete Group + Waypoints |
+| `my_waypoints` | Delete Group + Waypoints |
 | `track` | Delete Track |
 
-**†** Nuclear options (those that also remove route memberships) are shown only
-when the group's waypoints actually appear in at least one route. They are
-suppressed otherwise.
-
-**Route-first ordering** — "Delete Route + Waypoints" deletes the route before
-the waypoints. The E80 rejects deleting a waypoint that is still a member of a
-route; the route delete clears all routepoint associations first.
+**Blocked deletes** — "Delete Waypoint" and "Delete Group + Waypoints" are
+blocked (with a dialog) when the waypoint(s) are members of any route. Remove
+the route memberships first.
 
 **Tracks** — the TRACK service is read-only on the E80. Tracks are visible in
 the tree but no delete or modify operations exist for them.
@@ -166,7 +162,7 @@ $clipboard = {
 | Function | Purpose |
 |---|---|
 | `getCopyMenuItems($panel, @nodes)` | Copy items appropriate to the current selection |
-| `getDeleteMenuItems($panel, $node, $has_route_members)` | Delete items; nuclear option gated on `$has_route_members` |
+| `getDeleteMenuItems($panel, $node)` | Delete items appropriate to the node type |
 | `getNewMenuItems($panel, $node)` | New-object items; tracks nodes return empty |
 | `canPaste($node, $panel)` | True when clipboard intent is compatible with the drop target |
 
