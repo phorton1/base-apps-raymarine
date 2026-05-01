@@ -795,7 +795,7 @@ sub do_general
 	my $rpart = $command->{extra} || '';
 	display($dbg,0,"do_general(uuid=$uuid rpart=$rpart)");
 
-	return error("do_general: no uuid") unless $uuid;
+	return error("do_general: no uuid") if !$uuid;
 
 	my $seq   = $this->{next_seqnum}++;
 	my $cmd;

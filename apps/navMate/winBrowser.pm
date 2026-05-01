@@ -101,7 +101,7 @@ sub _loadTopLevel
 	my $root = $tree->AddRoot('root');
 
 	my $dbh = connectDB();
-	unless ($dbh) { $tree->Thaw(); return; }
+	if (!$dbh) { $tree->Thaw(); return; }
 	my $top_colls = getCollectionChildren($dbh, undef);
 	for my $coll (@$top_colls)
 	{
@@ -141,7 +141,7 @@ sub _collectionLabel
 	my $name = $coll->{name};
 	my ($nc, $nw, $nr, $nt) = @{$counts}{qw(collections waypoints routes tracks)};
 	my $total = $nc + $nw + $nr + $nt;
-	return "$name (empty)" unless $total;
+	return "$name (empty)" if !$total;
 	my @parts;
 	push @parts, "$nc " . ($nc==1 ? 'folder'   : 'folders')   if $nc;
 	push @parts, "$nw " . ($nw==1 ? 'waypoint' : 'waypoints') if $nw;
@@ -204,15 +204,15 @@ sub onTreeExpanding
 	my $tree = $this->{tree};
 
 	my ($first, $cookie) = $tree->GetFirstChild($item);
-	return unless $first && $first->IsOk();
-	return unless ($tree->GetItemText($first) // '') eq $DUMMY;
+	return if !($first && $first->IsOk());
+	return if (($tree->GetItemText($first) // '') ne $DUMMY);
 
 	$tree->Delete($first);
 
 	my $item_data = $tree->GetItemData($item);
-	return unless $item_data;
+	return if !$item_data;
 	my $node = $item_data->GetData();
-	return unless ref $node eq 'HASH';
+	return if ref $node ne 'HASH';
 
 	my $dbh = connectDB();
 	if ($node->{type} eq 'collection')
@@ -274,11 +274,11 @@ sub onTreeSelect
 {
 	my ($this, $event) = @_;
 	my $item = $event->GetItem();
-	return unless $item->IsOk();
+	return if !$item->IsOk();
 	my $item_data = $this->{tree}->GetItemData($item);
-	return unless $item_data;
+	return if !$item_data;
 	my $node = $item_data->GetData();
-	return unless ref $node eq 'HASH';
+	return if ref $node ne 'HASH';
 
 	my $dbh = connectDB();
 	if ($node->{type} eq 'collection')
@@ -418,16 +418,16 @@ sub _onTreeDblClick
 	my $pt = $event->GetPosition();
 	my ($item, $flags) = $tree->HitTest($pt);
 
-	unless ($item && $item->IsOk() && ($flags & wxTREE_HITTEST_ONITEMLABEL))
+	if (!($item && $item->IsOk() && ($flags & wxTREE_HITTEST_ONITEMLABEL)))
 	{
 		$event->Skip();
 		return;
 	}
 
 	my $item_data = $tree->GetItemData($item);
-	return unless $item_data;
+	return if !$item_data;
 	my $node = $item_data->GetData();
-	return unless ref $node eq 'HASH';
+	return if ref $node ne 'HASH';
 
 	my $dbh = connectDB();
 	if ($node->{type} eq 'collection')
@@ -493,7 +493,7 @@ sub _renderCollection
 	{
 		next if $rendered_uuids{$t->{uuid}};
 		my $pts = getTrackPoints($dbh, $t->{uuid});
-		next unless @$pts;
+		next if !@$pts;
 		$rendered_uuids{$t->{uuid}} = 1;
 		my @coords = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
 		push @features, {
@@ -520,7 +520,7 @@ sub _renderCollection
 	{
 		next if $rendered_uuids{$r->{uuid}};
 		my $pts = getRouteWaypoints($dbh, $r->{uuid});
-		next unless @$pts;
+		next if !@$pts;
 		$rendered_uuids{$r->{uuid}} = 1;
 		my @coords   = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
 		my @rp_names = map { $_->{name} // '' } @$pts;
@@ -545,7 +545,7 @@ sub _renderCollection
 
 	addRenderFeatures(\@features) if @features;
 
-	openMapBrowser() unless isBrowserConnected();
+	openMapBrowser() if !isBrowserConnected();
 }
 
 
@@ -567,7 +567,7 @@ sub _renderObject
 	if ($obj->{obj_type} eq 'waypoint')
 	{
 		my $w = getWaypoint($dbh, $obj->{uuid});
-		return unless $w;
+		return if !$w;
 		$rendered_uuids{$w->{uuid}} = 1;
 		push @features, {
 			type       => 'Feature',
@@ -652,7 +652,7 @@ sub _renderObject
 
 	addRenderFeatures(\@features) if @features;
 
-	openMapBrowser() unless isBrowserConnected();
+	openMapBrowser() if !isBrowserConnected();
 }
 
 
@@ -664,11 +664,11 @@ sub onTreeRightClick
 {
 	my ($this, $event) = @_;
 	my $item = $event->GetItem();
-	return unless $item->IsOk();
+	return if !$item->IsOk();
 	my $item_data = $this->{tree}->GetItemData($item);
-	return unless $item_data;
+	return if !$item_data;
 	my $node = $item_data->GetData();
-	return unless ref $node eq 'HASH';
+	return if ref $node ne 'HASH';
 
 	$this->{_right_click_node} = $node;
 	my $menu = _buildContextMenu($this, $node);
@@ -685,7 +685,7 @@ sub _buildContextMenu
 	for my $item ($tree->GetSelections())
 	{
 		my $d = $tree->GetItemData($item);
-		next unless $d;
+		next if !$d;
 		my $n = $d->GetData();
 		push @nodes, $n if ref $n eq 'HASH';
 	}
@@ -740,7 +740,7 @@ sub _onUploadE80
 	return if $progress && $progress->{active};
 
 	my $target = $this->{_upload_target};
-	return unless $target;
+	return if !$target;
 	my $kind = $target->{kind};
 	my $data = $target->{data};
 
@@ -795,7 +795,7 @@ sub getDataForIniFile
 sub _nodeKey
 {
 	my ($node) = @_;
-	return undef unless ref $node eq 'HASH';
+	return undef if ref $node ne 'HASH';
 	return $node->{uuid} // ($node->{data} // {})->{uuid};
 }
 
@@ -821,8 +821,8 @@ sub _captureExpandedInto
 sub _walkExpandedCapture
 {
 	my ($tree, $item, $result) = @_;
-	return unless $item->IsOk();
-	return unless $tree->IsExpanded($item);
+	return if !$item->IsOk();
+	return if !$tree->IsExpanded($item);
 	my $d = $tree->GetItemData($item);
 	if ($d)
 	{
@@ -849,9 +849,9 @@ sub _captureSelectedInto
 	for my $item ($this->{tree}->GetSelections())
 	{
 		my $d = $this->{tree}->GetItemData($item);
-		next unless $d;
+		next if !$d;
 		my $node = $d->GetData();
-		next unless ref $node eq 'HASH';
+		next if ref $node ne 'HASH';
 		my $key = _nodeKey($node);
 		$keys{$key} = 1 if $key;
 	}
@@ -862,7 +862,7 @@ sub _captureSelectedInto
 sub _restoreExpanded
 {
 	my ($tree, $item, $expanded) = @_;
-	return unless $item && $item->IsOk();
+	return if !($item && $item->IsOk());
 	my $d = $tree->GetItemData($item);
 	if ($d)
 	{
@@ -887,7 +887,7 @@ sub _restoreExpanded
 sub _restoreSelected
 {
 	my ($tree, $item, $selected) = @_;
-	return unless $item && $item->IsOk();
+	return if !($item && $item->IsOk());
 	my $d = $tree->GetItemData($item);
 	if ($d)
 	{

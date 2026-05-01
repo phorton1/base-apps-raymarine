@@ -82,7 +82,7 @@ sub handle_request
 	my $uri = $request->{uri} || '';
 
 	display($dbg,0,"request method=$request->{method} uri=$uri")
-		unless $uri eq '/raysys.kml';
+		if ($uri ne '/raysys.kml');
 
 	if ($uri eq '/test')
 	{
@@ -195,19 +195,19 @@ sub api_item
 {
 	my ($this, $request) = @_;
 	my $h = $request->getPostJSON();
-	return $this->api_json_response($request,{error => 'missing or invalid JSON body'}) unless $h;
+	return $this->api_json_response($request,{error => 'missing or invalid JSON body'}) if !$h;
 
 	my $op   = $h->{op}   // '';
 	my $uuid = $h->{uuid} // '';
 	my $name = $h->{name} // '';
 
 	my $wpmgr = $raydp->findImplementedService('WPMGR');
-	return $this->api_json_response($request,{error => 'WPMGR not available'}) unless $wpmgr;
+	return $this->api_json_response($request,{error => 'WPMGR not available'}) if !$wpmgr;
 
 	if ($op eq 'new_wp')
 	{
 		return $this->api_json_response($request,{error => 'new_wp requires uuid, name, lat, lon'})
-			unless $uuid && $name && defined($h->{lat}) && defined($h->{lon});
+			if !($uuid && $name && defined($h->{lat}) && defined($h->{lon}));
 		$wpmgr->createWaypoint({
 			uuid    => $uuid,
 			name    => $name,
@@ -221,7 +221,7 @@ sub api_item
 	elsif ($op eq 'new_route')
 	{
 		return $this->api_json_response($request,{error => 'new_route requires uuid and name'})
-			unless $uuid && $name;
+			if !($uuid && $name);
 		$wpmgr->createRoute({
 			uuid      => $uuid,
 			name      => $name,
@@ -233,7 +233,7 @@ sub api_item
 	elsif ($op eq 'new_group')
 	{
 		return $this->api_json_response($request,{error => 'new_group requires uuid and name'})
-			unless $uuid && $name;
+			if !($uuid && $name);
 		$wpmgr->createGroup({
 			uuid    => $uuid,
 			name    => $name,
@@ -243,23 +243,23 @@ sub api_item
 	}
 	elsif ($op eq 'del_wp')
 	{
-		return $this->api_json_response($request,{error => 'del_wp requires uuid'}) unless $uuid;
+		return $this->api_json_response($request,{error => 'del_wp requires uuid'}) if !$uuid;
 		my $wp = $wpmgr->{waypoints}{$uuid};
-		return $this->api_json_response($request,{error => "del_wp: uuid($uuid) not in memory"}) unless $wp;
+		return $this->api_json_response($request,{error => "del_wp: uuid($uuid) not in memory"}) if !$wp;
 		$wpmgr->deleteWaypoint($uuid);
 	}
 	elsif ($op eq 'del_route')
 	{
-		return $this->api_json_response($request,{error => 'del_route requires uuid'}) unless $uuid;
+		return $this->api_json_response($request,{error => 'del_route requires uuid'}) if !$uuid;
 		my $rt = $wpmgr->{routes}{$uuid};
-		return $this->api_json_response($request,{error => "del_route: uuid($uuid) not in memory"}) unless $rt;
+		return $this->api_json_response($request,{error => "del_route: uuid($uuid) not in memory"}) if !$rt;
 		$wpmgr->deleteRoute($uuid);
 	}
 	elsif ($op eq 'del_group')
 	{
-		return $this->api_json_response($request,{error => 'del_group requires uuid'}) unless $uuid;
+		return $this->api_json_response($request,{error => 'del_group requires uuid'}) if !$uuid;
 		my $grp = $wpmgr->{groups}{$uuid};
-		return $this->api_json_response($request,{error => "del_group: uuid($uuid) not in memory"}) unless $grp;
+		return $this->api_json_response($request,{error => "del_group: uuid($uuid) not in memory"}) if !$grp;
 		$wpmgr->deleteGroup($uuid);
 	}
 	else
@@ -306,17 +306,17 @@ sub handleCommand
 	elsif ($lpart eq 't')
 	{
 		my $track = $raydp->findImplementedService('TRACK');
-		return unless $track;
+		return if !$track;
 		$track->trackUICommand($rpart);
 	}
 	elsif ($lpart eq 't_uuid')
 	{
 		my $track = $raydp->findImplementedService('TRACK');
-		return unless $track;
+		return if !$track;
 		my ($uuid, @rest) = split(/\s+/, $rpart);
 		my $op = join(' ', @rest);
 		return error("t_uuid: usage: t_uuid <uuid> <erase|mta|rename <new_name>>")
-			unless $uuid && $op;
+			if !($uuid && $op);
 		$track->queueTRACKCommand(
 			$apps::raymarine::NET::d_TRACK::API_GENERAL_CMD,
 			$uuid, $op);
@@ -327,7 +327,7 @@ sub handleCommand
 	elsif ($lpart =~ /^(q|new|delete|find|routewp|clear_e80)$/)
 	{
 		my $wpmgr = $raydp->findImplementedService('WPMGR');
-		return unless $wpmgr;
+		return if !$wpmgr;
 
 		if ($lpart eq 'q')
 		{
@@ -372,11 +372,11 @@ sub handleCommand
 			$what    = lc($what // '');
 			my $full = $what eq 'wp' ? 'waypoint' : $what;
 			my $uuid = $wpmgr->findUUIDByName($full,$name);
-			return error("delete: $full '$name' not found") unless $uuid;
+			return error("delete: $full '$name' not found") if !$uuid;
 			$wpmgr->deleteWaypoint($uuid) if $what eq 'wp';
 			$wpmgr->deleteRoute($uuid)    if $what eq 'route';
 			$wpmgr->deleteGroup($uuid)    if $what eq 'group';
-			error("delete: unknown type '$what'") unless $what =~ /^(wp|route|group)$/;
+			error("delete: unknown type '$what'") if ($what !~ /^(wp|route|group)$/);
 		}
 		elsif ($lpart eq 'clear_e80')
 		{
@@ -404,15 +404,15 @@ sub handleCommand
 		{
 			my ($route_name,$op,$wp_name) = split(/\s+/,$rpart,3);
 			$op //= '';
-			unless ($route_name && ($op eq '+' || $op eq '-') && $wp_name)
+			if (!($route_name && ($op eq '+' || $op eq '-') && $wp_name))
 			{
 				error("usage: routewp <route> <+|-> <wp>");
 				return;
 			}
 			my $route_uuid = $wpmgr->findUUIDByName('route',$route_name);
 			my $wp_uuid    = $wpmgr->findUUIDByName('waypoint',$wp_name);
-			return error("routewp: route '$route_name' not found")    unless $route_uuid;
-			return error("routewp: waypoint '$wp_name' not found")    unless $wp_uuid;
+			return error("routewp: route '$route_name' not found")    if !$route_uuid;
+			return error("routewp: waypoint '$wp_name' not found")    if !$wp_uuid;
 			$wpmgr->routeWaypoint($route_uuid,$wp_uuid,$op eq '+');
 		}
 	}	# WPMGR
@@ -438,7 +438,7 @@ sub handleCommand
 
 		$val_str =~ s/^\s+|\s+$//g;
 		$val_str =~ s/^0x//i;
-		unless ($val_str =~ /^[0-9a-fA-F]+$/)
+		if ($val_str !~ /^[0-9a-fA-F]+$/)
 		{
 			error(0,0,"mon_$what: invalid value '$val_str'");
 			return;
@@ -451,7 +451,7 @@ sub handleCommand
 			$tmd->{mon_in}  = $val if $dir eq 'both' || $dir eq 'in';
 			$tmd->{mon_out} = $val if $dir eq 'both' || $dir eq 'out';
 			my $track = $raydp->findImplementedService('TRACK', 1);
-			warning(0,0,"mon_track: TRACK not connected") unless $track;
+			warning(0,0,"mon_track: TRACK not connected") if !$track;
 			c_print("mon_track dir($dir) = 0x".sprintf('%x', $val & ~$MON_SRC_SHARK)."\n");
 		}
 		else
@@ -463,7 +463,7 @@ sub handleCommand
 			$wmd->{mon_ins}[$idx]  = $val if $dir eq 'both' || $dir eq 'in';
 			$wmd->{mon_outs}[$idx] = $val if $dir eq 'both' || $dir eq 'out';
 			my $wpmgr = $raydp->findImplementedService('WPMGR', 1);
-			warning(0,0,"mon_$what: WPMGR not connected") unless $wpmgr;
+			warning(0,0,"mon_$what: WPMGR not connected") if !$wpmgr;
 			c_print("mon_$what dir($dir) = 0x".sprintf('%x', $val & ~$MON_SRC_SHARK)."\n");
 		}
 	}
@@ -827,7 +827,7 @@ sub kml_section
 		}
 	}
 
-	return '' unless keys %$folders;
+	return '' if !keys(%$folders);
 
 	my $kml = kml_start_folder('sectionStyle',"section_$section_name",$section_name);
 	for my $folder_uuid (sort { cmpByName($folders,$a,$b) } keys %$folders)

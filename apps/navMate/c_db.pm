@@ -171,7 +171,7 @@ sub openDB
 		return 0;
 	}
 
-	unless (_createTables($dbh))
+	if (!_createTables($dbh))
 	{
 		$dbh->disconnect();
 		return 0;
@@ -209,9 +209,9 @@ sub openDB
 
 sub connectDB
 {
-	return undef unless $db_ready;
+	return undef if !$db_ready;
 	my $dbh = Pub::Database->connect(_db_params());
-	error("c_db::connectDB failed") unless $dbh;
+	error("c_db::connectDB failed") if !$dbh;
 	return $dbh;
 }
 
@@ -448,7 +448,7 @@ sub insertTrack
 sub insertTrackPoints
 {
 	my ($dbh, $track_uuid, $points) = @_;
-	return 0 unless @$points;
+	return 0 if !@$points;
 	my $sth = $dbh->{dbh}->prepare(qq{
 		INSERT INTO track_points
 			(track_uuid, position, lat, lon, depth_cm, temp_k, ts)
@@ -742,7 +742,7 @@ sub getCollectionGroups
 	for my $row (@{$rows // []})
 	{
 		my $cu = $row->{coll_uuid};
-		unless (exists $idx{$cu})
+		if (!exists $idx{$cu})
 		{
 			$idx{$cu} = scalar @groups;
 			push @groups, { uuid => $cu, name => $row->{coll_name}, waypoints => [] };
@@ -933,7 +933,7 @@ sub promoteNavWaypoints
 		        WHERE collection_uuid IN (SELECT uuid FROM tree)
 		        AND wp_type = 'label'",
 		[$top_uuid]);
-	return 0 unless @$wps;
+	return 0 if !@$wps;
 
 	my $route_rows = $dbh->get_records(
 		$cte . "SELECT DISTINCT rw.wp_uuid
@@ -956,7 +956,7 @@ sub promoteNavWaypoints
 	for my $wp (@$wps)
 	{
 		my $is_nav = $in_route{$wp->{uuid}};
-		unless ($is_nav)
+		if (!$is_nav)
 		{
 			for my $ep (@{$eps // []})
 			{

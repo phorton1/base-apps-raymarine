@@ -366,7 +366,7 @@ sub _parseHex
 	my ($str) = @_;
 	$str =~ s/\s//g;
 	$str =~ s/^0x//i;
-	return 0 unless $str =~ /^[0-9a-fA-F]+$/;
+	return 0 if ($str !~ /^[0-9a-fA-F]+$/);
 	return hex($str);
 }
 

@@ -126,7 +126,7 @@ sub onMouseDown
     my $line_height = $this->{LINE_HEIGHT};
     # Only respond to clicks within header row
 	# in abs coordinates
-    return unless $y <= $line_height * $HEADER_SIZE;
+    return if !($y <= $line_height * $HEADER_SIZE);
 
     my $char_width = $this->{CHAR_WIDTH};
     my $cols = $this->{columns};

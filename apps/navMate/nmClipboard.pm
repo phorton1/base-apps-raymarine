@@ -162,7 +162,7 @@ sub clearClipboard
 
 sub getClipboardText
 {
-	return '' unless $clipboard;
+	return '' if !$clipboard;
 	my $n   = scalar @{$clipboard->{items}};
 	my $src = $clipboard->{source} eq 'browser' ? 'B' : 'E80';
 	return "[$src] $clipboard->{intent} ($n)";
@@ -171,7 +171,7 @@ sub getClipboardText
 sub _updateStatusBar
 {
 	my $frame = getAppFrame();
-	return unless $frame && $frame->can('setClipboardStatus');
+	return if !($frame && $frame->can('setClipboardStatus'));
 	$frame->setClipboardStatus(getClipboardText());
 }
 
@@ -347,7 +347,7 @@ sub getDeleteMenuItems
 sub getCopyMenuItems
 {
 	my ($panel, @nodes) = @_;
-	return () unless @nodes;
+	return () if !@nodes;
 
 	my %c = _analyzeNodes($panel, @nodes);
 
@@ -411,7 +411,7 @@ sub getCopyMenuItems
 sub canPaste
 {
 	my ($target_node, $panel) = @_;
-	return 0 unless $clipboard;
+	return 0 if !$clipboard;
 
 	my $intent = $clipboard->{intent};
 	my $t      = $target_node->{type} // '';

@@ -63,7 +63,7 @@ sub makeUUID
 sub parseLatLon
 {
 	my ($str) = @_;
-	return undef unless defined $str;
+	return undef if !defined($str);
 	$str =~ s/^\s+|\s+$//g;
 	return undef if $str eq '';
 

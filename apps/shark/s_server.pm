@@ -218,7 +218,7 @@ sub handleCommand
 			$raydp->findImplementedService($name,1) ||
 			$raydp->findServicePortByName($name,1);
 		return error("service $name("._def($service_port).") doesn't exist or is not connected")
-			unless $service_port && $service_port->{connected};
+			if !($service_port && $service_port->{connected});
 		$service_port->doProbe($args);
 	}
 
@@ -234,7 +234,7 @@ sub handleCommand
 	elsif ($lpart =~ /^(create|route|wp|group|mod)$/)
 	{
 		my $wpmgr = $raydp->findImplementedService('WPMGR');
-		return unless $wpmgr;
+		return if !$wpmgr;
 
 		if ($lpart eq 'create')
 		{
@@ -372,7 +372,7 @@ sub api_colormap
 	for my $port (sort { $a <=> $b } keys %SHARK_DEFAULTS)
 	{
 		my $def = $SHARK_DEFAULTS{$port};
-		next unless $def->{name};
+		next if !$def->{name};
 		my $entry = { name => $def->{name}, port => $port+0 };
 		if ($def->{in_colors})
 		{

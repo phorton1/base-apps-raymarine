@@ -80,7 +80,7 @@ sub dispatchNavMateCommand
 sub addRenderFeatures
 {
 	my ($features_ref) = @_;
-	return unless @$features_ref;
+	return if !@$features_ref;
 	lock($map_version);
 	my $existing = decode_json($features_json);
 	push @$existing, @$features_ref;
@@ -166,9 +166,9 @@ sub handle_request
 	elsif ($uri eq '/api/query')
 	{
 		my $sql = ($request->{params} || {})->{sql} // '';
-		return json_response($request,{ error => 'no sql' }) unless $sql;
+		return json_response($request,{ error => 'no sql' }) if !$sql;
 		return json_response($request,{ error => 'only SELECT allowed' })
-			unless $sql =~ /^\s*SELECT\s/i;
+			if ($sql !~ /^\s*SELECT\s/i);
 		my $dbh = c_db::connectDB();
 		my ($rows,$err) = c_db::rawQuery($dbh,$sql);
 		c_db::disconnectDB($dbh);

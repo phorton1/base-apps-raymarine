@@ -24,7 +24,7 @@ sub _newBrowserWaypoint
 {
 	my ($node, $tree) = @_;
 
-	unless (($node->{type} // '') eq 'collection')
+	if (($node->{type} // '') ne 'collection')
 	{
 		Wx::MessageBox("Right-click a folder to create a new Waypoint.",
 			"New Waypoint", wxOK | wxICON_INFORMATION, $tree);
@@ -32,11 +32,11 @@ sub _newBrowserWaypoint
 	}
 
 	my $data = nmDialogs::showNewWaypoint($tree);
-	return unless defined $data;
+	return if !defined($data);
 
 	my $lat = parseLatLon($data->{lat});
 	my $lon = parseLatLon($data->{lon});
-	unless (defined $lat && defined $lon)
+	if (!(defined $lat && defined $lon))
 	{
 		Wx::MessageBox(
 			"Could not parse Latitude or Longitude.\n" .
@@ -46,7 +46,7 @@ sub _newBrowserWaypoint
 	}
 
 	my $dbh = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 	insertWaypoint($dbh,
 		name            => $data->{name},
 		comment         => $data->{comment} // '',
@@ -70,7 +70,7 @@ sub _newCollection
 {
 	my ($node, $tree, $label, $node_type) = @_;
 
-	unless (($node->{type} // '') eq 'collection')
+	if (($node->{type} // '') ne 'collection')
 	{
 		Wx::MessageBox("Right-click a folder to create a new $label.",
 			"New $label", wxOK | wxICON_INFORMATION, $tree);
@@ -80,10 +80,10 @@ sub _newCollection
 	my $data = $node_type eq $NODE_TYPE_GROUP
 		? nmDialogs::showNewGroup($tree)
 		: nmDialogs::showNewBranch($tree);
-	return unless defined $data;
+	return if !defined($data);
 
 	my $dbh = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 	insertCollection($dbh, $data->{name}, $node->{data}{uuid}, $node_type, $data->{comment});
 	disconnectDB($dbh);
 	_refreshBrowser();
@@ -94,7 +94,7 @@ sub _newBrowserRoute
 {
 	my ($node, $tree) = @_;
 
-	unless (($node->{type} // '') eq 'collection')
+	if (($node->{type} // '') ne 'collection')
 	{
 		Wx::MessageBox("Right-click a folder to create a new Route.",
 			"New Route", wxOK | wxICON_INFORMATION, $tree);
@@ -102,10 +102,10 @@ sub _newBrowserRoute
 	}
 
 	my $data = nmDialogs::showNewRoute($tree);
-	return unless defined $data;
+	return if !defined($data);
 
 	my $dbh = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 	insertRoute($dbh, $data->{name}, _parseColor($data->{color}), $data->{comment}, $node->{data}{uuid});
 	disconnectDB($dbh);
 	_refreshBrowser();
@@ -124,7 +124,7 @@ sub _deleteBrowserWaypoint
 	my $name = $node->{data}{name};
 
 	my $dbh = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 	my $n = getWaypointRouteRefCount($dbh, $uuid);
 	disconnectDB($dbh);
 
@@ -137,10 +137,10 @@ sub _deleteBrowserWaypoint
 
 	my $rc = Wx::MessageBox("Delete waypoint '$name'?", "Confirm Delete",
 		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return unless $rc == wxYES;
+	return if $rc != wxYES;
 
 	$dbh = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 	deleteWaypoint($dbh, $uuid);
 	disconnectDB($dbh);
 	_refreshBrowser();
@@ -155,7 +155,7 @@ sub _deleteBrowserCollection
 	my $name = $node->{data}{name};
 
 	my $dbh = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 	my $counts = getCollectionCounts($dbh, $uuid);
 	disconnectDB($dbh);
 
@@ -170,10 +170,10 @@ sub _deleteBrowserCollection
 
 	my $rc = Wx::MessageBox("Delete $label '$name'?", "Confirm Delete",
 		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return unless $rc == wxYES;
+	return if $rc != wxYES;
 
 	$dbh = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 	deleteCollection($dbh, $uuid);
 	disconnectDB($dbh);
 	_refreshBrowser();
@@ -186,7 +186,7 @@ sub _deleteBrowserGroupAndWPs
 	my $uuid = $node->{data}{uuid};
 	my $name = $node->{data}{name};
 	my $dbh  = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 	my $wps  = getGroupWaypoints($dbh, $uuid);
 	my $in_route = 0;
 	for my $wp (@$wps)
@@ -207,9 +207,9 @@ sub _deleteBrowserGroupAndWPs
 		: "Delete group '$name'? Cannot be undone.";
 	my $rc = Wx::MessageBox($msg, "Delete Group + Waypoints",
 		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return unless $rc == wxYES;
+	return if $rc != wxYES;
 	$dbh = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 	deleteWaypoint($dbh, $_->{uuid}) for @$wps;
 	deleteCollection($dbh, $uuid);
 	disconnectDB($dbh);
@@ -226,10 +226,10 @@ sub _removeBrowserRoutePoint
 
 	my $rc = Wx::MessageBox("Remove '$name' from route?", "Remove RoutePoint",
 		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return unless $rc == wxYES;
+	return if $rc != wxYES;
 
 	my $dbh = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 	removeRoutePoint($dbh, $node->{route_uuid}, $node->{position});
 	disconnectDB($dbh);
 	_refreshBrowser();
@@ -244,7 +244,7 @@ sub _deleteBrowserRoute
 	my $name = $node->{data}{name};
 
 	my $dbh = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 	my $n = getRouteWaypointCount($dbh, $uuid);
 	disconnectDB($dbh);
 
@@ -253,10 +253,10 @@ sub _deleteBrowserRoute
 		: "Delete route '$name'? Cannot be undone.";
 	my $rc = Wx::MessageBox($msg, "Delete Route",
 		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return unless $rc == wxYES;
+	return if $rc != wxYES;
 
 	$dbh = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 	deleteRoute($dbh, $uuid);
 	disconnectDB($dbh);
 	_refreshBrowser();
@@ -274,10 +274,10 @@ sub _deleteBrowserTrack
 
 	my $rc = Wx::MessageBox("Delete track '$name'$pts?", "Confirm Delete",
 		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return unless $rc == wxYES;
+	return if $rc != wxYES;
 
 	my $dbh = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 	deleteTrack($dbh, $uuid);
 	disconnectDB($dbh);
 	_refreshBrowser();
@@ -292,7 +292,7 @@ sub _pasteWaypointToBrowser
 {
 	my ($node, $tree, $item, $cb) = @_;
 
-	unless (($node->{type} // '') eq 'collection')
+	if (($node->{type} // '') ne 'collection')
 	{
 		Wx::MessageBox("Right-click a folder to paste a waypoint.",
 			"Paste Waypoint", wxOK | wxICON_INFORMATION, $tree);
@@ -305,7 +305,7 @@ sub _pasteWaypointToBrowser
 	my $ts_source = ($cb->{source} eq 'e80') ? 'e80' : ($wp->{ts_source} // 'user');
 
 	my $dbh = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 	insertWaypoint($dbh,
 		name            => $wp->{name}    // '',
 		comment         => $wp->{comment} // '',
@@ -329,7 +329,7 @@ sub _pasteTrackToBrowser
 {
 	my ($node, $tree, $item, $cb) = @_;
 
-	unless (($node->{type} // '') eq 'collection')
+	if (($node->{type} // '') ne 'collection')
 	{
 		Wx::MessageBox("Right-click a folder to paste a track.",
 			"Paste Track", wxOK | wxICON_INFORMATION, $tree);
@@ -344,7 +344,7 @@ sub _pasteTrackToBrowser
 	my $ts_source = ($cb->{source} eq 'e80') ? 'e80' : ($track->{ts_source} // 'user');
 
 	my $dbh = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 	my $track_uuid = insertTrack($dbh,
 		name            => $track->{name} // '',
 		color           => $track->{color} // 0,

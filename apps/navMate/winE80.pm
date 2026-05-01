@@ -102,7 +102,7 @@ sub onSessionStart
 sub refresh
 {
 	my ($this) = @_;
-	return unless $this->{_e80_loaded};
+	return if !$this->{_e80_loaded};
 	display($dbg_wine80+1,0,"winE80::refresh triggered");
 	if ($this->{tree}->GetCount() > 0)
 	{
@@ -123,7 +123,7 @@ sub _buildAndRestore
 	$tree->DeleteAllItems();
 	$this->{detail}->SetValue('');
 
-	unless ($wpmgr)
+	if (!$wpmgr)
 	{
 		my $root = $tree->AddRoot('E80');
 		$tree->AppendItem($root, '(WPMGR not connected)');
@@ -274,11 +274,11 @@ sub onTreeSelect
 {
 	my ($this, $event) = @_;
 	my $item = $event->GetItem();
-	return unless $item->IsOk();
+	return if !$item->IsOk();
 	my $item_data = $this->{tree}->GetItemData($item);
-	return unless $item_data;
+	return if !$item_data;
 	my $node = $item_data->GetData();
-	return unless ref $node eq 'HASH';
+	return if ref $node ne 'HASH';
 
 	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
 
@@ -327,11 +327,11 @@ sub onTreeRightClick
 {
 	my ($this, $event) = @_;
 	my $item = $event->GetItem();
-	return unless $item->IsOk();
+	return if !$item->IsOk();
 	my $item_data = $this->{tree}->GetItemData($item);
-	return unless $item_data;
+	return if !$item_data;
 	my $node = $item_data->GetData();
-	return unless ref $node eq 'HASH';
+	return if ref $node ne 'HASH';
 
 	$this->{_right_click_node} = $node;
 	my $menu = _buildContextMenu($this, $node);
@@ -348,7 +348,7 @@ sub _buildContextMenu
 	for my $item ($tree->GetSelections())
 	{
 		my $d = $tree->GetItemData($item);
-		next unless $d;
+		next if !$d;
 		my $n = $d->GetData();
 		push @nodes, $n if ref $n eq 'HASH';
 	}
@@ -413,7 +413,7 @@ sub getDataForIniFile
 sub _nodeKey
 {
 	my ($node) = @_;
-	return undef unless ref $node eq 'HASH';
+	return undef if ref $node ne 'HASH';
 	my $t = $node->{type} // '';
 	return "header:$node->{kind}"                    if $t eq 'header';
 	return 'my_waypoints'                            if $t eq 'my_waypoints';
@@ -443,7 +443,7 @@ sub _captureExpandedInto
 sub _walkExpCapture
 {
 	my ($tree, $item, $result) = @_;
-	return unless $item->IsOk();
+	return if !$item->IsOk();
 	if ($tree->IsExpanded($item))
 	{
 		my $d = $tree->GetItemData($item);
@@ -473,9 +473,9 @@ sub _captureSelectedInto
 	for my $item ($this->{tree}->GetSelections())
 	{
 		my $d = $this->{tree}->GetItemData($item);
-		next unless $d;
+		next if !$d;
 		my $node = $d->GetData();
-		next unless ref $node eq 'HASH';
+		next if ref $node ne 'HASH';
 		my $key = _nodeKey($node);
 		$keys{$key} = 1 if $key;
 	}
@@ -486,7 +486,7 @@ sub _captureSelectedInto
 sub _walkRestoreExpanded
 {
 	my ($tree, $item, $expanded) = @_;
-	return unless $item && $item->IsOk();
+	return if !($item && $item->IsOk());
 	my $d = $tree->GetItemData($item);
 	if ($d)
 	{
@@ -509,7 +509,7 @@ sub _walkRestoreExpanded
 sub _walkRestoreSelected
 {
 	my ($tree, $item, $selected) = @_;
-	return unless $item && $item->IsOk();
+	return if !($item && $item->IsOk());
 	my $d = $tree->GetItemData($item);
 	if ($d)
 	{

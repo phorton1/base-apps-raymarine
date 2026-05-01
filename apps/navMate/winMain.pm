@@ -207,7 +207,7 @@ sub onCommand
 	}
 	elsif ($id == $CMD_OPEN_MAP)
 	{
-		openMapBrowser() unless isBrowserConnected();
+		openMapBrowser() if !isBrowserConnected();
 	}
 	elsif ($id == $CMD_IMPORT_KML)
 	{

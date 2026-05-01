@@ -70,10 +70,10 @@ sub _enrichFromIndex
 		chomp $line;
 		# Split on first 6 commas; field[6] = description (may contain commas)
 		my @f = split /,/, $line, 7;
-		next unless @f >= 6;
+		next if !(@f >= 6);
 
 		# Story rows: f[1]='' (blank level sub-field), f[2]=date
-		next unless $f[1] eq '' && $f[2] =~ /^\d{4}-\d{2}-\d{2}$/;
+		next if !($f[1] eq '' && $f[2] =~ /^\d{4}-\d{2}-\d{2}$/);
 
 		my @track_names = grep { $_ ne '' } split /:/, $f[5];
 		if (!@track_names)
@@ -83,7 +83,7 @@ sub _enrichFromIndex
 		}
 
 		my $ts_start = _parseDate($f[2]);
-		next unless $ts_start;
+		next if !$ts_start;
 
 		for my $name (@track_names)
 		{
@@ -125,7 +125,7 @@ sub _enrichFromIndex
 sub _parseDate
 {
 	my ($s) = @_;
-	return 0 unless $s && $s =~ /^(\d{4})-(\d{2})-(\d{2})$/;
+	return 0 if !($s && $s =~ /^(\d{4})-(\d{2})-(\d{2})$/);
 	return eval { timegm(0, 0, 0, $3, $2-1, $1-1900) } // 0;
 }
 

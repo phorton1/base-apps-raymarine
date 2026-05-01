@@ -55,7 +55,7 @@ sub _refreshBrowser
 sub _newNavUUID
 {
 	my $dbh = connectDB();
-	return undef unless $dbh;
+	return undef if !$dbh;
 	my $uuid = newUUID($dbh);
 	disconnectDB($dbh);
 	return $uuid;
@@ -64,7 +64,7 @@ sub _newNavUUID
 sub _parseColor
 {
 	my ($s) = @_;
-	return 0 unless defined $s && $s ne '';
+	return 0 if !(defined $s && $s ne '');
 	return ($s =~ /^0[xX]/) ? hex($s) : ($s + 0);
 }
 
@@ -90,7 +90,7 @@ sub doRefresh
 	my $wpmgr = _wpmgr();
 	my $track = _track();
 
-	unless ($wpmgr && $track)
+	if (!($wpmgr && $track))
 	{
 		Wx::MessageBox("E80 not connected — cannot refresh.",
 			"Refresh E80", wxOK | wxICON_WARNING, $parent // getAppFrame());
@@ -246,10 +246,10 @@ sub _copyWaypoint
 	{
 		my $uuid = $node->{data}{uuid};
 		my $dbh = connectDB();
-		return unless $dbh;
+		return if !$dbh;
 		my $wp = getWaypoint($dbh, $uuid);
 		disconnectDB($dbh);
-		unless ($wp)
+		if (!$wp)
 		{
 			Wx::MessageBox("Could not load waypoint.", "Copy Waypoint", wxOK | wxICON_ERROR, $tree);
 			return;
@@ -279,9 +279,9 @@ sub _copyTrack
 	{
 		my $uuid = $node->{data}{uuid};
 		my $dbh = connectDB();
-		return unless $dbh;
+		return if !$dbh;
 		my $track = getTrack($dbh, $uuid);
-		unless ($track)
+		if (!$track)
 		{
 			disconnectDB($dbh);
 			Wx::MessageBox("Could not load track.", "Copy Track", wxOK | wxICON_ERROR, $tree);
@@ -308,7 +308,7 @@ sub doPaste
 	my ($panel, $node, $tree) = @_;
 
 	my $cb = $nmClipboard::clipboard;
-	unless ($cb)
+	if (!$cb)
 	{
 		Wx::MessageBox("Nothing to paste.", "Paste", wxOK | wxICON_INFORMATION, $tree);
 		return;
@@ -316,7 +316,7 @@ sub doPaste
 
 	my $intent = $cb->{intent};
 	my $item   = ($cb->{items} // [])->[0];
-	unless ($item)
+	if (!$item)
 	{
 		Wx::MessageBox("Clipboard is empty.", "Paste", wxOK | wxICON_INFORMATION, $tree);
 		return;

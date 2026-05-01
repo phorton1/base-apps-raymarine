@@ -44,7 +44,7 @@ sub uploadCollectionToE80
 	my ($coll_uuid, $coll_name, $progress_data) = @_;
 
 	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
-	unless ($wpmgr)
+	if (!$wpmgr)
 	{
 		warning(0,0,"uploadCollectionToE80: WPMGR not connected");
 		return 0;
@@ -73,7 +73,7 @@ sub uploadCollectionToE80
 	my $total = scalar(@wps) + scalar(@routes_q) + scalar(@groups_q);
 	display(0,0,"upload($coll_name): $total ops (".
 		scalar(@wps)." wps, ".scalar(@routes_q)." routes, ".scalar(@groups_q)." groups)");
-	return 0 unless $total;
+	return 0 if !$total;
 
 	if ($progress_data)
 	{
@@ -128,7 +128,7 @@ sub uploadRouteToE80
 	my ($route_uuid, $route_name, $route_color, $progress_data) = @_;
 
 	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
-	unless ($wpmgr)
+	if (!$wpmgr)
 	{
 		warning(0,0,"uploadRouteToE80: WPMGR not connected");
 		return 0;
@@ -189,7 +189,7 @@ sub uploadWaypointToE80
 	my ($wp, $progress_data) = @_;
 
 	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
-	unless ($wpmgr)
+	if (!$wpmgr)
 	{
 		warning(0,0,"uploadWaypointToE80: WPMGR not connected");
 		return 0;

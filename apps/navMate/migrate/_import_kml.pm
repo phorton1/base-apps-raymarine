@@ -50,7 +50,7 @@ sub run
 sub _run
 {
 	my ($dbh) = @_;
-	die "_import_kml: not found: $MY_PLACES_KML" unless -f $MY_PLACES_KML;
+	die "_import_kml: not found: $MY_PLACES_KML" if !-f $MY_PLACES_KML;
 	display(0,0,"importing $MY_PLACES_KML");
 	my $data = $xs->XMLin($MY_PLACES_KML);
 	my $root = $data->{Document}[0]
@@ -207,7 +207,7 @@ sub _importWaypoint
 	my $raw = $pm->{Point}{coordinates} // '';
 	$raw =~ s/^\s+|\s+$//g;
 	my ($lon, $lat) = split /,/, $raw;
-	return unless defined $lat && defined $lon;
+	return if !(defined $lat && defined $lon);
 
 	my $name     = $pm->{name} // '';
 	my $wp_type  = $WP_TYPE_LABEL;
@@ -251,7 +251,7 @@ sub _importTrack
 	}
 
 	my @pts = _parseCoords($pm->{LineString}{coordinates});
-	return unless @pts;
+	return if !@pts;
 
 	my $dbh   = $ctx->{dbh};
 	my $color = _resolveColor($ctx->{style_colors}, $pm->{styleUrl});
@@ -301,9 +301,9 @@ sub _importRouteFolder
 			my $raw = $pm->{Point}{coordinates} // '';
 			$raw =~ s/^\s+|\s+$//g;
 			my ($lon, $lat) = split /,/, $raw;
-			next unless defined $lat && defined $lon;
+			next if !(defined $lat && defined $lon);
 			my $wp_uuid = findWaypointByLatLon($dbh, $lat + 0, $lon + 0);
-			unless ($wp_uuid)
+			if (!$wp_uuid)
 			{
 				$sub_coll //= findCollection($dbh, $route_name, $ctx->{coll_uuid})
 				          // insertCollection($dbh, $route_name, $ctx->{coll_uuid}, $NODE_TYPE_GROUP, '');
@@ -342,7 +342,7 @@ sub _importRouteFromLine
 {
 	my ($pm, $ctx) = @_;
 	my @pts = _parseCoords($pm->{LineString}{coordinates});
-	return unless @pts;
+	return if !@pts;
 	my $dbh        = $ctx->{dbh};
 	my $route_name = $pm->{name} // '';
 	my $color      = _resolveColor($ctx->{style_colors}, $pm->{styleUrl});
@@ -390,9 +390,9 @@ sub _buildStyleMap
 		my $id = $sm->{id} // next;
 		for my $pair (@{$sm->{Pair} // []})
 		{
-			next unless ($pair->{key} // '') eq 'normal';
+			next if (($pair->{key} // '') ne 'normal');
 			my $url = $pair->{styleUrl} // next;
-			next unless exists $sc{$url};
+			next if !exists $sc{$url};
 			$sc{"#$id"} = $sc{$url};
 			last;
 		}
@@ -411,7 +411,7 @@ sub _buildStyleMap
 sub _abgrToRouteColor
 {
 	my ($abgr) = @_;
-	return 0 unless $abgr && length($abgr) >= 8;
+	return 0 if !($abgr && length($abgr) >= 8);
 	my $rr = hex(substr($abgr, 6, 2));
 	my $gg = hex(substr($abgr, 4, 2));
 	my $bb = hex(substr($abgr, 2, 2));
@@ -444,9 +444,9 @@ sub _abgrToRouteColor
 sub _resolveColor
 {
 	my ($style_colors, $style_url) = @_;
-	return 0 unless $style_url && $style_colors;
+	return 0 if !($style_url && $style_colors);
 	my $abgr = $style_colors->{$style_url};
-	return 0 unless $abgr;
+	return 0 if !$abgr;
 	return _abgrToRouteColor($abgr);
 }
 
@@ -458,11 +458,11 @@ sub _resolveColor
 sub _parseCoords
 {
 	my ($raw) = @_;
-	return () unless $raw;
+	return () if !$raw;
 	my @pts;
 	for my $t (split /\s+/, $raw)
 	{
-		next unless $t =~ /,/;
+		next if ($t !~ /,/);
 		my ($lon, $lat) = split /,/, $t;
 		push @pts, { lat => $lat + 0, lon => $lon + 0 };
 	}
@@ -477,8 +477,8 @@ sub _parseCoords
 sub _parseISO
 {
 	my ($s) = @_;
-	return 0 unless $s;
-	return 0 unless $s =~ /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z?$/;
+	return 0 if !$s;
+	return 0 if ($s !~ /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z?$/);
 	return eval { timegm($6, $5, $4, $3, $2-1, $1-1900) } // 0;
 }
 
