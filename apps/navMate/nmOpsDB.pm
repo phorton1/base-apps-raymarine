@@ -116,32 +116,33 @@ sub _newBrowserRoute
 # Remove / Delete
 #----------------------------------------------------
 
-sub _deleteBrowserWaypoint
+sub _deleteBrowserWaypoints
 {
-	my ($node, $tree) = @_;
-
-	my $uuid = $node->{data}{uuid};
-	my $name = $node->{data}{name};
-
+	my ($nodes, $tree) = @_;
 	my $dbh = connectDB();
 	return if !$dbh;
-	my $n = getWaypointRouteRefCount($dbh, $uuid);
-	disconnectDB($dbh);
-
-	if ($n > 0)
+	for my $node (@$nodes)
 	{
-		Wx::MessageBox("Waypoint '$name' is used in $n route(s) — use 'Delete Waypoint + RoutePoints'.",
-			"Delete Waypoint", wxOK | wxICON_WARNING, $tree);
-		return;
+		if (getWaypointRouteRefCount($dbh, $node->{data}{uuid}) > 0)
+		{
+			disconnectDB($dbh);
+			Wx::MessageBox(
+				"One or more waypoints are used in routes — remove them from routes first.",
+				"Delete Waypoints", wxOK | wxICON_WARNING, $tree);
+			return;
+		}
 	}
-
-	my $rc = Wx::MessageBox("Delete waypoint '$name'?", "Confirm Delete",
+	disconnectDB($dbh);
+	my $n   = scalar @$nodes;
+	my $msg = $n == 1
+		? "Delete waypoint '$nodes->[0]{data}{name}'?"
+		: "Delete $n waypoints?";
+	my $rc = Wx::MessageBox($msg, "Confirm Delete",
 		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
 	return if $rc != wxYES;
-
 	$dbh = connectDB();
 	return if !$dbh;
-	deleteWaypoint($dbh, $uuid);
+	deleteWaypoint($dbh, $_->{data}{uuid}) for @$nodes;
 	disconnectDB($dbh);
 	_refreshBrowser();
 }
@@ -180,38 +181,91 @@ sub _deleteBrowserCollection
 }
 
 
-sub _deleteBrowserGroupAndWPs
+sub _deleteBrowserGroups
 {
-	my ($node, $tree) = @_;
-	my $uuid = $node->{data}{uuid};
-	my $name = $node->{data}{name};
-	my $dbh  = connectDB();
+	my ($nodes, $tree) = @_;
+	my $dbh = connectDB();
 	return if !$dbh;
-	my $wps  = getGroupWaypoints($dbh, $uuid);
-	my $in_route = 0;
-	for my $wp (@$wps)
+	for my $node (@$nodes)
 	{
-		if (getWaypointRouteRefCount($dbh, $wp->{uuid}) > 0) { $in_route = 1; last; }
+		my $counts = getCollectionCounts($dbh, $node->{data}{uuid});
+		my $total  = $counts->{collections} + $counts->{waypoints}
+		           + $counts->{routes}       + $counts->{tracks};
+		if ($total > 0)
+		{
+			disconnectDB($dbh);
+			Wx::MessageBox("'$node->{data}{name}' is not empty — use a more specific delete command.",
+				"Delete Group", wxOK | wxICON_WARNING, $tree);
+			return;
+		}
 	}
 	disconnectDB($dbh);
-	if ($in_route)
-	{
-		Wx::MessageBox(
-			"Group '$name' has waypoints used in routes — remove them from routes first.",
-			"Delete Group + Waypoints", wxOK | wxICON_WARNING, $tree);
-		return;
-	}
-	my $n   = scalar @$wps;
-	my $msg = $n > 0
-		? "Delete group '$name' and its $n waypoint(s)? Cannot be undone."
-		: "Delete group '$name'? Cannot be undone.";
-	my $rc = Wx::MessageBox($msg, "Delete Group + Waypoints",
+	my $n   = scalar @$nodes;
+	my $msg = $n == 1
+		? "Delete group '$nodes->[0]{data}{name}'?"
+		: "Delete $n groups?";
+	my $rc = Wx::MessageBox($msg, "Confirm Delete",
 		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
 	return if $rc != wxYES;
 	$dbh = connectDB();
 	return if !$dbh;
-	deleteWaypoint($dbh, $_->{uuid}) for @$wps;
-	deleteCollection($dbh, $uuid);
+	deleteCollection($dbh, $_->{data}{uuid}) for @$nodes;
+	disconnectDB($dbh);
+	_refreshBrowser();
+}
+
+
+sub _deleteBrowserGroupsAndWPs
+{
+	my ($nodes, $tree) = @_;
+	my $dbh = connectDB();
+	return if !$dbh;
+	my %group_wps;
+	my $total_wps = 0;
+	for my $node (@$nodes)
+	{
+		my $uuid = $node->{data}{uuid};
+		my $wps  = getGroupWaypoints($dbh, $uuid);
+		for my $wp (@$wps)
+		{
+			if (getWaypointRouteRefCount($dbh, $wp->{uuid}) > 0)
+			{
+				disconnectDB($dbh);
+				Wx::MessageBox(
+					"One or more groups have waypoints in routes — remove them from routes first.",
+					"Delete Groups + Waypoints", wxOK | wxICON_WARNING, $tree);
+				return;
+			}
+		}
+		$group_wps{$uuid} = $wps;
+		$total_wps += scalar @$wps;
+	}
+	disconnectDB($dbh);
+	my $n   = scalar @$nodes;
+	my $msg;
+	if ($n == 1)
+	{
+		$msg = $total_wps > 0
+			? "Delete group '$nodes->[0]{data}{name}' and its $total_wps waypoint(s)? Cannot be undone."
+			: "Delete group '$nodes->[0]{data}{name}'? Cannot be undone.";
+	}
+	else
+	{
+		$msg = $total_wps > 0
+			? "Delete $n groups and their $total_wps waypoint(s)? Cannot be undone."
+			: "Delete $n groups? Cannot be undone.";
+	}
+	my $rc = Wx::MessageBox($msg, "Delete Groups + Waypoints",
+		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
+	return if $rc != wxYES;
+	$dbh = connectDB();
+	return if !$dbh;
+	for my $node (@$nodes)
+	{
+		my $uuid = $node->{data}{uuid};
+		deleteWaypoint($dbh, $_->{uuid}) for @{$group_wps{$uuid}};
+		deleteCollection($dbh, $uuid);
+	}
 	disconnectDB($dbh);
 	_refreshBrowser();
 }
@@ -236,49 +290,49 @@ sub _removeBrowserRoutePoint
 }
 
 
-sub _deleteBrowserRoute
+sub _deleteBrowserRoutes
 {
-	my ($node, $tree) = @_;
-
-	my $uuid = $node->{data}{uuid};
-	my $name = $node->{data}{name};
-
-	my $dbh = connectDB();
-	return if !$dbh;
-	my $n = getRouteWaypointCount($dbh, $uuid);
-	disconnectDB($dbh);
-
-	my $msg = $n > 0
-		? "Delete route '$name'? Its $n waypoint(s) will remain. Cannot be undone."
-		: "Delete route '$name'? Cannot be undone.";
+	my ($nodes, $tree) = @_;
+	my $n = scalar @$nodes;
+	my $msg;
+	if ($n == 1)
+	{
+		my $dbh = connectDB();
+		return if !$dbh;
+		my $wpc = getRouteWaypointCount($dbh, $nodes->[0]{data}{uuid});
+		disconnectDB($dbh);
+		$msg = $wpc > 0
+			? "Delete route '$nodes->[0]{data}{name}'? Its $wpc waypoint(s) will remain. Cannot be undone."
+			: "Delete route '$nodes->[0]{data}{name}'? Cannot be undone.";
+	}
+	else
+	{
+		$msg = "Delete $n routes? Their waypoints will remain. Cannot be undone.";
+	}
 	my $rc = Wx::MessageBox($msg, "Delete Route",
 		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
 	return if $rc != wxYES;
-
-	$dbh = connectDB();
+	my $dbh = connectDB();
 	return if !$dbh;
-	deleteRoute($dbh, $uuid);
+	deleteRoute($dbh, $_->{data}{uuid}) for @$nodes;
 	disconnectDB($dbh);
 	_refreshBrowser();
 }
 
 
-sub _deleteBrowserTrack
+sub _deleteBrowserTracks
 {
-	my ($node, $tree) = @_;
-
-	my $uuid = $node->{data}{uuid};
-	my $name = $node->{data}{name};
-	my $n    = $node->{data}{point_count} // 0;
-	my $pts  = $n ? " ($n points)" : '';
-
-	my $rc = Wx::MessageBox("Delete track '$name'$pts?", "Confirm Delete",
+	my ($nodes, $tree) = @_;
+	my $n   = scalar @$nodes;
+	my $msg = $n == 1
+		? "Delete track '$nodes->[0]{data}{name}'?"
+		: "Delete $n tracks?";
+	my $rc = Wx::MessageBox($msg, "Confirm Delete",
 		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
 	return if $rc != wxYES;
-
 	my $dbh = connectDB();
 	return if !$dbh;
-	deleteTrack($dbh, $uuid);
+	deleteTrack($dbh, $_->{data}{uuid}) for @$nodes;
 	disconnectDB($dbh);
 	_refreshBrowser();
 }
@@ -287,6 +341,82 @@ sub _deleteBrowserTrack
 #----------------------------------------------------
 # Paste
 #----------------------------------------------------
+
+sub _pasteOneWaypointToDB
+	# UUID-preserving inner helper used by all browser paste handlers.
+	# Returns: 'created', 'replaced', 'skipped', 'no_change', 'aborted'.
+{
+	my ($dbh, $coll_uuid, $tree, $item, $source, $policy_ref, $title) = @_;
+	my $wp   = $item->{data};
+	my $uuid = $item->{uuid};
+
+	return 'aborted' if $$policy_ref && $$policy_ref eq 'abort';
+
+	my $ts     = $wp->{created_ts} // $wp->{ts} // time();
+	my $ts_src = $source eq 'e80' ? 'e80' : ($wp->{ts_source} // 'user');
+
+	my $existing = getWaypoint($dbh, $uuid);
+
+	if (!$existing)
+	{
+		insertWaypoint($dbh,
+			uuid            => $uuid,
+			name            => $wp->{name}    // '',
+			comment         => $wp->{comment} // '',
+			lat             => $wp->{lat},
+			lon             => $wp->{lon},
+			sym             => $wp->{sym}     // 0,
+			wp_type         => $wp->{wp_type} // $WP_TYPE_NAV,
+			color           => $wp->{color},
+			depth_cm        => $wp->{depth_cm} // $wp->{depth} // 0,
+			created_ts      => $ts,
+			ts_source       => $ts_src,
+			source          => $wp->{source},
+			collection_uuid => $coll_uuid,
+		);
+		return 'created';
+	}
+
+	return 'no_change' if !_wpFieldsDiffer($existing, $wp, $source);
+
+	my $action;
+	if ($$policy_ref && $$policy_ref eq 'replace_all')
+	{
+		$action = 'replace';
+	}
+	elsif ($$policy_ref && $$policy_ref eq 'skip_all')
+	{
+		$action = 'skip';
+	}
+	else
+	{
+		$action = _resolveConflict($tree, $title, $wp->{name} // $uuid);
+		$$policy_ref = $action if $action eq 'replace_all' || $action eq 'skip_all' || $action eq 'abort';
+	}
+
+	return 'aborted' if $action eq 'abort';
+
+	if ($action eq 'replace' || $action eq 'replace_all')
+	{
+		updateWaypoint($dbh, $uuid,
+			name      => $wp->{name}    // '',
+			comment   => $wp->{comment} // '',
+			lat       => $wp->{lat},
+			lon       => $wp->{lon},
+			sym       => $wp->{sym}     // 0,
+			wp_type   => $wp->{wp_type} // $WP_TYPE_NAV,
+			color     => $wp->{color},
+			depth_cm  => $wp->{depth_cm} // $wp->{depth} // 0,
+			created_ts => $ts,
+			ts_source => $ts_src,
+			source    => $wp->{source},
+		);
+		return 'replaced';
+	}
+
+	return 'skipped';
+}
+
 
 sub _pasteWaypointToBrowser
 {
@@ -299,27 +429,186 @@ sub _pasteWaypointToBrowser
 		return;
 	}
 
-	my $coll_uuid = $node->{data}{uuid};
-	my $wp        = $item->{data};
-	my $ts        = $wp->{created_ts} // $wp->{ts} // time();
-	my $ts_source = ($cb->{source} eq 'e80') ? 'e80' : ($wp->{ts_source} // 'user');
+	if ($cb->{source} eq 'browser' && $cb->{cut})
+	{
+		my $dbh = connectDB();
+		return if !$dbh;
+		moveWaypoint($dbh, $item->{uuid}, $node->{data}{uuid});
+		disconnectDB($dbh);
+		_refreshBrowser();
+		return;
+	}
 
 	my $dbh = connectDB();
 	return if !$dbh;
-	insertWaypoint($dbh,
-		name            => $wp->{name}    // '',
-		comment         => $wp->{comment} // '',
-		lat             => $wp->{lat},
-		lon             => $wp->{lon},
-		sym             => $wp->{sym}     // 0,
-		wp_type         => $wp->{wp_type} // $WP_TYPE_NAV,
-		color           => $wp->{color},
-		depth_cm        => $wp->{depth_cm} // $wp->{depth} // 0,
-		created_ts      => $ts,
-		ts_source       => $ts_source,
-		source          => $wp->{source},
-		collection_uuid => $coll_uuid,
-	);
+	my $policy = undef;
+	my $result = _pasteOneWaypointToDB($dbh, $node->{data}{uuid}, $tree, $item,
+		$cb->{source}, \$policy, 'Paste Waypoint');
+	disconnectDB($dbh);
+	if ($cb->{cut} && $result ne 'skipped' && $result ne 'aborted')
+	{
+		$cb->{source} eq 'e80'
+			? _cutE80Waypoint($item->{uuid}, $tree)
+			: _cutBrowserWaypoint($item->{uuid}, $tree);
+	}
+	_refreshBrowser();
+}
+
+
+sub _pasteGroupToBrowser
+{
+	my ($node, $tree, $item, $cb) = @_;
+
+	if (($node->{type} // '') ne 'collection')
+	{
+		Wx::MessageBox("Right-click a folder to paste a group.",
+			"Paste Group", wxOK | wxICON_INFORMATION, $tree);
+		return;
+	}
+
+	if ($cb->{source} eq 'browser' && $cb->{cut})
+	{
+		return if !$item->{uuid};
+		my $dbh = connectDB();
+		return if !$dbh;
+		moveCollection($dbh, $item->{uuid}, $node->{data}{uuid});
+		disconnectDB($dbh);
+		_refreshBrowser();
+		return;
+	}
+
+	my $target_uuid = $node->{data}{uuid};
+	my $group_uuid  = $item->{uuid};
+	my $group_data  = $item->{data};
+	my $members     = $item->{members} // [];
+	my $source      = $cb->{source};
+
+	my $dbh = connectDB();
+	return if !$dbh;
+
+	# Ensure group collection exists under target; group=merge keeps existing members.
+	if ($group_uuid && !getCollection($dbh, $group_uuid))
+	{
+		insertCollectionUUID($dbh, $group_uuid,
+			$group_data->{name}    // '',
+			$target_uuid,
+			$NODE_TYPE_GROUP,
+			$group_data->{comment} // '');
+	}
+
+	# Paste member WPs into the group collection (or target if no group UUID).
+	my $dest_uuid = $group_uuid // $target_uuid;
+	my $policy      = undef;
+	my $any_skipped = 0;
+	for my $member (@$members)
+	{
+		my $result = _pasteOneWaypointToDB($dbh, $dest_uuid, $tree, $member, $source, \$policy, 'Paste Group');
+		last if $policy && $policy eq 'abort';
+		$any_skipped = 1 if $result eq 'skipped';
+		if ($cb->{cut} && $result ne 'skipped' && $result ne 'aborted')
+		{
+			$source eq 'e80'
+				? _cutE80Waypoint($member->{uuid}, $tree)
+				: _cutBrowserWaypoint($member->{uuid}, $tree);
+		}
+	}
+
+	my $aborted = ($policy && $policy eq 'abort');
+	if ($cb->{cut} && !$aborted && !$any_skipped && $group_uuid)
+	{
+		$source eq 'e80'
+			? _cutE80Group($group_uuid, $tree)
+			: _cutBrowserGroup($group_uuid, $tree);
+	}
+
+	disconnectDB($dbh);
+	_refreshBrowser();
+}
+
+
+sub _pasteRouteToBrowser
+{
+	my ($node, $tree, $item, $cb) = @_;
+
+	if (($node->{type} // '') ne 'collection')
+	{
+		Wx::MessageBox("Right-click a folder to paste a route.",
+			"Paste Route", wxOK | wxICON_INFORMATION, $tree);
+		return;
+	}
+
+	if ($cb->{source} eq 'browser' && $cb->{cut})
+	{
+		my $dbh = connectDB();
+		return if !$dbh;
+		moveRoute($dbh, $item->{uuid}, $node->{data}{uuid});
+		disconnectDB($dbh);
+		_refreshBrowser();
+		return;
+	}
+
+	my $target_uuid = $node->{data}{uuid};
+	my $route_uuid  = $item->{uuid};
+	my $route_data  = $item->{data};
+	my $members     = $item->{members} // [];
+	my $source      = $cb->{source};
+
+	my $dbh = connectDB();
+	return if !$dbh;
+
+	# Paste member WPs into the target collection (UUID-preserving).
+	my $policy = undef;
+	for my $member (@$members)
+	{
+		my $result = _pasteOneWaypointToDB($dbh, $target_uuid, $tree, $member, $source, \$policy, 'Paste Route');
+		last if $policy && $policy eq 'abort';
+		if ($cb->{cut} && $result ne 'skipped' && $result ne 'aborted')
+		{
+			$source eq 'e80'
+				? _cutE80Waypoint($member->{uuid}, $tree)
+				: _cutBrowserWaypoint($member->{uuid}, $tree);
+		}
+	}
+
+	if ($policy && $policy eq 'abort')
+	{
+		disconnectDB($dbh);
+		_refreshBrowser();
+		return;
+	}
+
+	# Insert or update the route record; route=set replaces the waypoint list.
+	my $existing_route = getRoute($dbh, $route_uuid);
+	if (!$existing_route)
+	{
+		insertRouteUUID($dbh, $route_uuid,
+			$route_data->{name}    // '',
+			$route_data->{color}   // 0,
+			$route_data->{comment} // '',
+			$target_uuid);
+	}
+	else
+	{
+		updateRoute($dbh, $route_uuid,
+			$route_data->{name}    // '',
+			$route_data->{color}   // 0,
+			$route_data->{comment} // '');
+	}
+
+	clearRouteWaypoints($dbh, $route_uuid);
+	my $pos = 0;
+	for my $member (@$members)
+	{
+		appendRouteWaypoint($dbh, $route_uuid, $member->{uuid}, $pos++);
+	}
+
+	if ($cb->{cut})
+	{
+		$source eq 'e80'
+			? _cutE80Route($route_uuid, $tree)
+			: _cutBrowserRoute($route_uuid, $tree);
+	}
+
 	disconnectDB($dbh);
 	_refreshBrowser();
 }
@@ -337,6 +626,17 @@ sub _pasteTrackToBrowser
 	}
 
 	my $coll_uuid = $node->{data}{uuid};
+
+	if ($cb->{source} eq 'browser' && $cb->{cut})
+	{
+		my $dbh = connectDB();
+		return if !$dbh;
+		moveTrack($dbh, $item->{uuid}, $coll_uuid);
+		disconnectDB($dbh);
+		_refreshBrowser();
+		return;
+	}
+
 	my $track     = $item->{data};
 	my $pts       = $track->{points} // [];
 	my $ts_start  = $track->{ts_start} // (@$pts ? ($pts->[0]{ts}  // 0) : 0);
@@ -366,6 +666,135 @@ sub _pasteTrackToBrowser
 		insertTrackPoints($dbh, $track_uuid, \@db_pts);
 	}
 	disconnectDB($dbh);
+	if ($cb->{cut})
+	{
+		$cb->{source} eq 'e80'
+			? _cutE80Track($item->{uuid}, $tree)
+			: _cutBrowserTrack($item->{uuid}, $tree);
+	}
+	_refreshBrowser();
+}
+
+
+#----------------------------------------------------
+# Paste New — always fresh UUIDs, no conflict check
+#----------------------------------------------------
+
+sub _insertFreshWaypoint
+	# Inserts a WP with a fresh UUID. Returns the new UUID.
+{
+	my ($dbh, $coll_uuid, $wp, $source) = @_;
+	my $ts     = $wp->{created_ts} // $wp->{ts} // time();
+	my $ts_src = $source eq 'e80' ? 'e80' : ($wp->{ts_source} // 'user');
+	return insertWaypoint($dbh,
+		name            => $wp->{name}    // '',
+		comment         => $wp->{comment} // '',
+		lat             => $wp->{lat},
+		lon             => $wp->{lon},
+		sym             => $wp->{sym}     // 0,
+		wp_type         => $wp->{wp_type} // $WP_TYPE_NAV,
+		color           => $wp->{color},
+		depth_cm        => $wp->{depth_cm} // $wp->{depth} // 0,
+		created_ts      => $ts,
+		ts_source       => $ts_src,
+		source          => $wp->{source},
+		collection_uuid => $coll_uuid,
+	);
+}
+
+
+sub _pasteNewWaypointToBrowser
+{
+	my ($node, $tree, $item, $cb) = @_;
+
+	if (($node->{type} // '') ne 'collection')
+	{
+		Wx::MessageBox("Right-click a folder to paste a waypoint.",
+			"Paste New Waypoint", wxOK | wxICON_INFORMATION, $tree);
+		return;
+	}
+
+	my $dbh = connectDB();
+	return if !$dbh;
+	_insertFreshWaypoint($dbh, $node->{data}{uuid}, $item->{data}, $cb->{source});
+	disconnectDB($dbh);
+	_refreshBrowser();
+}
+
+
+sub _pasteNewGroupToBrowser
+{
+	my ($node, $tree, $item, $cb) = @_;
+
+	if (($node->{type} // '') ne 'collection')
+	{
+		Wx::MessageBox("Right-click a folder to paste a group.",
+			"Paste New Group", wxOK | wxICON_INFORMATION, $tree);
+		return;
+	}
+
+	my $target_uuid = $node->{data}{uuid};
+	my $group_data  = $item->{data};
+	my $members     = $item->{members} // [];
+
+	my $dbh = connectDB();
+	return if !$dbh;
+
+	my $new_group_uuid = insertCollection($dbh,
+		$group_data->{name}    // '',
+		$target_uuid,
+		$NODE_TYPE_GROUP,
+		$group_data->{comment} // '');
+
+	for my $member (@$members)
+	{
+		_insertFreshWaypoint($dbh, $new_group_uuid, $member->{data}, $cb->{source});
+	}
+
+	disconnectDB($dbh);
+	_refreshBrowser();
+}
+
+
+sub _pasteNewRouteToBrowser
+{
+	my ($node, $tree, $item, $cb) = @_;
+
+	if (($node->{type} // '') ne 'collection')
+	{
+		Wx::MessageBox("Right-click a folder to paste a route.",
+			"Paste New Route", wxOK | wxICON_INFORMATION, $tree);
+		return;
+	}
+
+	my $target_uuid = $node->{data}{uuid};
+	my $route_data  = $item->{data};
+	my $members     = $item->{members} // [];
+
+	my $dbh = connectDB();
+	return if !$dbh;
+
+	# Insert member WPs with fresh UUIDs; collect them for the route waypoint list.
+	my @new_wp_uuids;
+	for my $member (@$members)
+	{
+		push @new_wp_uuids,
+			_insertFreshWaypoint($dbh, $target_uuid, $member->{data}, $cb->{source});
+	}
+
+	my $new_route_uuid = insertRoute($dbh,
+		$route_data->{name}    // '',
+		$route_data->{color}   // 0,
+		$route_data->{comment} // '',
+		$target_uuid);
+
+	my $pos = 0;
+	for my $new_uuid (@new_wp_uuids)
+	{
+		appendRouteWaypoint($dbh, $new_route_uuid, $new_uuid, $pos++);
+	}
+
+	disconnectDB($dbh);
 	_refreshBrowser();
 }
 
@@ -377,25 +806,51 @@ sub _pasteTrackToBrowser
 sub _cutBrowserWaypoint
 {
 	my ($uuid, $tree) = @_;
-	display(0,0,"nmOps::_cutBrowserWaypoint: not yet implemented");
+	my $dbh = connectDB();
+	return if !$dbh;
+	if (getWaypointRouteRefCount($dbh, $uuid) > 0)
+	{
+		disconnectDB($dbh);
+		warning(0,0,"_cutBrowserWaypoint $uuid: in route(s) — not removed from source");
+		return;
+	}
+	deleteWaypoint($dbh, $uuid);
+	disconnectDB($dbh);
+	_refreshBrowser();
 }
+
 
 sub _cutBrowserGroup
 {
 	my ($uuid, $tree) = @_;
-	display(0,0,"nmOps::_cutBrowserGroup: not yet implemented");
+	return if !defined $uuid;
+	my $dbh = connectDB();
+	return if !$dbh;
+	deleteCollection($dbh, $uuid);
+	disconnectDB($dbh);
+	_refreshBrowser();
 }
+
 
 sub _cutBrowserRoute
 {
 	my ($uuid, $tree) = @_;
-	display(0,0,"nmOps::_cutBrowserRoute: not yet implemented");
+	my $dbh = connectDB();
+	return if !$dbh;
+	deleteRoute($dbh, $uuid);
+	disconnectDB($dbh);
+	_refreshBrowser();
 }
+
 
 sub _cutBrowserTrack
 {
 	my ($uuid, $tree) = @_;
-	display(0,0,"nmOps::_cutBrowserTrack: not yet implemented");
+	my $dbh = connectDB();
+	return if !$dbh;
+	deleteTrack($dbh, $uuid);
+	disconnectDB($dbh);
+	_refreshBrowser();
 }
 
 

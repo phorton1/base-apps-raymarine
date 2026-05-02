@@ -16,6 +16,7 @@ use Time::HiRes qw(time sleep);
 use lib 'migrate';
 use Pub::Utils qw(display warning error _def);
 use Pub::WX::Frame;
+use Pub::WX::Dialogs;
 use apps::raymarine::NET::c_RAYDP;
 use w_resources;
 use nmServer;
@@ -162,19 +163,32 @@ sub onIdle
 	}
 	elsif ($session_stable)
 	{
-		my $v = apps::raymarine::NET::b_sock::getVersion();
-		if ($v != ($this->{_e80_version} // -1))
-		{
-			$this->{_e80_version}    = $v;
-			$this->{_e80_dirty_time} = time();
-		}
-		elsif ($this->{_e80_dirty_time} &&
-		       !apps::raymarine::NET::d_WPMGR::getPendingCommands() &&
-		       time() > $this->{_e80_dirty_time} + 0.20)
+		my $was_active = $this->{_dialog_active} // 0;
+		my $now_active = Pub::WX::ProgressDialog::isActive() ? 1 : 0;
+		$this->{_dialog_active} = $now_active;
+
+		if ($was_active && !$now_active)
 		{
 			$this->{_e80_dirty_time} = 0;
 			my $e80 = $this->findPane($WIN_E80);
 			$e80->refresh() if $e80;
+		}
+		else
+		{
+			my $v = apps::raymarine::NET::b_sock::getVersion();
+			if ($v != ($this->{_e80_version} // -1))
+			{
+				$this->{_e80_version}    = $v;
+				$this->{_e80_dirty_time} = time();
+			}
+			elsif ($this->{_e80_dirty_time} &&
+			       !apps::raymarine::NET::d_WPMGR::getPendingCommands() &&
+			       time() > $this->{_e80_dirty_time} + 0.20)
+			{
+				$this->{_e80_dirty_time} = 0;
+				my $e80 = $this->findPane($WIN_E80);
+				$e80->refresh() if $e80;
+			}
 		}
 	}
 

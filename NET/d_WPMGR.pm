@@ -36,7 +36,7 @@ use base qw(apps::raymarine::NET::b_sock);
 
 my $dbg = 0;
 my $dbg_got = 0;
-my $dbg_mods = 0;
+my $dbg_mods = 1;
 
 
 
@@ -44,7 +44,7 @@ my $WITH_MOD_PROCESSING = 1;
 
 our $query_in_progress :shared = 0;
 our $pending_commands  :shared = 0;
-my $del_prog = shared_clone({progress => undef});
+my $delete_progress = shared_clone({progress => undef});
 
 my $WPMGR_SERVICE_ID = 15;
 	# 15 = 0xf0 == 'F000' in streams
@@ -133,7 +133,7 @@ sub queueWPMGRCommand
 			$exist->{uuid} eq $uuid	&&
 			$exist->{data} eq $data)
 		{
-			warning($dbg-1,0,"not enquiing duplicate api_command($api_command)");
+			warning($dbg_mods,0,"not enquiing duplicate api_command($api_command)");
 			return 1;
 		}
 	}
@@ -144,9 +144,9 @@ sub queueWPMGRCommand
 		uuid => $uuid,
 		data => $data });
 	$command->{progress} = $progress if $progress;
-	$del_prog->{progress} = $progress
-		if $progress && $progress->{_track_get_items} &&
-		   $api_command == $API_DEL_ITEM &&
+	$delete_progress->{progress} = $progress
+		if $progress && $progress->{_counting_get_items} &&
+		   ($api_command == $API_DEL_ITEM || $api_command == $API_NEW_ITEM) &&
 		   ($what == $WHAT_ROUTE || $what == $WHAT_GROUP);
 	$pending_commands++;
 	if ($front)
@@ -611,7 +611,7 @@ sub handleEvent
 		else
 		{
 			warning($dbg_mods,0,"enquing mod($mod->{what}) uuid($mod->{uuid})");
-			$this->queueWPMGRCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef,$del_prog->{progress},1);
+			$this->queueWPMGRCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef,$delete_progress->{progress},1);
 		}
 
 	}	# for each mod

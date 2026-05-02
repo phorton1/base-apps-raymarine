@@ -80,7 +80,7 @@ sub new
 
 	EVT_MENU($this, $CMD_UPLOAD_E80, \&_onUploadE80);   # vestigial
 	EVT_MENU($this, $_, \&_onContextMenuCommand)
-		for (allCopyCmds(), allCutCmds(), $CMD_PASTE, allDeleteCmds(), allNewCmds());
+		for (allCopyCmds(), allCutCmds(), $CMD_PASTE, $CMD_PASTE_NEW, allDeleteCmds(), allNewCmds());
 
 	_loadTopLevel($this);
 
@@ -690,16 +690,22 @@ sub _buildContextMenu
 		push @nodes, $n if ref $n eq 'HASH';
 	}
 
+	$this->{_context_nodes} = \@nodes;
+
 	my $menu = Wx::Menu->new();
 
 	my @copy_items = getCopyMenuItems('browser', @nodes);
+	my @cut_items  = getCutMenuItems('browser', @nodes);
 	$menu->Append($_->{id}, $_->{label}) for @copy_items;
-	$menu->AppendSeparator()             if @copy_items;
+	$menu->Append($_->{id}, $_->{label}) for @cut_items;
+	$menu->AppendSeparator() if @copy_items || @cut_items;
 
 	$menu->Append($CMD_PASTE, 'Paste');
 	$menu->Enable($CMD_PASTE, canPaste($right_click_node, 'browser') ? 1 : 0);
+	$menu->Append($CMD_PASTE_NEW, 'Paste New');
+	$menu->Enable($CMD_PASTE_NEW, canPasteNew($right_click_node, 'browser') ? 1 : 0);
 
-	my @delete_items = getDeleteMenuItems('browser', $right_click_node);
+	my @delete_items = getDeleteMenuItems('browser', $right_click_node, @nodes);
 	if (@delete_items)
 	{
 		$menu->AppendSeparator();
@@ -729,7 +735,8 @@ sub _onContextMenuCommand
 {
 	my ($this, $event) = @_;
 	onContextMenuCommand(
-		$event->GetId(), 'browser', $this->{_right_click_node}, $this->{tree});
+		$event->GetId(), 'browser', $this->{_right_click_node}, $this->{tree},
+		@{$this->{_context_nodes} // []});
 }
 
 

@@ -62,7 +62,7 @@ sub new
 	EVT_TREE_SEL_CHANGED($this,      $this->{tree}, \&onTreeSelect);
 	EVT_TREE_ITEM_RIGHT_CLICK($this, $this->{tree}, \&onTreeRightClick);
 	EVT_MENU($this, $_, \&_onContextMenuCommand)
-		for (allCopyCmds(), allCutCmds(), $CMD_PASTE, allDeleteCmds(), allNewCmds());
+		for (allCopyCmds(), allCutCmds(), $CMD_PASTE, $CMD_PASTE_NEW, allDeleteCmds(), allNewCmds());
 	EVT_MENU($this, $CMD_REFRESH_E80, sub { doRefresh($_[0]) });
 
 	$this->{_expanded_keys} = {
@@ -353,6 +353,8 @@ sub _buildContextMenu
 		push @nodes, $n if ref $n eq 'HASH';
 	}
 
+	$this->{_context_nodes} = \@nodes;
+
 	my $menu = Wx::Menu->new();
 
 	my @copy_items = getCopyMenuItems('e80', @nodes);
@@ -361,8 +363,10 @@ sub _buildContextMenu
 
 	$menu->Append($CMD_PASTE, 'Paste');
 	$menu->Enable($CMD_PASTE, canPaste($right_click_node, 'e80') ? 1 : 0);
+	$menu->Append($CMD_PASTE_NEW, 'Paste New');
+	$menu->Enable($CMD_PASTE_NEW, canPasteNew($right_click_node, 'e80') ? 1 : 0);
 
-	my @delete_items = getDeleteMenuItems('e80', $right_click_node);
+	my @delete_items = getDeleteMenuItems('e80', $right_click_node, @nodes);
 	if (@delete_items)
 	{
 		$menu->AppendSeparator();
@@ -387,7 +391,8 @@ sub _onContextMenuCommand
 {
 	my ($this, $event) = @_;
 	onContextMenuCommand(
-		$event->GetId(), 'e80', $this->{_right_click_node}, $this->{tree});
+		$event->GetId(), 'e80', $this->{_right_click_node}, $this->{tree},
+		@{$this->{_context_nodes} // []});
 }
 
 

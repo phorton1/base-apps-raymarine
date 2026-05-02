@@ -57,6 +57,15 @@ BEGIN
 		removeRoutePoint
 		promoteNavWaypoints
 		promoteWaypointOnlyBranches
+		updateWaypoint
+		insertCollectionUUID
+		insertRouteUUID
+		updateRoute
+		clearRouteWaypoints
+		moveWaypoint
+		moveCollection
+		moveRoute
+		moveTrack
 		isDBReady
 	);
 }
@@ -333,6 +342,26 @@ sub insertCollection
 }
 
 
+sub insertCollectionUUID
+{
+	my ($dbh, $uuid, $name, $parent_uuid, $node_type, $comment) = @_;
+	if (defined $parent_uuid)
+	{
+		my $pr = $dbh->get_record(
+			"SELECT node_type FROM collections WHERE uuid=?", [$parent_uuid]);
+		if ($pr && $pr->{node_type} eq $NODE_TYPE_GROUP)
+		{
+			error(0,0,"insertCollectionUUID: cannot add sub-collection under group '$name'");
+			return undef;
+		}
+	}
+	$dbh->do(
+		"INSERT INTO collections (uuid, name, parent_uuid, node_type, comment) VALUES (?,?,?,?,?)",
+		[$uuid, $name, $parent_uuid, $node_type // $NODE_TYPE_BRANCH, $comment // '']);
+	return $uuid;
+}
+
+
 #---------------------------------
 # findCollection
 #---------------------------------
@@ -364,7 +393,7 @@ sub findCollection
 sub insertWaypoint
 {
 	my ($dbh, %a) = @_;
-	my $uuid = newUUID($dbh);
+	my $uuid = $a{uuid} // newUUID($dbh);
 	$dbh->do(qq{
 		INSERT INTO waypoints
 			(uuid, name, comment, lat, lon, sym, wp_type, color, depth_cm,
@@ -387,6 +416,30 @@ sub insertWaypoint
 }
 
 
+sub updateWaypoint
+{
+	my ($dbh, $uuid, %a) = @_;
+	$dbh->do(qq{
+		UPDATE waypoints SET
+			name=?, comment=?, lat=?, lon=?, sym=?, wp_type=?, color=?,
+			depth_cm=?, created_ts=?, ts_source=?, source=?
+		WHERE uuid=?},
+		[$a{name},
+		$a{comment}  // '',
+		$a{lat},
+		$a{lon},
+		$a{sym}      // 0,
+		$a{wp_type}  // $WP_TYPE_NAV,
+		$a{color},
+		$a{depth_cm} // 0,
+		$a{created_ts},
+		$a{ts_source},
+		$a{source},
+		$uuid]);
+	return 1;
+}
+
+
 #---------------------------------
 # insertRoute
 #---------------------------------
@@ -399,6 +452,26 @@ sub insertRoute
 		"INSERT INTO routes (uuid, name, color, comment, collection_uuid) VALUES (?,?,?,?,?)",
 		[$uuid, $name, $color // 0, $comment // '', $collection_uuid]);
 	return $uuid;
+}
+
+
+sub insertRouteUUID
+{
+	my ($dbh, $uuid, $name, $color, $comment, $collection_uuid) = @_;
+	$dbh->do(
+		"INSERT INTO routes (uuid, name, color, comment, collection_uuid) VALUES (?,?,?,?,?)",
+		[$uuid, $name, $color // 0, $comment // '', $collection_uuid]);
+	return $uuid;
+}
+
+
+sub updateRoute
+{
+	my ($dbh, $uuid, $name, $color, $comment) = @_;
+	$dbh->do(
+		"UPDATE routes SET name=?, color=?, comment=? WHERE uuid=?",
+		[$name, $color // 0, $comment // '', $uuid]);
+	return 1;
 }
 
 
@@ -817,6 +890,59 @@ sub removeRoutePoint
 	$dbh->do(
 		"UPDATE route_waypoints SET position=position-1 WHERE route_uuid=? AND position>?",
 		[$route_uuid, $position]);
+}
+
+
+sub clearRouteWaypoints
+{
+	my ($dbh, $route_uuid) = @_;
+	$dbh->do("DELETE FROM route_waypoints WHERE route_uuid=?", [$route_uuid]);
+}
+
+
+#---------------------------------
+# move* — re-home an object to a different collection/parent
+#---------------------------------
+
+sub moveWaypoint
+{
+	my ($dbh, $uuid, $new_coll_uuid) = @_;
+	$dbh->do("UPDATE waypoints SET collection_uuid=? WHERE uuid=?", [$new_coll_uuid, $uuid]);
+	return 1;
+}
+
+
+sub moveCollection
+{
+	my ($dbh, $uuid, $new_parent_uuid) = @_;
+	if (defined $new_parent_uuid)
+	{
+		my $pr = $dbh->get_record(
+			"SELECT node_type FROM collections WHERE uuid=?", [$new_parent_uuid]);
+		if ($pr && $pr->{node_type} eq $NODE_TYPE_GROUP)
+		{
+			error(0, 0, "moveCollection: cannot move collection under group");
+			return undef;
+		}
+	}
+	$dbh->do("UPDATE collections SET parent_uuid=? WHERE uuid=?", [$new_parent_uuid, $uuid]);
+	return 1;
+}
+
+
+sub moveRoute
+{
+	my ($dbh, $uuid, $new_coll_uuid) = @_;
+	$dbh->do("UPDATE routes SET collection_uuid=? WHERE uuid=?", [$new_coll_uuid, $uuid]);
+	return 1;
+}
+
+
+sub moveTrack
+{
+	my ($dbh, $uuid, $new_coll_uuid) = @_;
+	$dbh->do("UPDATE tracks SET collection_uuid=? WHERE uuid=?", [$new_coll_uuid, $uuid]);
+	return 1;
 }
 
 

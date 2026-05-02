@@ -19,7 +19,7 @@ use strict;
 use warnings;
 use threads;
 use threads::shared;
-use Pub::Utils qw(display warning error getAppFrame);
+use Pub::Utils qw(display warning error getAppFrame $UTILS_COLOR_LIGHT_MAGENTA);
 
 
 BEGIN
@@ -48,6 +48,7 @@ BEGIN
 		$CMD_CUT_ALL
 
 		$CMD_PASTE
+		$CMD_PASTE_NEW
 
 		$CMD_DELETE_WAYPOINT
 		$CMD_DELETE_GROUP
@@ -72,6 +73,7 @@ BEGIN
 		getCopyMenuItems
 		getCutMenuItems
 		canPaste
+		canPasteNew
 		setCopy
 		setCut
 		clearClipboard
@@ -103,6 +105,7 @@ our $CMD_CUT_TRACKS    = 10141;
 our $CMD_CUT_ALL       = 10199;
 
 our $CMD_PASTE          = 10300;
+our $CMD_PASTE_NEW      = 10301;
 
 our $CMD_DELETE_WAYPOINT   = 10410;
 our $CMD_DELETE_GROUP      = 10420;
@@ -328,10 +331,12 @@ sub getNewMenuItems
 
 sub getDeleteMenuItems
 {
-	my ($panel, $right_click_node) = @_;
-	my $t  = $right_click_node->{type}  // '';
-	my $ot = ($right_click_node->{data} // {})->{obj_type}  // '';
-	my $nt = ($right_click_node->{data} // {})->{node_type} // '';
+	my ($panel, $right_click_node, @nodes) = @_;
+	my $n    = @nodes > 0 ? scalar(@nodes) : 1;
+	my $t    = $right_click_node->{type}  // '';
+	my $kind = $right_click_node->{kind}  // '';
+	my $ot   = ($right_click_node->{data} // {})->{obj_type}  // '';
+	my $nt   = ($right_click_node->{data} // {})->{node_type} // '';
 
 	if ($panel eq 'browser')
 	{
@@ -340,21 +345,21 @@ sub getDeleteMenuItems
 
 		if ($t eq 'object')
 		{
-			return ({ id => $CMD_DELETE_WAYPOINT, label => 'Delete Waypoint' })
+			return ({ id => $CMD_DELETE_WAYPOINT, label => $n > 1 ? 'Delete Waypoints' : 'Delete Waypoint' })
 				if $ot eq 'waypoint';
 
-			return ({ id => $CMD_DELETE_ROUTE, label => 'Delete Route' })
+			return ({ id => $CMD_DELETE_ROUTE, label => $n > 1 ? 'Delete Routes' : 'Delete Route' })
 				if $ot eq 'route';
 
-			return ({ id => $CMD_DELETE_TRACK, label => 'Delete Track' })
+			return ({ id => $CMD_DELETE_TRACK, label => $n > 1 ? 'Delete Tracks' : 'Delete Track' })
 				if $ot eq 'track';
 		}
 
 		if ($t eq 'collection')
 		{
 			return (
-				{ id => $CMD_DELETE_GROUP,     label => 'Delete Group'             },
-				{ id => $CMD_DELETE_GROUP_WPS, label => 'Delete Group + Waypoints' },
+				{ id => $CMD_DELETE_GROUP,     label => $n > 1 ? 'Delete Groups'             : 'Delete Group'             },
+				{ id => $CMD_DELETE_GROUP_WPS, label => $n > 1 ? 'Delete Groups + Waypoints' : 'Delete Group + Waypoints' },
 			) if $nt eq 'group';
 
 			return ({ id => $CMD_DELETE_BRANCH, label => 'Delete Branch' });
@@ -367,22 +372,30 @@ sub getDeleteMenuItems
 			{ id => $CMD_DELETE_WAYPOINT,   label => 'Delete Waypoint'   },
 		) if $t eq 'route_point';
 
-		return ({ id => $CMD_DELETE_WAYPOINT, label => 'Delete Waypoint' })
+		return ({ id => $CMD_DELETE_WAYPOINT, label => $n > 1 ? 'Delete Waypoints' : 'Delete Waypoint' })
 			if $t eq 'waypoint';
 
-		return ({ id => $CMD_DELETE_ROUTE, label => 'Delete Route' })
+		return ({ id => $CMD_DELETE_ROUTE, label => $n > 1 ? 'Delete Routes' : 'Delete Route' })
 			if $t eq 'route';
 
 		return (
-			{ id => $CMD_DELETE_GROUP,     label => 'Delete Group'             },
-			{ id => $CMD_DELETE_GROUP_WPS, label => 'Delete Group + Waypoints' },
+			{ id => $CMD_DELETE_GROUP,     label => $n > 1 ? 'Delete Groups'             : 'Delete Group'             },
+			{ id => $CMD_DELETE_GROUP_WPS, label => $n > 1 ? 'Delete Groups + Waypoints' : 'Delete Group + Waypoints' },
 		) if $t eq 'group';
 
 		return ({ id => $CMD_DELETE_GROUP_WPS, label => 'Delete Group + Waypoints' })
 			if $t eq 'my_waypoints';
 
-		return ({ id => $CMD_DELETE_TRACK, label => 'Delete Track' })
+		return ({ id => $CMD_DELETE_TRACK, label => $n > 1 ? 'Delete Tracks' : 'Delete Track' })
 			if $t eq 'track';
+
+		return ({ id => $CMD_DELETE_ROUTE, label => 'Delete Routes' })
+			if $t eq 'header' && $kind eq 'routes';
+
+		return (
+			{ id => $CMD_DELETE_GROUP,     label => 'Delete Groups'             },
+			{ id => $CMD_DELETE_GROUP_WPS, label => 'Delete Groups + Waypoints' },
+		) if $t eq 'header' && $kind eq 'groups';
 	}
 
 	return ();
@@ -517,17 +530,16 @@ sub getCutMenuItems
 
 
 #----------------------------------------------------
-# canPaste
+# _canPasteBase / canPaste / canPasteNew
 #----------------------------------------------------
-# Paste is always shown in the menu but enabled only when
-# the clipboard intent is compatible with the target node.
-# Tracks cannot be pasted to E80 (read-only TRACK API).
+# _canPasteBase: pure target-type compatibility, no source guard.
+# canPaste:      adds source guard (browser->browser non-cut = no-op, disabled).
+# canPasteNew:   calls _canPasteBase directly so it stays enabled for intra-browser
+#                copy (Paste New is the correct duplication path there).
 
-sub canPaste
+sub _canPasteBase
 {
 	my ($target_node, $panel) = @_;
-	return 0 if !$clipboard;
-
 	my $intent = $clipboard->{intent};
 	my $t      = $target_node->{type} // '';
 
@@ -564,47 +576,90 @@ sub canPaste
 }
 
 
+sub canPaste
+{
+	my ($target_node, $panel) = @_;
+	return 0 if !$clipboard;
+	return 0 if $clipboard->{source} eq 'browser' && $panel eq 'browser' && !$clipboard->{cut};
+	return _canPasteBase($target_node, $panel);
+}
+
+
+sub canPasteNew
+{
+	my ($target_node, $panel) = @_;
+	return 0 if !$clipboard;
+	return 0 if $clipboard->{cut};
+	return 0 if $clipboard->{intent} =~ /^tracks?$/;
+	return _canPasteBase($target_node, $panel);
+}
+
+
 #----------------------------------------------------
-# onContextMenuCommand — STUB
+# _cmdLabel / onContextMenuCommand
 #----------------------------------------------------
+
+sub _cmdLabel
+{
+	my ($cmd_id) = @_;
+	return "PASTE"           if $cmd_id == $CMD_PASTE;
+	return "PASTE NEW"       if $cmd_id == $CMD_PASTE_NEW;
+	my $ci = $CMD_COPY_INTENT{$cmd_id};
+	return "COPY " . uc($ci) if $ci;
+	my $xi = $CMD_CUT_INTENT{$cmd_id};
+	return "CUT " . uc($xi)  if $xi;
+	return "DELETE WAYPOINT"   if $cmd_id == $CMD_DELETE_WAYPOINT;
+	return "DELETE GROUP"      if $cmd_id == $CMD_DELETE_GROUP;
+	return "DELETE GROUP+WPS"  if $cmd_id == $CMD_DELETE_GROUP_WPS;
+	return "DELETE ROUTE"      if $cmd_id == $CMD_DELETE_ROUTE;
+	return "REMOVE ROUTEPOINT" if $cmd_id == $CMD_REMOVE_ROUTEPOINT;
+	return "DELETE TRACK"      if $cmd_id == $CMD_DELETE_TRACK;
+	return "DELETE BRANCH"     if $cmd_id == $CMD_DELETE_BRANCH;
+	return "NEW WAYPOINT"      if $cmd_id == $CMD_NEW_WAYPOINT;
+	return "NEW GROUP"         if $cmd_id == $CMD_NEW_GROUP;
+	return "NEW ROUTE"         if $cmd_id == $CMD_NEW_ROUTE;
+	return "NEW BRANCH"        if $cmd_id == $CMD_NEW_BRANCH;
+	return "CMD_$cmd_id";
+}
+
 
 sub onContextMenuCommand
 {
-	my ($cmd_id, $panel, $right_click_node, $tree) = @_;
+	my ($cmd_id, $panel, $right_click_node, $tree, @nodes) = @_;
+
+	my $label = _cmdLabel($cmd_id);
+	display(-1, 0, "===== $label ($panel) STARTED =====", 0, $UTILS_COLOR_LIGHT_MAGENTA);
 
 	if ($cmd_id == $CMD_PASTE)
 	{
 		nmOps::doPaste($panel, $right_click_node, $tree);
-		return;
 	}
-
-	if (grep { $cmd_id == $_ } @ALL_DELETE_CMDS)
+	elsif ($cmd_id == $CMD_PASTE_NEW)
 	{
-		nmOps::doDelete($cmd_id, $panel, $right_click_node, $tree);
-		return;
+		nmOps::doPasteNew($panel, $right_click_node, $tree);
 	}
-
-	my $copy_intent = $CMD_COPY_INTENT{$cmd_id};
-	if ($copy_intent)
+	elsif (grep { $cmd_id == $_ } @ALL_DELETE_CMDS)
 	{
-		nmOps::doCopy($copy_intent, $panel, $right_click_node, $tree);
-		return;
+		nmOps::doDelete($cmd_id, $panel, $right_click_node, $tree, @nodes);
 	}
-
-	my $cut_intent = $CMD_CUT_INTENT{$cmd_id};
-	if ($cut_intent)
+	elsif (my $copy_intent = $CMD_COPY_INTENT{$cmd_id})
 	{
-		nmOps::doCut($cut_intent, $panel, $right_click_node, $tree);
-		return;
+		nmOps::doCopy($copy_intent, $panel, $right_click_node, $tree, @nodes);
 	}
-
-	if (grep { $cmd_id == $_ } @ALL_NEW_CMDS)
+	elsif (my $cut_intent = $CMD_CUT_INTENT{$cmd_id})
+	{
+		nmOps::doCut($cut_intent, $panel, $right_click_node, $tree, @nodes);
+	}
+	elsif (grep { $cmd_id == $_ } @ALL_NEW_CMDS)
 	{
 		nmOps::doNew($cmd_id, $panel, $right_click_node, $tree);
-		return;
+	}
+	else
+	{
+		warning(0, 0, "nmClipboard: unknown cmd_id=$cmd_id");
 	}
 
-	warning(0,0,"nmClipboard: unknown cmd_id=$cmd_id");
+	display(-1, 0, "===== $label ($panel) FINISHED =====", 0, $UTILS_COLOR_LIGHT_MAGENTA);
 }
 
 
