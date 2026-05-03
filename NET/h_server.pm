@@ -440,7 +440,7 @@ sub handleCommand
 		$val_str =~ s/^0x//i;
 		if ($val_str !~ /^[0-9a-fA-F]+$/)
 		{
-			error(0,0,"mon_$what: invalid value '$val_str'");
+			error("mon_$what: invalid value '$val_str'");
 			return;
 		}
 		my $val = hex($val_str) | $MON_SRC_SHARK;
@@ -489,6 +489,26 @@ sub handleCommand
 	{
 		display(0,0,"------------------------------ MARK" . ($rpart ? ": $rpart" : '') . " ------------------------------");
 		$mark_seq = getOutputRingSeq();
+	}
+
+	elsif ($lpart eq 'dialog_state')
+	{
+		my $active = Pub::WX::ProgressDialog->can('isActiveShared')
+			? Pub::WX::ProgressDialog::isActiveShared() : 0;
+		display(0,0,"dialog_state: " . ($active ? "active" : "idle"));
+	}
+
+	elsif ($lpart eq 'close_dialog')
+	{
+		if (Pub::WX::ProgressDialog->can('setForceClose'))
+		{
+			Pub::WX::ProgressDialog::setForceClose();
+			display(0,0,"close_dialog: force close requested");
+		}
+		else
+		{
+			display(0,0,"close_dialog: wx not available");
+		}
 	}
 
 	# Help

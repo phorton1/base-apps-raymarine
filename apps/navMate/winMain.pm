@@ -87,8 +87,12 @@ sub onIdle
 {
 	my ($this, $event) = @_;
 
-	my $test_cmd = pollTestCommand();
-	dispatchTestCommand($this, $test_cmd) if $test_cmd;
+	Pub::WX::ProgressDialog::forceCloseActive();
+	unless (Pub::WX::ProgressDialog::isActive())
+	{
+		my $test_cmd = pollTestCommand();
+		dispatchTestCommand($this, $test_cmd) if $test_cmd;
+	}
 
 	my $wpmgr_on = ($raydp && $raydp->findImplementedService('WPMGR', 1)) ? 1 : 0;
 	my $track_on = ($raydp && $raydp->findImplementedService('TRACK', 1)) ? 1 : 0;

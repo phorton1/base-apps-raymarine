@@ -36,11 +36,8 @@ use base qw(apps::raymarine::NET::b_sock);
 
 my $dbg = 0;
 my $dbg_got = 0;
-my $dbg_mods = 1;
+my $dbg_mods = 0;
 
-
-
-my $WITH_MOD_PROCESSING = 1;
 
 our $query_in_progress :shared = 0;
 our $pending_commands  :shared = 0;
@@ -371,15 +368,18 @@ sub create_item
 
 	# check the name
 
-	my $seq = $this->{next_seqnum}++;
-	my $request = createMsg($seq,$DIRECTION_SEND,$CMD_FIND,$what,name16_hex($name));
-	return 0 if !$this->sendRequest($seq,"$what_name name must not exist",$request);
-	return 0 if !$this->waitReply(-1);
+	if (0)	# ALLOW DUPLICATE ITEM NAMES ON THE E80
+	{
+		my $seq = $this->{next_seqnum}++;
+		my $request = createMsg($seq,$DIRECTION_SEND,$CMD_FIND,$what,name16_hex($name));
+		return 0 if !$this->sendRequest($seq,"$what_name name must not exist",$request);
+		return 0 if !$this->waitReply(-1);
+	}
 
 	# check the uuid
 
-	$seq = $this->{next_seqnum}++;
-	$request = createMsg($seq,$DIRECTION_SEND,$CMD_ITEM,$what,$uuid);
+	my $seq = $this->{next_seqnum}++;
+	my $request = createMsg($seq,$DIRECTION_SEND,$CMD_ITEM,$what,$uuid);
 	return 0 if !$this->sendRequest($seq,"$what_name uuid must not exist",$request);
 	return 0 if !$this->waitReply(-1);
 
@@ -579,7 +579,6 @@ sub handleEvent
 	my $mods = $packet->{mods};
 	return $packet if
 		!$mods ||
-		!$WITH_MOD_PROCESSING ||
 		$packet->{item};
 
 	warning($dbg_mods+1,1,"found ".scalar(@$mods)." mods");

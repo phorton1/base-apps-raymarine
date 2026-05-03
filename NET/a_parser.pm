@@ -99,22 +99,29 @@ sub dispatchTCPSendMsg
 	# called by b_sock for each outgoing TCP message (display/monitoring only)
 {
 	my ($this, $payload) = @_;
-	return if length($payload) < 2;
-	my $msg_len = unpack('v', substr($payload, 0, 2));
-	my $msg     = substr($payload, 2, $msg_len);
-	my $cmd_word = unpack('v', substr($msg, 0, 2));
-	$this->resetTransaction() if ($cmd_word & 0xf00) == $DIRECTION_SEND;
-	my $packet = {
-		is_reply   => 0,
-		is_sniffer => $this->{mon_defs}{is_sniffer} // 0,
-		is_shark   => $this->{mon_defs}{is_shark}   // 1,
-		proto      => 'tcp',
-		payload    => $msg,
-		mon        => 0,
-		color      => 0,
-	};
-	$this->applyMonDefs($packet);
-	$this->parseMessage($packet, $msg_len, $msg);
+	if ($this->{last_dir_was_reply}) { $this->resetTransaction(); }
+	$this->{last_dir_was_reply} = 0;
+	my $offset = 0;
+	while ($offset + 2 <= length($payload))
+	{
+		my $msg_len  = unpack('v', substr($payload, $offset, 2));
+		last if $msg_len == 0 || $offset + 2 + $msg_len > length($payload);
+		my $msg      = substr($payload, $offset + 2, $msg_len);
+		$offset     += 2 + $msg_len;
+		my $cmd_word = unpack('v', substr($msg, 0, 2));
+		$this->resetTransaction() if ($cmd_word & 0xf00) == $DIRECTION_SEND;
+		my $packet = {
+			is_reply   => 0,
+			is_sniffer => $this->{mon_defs}{is_sniffer} // 0,
+			is_shark   => $this->{mon_defs}{is_shark}   // 1,
+			proto      => 'tcp',
+			payload    => $msg,
+			mon        => 0,
+			color      => 0,
+		};
+		$this->applyMonDefs($packet);
+		$this->parseMessage($packet, $msg_len, $msg);
+	}
 }
 
 
@@ -122,6 +129,8 @@ sub dispatchTCPRecvMsg
 	# called by b_sock for each incoming TCP message; returns undef or completed reply
 {
 	my ($this, $msg) = @_;
+	if (!$this->{last_dir_was_reply}) { $this->resetTransaction(); }
+	$this->{last_dir_was_reply} = 1;
 	my $msg_len = length($msg);
 	my $packet  = {
 		is_reply   => 1,

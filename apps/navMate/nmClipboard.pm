@@ -20,6 +20,7 @@ use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils qw(display warning error getAppFrame $UTILS_COLOR_LIGHT_MAGENTA);
+use apps::raymarine::NET::c_RAYDP;
 use c_db;
 
 
@@ -429,16 +430,13 @@ sub getDeleteMenuItems
 			else  # branch
 			{
 				my $uuid = ($right_click_node->{data} // {})->{uuid};
-				my $show  = 1;
+				my $safe  = 1;
 				if ($uuid && $dbh)
 				{
-					my $counts = getCollectionCounts($dbh, $uuid);
-					my $total  = $counts->{collections} + $counts->{waypoints}
-					           + $counts->{routes}      + $counts->{tracks};
-					$show = 0 if $total > 0;
+					$safe = isBranchDeleteSafe($dbh, $uuid);
 				}
 				disconnectDB($dbh) if $dbh;
-				return $show ? ({ id => $CTX_CMD_DELETE_BRANCH, label => 'Delete Branch' }) : ();
+				return $safe ? ({ id => $CTX_CMD_DELETE_BRANCH, label => 'Delete Branch' }) : ();
 			}
 		}
 
@@ -457,24 +455,79 @@ sub getDeleteMenuItems
 		return ({ id => $CTX_CMD_DELETE_ROUTE, label => $n > 1 ? 'Delete Routes' : 'Delete Route' })
 			if $t eq 'route';
 
-		return (
-			{ id => $CTX_CMD_DELETE_GROUP,     label => $n > 1 ? 'Delete Groups'             : 'Delete Group'             },
-			{ id => $CTX_CMD_DELETE_GROUP_WPS, label => $n > 1 ? 'Delete Groups + Waypoints' : 'Delete Group + Waypoints' },
-		) if $t eq 'group';
-
-		return ({ id => $CTX_CMD_DELETE_GROUP_WPS, label => 'Delete Group + Waypoints' })
-			if $t eq 'my_waypoints';
-
 		return ({ id => $CTX_CMD_DELETE_TRACK, label => $n > 1 ? 'Delete Tracks' : 'Delete Track' })
 			if $t eq 'track';
 
 		return ({ id => $CTX_CMD_DELETE_ROUTE, label => 'Delete Routes' })
 			if $t eq 'header' && $kind eq 'routes';
 
-		return (
-			{ id => $CTX_CMD_DELETE_GROUP,     label => 'Delete Groups'             },
-			{ id => $CTX_CMD_DELETE_GROUP_WPS, label => 'Delete Groups + Waypoints' },
-		) if $t eq 'header' && $kind eq 'groups';
+		if ($t eq 'group' || $t eq 'my_waypoints' || ($t eq 'header' && $kind eq 'groups'))
+		{
+			my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
+			my %in_route;
+			if ($wpmgr)
+			{
+				for my $r (values %{$wpmgr->{routes} // {}})
+				{
+					$in_route{$_} = 1 for @{$r->{uuids} // []};
+				}
+			}
+
+			if ($t eq 'group')
+			{
+				my $any_in_routes = 0;
+				for my $node (@nodes)
+				{
+					if (grep { $in_route{$_} } @{$node->{data}{uuids} // []})
+					{
+						$any_in_routes = 1;
+						last;
+					}
+				}
+				my @result = ({ id => $CTX_CMD_DELETE_GROUP,
+				                label => $n > 1 ? 'Delete Groups' : 'Delete Group' });
+				push @result, { id => $CTX_CMD_DELETE_GROUP_WPS,
+				                label => $n > 1 ? 'Delete Groups + Waypoints' : 'Delete Group + Waypoints' }
+					unless $any_in_routes;
+				return @result;
+			}
+
+			if ($t eq 'my_waypoints')
+			{
+				my %grouped;
+				for my $grp (values %{($wpmgr // {})->{groups} // {}})
+				{
+					$grouped{$_} = 1 for @{$grp->{uuids} // []};
+				}
+				my $any_in_routes = $wpmgr
+					? (grep { !$grouped{$_} && $in_route{$_} } keys %{$wpmgr->{waypoints} // {}})
+					: 0;
+				return ({ id => $CTX_CMD_DELETE_GROUP_WPS, label => 'Delete Group + Waypoints' })
+					unless $any_in_routes;
+				return ();
+			}
+
+			if ($t eq 'header' && $kind eq 'groups')
+			{
+				my $any_in_routes = 0;
+				for my $grp (values %{($wpmgr // {})->{groups} // {}})
+				{
+					last if $any_in_routes;
+					for my $uuid (@{$grp->{uuids} // []})
+					{
+						if ($in_route{$uuid})
+						{
+							$any_in_routes = 1;
+							last;
+						}
+					}
+				}
+				my @result = ({ id => $CTX_CMD_DELETE_GROUP,     label => 'Delete Groups' });
+				push @result, { id => $CTX_CMD_DELETE_GROUP_WPS, label => 'Delete Groups + Waypoints' }
+					unless $any_in_routes;
+				return @result;
+			}
+		}
 	}
 
 	return ();
@@ -679,6 +732,7 @@ sub canPaste
 {
 	my ($target_node, $panel) = @_;
 	return 0 if !$clipboard;
+	return 0 if $clipboard->{cut} && $clipboard->{source} eq 'database' && $panel eq 'e80';
 	return 0 if $clipboard->{source} eq 'database' && $panel eq 'database' && !$clipboard->{cut};
 	# D-CT-ALL → DB: only allow for non-root collection targets (move branch contents)
 	return 0 if $clipboard->{intent} eq 'all' && $clipboard->{source} eq 'database' && $panel eq 'database'

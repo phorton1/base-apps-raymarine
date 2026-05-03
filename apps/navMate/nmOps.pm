@@ -183,7 +183,7 @@ sub doDelete
 	}
 	elsif ($cmd_id == $nmClipboard::CTX_CMD_DELETE_BRANCH)
 	{
-		_deleteDatabaseCollection($node, $tree, 'Branch');
+		_deleteDatabaseBranch($node, $tree);
 	}
 	elsif ($cmd_id == $nmClipboard::CTX_CMD_DELETE_GROUP)
 	{

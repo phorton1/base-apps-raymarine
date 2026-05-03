@@ -48,9 +48,11 @@ BEGIN
 		getRouteWaypoints
 		rawQuery
 		deleteCollection
+		deleteBranch
 		deleteRoute
 		deleteWaypoint
 		deleteTrack
+		isBranchDeleteSafe
 		getWaypointRouteRefCount
 		getWaypointRoutes
 		getGroupWaypoints
@@ -330,7 +332,7 @@ sub insertCollection
 			"SELECT node_type FROM collections WHERE uuid=?", [$parent_uuid]);
 		if ($pr && $pr->{node_type} eq $NODE_TYPE_GROUP)
 		{
-			error(0,0,"insertCollection: cannot add sub-collection under group '$name'");
+			error("insertCollection: cannot add sub-collection under group '$name'");
 			return undef;
 		}
 	}
@@ -351,7 +353,7 @@ sub insertCollectionUUID
 			"SELECT node_type FROM collections WHERE uuid=?", [$parent_uuid]);
 		if ($pr && $pr->{node_type} eq $NODE_TYPE_GROUP)
 		{
-			error(0,0,"insertCollectionUUID: cannot add sub-collection under group '$name'");
+			error("insertCollectionUUID: cannot add sub-collection under group '$name'");
 			return undef;
 		}
 	}
@@ -921,7 +923,7 @@ sub moveCollection
 			"SELECT node_type FROM collections WHERE uuid=?", [$new_parent_uuid]);
 		if ($pr && $pr->{node_type} eq $NODE_TYPE_GROUP)
 		{
-			error(0, 0, "moveCollection: cannot move collection under group");
+			error("moveCollection: cannot move collection under group");
 			return undef;
 		}
 	}
@@ -954,6 +956,92 @@ sub deleteCollection
 {
 	my ($dbh, $uuid) = @_;
 	$dbh->do("DELETE FROM collections WHERE uuid=?", [$uuid]);
+}
+
+
+#---------------------------------
+# isBranchDeleteSafe
+#---------------------------------
+# Returns 1 if deleting the branch at $uuid (recursively) would not orphan
+# any route_waypoints rows — i.e. every route that references a WP in the
+# subtree is itself inside the same subtree. Returns 0 if any WP is referenced
+# by a route that lives outside the branch.
+
+sub isBranchDeleteSafe
+{
+	my ($dbh, $uuid) = @_;
+	my $col_rows = $dbh->get_records(
+		"WITH RECURSIVE subtree(uuid) AS (
+			SELECT uuid FROM collections WHERE uuid = ?
+			UNION ALL
+			SELECT c.uuid FROM collections c JOIN subtree s ON c.parent_uuid = s.uuid
+		) SELECT uuid FROM subtree",
+		[$uuid]);
+	return 1 unless @$col_rows;
+	my @col_uuids = map { $_->{uuid} } @$col_rows;
+	my $col_ph    = join(',', map { '?' } @col_uuids);
+	my $wp_rows   = $dbh->get_records(
+		"SELECT uuid FROM waypoints WHERE collection_uuid IN ($col_ph)",
+		\@col_uuids);
+	return 1 unless @$wp_rows;
+	my $rt_rows = $dbh->get_records(
+		"SELECT uuid FROM routes WHERE collection_uuid IN ($col_ph)",
+		\@col_uuids);
+	my %route_set = map { $_->{uuid} => 1 } @$rt_rows;
+	my @wp_uuids  = map { $_->{uuid} } @$wp_rows;
+	my $wp_ph     = join(',', map { '?' } @wp_uuids);
+	my $ref_rows  = $dbh->get_records(
+		"SELECT DISTINCT route_uuid FROM route_waypoints WHERE wp_uuid IN ($wp_ph)",
+		\@wp_uuids);
+	for my $row (@$ref_rows)
+	{
+		return 0 unless $route_set{$row->{route_uuid}};
+	}
+	return 1;
+}
+
+
+#---------------------------------
+# deleteBranch
+#---------------------------------
+# Recursively deletes a branch and all its descendants. Caller must verify
+# safety with isBranchDeleteSafe before calling.
+
+sub deleteBranch
+{
+	my ($dbh, $uuid) = @_;
+	my $col_rows = $dbh->get_records(
+		"WITH RECURSIVE subtree(uuid) AS (
+			SELECT uuid FROM collections WHERE uuid = ?
+			UNION ALL
+			SELECT c.uuid FROM collections c JOIN subtree s ON c.parent_uuid = s.uuid
+		) SELECT uuid FROM subtree",
+		[$uuid]);
+	return unless @$col_rows;
+	my @col_uuids = map { $_->{uuid} } @$col_rows;
+	my $col_ph    = join(',', map { '?' } @col_uuids);
+	my $rt_rows = $dbh->get_records(
+		"SELECT uuid FROM routes WHERE collection_uuid IN ($col_ph)",
+		\@col_uuids);
+	if (@$rt_rows)
+	{
+		my @rt_uuids = map { $_->{uuid} } @$rt_rows;
+		my $rt_ph = join(',', map { '?' } @rt_uuids);
+		$dbh->do("DELETE FROM route_waypoints WHERE route_uuid IN ($rt_ph)", \@rt_uuids);
+	}
+	my $tk_rows = $dbh->get_records(
+		"SELECT uuid FROM tracks WHERE collection_uuid IN ($col_ph)",
+		\@col_uuids);
+	if (@$tk_rows)
+	{
+		my @tk_uuids = map { $_->{uuid} } @$tk_rows;
+		my $tk_ph = join(',', map { '?' } @tk_uuids);
+		$dbh->do("DELETE FROM track_points WHERE track_uuid IN ($tk_ph)", \@tk_uuids);
+	}
+	$dbh->do("DELETE FROM waypoints   WHERE collection_uuid IN ($col_ph)", \@col_uuids);
+	$dbh->do("DELETE FROM routes      WHERE collection_uuid IN ($col_ph)", \@col_uuids);
+	$dbh->do("DELETE FROM tracks      WHERE collection_uuid IN ($col_ph)", \@col_uuids);
+	$dbh->do("DELETE FROM collections WHERE uuid IN ($col_ph)",            \@col_uuids);
 }
 
 

@@ -389,9 +389,7 @@ sub _deleteE80GroupsAndWPs
 		}
 		if (grep { _e80WPRoutes($wpmgr, $_) } @members)
 		{
-			okDialog($tree,
-				"My Waypoints has waypoints in routes — remove them from routes first.",
-				"Delete Group + Waypoints");
+			warning(0, 0, "IMPLEMENTATION ERROR: _deleteE80GroupsAndWPs: my_waypoints member in route reached handler");
 			return;
 		}
 		my $n = scalar @members;
@@ -415,9 +413,7 @@ sub _deleteE80GroupsAndWPs
 		{
 			if (_e80WPRoutes($wpmgr, $wp_uuid))
 			{
-				okDialog($tree,
-					"'$node->{data}{name}' has waypoints in routes — remove them from routes first.",
-					"Delete Groups + Waypoints");
+				warning(0, 0, "IMPLEMENTATION ERROR: _deleteE80GroupsAndWPs: group '$node->{data}{name}' member in route reached handler");
 				return;
 			}
 		}
@@ -572,7 +568,9 @@ sub _pasteOneWaypointToE80
 
 	if (!$existing)
 	{
-		my $wp_name = _deconflictE80Name($wpmgr, $wp->{name}, $pending_names);
+		my $wp_name = defined($pending_names)
+			? _deconflictE80Name($wpmgr, $wp->{name}, $pending_names)
+			: ($wp->{name} // '');
 		$pending_uuids->{$uuid} = 1 if $pending_uuids;
 		$wpmgr->createWaypoint({
 			name     => $wp_name,

@@ -64,49 +64,94 @@ Expected: waypoint row removed. Verify: UUID absent from `/api/nmdb`.
 
 ---
 
-### 2.4 Delete group shell — blocked by non-empty group (D-GR1 → DEL-GR)
+### 2.4 Delete group — dissolve (D-GR1 → DEL-GR)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=GR_UUID&right_click=GR_UUID&cmd=10420"
 ```
 
-Use a group that has members. Expected: command blocked; warning in log; group and
-members unchanged.  The success path (delete empty group shell) requires creating an
-empty group via the UI (NEW-GR dialog) and is tested manually.
+Use a group that has members. Expected: group shell deleted; all member WPs reparented
+to the group's parent collection. Verify: GR_UUID absent from `/api/nmdb`; former
+member WPs now show `collection_uuid` equal to the parent branch UUID.
 
 ---
 
-### 2.5 Delete group + all members (D-GR1 → DEL-GR+WPS)
+### 2.5 Delete group + all members — success (D-GR1 → DEL-GR+WPS)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=GR_UUID&right_click=GR_UUID&cmd=10421"
 ```
 
 Use a group whose members are NOT referenced in any route.
-Expected: collection row and all member WPs deleted.
-Blocked variant: use a group whose members ARE in a route — warning in log; no change.
+Expected: collection row and all member WPs deleted; UUIDs absent from `/api/nmdb`.
 
 ---
 
-### 2.6 Delete branch — MANUAL ONLY
+### 2.6 Delete group + all members — blocked (members in route)
 
-DEL-BR requires an empty branch.  Creating an empty branch requires the NEW-BR dialog,
-which blocks the test machinery.  Test this path manually via the UI.
+```
+curl -s "http://localhost:9883/api/test?panel=database&select=GR_UUID&right_click=GR_UUID&cmd=10421"
+```
+
+Use a group whose members ARE referenced in a route.
+Expected: WARNING in log (member WP in route — delete blocked); group and members unchanged.
 
 ---
 
-### 2.7 Copy branch → COPY_ALL (D-BR → clipboard=all)
+### 2.7 Delete branch (DEL-BR → recursive delete)
+
+```
+curl -s "http://localhost:9883/api/test?panel=database&select=BR_UUID&right_click=BR_UUID&cmd=10450"
+```
+
+Use a branch whose member WPs are not referenced by any route outside the branch (all
+referencing routes are within the same branch subtree, or no WPs are in any route).
+Expected: branch and all its descendants deleted — sub-collections, waypoints, routes,
+route_waypoints, tracks, and track_points all removed. Verify via `/api/nmdb`.
+
+Note: `getDeleteMenuItems` hides DEL-BR when `isBranchDeleteSafe` returns 0 (member WP
+in an external route). Firing cmd=10450 directly on a blocked branch logs a WARNING and
+makes no change — this blocked case requires cross-branch route setup and is verified
+manually or by direct cmd fire.
+
+---
+
+### 2.8 Copy branch → COPY_ALL (D-BR → clipboard=all)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=BR_UUID&cmd=10099"
 ```
 
 Expected: clipboard set to `intent=all, source=database`. Status bar shows `[DB] all (N)`.
-Do not attempt Paste after this — see context_bugs.md: paste-all-not-implemented.
 
 ---
 
-### 2.8 Cut route → Paste to collection (D-CT-RT → move)
+### 2.9 Copy ALL → Paste New to collection (D-CP-ALL → duplicate branch contents)
+
+After §2.8, paste to a different collection with Paste New:
+```
+curl -s "http://localhost:9883/api/test?panel=database&select=DST_UUID&right_click=DST_UUID&cmd=10301"
+```
+
+Expected: all groups, routes, and WPs from the source branch are duplicated into DST with
+fresh navMate UUIDs. Source branch unchanged. Track items silently skipped (Paste New
+not supported for tracks).
+
+---
+
+### 2.10 Cut branch → Paste to collection (D-CT-ALL → move branch contents)
+
+```
+curl -s "http://localhost:9883/api/test?panel=database&select=BR_UUID&cmd=10199"
+curl -s "http://localhost:9883/api/test?panel=database&select=DST_UUID&right_click=DST_UUID&cmd=10300"
+```
+
+Expected: all items from the source branch are moved (UUID-preserving re-home) to DST.
+Source branch loses its contents. DB→E80 all-paste is tested separately in §3.7.
+
+---
+
+### 2.11 Cut route → Paste to collection (D-CT-RT → move)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=RT_UUID&cmd=10130"
@@ -117,7 +162,7 @@ Expected: route record's `collection_uuid` updated to DST; same UUID retained.
 
 ---
 
-### 2.9 Copy route → Paste New to collection (D-CP-RT → fresh UUIDs)
+### 2.12 Copy route → Paste New to collection (D-CP-RT → fresh UUIDs)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=RT_UUID&cmd=10030"
@@ -128,7 +173,7 @@ Expected: new route with fresh UUID; each member WP also gets a fresh UUID.
 
 ---
 
-### 2.10 Cut track → Paste to collection (D-CT-TK → move)
+### 2.13 Cut track → Paste to collection (D-CT-TK → move)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=TK_UUID&cmd=10140"
@@ -234,6 +279,83 @@ curl -s "http://localhost:9883/api/test?panel=database&select=DST_UUID&right_cli
 ```
 
 Expected: route record and member WPs inserted or updated in DB.
+
+---
+
+### 3.7 DB→E80 all-paste with group+route WP ordering (D-COPY-ALL → E80 root)
+
+Exercises the key ordering dependency: a clipboard built from a branch that contains
+groups whose WPs are also referenced by routes. `_pasteAllToE80` must handle the
+dependency correctly regardless of item order — each route paste calls
+`_pasteOneWaypointToE80` per member (idempotent: existing WP → `no_change`).
+
+Use the Navigation/Routes sub-branch which has Agua and Michelle groups + routes
+(same WPs in both). Popa group WPs are already on E80 from §3.0 — their paste should
+produce `no_change` for each WP, with the group created correctly.
+
+```
+curl -s "http://localhost:9883/api/test?panel=database&select=ROUTES_BR_UUID&cmd=10099"
+curl -s "http://localhost:9883/api/test?panel=e80&select=root&right_click=root&cmd=10300"
+```
+
+Expected:
+- Agua group and WPs appear on E80 (UUIDs preserved)
+- Michelle group and WPs appear on E80 (large — ProgressDialog expected)
+- Popa group created; Popa WPs produce `no_change` in log (already on E80 from §3.0)
+- Agua route created with correct WP UUIDs (WPs already existed from group paste)
+- Michelle route created with correct WP UUIDs
+- No duplicate WPs — each UUID appears exactly once
+
+---
+
+### 3.8 Paste New WP to E80 (D-CP-WP → E80 Paste New)
+
+```
+curl -s "http://localhost:9883/api/test?panel=database&select=WP_UUID&cmd=10010"
+curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10301"
+```
+
+Expected: new WP on E80 with fresh navMate UUID (byte 1 = 0x82) ≠ WP_UUID; name preserved.
+`canPasteNew` must return 1 for WP intent to E80 header:groups.
+
+---
+
+### 3.9 Paste New group to E80 (D-CP-GR → E80 Paste New)
+
+```
+curl -s "http://localhost:9883/api/test?panel=database&select=GR_UUID&cmd=10020"
+curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10301"
+```
+
+Expected: new group on E80 with fresh UUID ≠ GR_UUID; each member WP has a fresh UUID;
+if the original group UUID was already on E80, that copy is unchanged.
+
+---
+
+### 3.10 Paste New route to E80 (D-CP-RT → E80 Paste New)
+
+```
+curl -s "http://localhost:9883/api/test?panel=database&select=RT_UUID&cmd=10030"
+curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10301"
+```
+
+Expected: new route on E80 with fresh UUID; all member WPs created with fresh UUIDs
+independent of any same-source WPs already on E80; route references the new WP UUIDs.
+
+---
+
+### 3.11 Multi-select two WPs → Paste to E80 (D-CP-WPS → E80)
+
+Exercises the multi-item clipboard path. Select two WPs by comma-separated UUID —
+`_analyzeNodes` produces `only_wp=true`, menu shows "Copy Waypoints" (cmd=10011, plural intent).
+
+```
+curl -s "http://localhost:9883/api/test?panel=database&select=WP1_UUID,WP2_UUID&cmd=10011"
+curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10300"
+```
+
+Expected: both WP UUIDs appear in E80 waypoints; log shows `COPY WAYPOINTS` (plural),
+`PASTE` with `items=2`.
 
 ---
 
@@ -344,3 +466,17 @@ curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_c
 ```
 
 Expected: paste rejected (target is read-only tracks header); E80 unchanged.
+
+---
+
+### 5.4 Paste blocked — D-CT-* from database → E80 destination
+
+Cut a WP from the database, then attempt Paste to the E80 groups header:
+```
+curl -s "http://localhost:9883/api/test?panel=database&select=WP_UUID&cmd=10110"
+curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10300"
+```
+
+Expected: paste rejected by `canPaste` (`cut=1 && source=database && panel=e80`); E80
+unchanged; source WP remains in DB. The database is the authoritative repository —
+uploads to E80 are always copies, never cuts.

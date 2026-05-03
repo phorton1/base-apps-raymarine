@@ -27,6 +27,7 @@ sub newParser
 	display($dbg_ewp,0,"apps::raymarine::NET::e_WPMGR::newParser($mon_defs->{name}) is_shark($mon_defs->{is_shark}) is_sniffer($mon_defs->{is_sniffer})");
 	my $this = $class->SUPER::newParser($mon_defs);
 	bless $this,$class;
+	$this->{last_dir_was_reply} = 1;
 	$this->resetTransaction();
 	return $this;
 }

@@ -120,21 +120,29 @@ selection provides the item list; singular/plural labeling adjusts accordingly.
 All database deletes require confirmation. `DEL-BR` is blocked (informational message)
 if the branch is non-empty.
 
-| Right-click node type | Commands shown        | Action                                        |
-|-----------------------|-----------------------|-----------------------------------------------|
-| collection/branch     | DEL-BR                | Delete branch (empty only)                    |
-| collection/group      | DEL-GR, DEL-GR+WPS   | Delete group shell / group + all members      |
-| object/waypoint       | DEL-WP                | Delete selected waypoint(s)                   |
-| object/route          | DEL-RT                | Delete selected route(s); member WPs remain   |
-| object/track          | DEL-TK                | Delete selected track(s) and track_points     |
-| route_point           | DEL-RP                | Remove point from route; WP record preserved  |
+| Right-click node type | Commands shown        | Action                                                |
+|-----------------------|-----------------------|-------------------------------------------------------|
+| collection/branch     | DEL-BR                | Delete branch + all contents recursively              |
+| collection/group      | DEL-GR, DEL-GR+WPS   | Delete group shell / group + all members              |
+| object/waypoint       | DEL-WP                | Delete selected waypoint(s)                           |
+| object/route          | DEL-RT                | Delete selected route(s); member WPs remain           |
+| object/track          | DEL-TK                | Delete selected track(s) and track_points             |
+| route_point           | DEL-RP                | Remove point from route; WP record preserved          |
+
+`DEL-BR` is hidden (not shown) if any waypoint in the branch subtree is referenced by a
+route that lives **outside** the branch subtree (`isBranchDeleteSafe` returns 0). When
+all referencing routes are within the branch, the deletion is safe: routes, waypoints,
+tracks, and sub-collections are all deleted together. Requires confirmation.
 
 `DEL-WP` is additionally blocked (informational message) if any selected waypoint is
 referenced in a route (`getWaypointRouteRefCount > 0`). Similarly `DEL-GR+WPS` is
 blocked if any member WP is in a route.
 
-There is no `DEL-ALL` in winDatabase. Bulk deletion of a branch's contents requires
-sequential object-type-specific operations.
+`DEL-GR` dissolves the group: all member waypoints are reparented to the group's parent
+collection, then the group shell is deleted. Route references to member WPs are
+unaffected (UUIDs preserved). Requires confirm.
+
+`DEL-BR` is the primary bulk-delete path for the database panel.
 
 ### 2.4 New Commands
 
@@ -275,7 +283,9 @@ Destination node type is what was right-clicked as the paste target.
 | D-CT-RT / D-CT-RTS     | collection       | Y     | —         | Move — re-home `collection_uuid`    |
 | D-CP-TK / D-CP-TKS     | collection       | —     | —         | No paste path (copy-only is blocked)|
 | D-CT-TK / D-CT-TKS     | collection       | Y     | —         | Move — re-home `collection_uuid`    |
-| D-CP-ALL / D-CT-ALL    | collection       | —     | —         | DB-to-DB all blocked by design      |
+| D-CP-ALL               | collection       | —     | Y         | Duplicate branch contents, fresh UUIDs |
+| D-CT-ALL               | collection       | Y     | —         | Move branch contents to new collection |
+| D-CP-ALL / D-CT-ALL    | root             | —     | —         | Root is not a schema collection        |
 | E-CP-WP / E-CP-WPS     | any database node | Y     | Y         | Download / download+duplicate       |
 | E-CT-WP / E-CT-WPS     | any database node | Y     | —         | Download + delete from E80          |
 | E-CP-GR / E-CP-GRS     | collection       | Y     | Y         | Download group(s)                   |
@@ -296,17 +306,31 @@ Groups, routes, tracks, and all require a `collection` target node at the `canPa
 
 | Clipboard state              | Dest node type              | Paste | Paste New | Semantic                   |
 |------------------------------|-----------------------------|-------|-----------|----------------------------|
-| B/E-CP-WP / B/E-CP-WPS      | header, mywp, group,        | Y     | Y         | Upload / upload+duplicate  |
+| D-CP-WP / D-CP-WPS          | header, mywp, group,        | —     | Y         | Upload+duplicate (copy)    |
 |                              | route, waypoint, route_pt   |       |           |                            |
-| B/E-CT-WP / B/E-CT-WPS      | same set as above           | Y     | —         | Upload + delete source     |
-| B/E-CP-GR / B/E-CP-GRS      | header/groups               | Y     | Y         | Upload group(s)            |
-| B/E-CT-GR / B/E-CT-GRS      | header/groups               | Y     | —         | Upload + delete source     |
-| B/E-CP-RT / B/E-CP-RTS      | header/routes               | Y     | Y         | Upload route(s)            |
-| B/E-CT-RT / B/E-CT-RTS      | header/routes               | Y     | —         | Upload + delete source     |
+| D-CT-WP / D-CT-WPS          | any E80 node                | —     | —         | DB→E80 cut blocked         |
+| D-CT-GR / D-CT-GRS          | any E80 node                | —     | —         | DB→E80 cut blocked         |
+| D-CT-RT / D-CT-RTS          | any E80 node                | —     | —         | DB→E80 cut blocked         |
+| D-CT-TK / D-CT-TKS          | any E80 node                | —     | —         | DB→E80 cut blocked         |
+| D-CT-ALL                    | any E80 node                | —     | —         | DB→E80 cut blocked         |
+| E-CP-WP / E-CP-WPS          | header, mywp, group,        | Y     | Y         | Upload / upload+duplicate  |
+|                              | route, waypoint, route_pt   |       |           |                            |
+| E-CT-WP / E-CT-WPS          | same set as above           | Y     | —         | Upload + delete from E80   |
+| D-CP-GR / D-CP-GRS          | header/groups               | Y     | Y         | Upload group(s) (copy)     |
+| E-CP-GR / E-CP-GRS          | header/groups               | Y     | Y         | Upload group(s)            |
+| E-CT-GR / E-CT-GRS          | header/groups               | Y     | —         | Upload + delete from E80   |
+| D-CP-RT / D-CP-RTS          | header/routes               | Y     | Y         | Upload route(s) (copy)     |
+| E-CP-RT / E-CP-RTS          | header/routes               | Y     | Y         | Upload route(s)            |
+| E-CT-RT / E-CT-RTS          | header/routes               | Y     | —         | Upload + delete from E80   |
 | any TK intent                | any E80 node                | —     | —         | Tracks read-only on E80    |
-| any ALL intent               | root                        | Y     | —         | Upload all; tracks skipped |
+| D-CP-ALL / E-CP-ALL         | root                        | Y     | —         | Upload all; tracks skipped |
+| E-CT-ALL                    | root                        | Y     | —         | Upload all + delete source |
 | any ALL intent               | non-root E80 node           | —     | —         | Root is the only ALL target|
 | any                          | header/tracks or track      | —     | —         | Target incompatible        |
+
+Note: `D-CT-*` → E80 is blocked entirely by `canPaste` (`cut=1 && source=database && panel=e80`).
+The database is the authoritative repository; uploading to E80 is always a copy operation.
+E80→DB cut (download + erase from E80) remains fully supported.
 
 
 ## 6. Operation Semantics
@@ -361,16 +385,20 @@ Sends WPMGR `NEW_ITEM` commands. E80 assigns its own UUIDs. Order of operations:
 - Groups: group created first, then member WPs created inside it.
 - Routes: member WPs created first, then route created referencing them by E80 UUID.
 
-Cut variant: after successful paste, source deleted from database or E80.
+Cut variant: only available when source=E80. After successful paste, source item is
+deleted from E80 via WPMGR commands. Database-source cut to E80 is blocked by `canPaste`.
 
 ### 6.5 Delete (database)
 
 - `DEL-WP`: blocked if any selected WP has `route_waypoints` references. Requires confirm.
-- `DEL-GR`: blocked if group is non-empty. Requires confirm.
+- `DEL-GR`: dissolves the group. All member waypoints are reparented to the group's parent collection (`collection_uuid` updated in place), then the group shell is deleted. Route references to member WPs are unaffected (UUIDs unchanged). Requires confirm.
 - `DEL-GR+WPS`: blocked if any member WP is in a route. Requires confirm.
 - `DEL-RT`: deletes route and `route_waypoints` rows; member WPs preserved. Requires confirm.
 - `DEL-TK`: deletes track and `track_points` rows. Requires confirm.
-- `DEL-BR`: blocked if branch has any contents. Requires confirm.
+- `DEL-BR`: recursively deletes the branch and all its descendants (sub-collections,
+  waypoints, routes, route_waypoints, tracks, track_points). Hidden (not shown) if any
+  member WP is referenced by a route outside the branch subtree (`isBranchDeleteSafe`
+  returns 0). Requires confirm.
 - `DEL-RP`: removes one `route_waypoints` row (by position); WP record preserved. Requires confirm.
 
 ### 6.6 Delete (E80)
@@ -448,25 +476,36 @@ curl -s "http://localhost:9883/api/log?since=N"        # entries after mark
 A test cycle begins from a fully known system state. Perform all three steps before
 running any tests.
 
-**1. Restore navMate.db**
+#### 7.2.1 Restore navMate.db
 
 Git-revert `C:/dat/Rhapsody/navMate.db` to the committed test baseline, then reload:
 Database → Refresh in navMate.
 
-**2. Clear the E80**
+#### 7.2.2 Clear the E80
 
 The E80 must contain no waypoints, groups, routes, or tracks. Use the test machinery
-or the winE80 context menu:
+or the winE80 context menu. After each dispatch, wait for `dialog_state: idle`
+(see §7.2.4 before proceeding):
 
 ```
 # Delete all routes
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10430&suppress=1"
-# Delete all groups and their waypoints (covers named groups and My Waypoints)
+curl -s "http://localhost:9883/api/command?cmd=dialog_state"   # poll until idle
+
+# Delete all named groups and their member waypoints
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10421&suppress=1"
+curl -s "http://localhost:9883/api/command?cmd=dialog_state"   # poll until idle
+
+# If ungrouped waypoints remain (wps > 0, groups = 0), clear the My Waypoints node.
+# NOTE: the node key is 'my_waypoints' — no 'header:' prefix.
+# 'header:my_waypoints' will fail (selected 0 nodes).
+curl -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10421&suppress=1"
+curl -s "http://localhost:9883/api/command?cmd=dialog_state"   # poll until idle
+
 # Tracks: delete individually via DEL-TK (10440) if any are present
 ```
 
-**3. Mark the log and enable suppress**
+#### 7.2.3 Mark the log and enable suppress
 
 ```
 curl -s "http://localhost:9883/api/command?cmd=mark"
@@ -475,3 +514,51 @@ curl -s "http://localhost:9883/api/test?op=suppress&val=1"
 
 Suppress remains set for the duration of the test cycle. Reset with `val=0` if a
 specific test needs to verify that a confirmation dialog fires.
+
+#### 7.2.4 Running a step
+
+Any test step that dispatches an E80 context operation (delete, copy/paste, etc.) may
+open a ProgressDialog that runs asynchronously. The general polling pattern:
+
+**1. Dispatch the operation** via `/api/test`, then poll `dialog_state`:
+
+```
+curl -s "http://localhost:9883/api/command?cmd=dialog_state"
+```
+
+Each call logs `dialog_state: active` or `dialog_state: idle` to the ring buffer.
+Repeat until `idle` is seen before issuing the next dispatch.
+
+**2. Watch the progress count** (human observation). While the dialog is open, the
+counter increments for each E80 callback completed. If the count stops advancing
+for an unreasonable time (roughly 10 seconds), the operation may be stuck.
+
+**3. Timeout and force-close**. If the dialog remains active past the expected
+duration, issue:
+
+```
+curl -s "http://localhost:9883/api/command?cmd=close_dialog"
+```
+
+This sets `$_force_close = 1` in `Pub::WX::Dialogs`; `winMain::onIdle` calls
+`forceCloseActive()` on the next tick, which calls `Destroy()` on the open dialog.
+After a force-close, scan the ring buffer for ERROR or WARNING entries before
+continuing.
+
+**Bounded polling example:**
+
+```powershell
+for ($i = 1; $i -le 20; $i++) {
+    $result = curl -s "http://localhost:9883/api/command?cmd=dialog_state"
+    $log    = curl -s "http://localhost:9883/api/log?since=$mark"
+    if ($log -match "dialog_state: idle") { break }
+    Start-Sleep 1
+}
+if ($i -gt 20) {
+    [console]::beep(800, 200)   # stuck — inspect screen; optionally close_dialog
+}
+```
+
+Important: the dispatch guard in `winMain::onIdle` prevents the next `/api/test`
+command from firing while a ProgressDialog is active. Always wait for `dialog_state:
+idle` before dispatching the next step, or the command will be silently skipped.

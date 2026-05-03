@@ -172,32 +172,72 @@ sub _deleteDatabaseCollection
 }
 
 
+sub _deleteDatabaseBranch
+{
+	my ($node, $tree) = @_;
+	my $uuid = $node->{data}{uuid};
+	my $name = $node->{data}{name};
+	my $dbh  = connectDB();
+	return if !$dbh;
+	if (!isBranchDeleteSafe($dbh, $uuid))
+	{
+		disconnectDB($dbh);
+		warning(0, 0, "DELETE BRANCH '$name': blocked — member waypoint(s) referenced by external route(s)");
+		return;
+	}
+	disconnectDB($dbh);
+	return if !confirmDialog($tree,
+		"Delete branch '$name' and all its contents? Cannot be undone.",
+		"Confirm Delete Branch");
+	$dbh = connectDB();
+	return if !$dbh;
+	deleteBranch($dbh, $uuid);
+	disconnectDB($dbh);
+	_refreshDatabase();
+}
+
+
 sub _deleteDatabaseGroups
 {
 	my ($nodes, $tree) = @_;
 	my $dbh = connectDB();
 	return if !$dbh;
+	my %group_info;
+	my $total_wps = 0;
 	for my $node (@$nodes)
 	{
-		my $counts = getCollectionCounts($dbh, $node->{data}{uuid});
-		my $total  = $counts->{collections} + $counts->{waypoints}
-		           + $counts->{routes}       + $counts->{tracks};
-		if ($total > 0)
-		{
-			disconnectDB($dbh);
-			warning(0, 0, "IMPLEMENTATION ERROR: _deleteDatabaseGroups: non-empty group reached delete handler");
-			return;
-		}
+		my $uuid = $node->{data}{uuid};
+		my $coll = getCollection($dbh, $uuid);
+		my $wps  = getGroupWaypoints($dbh, $uuid);
+		$group_info{$uuid} = { parent_uuid => $coll->{parent_uuid}, wps => $wps };
+		$total_wps += scalar @$wps;
 	}
 	disconnectDB($dbh);
 	my $n   = scalar @$nodes;
-	my $msg = $n == 1
-		? "Delete group '$nodes->[0]{data}{name}'?"
-		: "Delete $n groups?";
+	my $msg;
+	if ($n == 1)
+	{
+		my $name = $nodes->[0]{data}{name};
+		$msg = $total_wps > 0
+			? "Delete group '$name'? Its $total_wps waypoint(s) will be moved to the parent collection."
+			: "Delete group '$name'?";
+	}
+	else
+	{
+		$msg = $total_wps > 0
+			? "Delete $n groups? Their $total_wps waypoint(s) will be moved to the parent collection."
+			: "Delete $n groups?";
+	}
 	return if !confirmDialog($tree, $msg, "Confirm Delete");
 	$dbh = connectDB();
 	return if !$dbh;
-	deleteCollection($dbh, $_->{data}{uuid}) for @$nodes;
+	for my $node (@$nodes)
+	{
+		my $uuid = $node->{data}{uuid};
+		my $info = $group_info{$uuid};
+		moveWaypoint($dbh, $_->{uuid}, $info->{parent_uuid}) for @{$info->{wps}};
+		deleteCollection($dbh, $uuid);
+	}
 	disconnectDB($dbh);
 	_refreshDatabase();
 }

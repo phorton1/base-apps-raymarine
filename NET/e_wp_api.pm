@@ -16,7 +16,6 @@ use apps::raymarine::NET::a_utils;
 use apps::raymarine::NET::e_wp_defs;
 
 my $TEMP_COLOR = $UTILS_COLOR_CYAN;
-my $TEMP_MON   = $MONITOR_API_BUILDS;
 
 my $next_color:shared = 0;
 
@@ -80,7 +79,7 @@ sub _removeFromGroup
 	my @new_uuids = grep { $_ ne $wp_uuid } @{$group->{uuids}};
 	$group->{uuids} = shared_clone(\@new_uuids);
 
-	my $buffer = buildGroup(0,$group,$TEMP_MON,$TEMP_COLOR);
+	my $buffer = buildGroup(0,$group,$MONITOR_API_BUILDS,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
 	return $this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_GROUP,$group->{name},$group_uuid,$data);
 }
@@ -91,6 +90,10 @@ sub _removeFromGroup
 #--------------------------------------
 
 sub createWaypoint
+	# LAT/LON FORMAT BOUNDARY:
+	#   hash input  => decimal degrees
+	#   wire/memory => 1e7 scaled integers (E80 protocol)
+	# This function converts. Callers must NOT pre-scale.
 {
 	my ($this,$hash) = @_;
 	my $name    = $hash->{name};
@@ -115,13 +118,17 @@ sub createWaypoint
 		depth   => $depth,
 		date    => int($ts / $SECS_PER_DAY),
 		time    => int($ts % $SECS_PER_DAY),
-	},$TEMP_MON,$TEMP_COLOR);
+	},$MONITOR_API_BUILDS,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
 	return $this->queueWPMGRCommand($API_NEW_ITEM,$WHAT_WAYPOINT,$name,$uuid,$data,$progress);
 }
 
 
 sub modifyWaypoint
+	# LAT/LON FORMAT BOUNDARY:
+	#   hash input  => decimal degrees (same contract as createWaypoint)
+	#   wire/memory => 1e7 scaled integers (E80 protocol)
+	# This function converts before patching the wpmgr in-memory record.
 {
 	my ($this,$hash) = @_;
 	my $uuid = $hash->{uuid};
@@ -130,10 +137,13 @@ sub modifyWaypoint
 	for my $key (keys %$hash)
 	{
 		next if $key eq 'uuid';
+		next if $key eq 'lat' || $key eq 'lon';
 		$wp->{$key} = $hash->{$key};
 	}
+	$wp->{lat} = int($hash->{lat} * $SCALE_LATLON) if exists $hash->{lat};
+	$wp->{lon} = int($hash->{lon} * $SCALE_LATLON) if exists $hash->{lon};
 	$this->showCommand("modifyWaypoint($wp->{name}) uuid($uuid)");
-	my $buffer = buildWaypoint(0,$wp,$TEMP_MON,$TEMP_COLOR);
+	my $buffer = buildWaypoint(0,$wp,$MONITOR_API_BUILDS,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
 	return $this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_WAYPOINT,$wp->{name},$uuid,$data,$hash->{progress});
 }
@@ -170,7 +180,7 @@ sub createGroup
 		name    => $name,
 		comment => $comment,
 		uuids   => shared_clone($members),
-	},$TEMP_MON,$TEMP_COLOR);
+	},$MONITOR_API_BUILDS,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
 	return $this->queueWPMGRCommand($API_NEW_ITEM,$WHAT_GROUP,$name,$uuid,$data,$progress);
 }
@@ -192,7 +202,7 @@ sub modifyGroup
 		$group->{$key} = $hash->{$key};
 	}
 	$this->showCommand("modifyGroup($group->{name}) uuid($uuid)");
-	my $buffer = buildGroup(0,$group,$TEMP_MON,$TEMP_COLOR);
+	my $buffer = buildGroup(0,$group,$MONITOR_API_BUILDS,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
 	return $this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_GROUP,$group->{name},$uuid,$data,$hash->{progress});
 }
@@ -236,14 +246,14 @@ sub setWaypointGroup
 		display(0,0,"removing wp($wp->{name}) from old group($old_name)");
 		my @old_uuids = grep { $_ ne $wp_uuid } @{$old_group->{uuids}};
 		$old_group->{uuids} = shared_clone(\@old_uuids);
-		my $old_buf  = buildGroup(0,$old_group,$TEMP_MON,$TEMP_COLOR);
+		my $old_buf  = buildGroup(0,$old_group,$MONITOR_API_BUILDS,$TEMP_COLOR);
 		my $old_data = unpack('H*',$old_buf);
 		$this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_GROUP,$old_name,$try_uuid,$old_data,$progress);
 		last;
 	}
 
 	push @{$group->{uuids}},$wp_uuid;
-	my $buffer = buildGroup(0,$group,$TEMP_MON,$TEMP_COLOR);
+	my $buffer = buildGroup(0,$group,$MONITOR_API_BUILDS,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
 	return $this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_GROUP,$group->{name},$group_uuid,$data,$progress);
 }
@@ -271,7 +281,7 @@ sub createRoute
 		color   => $color,
 		uuids   => shared_clone($waypoints),
 		points  => shared_clone(\@pts),
-	},$TEMP_MON,$TEMP_COLOR);
+	},$MONITOR_API_BUILDS,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
 	return $this->queueWPMGRCommand($API_NEW_ITEM,$WHAT_ROUTE,$name,$uuid,$data,$progress);
 }
@@ -296,7 +306,7 @@ sub modifyRoute
 		$route->{$key} = $hash->{$key};
 	}
 	$this->showCommand("modifyRoute($route->{name}) uuid($uuid)");
-	my $buffer = buildRoute(0,$route,$TEMP_MON,$TEMP_COLOR);
+	my $buffer = buildRoute(0,$route,$MONITOR_API_BUILDS,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
 	return $this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_ROUTE,$route->{name},$uuid,$data,$hash->{progress});
 }
@@ -349,7 +359,7 @@ sub routeWaypoint
 	$route->{uuids}  = shared_clone(\@uuids);
 	$route->{points} = shared_clone(\@points);
 
-	my $buffer = buildRoute(0,$route,$TEMP_MON,$TEMP_COLOR);
+	my $buffer = buildRoute(0,$route,$MONITOR_API_BUILDS,$TEMP_COLOR);
 	my $data = unpack('H*',$buffer);
 	$this->queueWPMGRCommand($API_MOD_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,$data,$progress);
 	return $this->queueWPMGRCommand($API_GET_ITEM,$WHAT_ROUTE,$route_name,$route_uuid,undef);
