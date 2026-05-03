@@ -5,7 +5,8 @@
 **[Architecture](architecture.md)** --
 **[Data Model](data_model.md)** --
 **[UI Model](ui_model.md)** --
-**Implementation**
+**Implementation** --
+**[Context Menu](context_menu.md)**
 
 ## Approach
 
@@ -24,7 +25,7 @@ See [Architecture — Code Organization](architecture.md#code-organization) for 
 full file list and naming conventions. In brief: lower layers use sparse alpha
 prefixes with underscore-delimited lowercase names (`a_defs.pm`, `a_utils.pm`,
 `c_db.pm`); application layer modules use camelCase (`nmServer.pm`, `winMain.pm`,
-`winBrowser.pm`).
+`winDatabase.pm`).
 
 ## Phase Sequence
 
@@ -47,7 +48,7 @@ One-time import scripts, not production modules. Single source:
   against `C:\var\www\phorton\map_data\` index files; back-fill `ts_start`/`ts_end`;
   set `ts_source = 'phorton'`
 
-### Phase 3 — wx Panels (`winMain.pm`, `winBrowser.pm`)  ✓ substantially done
+### Phase 3 — wx Panels (`winMain.pm`, `winDatabase.pm`)  ✓ substantially done
 
 - Main frame and collection tree with three-state checkboxes — built
 - Collection labels derived from content counts — in progress

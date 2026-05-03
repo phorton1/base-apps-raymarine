@@ -62,8 +62,8 @@ sub new
 	EVT_TREE_SEL_CHANGED($this,      $this->{tree}, \&onTreeSelect);
 	EVT_TREE_ITEM_RIGHT_CLICK($this, $this->{tree}, \&onTreeRightClick);
 	EVT_MENU($this, $_, \&_onContextMenuCommand)
-		for (allCopyCmds(), allCutCmds(), $CMD_PASTE, $CMD_PASTE_NEW, allDeleteCmds(), allNewCmds());
-	EVT_MENU($this, $CMD_REFRESH_E80, sub { doRefresh($_[0]) });
+		for (allCopyCmds(), allCutCmds(), $CTX_CMD_PASTE, $CTX_CMD_PASTE_NEW, allDeleteCmds(), allNewCmds());
+	EVT_MENU($this, $COMMAND_REFRESH_E80, sub { doRefresh($_[0]) });
 
 	$this->{_expanded_keys} = {
 		'header:groups' => 1,
@@ -126,6 +126,9 @@ sub _buildAndRestore
 	if (!$wpmgr)
 	{
 		my $root = $tree->AddRoot('E80');
+		my $e80_item = $tree->AppendItem($root, 'E80', -1, -1,
+			Wx::TreeItemData->new({ type => 'root', data => { uuid => undef, name => 'E80' } }));
+		$tree->SetItemBold($e80_item, 1);
 		$tree->AppendItem($root, '(WPMGR not connected)');
 		$this->{_e80_loaded} = 0;
 		return;
@@ -138,6 +141,9 @@ sub _buildAndRestore
 		" groups=".scalar(keys %$groups)." routes=".scalar(keys %$routes));
 
 	my $root = $tree->AddRoot('E80');
+	my $e80_item = $tree->AppendItem($root, 'E80', -1, -1,
+		Wx::TreeItemData->new({ type => 'root', data => { uuid => undef, name => 'E80' } }));
+	$tree->SetItemBold($e80_item, 1);
 	_buildGroups($this, $tree, $root, $wpmgr);
 	_buildRoutes($this, $tree, $root, $wpmgr);
 	_buildTracks($this, $tree, $root, $track_mgr);
@@ -280,6 +286,8 @@ sub onTreeSelect
 	my $node = $item_data->GetData();
 	return if ref $node ne 'HASH';
 
+	if ($node->{type} eq 'root') { $this->{detail}->SetValue(''); return; }
+
 	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
 
 	my $type = $node->{type};
@@ -296,14 +304,17 @@ sub onTreeSelect
 	elsif (($type eq 'waypoint' || $type eq 'route_point') && $node->{data})
 	{
 		$text = wpmgrRecordToText($node->{data}, 'WAYPOINT', 2, 0, undef, $wpmgr);
+		$text = sprintf("  %-10s = %s\n", 'uuid', $node->{uuid}) . $text if $node->{uuid};
 	}
 	elsif ($type eq 'group' && $node->{data})
 	{
 		$text = wpmgrRecordToText($node->{data}, 'GROUP', 2, 0, undef, $wpmgr);
+		$text = sprintf("  %-10s = %s\n", 'uuid', $node->{uuid}) . $text if $node->{uuid};
 	}
 	elsif ($type eq 'route' && $node->{data})
 	{
 		$text = wpmgrRecordToText($node->{data}, 'ROUTE', 2, 0, undef, $wpmgr);
+		$text = sprintf("  %-10s = %s\n", 'uuid', $node->{uuid}) . $text if $node->{uuid};
 	}
 	elsif ($type eq 'track' && $node->{data})
 	{
@@ -361,10 +372,10 @@ sub _buildContextMenu
 	$menu->Append($_->{id}, $_->{label}) for @copy_items;
 	$menu->AppendSeparator()             if @copy_items;
 
-	$menu->Append($CMD_PASTE, 'Paste');
-	$menu->Enable($CMD_PASTE, canPaste($right_click_node, 'e80') ? 1 : 0);
-	$menu->Append($CMD_PASTE_NEW, 'Paste New');
-	$menu->Enable($CMD_PASTE_NEW, canPasteNew($right_click_node, 'e80') ? 1 : 0);
+	$menu->Append($CTX_CMD_PASTE, 'Paste');
+	$menu->Enable($CTX_CMD_PASTE, canPaste($right_click_node, 'e80') ? 1 : 0);
+	$menu->Append($CTX_CMD_PASTE_NEW, 'Paste New');
+	$menu->Enable($CTX_CMD_PASTE_NEW, canPasteNew($right_click_node, 'e80') ? 1 : 0);
 
 	my @delete_items = getDeleteMenuItems('e80', $right_click_node, @nodes);
 	if (@delete_items)
@@ -381,7 +392,7 @@ sub _buildContextMenu
 	}
 
 	$menu->AppendSeparator();
-	$menu->Append($CMD_REFRESH_E80, 'Refresh E80');
+	$menu->Append($COMMAND_REFRESH_E80, 'Refresh E80');
 
 	return $menu;
 }

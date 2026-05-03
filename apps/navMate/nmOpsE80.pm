@@ -88,6 +88,34 @@ sub _treeChildNodes
 }
 
 
+sub _deconflictE80Name
+	# Returns a name that won't clash with existing E80 names or $pending_names.
+	# $hash_name: 'waypoints' (default), 'groups', or 'routes' — which WPMGR hash to check.
+	# Appends " (2)", " (3)", ... until the name is unique. Logs any rename.
+	# Always records the chosen name in $pending_names if provided.
+{
+	my ($wpmgr, $name, $pending_names, $hash_name) = @_;
+	$hash_name    //= 'waypoints';
+	$pending_names //= {};
+	my %existing;
+	$existing{lc($_->{name} // '')} = 1 for values %{$wpmgr->{$hash_name} // {}};
+	my $base      = $name // '';
+	my $candidate = $base;
+	my $n         = 2;
+	while ($existing{lc($candidate)} || $pending_names->{lc($candidate)})
+	{
+		$candidate = "$base ($n)";
+		$n++;
+	}
+	if ($candidate ne $base)
+	{
+		display(0, 0, "_deconflictE80Name: renamed '$base' to '$candidate'");
+	}
+	$pending_names->{lc($candidate)} = 1;
+	return $candidate;
+}
+
+
 sub _openE80Progress
 {
 	my ($title, $total, $opts) = @_;
@@ -148,7 +176,7 @@ sub _newE80Waypoint
 	my $wpmgr = _wpmgr();
 	if (!$wpmgr)
 	{
-		Wx::MessageBox("WPMGR not connected.", "New Waypoint", wxOK | wxICON_ERROR, $tree);
+		error("_newE80Waypoint: WPMGR not connected");
 		return;
 	}
 
@@ -159,10 +187,10 @@ sub _newE80Waypoint
 	my $lon = parseLatLon($data->{lon});
 	if (!(defined $lat && defined $lon))
 	{
-		Wx::MessageBox(
+		okDialog($tree,
 			"Could not parse Latitude or Longitude.\n" .
 			"Use decimal degrees (9.3617 N) or degrees and minutes (9 21.702 N).",
-			"New Waypoint", wxOK | wxICON_WARNING, $tree);
+			"New Waypoint");
 		return;
 	}
 
@@ -202,7 +230,7 @@ sub _newE80Group
 	my $wpmgr = _wpmgr();
 	if (!$wpmgr)
 	{
-		Wx::MessageBox("WPMGR not connected.", "New Group", wxOK | wxICON_ERROR, $tree);
+		error("_newE80Group: WPMGR not connected");
 		return;
 	}
 
@@ -223,7 +251,7 @@ sub _newE80Route
 	my $wpmgr = _wpmgr();
 	if (!$wpmgr)
 	{
-		Wx::MessageBox("WPMGR not connected.", "New Route", wxOK | wxICON_ERROR, $tree);
+		error("_newE80Route: WPMGR not connected");
 		return;
 	}
 
@@ -253,16 +281,14 @@ sub _deleteE80Waypoints
 	my $wpmgr = _wpmgr();
 	if (!$wpmgr)
 	{
-		Wx::MessageBox("WPMGR not connected.", "Delete Waypoint", wxOK | wxICON_ERROR, $tree);
+		error("_deleteE80Waypoints: WPMGR not connected");
 		return;
 	}
 	my $n   = scalar @$nodes;
 	my $msg = $n == 1
 		? "Delete waypoint '$nodes->[0]{data}{name}' from E80?"
 		: "Delete $n waypoints from E80?";
-	my $rc = Wx::MessageBox($msg, "Confirm Delete",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return if $rc != wxYES;
+	return if !confirmDialog($tree, $msg, "Confirm Delete");
 	$wpmgr->deleteWaypoint($_->{uuid}) for @$nodes;
 }
 
@@ -272,8 +298,7 @@ sub _deleteE80Groups
 	my ($nodes, $tree) = @_;
 	if (grep { ($_->{type} // '') eq 'my_waypoints' } @$nodes)
 	{
-		Wx::MessageBox("'My Waypoints' is synthesized and cannot be deleted.",
-			"Delete Group", wxOK | wxICON_INFORMATION, $tree);
+		warning(0, 0, "IMPLEMENTATION ERROR: _deleteE80Groups: my_waypoints node reached CMD_DELETE_GROUP handler");
 		return;
 	}
 	my $wpmgr = _wpmgr();
@@ -291,7 +316,7 @@ sub _deleteE80Groups
 	$nodes = \@expanded;
 	if (!$wpmgr)
 	{
-		Wx::MessageBox("WPMGR not connected.", "Delete Group", wxOK | wxICON_ERROR, $tree);
+		error("_deleteE80Groups: WPMGR not connected");
 		return;
 	}
 	my $n         = scalar @$nodes;
@@ -311,9 +336,7 @@ sub _deleteE80Groups
 			? "Delete $n groups from E80? Their $total_wps member(s) will remain in My Waypoints. Cannot be undone."
 			: "Delete $n groups from E80? Cannot be undone.";
 	}
-	my $rc = Wx::MessageBox($msg, "Delete Group",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return if $rc != wxYES;
+	return if !confirmDialog($tree, $msg, "Delete Group");
 	my $total_ops = $n + $total_wps;
 	my $progress  = _openE80Progress("Delete Group", $total_ops);
 	$progress->{_counting_get_items} = 1;
@@ -346,9 +369,7 @@ sub _deleteE80GroupsAndWPs
 
 	if (@mw && @grps)
 	{
-		Wx::MessageBox(
-			"Cannot mix 'My Waypoints' with named groups — delete them separately.",
-			"Delete Groups + Waypoints", wxOK | wxICON_WARNING, $tree);
+		warning(0, 0, "IMPLEMENTATION ERROR: _deleteE80GroupsAndWPs: mixed my_waypoints and named groups in selection");
 		return;
 	}
 
@@ -357,29 +378,26 @@ sub _deleteE80GroupsAndWPs
 		my $wpmgr = _wpmgr();
 		if (!$wpmgr)
 		{
-			Wx::MessageBox("WPMGR not connected.", "Delete Group + Waypoints",
-				wxOK | wxICON_ERROR, $tree);
+			error("_deleteE80GroupsAndWPs: WPMGR not connected (my_waypoints path)");
 			return;
 		}
 		my @members = map { $_->{uuid} } @{_treeChildNodes($tree, $mw[0])};
 		if (!@members)
 		{
-			Wx::MessageBox("My Waypoints is empty.", "Delete Group + Waypoints",
-				wxOK | wxICON_INFORMATION, $tree);
+			okDialog($tree, "My Waypoints is empty.", "Delete Group + Waypoints");
 			return;
 		}
 		if (grep { _e80WPRoutes($wpmgr, $_) } @members)
 		{
-			Wx::MessageBox(
+			okDialog($tree,
 				"My Waypoints has waypoints in routes — remove them from routes first.",
-				"Delete Group + Waypoints", wxOK | wxICON_WARNING, $tree);
+				"Delete Group + Waypoints");
 			return;
 		}
-		my $n  = scalar @members;
-		my $rc = Wx::MessageBox(
+		my $n = scalar @members;
+		return if !confirmDialog($tree,
 			"Delete all $n ungrouped waypoint(s) from E80? Cannot be undone.",
-			"Delete Group + Waypoints", wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-		return if $rc != wxYES;
+			"Delete Group + Waypoints");
 		my $progress = _openE80Progress("Delete Group + Waypoints", scalar @members);
 		$wpmgr->deleteWaypoint($_, $progress, 1) for @members;
 		return;
@@ -388,8 +406,7 @@ sub _deleteE80GroupsAndWPs
 	my $wpmgr = _wpmgr();
 	if (!$wpmgr)
 	{
-		Wx::MessageBox("WPMGR not connected.", "Delete Groups + Waypoints",
-			wxOK | wxICON_ERROR, $tree);
+		error("_deleteE80GroupsAndWPs: WPMGR not connected");
 		return;
 	}
 	for my $node (@grps)
@@ -398,9 +415,9 @@ sub _deleteE80GroupsAndWPs
 		{
 			if (_e80WPRoutes($wpmgr, $wp_uuid))
 			{
-				Wx::MessageBox(
+				okDialog($tree,
 					"'$node->{data}{name}' has waypoints in routes — remove them from routes first.",
-					"Delete Groups + Waypoints", wxOK | wxICON_WARNING, $tree);
+					"Delete Groups + Waypoints");
 				return;
 			}
 		}
@@ -421,9 +438,7 @@ sub _deleteE80GroupsAndWPs
 			? "Delete $n groups and their $total_wps waypoint(s) from E80? Cannot be undone."
 			: "Delete $n groups from E80? Cannot be undone.";
 	}
-	my $rc = Wx::MessageBox($msg, "Delete Groups + Waypoints",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return if $rc != wxYES;
+	return if !confirmDialog($tree, $msg, "Delete Groups + Waypoints");
 	display($dbg_e80_ops,0,"nmOps::_deleteE80GroupsAndWPs n=$n total_wps=$total_wps");
 	my $total_ops = (2 * $total_wps) + $n;
 	my $progress  = _openE80Progress("Delete Groups + Waypoints", $total_ops);
@@ -443,7 +458,7 @@ sub _removeE80RoutePoint
 	my $wpmgr = _wpmgr();
 	if (!$wpmgr)
 	{
-		Wx::MessageBox("WPMGR not connected.", "Remove RoutePoint", wxOK | wxICON_ERROR, $tree);
+		error("_removeE80RoutePoint: WPMGR not connected");
 		return;
 	}
 
@@ -453,9 +468,7 @@ sub _removeE80RoutePoint
 	my $route      = $wpmgr->{routes}{$route_uuid};
 	my $route_name = $route ? ($route->{name} // $route_uuid) : $route_uuid;
 
-	my $rc = Wx::MessageBox("Remove '$name' from route '$route_name'?", "Remove RoutePoint",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return if $rc != wxYES;
+	return if !confirmDialog($tree, "Remove '$name' from route '$route_name'?", "Remove RoutePoint");
 
 	my @new_uuids = grep { $_ ne $node->{uuid} } @{$route->{uuids} // []};
 	$wpmgr->modifyRoute({uuid => $route_uuid, waypoints => \@new_uuids});
@@ -468,7 +481,7 @@ sub _deleteE80Routes
 	my $wpmgr = _wpmgr();
 	if (!$wpmgr)
 	{
-		Wx::MessageBox("WPMGR not connected.", "Delete Route", wxOK | wxICON_ERROR, $tree);
+		error("_deleteE80Routes: WPMGR not connected");
 		return;
 	}
 
@@ -501,9 +514,7 @@ sub _deleteE80Routes
 	{
 		$msg = "Delete $n routes from E80? Their waypoints will remain. Cannot be undone.";
 	}
-	my $rc = Wx::MessageBox($msg, "Delete Route",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return if $rc != wxYES;
+	return if !confirmDialog($tree, $msg, "Delete Route");
 	my $total_ops = $n + $total_pts;
 	my $progress  = _openE80Progress("Delete Route", $total_ops);
 	$progress->{_counting_get_items} = 1;
@@ -517,16 +528,14 @@ sub _deleteE80Tracks
 	my $track = _track();
 	if (!$track)
 	{
-		Wx::MessageBox("E80 not connected.", "Delete Track", wxOK | wxICON_WARNING, $tree);
+		error("_deleteE80Tracks: TRACK service not connected");
 		return;
 	}
 	my $n   = scalar @$nodes;
 	my $msg = $n == 1
 		? "Delete track '$nodes->[0]{data}{name}' from E80?"
 		: "Delete $n tracks from E80?";
-	my $rc = Wx::MessageBox($msg, "Confirm Delete",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return if $rc != wxYES;
+	return if !confirmDialog($tree, $msg, "Confirm Delete");
 	for my $node (@$nodes)
 	{
 		$track->queueTRACKCommand(
@@ -543,20 +552,30 @@ sub _deleteE80Tracks
 sub _pasteOneWaypointToE80
 	# UUID-preserving inner helper for paste-to-E80.
 	# Returns: 'created', 'replaced', 'skipped', 'no_change', 'aborted'.
+	# $pending_uuids: hashref — UUIDs queued in this pass; avoids double-queue in _pasteAllToE80.
+	# $pending_names: hashref — lc(name)=>1 for names already used; avoids E80 dup-name reject.
 {
-	my ($wpmgr, $tree, $item, $policy_ref, $title, $progress) = @_;
+	my ($wpmgr, $tree, $item, $policy_ref, $title, $progress, $pending_uuids, $pending_names) = @_;
 	my $wp   = $item->{data};
 	my $uuid = $item->{uuid};
 
 	return 'aborted' if $$policy_ref && $$policy_ref eq 'abort';
 	return 'aborted' if $progress && $progress->{cancelled};
 
+	if ($pending_uuids && $pending_uuids->{$uuid})
+	{
+		$progress->{done}++ if $progress;
+		return 'no_change';
+	}
+
 	my $existing = $wpmgr->{waypoints}{$uuid};
 
 	if (!$existing)
 	{
+		my $wp_name = _deconflictE80Name($wpmgr, $wp->{name}, $pending_names);
+		$pending_uuids->{$uuid} = 1 if $pending_uuids;
 		$wpmgr->createWaypoint({
-			name     => $wp->{name}    // '',
+			name     => $wp_name,
 			uuid     => $uuid,
 			lat      => $wp->{lat},
 			lon      => $wp->{lon},
@@ -621,12 +640,12 @@ sub _pasteOneWaypointToE80
 
 sub _pasteWaypointToE80
 {
-	my ($node, $tree, $item, $cb) = @_;
+	my ($node, $tree, $item, $cb, $pending_uuids, $pending_names) = @_;
 
 	my $wpmgr = _wpmgr();
 	if (!$wpmgr)
 	{
-		Wx::MessageBox("WPMGR not connected.", "Paste Waypoint", wxOK | wxICON_ERROR, $tree);
+		error("_pasteWaypointToE80: WPMGR not connected");
 		return;
 	}
 
@@ -642,7 +661,7 @@ sub _pasteWaypointToE80
 		{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
 
 	my $policy = undef;
-	my $result = _pasteOneWaypointToE80($wpmgr, $tree, $item, \$policy, 'Paste Waypoint', $progress);
+	my $result = _pasteOneWaypointToE80($wpmgr, $tree, $item, \$policy, 'Paste Waypoint', $progress, $pending_uuids, $pending_names);
 	return if $result eq 'aborted';
 
 	if ($group_uuid)
@@ -668,8 +687,8 @@ sub _pasteWaypointToE80
 
 	if ($cb && $cb->{cut} && ($result eq 'created' || $result eq 'replaced'))
 	{
-		$cb->{source} eq 'browser'
-			? _cutBrowserWaypoint($uuid, $tree)
+		$cb->{source} eq 'database'
+			? _cutDatabaseWaypoint($uuid, $tree)
 			: _cutE80Waypoint($uuid, $tree);
 	}
 }
@@ -682,7 +701,7 @@ sub _pasteNewWaypointToE80
 	my $wpmgr = _wpmgr();
 	if (!$wpmgr)
 	{
-		Wx::MessageBox("WPMGR not connected.", "Paste New Waypoint", wxOK | wxICON_ERROR, $tree);
+		error("_pasteNewWaypointToE80: WPMGR not connected");
 		return;
 	}
 
@@ -700,12 +719,14 @@ sub _pasteNewWaypointToE80
 	my $new_uuid = _newNavUUID();
 	if (!$new_uuid)
 	{
-		error(0,0,"_pasteNewWaypointToE80: UUID generation failed");
+		error("_pasteNewWaypointToE80: UUID generation failed");
 		return;
 	}
 
+	my %pending_names;
+	my $wp_name = _deconflictE80Name($wpmgr, $wp->{name}, \%pending_names);
 	$wpmgr->createWaypoint({
-		name     => $wp->{name}    // '',
+		name     => $wp_name,
 		uuid     => $new_uuid,
 		lat      => $wp->{lat},
 		lon      => $wp->{lon},
@@ -734,12 +755,12 @@ sub _pasteNewWaypointToE80
 
 sub _pasteGroupToE80
 {
-	my ($node, $tree, $item, $cb, $shared_progress) = @_;
+	my ($node, $tree, $item, $cb, $shared_progress, $pending_uuids, $pending_names) = @_;
 
 	my $wpmgr = _wpmgr();
 	if (!$wpmgr)
 	{
-		Wx::MessageBox("WPMGR not connected.", "Paste Group", wxOK | wxICON_ERROR, $tree);
+		error("_pasteGroupToE80: WPMGR not connected");
 		return;
 	}
 
@@ -766,14 +787,14 @@ sub _pasteGroupToE80
 	for my $member (@$members)
 	{
 		last if $progress && $progress->{cancelled};
-		my $result = _pasteOneWaypointToE80($wpmgr, $tree, $member, \$policy, 'Paste Group', $progress);
+		my $result = _pasteOneWaypointToE80($wpmgr, $tree, $member, \$policy, 'Paste Group', $progress, $pending_uuids, $pending_names);
 		last if $result eq 'aborted';
 		push @placed_uuids, $member->{uuid};
 		$any_skipped = 1 if $result eq 'skipped';
 		if ($cb->{cut} && $result ne 'skipped' && $result ne 'aborted')
 		{
-			$cb->{source} eq 'browser'
-				? _cutBrowserWaypoint($member->{uuid}, $tree)
+			$cb->{source} eq 'database'
+				? _cutDatabaseWaypoint($member->{uuid}, $tree)
 				: _cutE80Waypoint($member->{uuid}, $tree);
 		}
 	}
@@ -813,8 +834,8 @@ sub _pasteGroupToE80
 		}
 		if ($cb->{cut} && !$any_skipped)
 		{
-			$cb->{source} eq 'browser'
-				? _cutBrowserGroup($group_uuid, $tree)
+			$cb->{source} eq 'database'
+				? _cutDatabaseGroup($group_uuid, $tree)
 				: _cutE80Group($group_uuid, $tree);
 		}
 	}
@@ -823,12 +844,12 @@ sub _pasteGroupToE80
 
 sub _pasteRouteToE80
 {
-	my ($node, $tree, $item, $cb, $shared_progress) = @_;
+	my ($node, $tree, $item, $cb, $shared_progress, $pending_uuids, $pending_names) = @_;
 
 	my $wpmgr = _wpmgr();
 	if (!$wpmgr)
 	{
-		Wx::MessageBox("WPMGR not connected.", "Paste Route", wxOK | wxICON_ERROR, $tree);
+		error("_pasteRouteToE80: WPMGR not connected");
 		return;
 	}
 
@@ -854,12 +875,12 @@ sub _pasteRouteToE80
 	for my $member (@$members)
 	{
 		last if $progress && $progress->{cancelled};
-		my $result = _pasteOneWaypointToE80($wpmgr, $tree, $member, \$policy, 'Paste Route', $progress);
+		my $result = _pasteOneWaypointToE80($wpmgr, $tree, $member, \$policy, 'Paste Route', $progress, $pending_uuids, $pending_names);
 		last if $result eq 'aborted';
 		if ($cb->{cut} && $result ne 'skipped' && $result ne 'aborted')
 		{
-			$cb->{source} eq 'browser'
-				? _cutBrowserWaypoint($member->{uuid}, $tree)
+			$cb->{source} eq 'database'
+				? _cutDatabaseWaypoint($member->{uuid}, $tree)
 				: _cutE80Waypoint($member->{uuid}, $tree);
 		}
 	}
@@ -890,9 +911,51 @@ sub _pasteRouteToE80
 		}
 		if ($cb->{cut})
 		{
-			$cb->{source} eq 'browser'
-				? _cutBrowserRoute($route_uuid, $tree)
+			$cb->{source} eq 'database'
+				? _cutDatabaseRoute($route_uuid, $tree)
 				: _cutE80Route($route_uuid, $tree);
+		}
+	}
+}
+
+
+sub _pasteAllToE80
+{
+	my ($node, $tree, $cb) = @_;
+	my @items = @{$cb->{items} // []};
+
+	my $wpmgr = _wpmgr();
+	if (!$wpmgr)
+	{
+		error("_pasteAllToE80: WPMGR not connected");
+		return;
+	}
+
+	my %pending_uuids;
+	my %pending_names;
+
+	for my $item (@items)
+	{
+		my $type = $item->{type} // '';
+		if ($type eq 'waypoint')
+		{
+			_pasteWaypointToE80($node, $tree, $item, $cb, \%pending_uuids, \%pending_names);
+		}
+		elsif ($type eq 'group')
+		{
+			_pasteGroupToE80($node, $tree, $item, $cb, undef, \%pending_uuids, \%pending_names);
+		}
+		elsif ($type eq 'route')
+		{
+			_pasteRouteToE80($node, $tree, $item, $cb, undef, \%pending_uuids, \%pending_names);
+		}
+		elsif ($type eq 'track')
+		{
+			display($dbg_e80_ops, 0, "_pasteAllToE80: skipping track '${\($item->{data}{name}//$item->{uuid})}'");
+		}
+		else
+		{
+			warning(0, 0, "_pasteAllToE80: unknown item type '$type'");
 		}
 	}
 }
@@ -909,7 +972,7 @@ sub _pasteNewGroupToE80
 	my $wpmgr = _wpmgr();
 	if (!$wpmgr)
 	{
-		Wx::MessageBox("WPMGR not connected.", "Paste New Group", wxOK | wxICON_ERROR, $tree);
+		error("_pasteNewGroupToE80: WPMGR not connected");
 		return;
 	}
 
@@ -927,6 +990,7 @@ sub _pasteNewGroupToE80
 			{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
 	}
 
+	my %pending_names;
 	my @new_wp_uuids;
 	for my $member (@$members)
 	{
@@ -935,12 +999,13 @@ sub _pasteNewGroupToE80
 		my $new_uuid = _newNavUUID();
 		if (!$new_uuid)
 		{
-			error(0,0,"_pasteNewGroupToE80: UUID generation failed");
+			error("_pasteNewGroupToE80: UUID generation failed");
 			$progress->{error} = 'UUID generation failed' if $progress;
 			last;
 		}
+		my $wp_name = _deconflictE80Name($wpmgr, $wp->{name}, \%pending_names);
 		$wpmgr->createWaypoint({
-			name     => $wp->{name}    // '',
+			name     => $wp_name,
 			uuid     => $new_uuid,
 			lat      => $wp->{lat},
 			lon      => $wp->{lon},
@@ -958,13 +1023,15 @@ sub _pasteNewGroupToE80
 		my $new_group_uuid = _newNavUUID();
 		if (!$new_group_uuid)
 		{
-			error(0,0,"_pasteNewGroupToE80: UUID generation failed for group");
+			error("_pasteNewGroupToE80: UUID generation failed for group");
 			$progress->{error} = 'UUID generation failed' if $progress;
 		}
 		else
 		{
+			my %pending_group_names;
+			my $group_name = _deconflictE80Name($wpmgr, $group_data->{name} // '', \%pending_group_names, 'groups');
 			$wpmgr->createGroup({
-				name     => $group_data->{name}    // '',
+				name     => $group_name,
 				uuid     => $new_group_uuid,
 				comment  => $group_data->{comment} // '',
 				members  => \@new_wp_uuids,
@@ -982,7 +1049,7 @@ sub _pasteNewRouteToE80
 	my $wpmgr = _wpmgr();
 	if (!$wpmgr)
 	{
-		Wx::MessageBox("WPMGR not connected.", "Paste New Route", wxOK | wxICON_ERROR, $tree);
+		error("_pasteNewRouteToE80: WPMGR not connected");
 		return;
 	}
 
@@ -996,11 +1063,11 @@ sub _pasteNewRouteToE80
 	}
 	else
 	{
-		$progress = _openE80Progress("Paste New Route", (2 * scalar(@$members)) + 1,
+		$progress = _openE80Progress("Paste New Route", scalar(@$members) + 1,
 			{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
 	}
-	$progress->{_counting_get_items} = 1 if $progress;
 
+	my %pending_names;
 	my @new_wp_uuids;
 	for my $member (@$members)
 	{
@@ -1009,12 +1076,13 @@ sub _pasteNewRouteToE80
 		my $new_uuid = _newNavUUID();
 		if (!$new_uuid)
 		{
-			error(0,0,"_pasteNewRouteToE80: UUID generation failed");
+			error("_pasteNewRouteToE80: UUID generation failed");
 			$progress->{error} = 'UUID generation failed' if $progress;
 			last;
 		}
+		my $wp_name = _deconflictE80Name($wpmgr, $wp->{name}, \%pending_names);
 		$wpmgr->createWaypoint({
-			name     => $wp->{name}    // '',
+			name     => $wp_name,
 			uuid     => $new_uuid,
 			lat      => $wp->{lat},
 			lon      => $wp->{lon},
@@ -1032,13 +1100,15 @@ sub _pasteNewRouteToE80
 		my $new_route_uuid = _newNavUUID();
 		if (!$new_route_uuid)
 		{
-			error(0,0,"_pasteNewRouteToE80: UUID generation failed for route");
+			error("_pasteNewRouteToE80: UUID generation failed for route");
 			$progress->{error} = 'UUID generation failed' if $progress;
 		}
 		else
 		{
+			my %pending_route_names;
+			my $route_name = _deconflictE80Name($wpmgr, $route_data->{name} // '', \%pending_route_names, 'routes');
 			$wpmgr->createRoute({
-				name      => $route_data->{name}    // '',
+				name      => $route_name,
 				uuid      => $new_route_uuid,
 				comment   => $route_data->{comment} // '',
 				color     => $route_data->{color}   // 0,

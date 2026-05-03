@@ -5,7 +5,8 @@
 **Architecture** --
 **[Data Model](data_model.md)** --
 **[UI Model](ui_model.md)** --
-**[Implementation](implementation.md)**
+**[Implementation](implementation.md)** --
+**[Context Menu](context_menu.md)**
 
 ## Primary Statement
 
@@ -219,7 +220,7 @@ this zone.
 | `nmSession.pm` | app | planned | session state (viewport, tree, working set) |
 | `s_serial.pm` | app | built (temp) | serial port interface; temporary location — belongs in NET layer |
 | `winMain.pm` | app | built | main frame, menu dispatch |
-| `winBrowser.pm` | app | built | collection tree + detail panel (SplitterWindow); upload context menu |
+| `winDatabase.pm` | app | built | collection tree + detail panel (SplitterWindow); upload context menu |
 | `w_frame.pm` | app | built | wx frame/panel base utilities |
 | `w_resources.pm` | app | built | wx resource constants (IDs, menus, context menus) |
 

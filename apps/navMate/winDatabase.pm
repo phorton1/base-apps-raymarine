@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #-------------------------------------------------------------------------
-# winBrowser.pm
+# winDatabase.pm
 #-------------------------------------------------------------------------
 # Two-pane window: collection tree (left), detail text (right).
 #
@@ -12,7 +12,7 @@
 # Detail pane: branch nodes show child counts; leaf nodes show
 # type-specific fields.
 
-package winBrowser;
+package winDatabase;
 use strict;
 use warnings;
 use threads;
@@ -23,6 +23,7 @@ use Wx::Event qw(
 	EVT_TREE_ITEM_EXPANDING
 	EVT_TREE_ITEM_RIGHT_CLICK
 	EVT_LEFT_DCLICK
+	EVT_RIGHT_DOWN
 	EVT_MENU);
 use Pub::WX::Dialogs;
 use POSIX qw(strftime);
@@ -48,7 +49,7 @@ sub new
 {
 	my ($class, $frame, $book, $id, $data) = @_;
 	my $this = $class->SUPER::new($book, $id);
-	$this->MyWindow($frame, $book, $id, 'Browser', $data);
+	$this->MyWindow($frame, $book, $id, 'Database', $data);
 
 	$this->{tree} = Wx::TreeCtrl->new($this, -1, wxDefaultPosition, wxDefaultSize,
 		wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxTR_MULTIPLE);
@@ -76,11 +77,12 @@ sub new
 	EVT_TREE_SEL_CHANGED($this,        $this->{tree}, \&onTreeSelect);
 	EVT_TREE_ITEM_EXPANDING($this,     $this->{tree}, \&onTreeExpanding);
 	EVT_TREE_ITEM_RIGHT_CLICK($this,   $this->{tree}, \&onTreeRightClick);
+	EVT_RIGHT_DOWN($this->{tree},      sub { _onTreeRightDown($this, @_) });
 	EVT_LEFT_DCLICK($this->{tree}, sub { _onTreeDblClick($this, @_) });
 
-	EVT_MENU($this, $CMD_UPLOAD_E80, \&_onUploadE80);   # vestigial
+	EVT_MENU($this, $COMMAND_UPLOAD_E80, \&_onUploadE80);   # vestigial
 	EVT_MENU($this, $_, \&_onContextMenuCommand)
-		for (allCopyCmds(), allCutCmds(), $CMD_PASTE, $CMD_PASTE_NEW, allDeleteCmds(), allNewCmds());
+		for (allCopyCmds(), allCutCmds(), $CTX_CMD_PASTE, $CTX_CMD_PASTE_NEW, allDeleteCmds(), allNewCmds());
 
 	_loadTopLevel($this);
 
@@ -99,6 +101,10 @@ sub _loadTopLevel
 	$tree->Freeze();
 	$tree->DeleteAllItems();
 	my $root = $tree->AddRoot('root');
+
+	my $db_item = $tree->AppendItem($root, 'Database', -1, -1,
+		Wx::TreeItemData->new({ type => 'root', data => { uuid => undef, name => 'Database' } }));
+	$tree->SetItemBold($db_item, 1);
 
 	my $dbh = connectDB();
 	if (!$dbh) { $tree->Thaw(); return; }
@@ -279,6 +285,8 @@ sub onTreeSelect
 	return if !$item_data;
 	my $node = $item_data->GetData();
 	return if ref $node ne 'HASH';
+
+	if ($node->{type} eq 'root') { $this->{detail}->SetValue(''); return; }
 
 	my $dbh = connectDB();
 	if ($node->{type} eq 'collection')
@@ -660,6 +668,24 @@ sub _renderObject
 # right-click context menu
 #---------------------------------
 
+sub _onTreeRightDown
+{
+	my ($this, $tree, $event) = @_;
+	my ($item, $flags) = $tree->HitTest($event->GetPosition());
+	if ($item && $item->IsOk())
+	{
+		$event->Skip();
+		return;
+	}
+	my $root_node = { type => 'root', data => { uuid => undef, name => 'Database' } };
+	$this->{_right_click_node} = $root_node;
+	$this->{_context_nodes}    = [];
+	my $menu = Wx::Menu->new();
+	$menu->Append($CTX_CMD_NEW_BRANCH, 'New Branch');
+	$this->PopupMenu($menu, [-1, -1]);
+}
+
+
 sub onTreeRightClick
 {
 	my ($this, $event) = @_;
@@ -694,25 +720,25 @@ sub _buildContextMenu
 
 	my $menu = Wx::Menu->new();
 
-	my @copy_items = getCopyMenuItems('browser', @nodes);
-	my @cut_items  = getCutMenuItems('browser', @nodes);
+	my @copy_items = getCopyMenuItems('database', @nodes);
+	my @cut_items  = getCutMenuItems('database', @nodes);
 	$menu->Append($_->{id}, $_->{label}) for @copy_items;
 	$menu->Append($_->{id}, $_->{label}) for @cut_items;
 	$menu->AppendSeparator() if @copy_items || @cut_items;
 
-	$menu->Append($CMD_PASTE, 'Paste');
-	$menu->Enable($CMD_PASTE, canPaste($right_click_node, 'browser') ? 1 : 0);
-	$menu->Append($CMD_PASTE_NEW, 'Paste New');
-	$menu->Enable($CMD_PASTE_NEW, canPasteNew($right_click_node, 'browser') ? 1 : 0);
+	$menu->Append($CTX_CMD_PASTE, 'Paste');
+	$menu->Enable($CTX_CMD_PASTE, canPaste($right_click_node, 'database') ? 1 : 0);
+	$menu->Append($CTX_CMD_PASTE_NEW, 'Paste New');
+	$menu->Enable($CTX_CMD_PASTE_NEW, canPasteNew($right_click_node, 'database') ? 1 : 0);
 
-	my @delete_items = getDeleteMenuItems('browser', $right_click_node, @nodes);
+	my @delete_items = getDeleteMenuItems('database', $right_click_node, @nodes);
 	if (@delete_items)
 	{
 		$menu->AppendSeparator();
 		$menu->Append($_->{id}, $_->{label}) for @delete_items;
 	}
 
-	my @new_items = getNewMenuItems('browser', $right_click_node);
+	my @new_items = getNewMenuItems('database', $right_click_node);
 	if (@new_items)
 	{
 		$menu->AppendSeparator();
@@ -724,7 +750,7 @@ sub _buildContextMenu
 	{
 		$this->{_upload_target} = { kind => 'collection', data => $right_click_node->{data} };
 		$menu->AppendSeparator();
-		$menu->Append($CMD_UPLOAD_E80, 'Upload to E80');
+		$menu->Append($COMMAND_UPLOAD_E80, 'Upload to E80');
 	}
 
 	return $menu;
@@ -735,7 +761,7 @@ sub _onContextMenuCommand
 {
 	my ($this, $event) = @_;
 	onContextMenuCommand(
-		$event->GetId(), 'browser', $this->{_right_click_node}, $this->{tree},
+		$event->GetId(), 'database', $this->{_right_click_node}, $this->{tree},
 		@{$this->{_context_nodes} // []});
 }
 

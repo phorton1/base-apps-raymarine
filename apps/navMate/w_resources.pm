@@ -18,70 +18,79 @@ BEGIN
 	our @EXPORT = qw(
 		$appName
 		$resources
-		$WIN_BROWSER
+		$WIN_DATABASE
 		$WIN_E80
 		$WIN_MONITOR
-		$CMD_OPEN_MAP
-		$CMD_IMPORT_KML
-		$CMD_UPLOAD_E80
-		$CMD_REFRESH_E80
+		$COMMAND_OPEN_MAP
+		$COMMAND_IMPORT_KML
+		$COMMAND_UPLOAD_E80
+		$COMMAND_REFRESH_E80
+		$COMMAND_REFRESH_DB
 	);
 }
 
 
 our $appName = "navMate";
 
-our $WIN_BROWSER = 10001;
+our $WIN_DATABASE = 10001;
 our $WIN_E80     = 10005;
 our $WIN_MONITOR = 10006;
-our $CMD_OPEN_MAP    = 10002;
-our $CMD_IMPORT_KML  = 10003;
-our $CMD_UPLOAD_E80  = 10004;
-our $CMD_REFRESH_E80 = 10021;
+our $COMMAND_OPEN_MAP    = 10002;
+our $COMMAND_IMPORT_KML  = 10003;
+our $COMMAND_UPLOAD_E80  = 10004;
+our $COMMAND_REFRESH_E80 = 10023;
+our $COMMAND_REFRESH_DB  = 10022;
 
 
 my $pane_data = {
-	$WIN_BROWSER => ['Unused String1', 'content'],
+	$WIN_DATABASE => ['Unused String1', 'content'],
 	$WIN_E80     => ['Unused String2', 'content'],
 	$WIN_MONITOR => ['Unused String3', 'content'],
 };
 
 my $command_data = {
 	%{$resources->{command_data}},
-	$WIN_BROWSER => ['Browser',    'Navigation data browser'],
+	$WIN_DATABASE => ['Database',    'navMate database browser'],
 	$WIN_E80     => ['E80',        'Live E80 contents'],
 	$WIN_MONITOR => ['Monitor',    'Monitor and control service monitoring bits'],
-	$CMD_OPEN_MAP    => ['Open Map',    'Open the Leaflet map in a browser'],
-	$CMD_IMPORT_KML  => ['Import KML',  'Delete and rebuild database from KML files'],
-	$CMD_UPLOAD_E80  => ['Upload to E80', 'Upload collection to E80 plotter'],
-	$CMD_REFRESH_E80 => ['Refresh E80', 'Re-query all waypoints, routes, groups, and tracks from E80'],
+	$COMMAND_OPEN_MAP    => ['Open Map',    'Open the Leaflet map in a browser'],
+	$COMMAND_IMPORT_KML  => ['Import KML',  'Delete and rebuild database from KML files'],
+	$COMMAND_UPLOAD_E80  => ['Upload to E80', 'Upload collection to E80 plotter'],
+	$COMMAND_REFRESH_E80 => ['Refresh',     'Re-query all waypoints, routes, groups, and tracks from E80'],
+	$COMMAND_REFRESH_DB  => ['Refresh',     'Reload database window from current navMate.db'],
 };
 
 my @collection_context_menu = (
-	$CMD_UPLOAD_E80,
+	$COMMAND_UPLOAD_E80,
 );
 
 my $main_menu = [
-	'file_menu,&File',
-	'edit_menu,&Edit',
 	'view_menu,&View',
-];
-
-my $edit_menu = [
-	$CMD_REFRESH_E80,
-];
-
-my $file_menu = [
-	$CMD_IMPORT_KML,
+	'database_menu,&Database',
+	'e80_menu,&E80',
+	'utils_menu,&Utils',
 ];
 
 my $view_menu = [
-	$WIN_BROWSER,
+	$WIN_DATABASE,
 	$WIN_E80,
 	$WIN_MONITOR,
-	$CMD_OPEN_MAP,
+	$ID_SEPARATOR,
+	$COMMAND_OPEN_MAP,
 	$ID_SEPARATOR,
 	@{$resources->{view_menu}},
+];
+
+my $database_menu = [
+	$COMMAND_REFRESH_DB,
+];
+
+my $e80_menu = [
+	$COMMAND_REFRESH_E80,
+];
+
+my $utils_menu = [
+	$COMMAND_IMPORT_KML,
 ];
 
 
@@ -90,9 +99,10 @@ $resources = { %$resources,
 	command_data             => $command_data,
 	pane_data                => $pane_data,
 	main_menu                => $main_menu,
-	file_menu                => $file_menu,
-	edit_menu                => $edit_menu,
 	view_menu                => $view_menu,
+	database_menu            => $database_menu,
+	e80_menu                 => $e80_menu,
+	utils_menu               => $utils_menu,
 	collection_context_menu  => \@collection_context_menu,
 };
 

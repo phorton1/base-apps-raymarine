@@ -5,7 +5,8 @@
 **[Architecture](architecture.md)** --
 **[Data Model](data_model.md)** --
 **[UI Model](ui_model.md)** --
-**[Implementation](implementation.md)**
+**[Implementation](implementation.md)** --
+**[Context Menu](context_menu.md)**
 
 **navMate** is a desktop application for managing a mariner's complete navigation
 data — waypoints, groups, routes, and tracks — across a lifetime of voyaging, across
@@ -47,7 +48,7 @@ base, data model, and UI are the product. Everything else is a boundary adapter.
 
 navMate implementation is underway. Foundation layers (schema, CRUD, wx panels, embedded
 HTTP server) are built. Upload to E80 via WPMGR is implemented (`nmUpload.pm`): waypoints,
-routes, and groups are uploaded from the collection tree context menu in `winBrowser.pm`.
+routes, and groups are uploaded from the collection tree context menu in `winDatabase.pm`.
 A companion E80-side panel (`winE80.pm`) is under development. Basic Leaflet rendering of
 routes and waypoints is partially built.
 

@@ -21,7 +21,8 @@ use apps::raymarine::NET::c_RAYDP;
 use w_resources;
 use nmServer;
 use nmOps;
-use winBrowser;
+use nmTest;
+use winDatabase;
 use winE80;
 use winMonitor;
 use _import_kml;
@@ -37,12 +38,13 @@ sub new
 
 	my $this = $class->SUPER::new($parent, $rect);
 
-	EVT_MENU($this, $WIN_BROWSER,      \&onCommand);
+	EVT_MENU($this, $WIN_DATABASE,      \&onCommand);
 	EVT_MENU($this, $WIN_E80,          \&onCommand);
 	EVT_MENU($this, $WIN_MONITOR,      \&onCommand);
-	EVT_MENU($this, $CMD_OPEN_MAP,     \&onCommand);
-	EVT_MENU($this, $CMD_IMPORT_KML,   \&onCommand);
-	EVT_MENU($this, $CMD_REFRESH_E80,  \&onCommand);
+	EVT_MENU($this, $COMMAND_OPEN_MAP,     \&onCommand);
+	EVT_MENU($this, $COMMAND_IMPORT_KML,   \&onCommand);
+	EVT_MENU($this, $COMMAND_REFRESH_E80,  \&onCommand);
+	EVT_MENU($this, $COMMAND_REFRESH_DB,   \&onCommand);
 	EVT_IDLE($this, \&onIdle);
 
 	my $sb = Wx::StatusBar->new($this, -1);
@@ -85,6 +87,9 @@ sub onIdle
 {
 	my ($this, $event) = @_;
 
+	my $test_cmd = pollTestCommand();
+	dispatchTestCommand($this, $test_cmd) if $test_cmd;
+
 	my $wpmgr_on = ($raydp && $raydp->findImplementedService('WPMGR', 1)) ? 1 : 0;
 	my $track_on = ($raydp && $raydp->findImplementedService('TRACK', 1)) ? 1 : 0;
 
@@ -124,6 +129,11 @@ sub onIdle
 		$this->{_wpmgr_in_query} = 0;
 		$this->{_wpmgr_queried}  = 1;
 	}
+	elsif ($wpmgr_on && !$wpmgr_busy && !($this->{_wpmgr_queried}//0) && !($this->{_wpmgr_in_query}//0))
+	{
+		# startup race: initial query finished before onIdle ever saw it busy
+		$this->{_wpmgr_queried} = 1;
+	}
 	if ($track_on && $track_busy)
 	{
 		$this->{_track_in_query} = 1;
@@ -132,6 +142,11 @@ sub onIdle
 	{
 		$this->{_track_in_query} = 0;
 		$this->{_track_queried}  = 1;
+	}
+	elsif ($track_on && !$track_busy && !($this->{_track_queried}//0) && !($this->{_track_in_query}//0))
+	{
+		# startup race: initial query finished before onIdle ever saw it busy
+		$this->{_track_queried} = 1;
 	}
 
 	# Session is stable once WPMGR has completed a real query and no service
@@ -203,7 +218,7 @@ sub createPane
 	return error("No id in createPane()") if !$id;
 	$book ||= $this->{book};
 	display(0, 0, "winMain::createPane($id) book=" . _def($book) . "  data=" . _def($data));
-	return winBrowser->new($this, $book, $id, $data)  if $id == $WIN_BROWSER;
+	return winDatabase->new($this, $book, $id, $data)  if $id == $WIN_DATABASE;
 	return winE80->new($this, $book, $id, $data)      if $id == $WIN_E80;
 	return winMonitor->new($this, $book, $id, $data)  if $id == $WIN_MONITOR;
 	return $this->SUPER::createPane($id, $book, $data);
@@ -214,22 +229,27 @@ sub onCommand
 {
 	my ($this, $event) = @_;
 	my $id = $event->GetId();
-	if ($id == $WIN_BROWSER || $id == $WIN_E80 || $id == $WIN_MONITOR)
+	if ($id == $WIN_DATABASE || $id == $WIN_E80 || $id == $WIN_MONITOR)
 	{
 		my $pane = $this->findPane($id);
 		$this->createPane($id) if !$pane;
 	}
-	elsif ($id == $CMD_OPEN_MAP)
+	elsif ($id == $COMMAND_OPEN_MAP)
 	{
 		openMapBrowser() if !isBrowserConnected();
 	}
-	elsif ($id == $CMD_IMPORT_KML)
+	elsif ($id == $COMMAND_IMPORT_KML)
 	{
 		_doImportKML($this);
 	}
-	elsif ($id == $CMD_REFRESH_E80)
+	elsif ($id == $COMMAND_REFRESH_E80)
 	{
 		doRefresh($this);
+	}
+	elsif ($id == $COMMAND_REFRESH_DB)
+	{
+		my $database = $this->findPane($WIN_DATABASE);
+		$database->refresh() if $database;
 	}
 }
 
@@ -245,8 +265,8 @@ sub _doImportKML
 		return;
 	}
 	_import_kml::run();
-	my $browser = $this->findPane($WIN_BROWSER);
-	$browser->refresh() if $browser;
+	my $database = $this->findPane($WIN_DATABASE);
+	$database->refresh() if $database;
 	display(0,0,"winMain: ImportKML done");
 }
 

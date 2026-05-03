@@ -5,27 +5,28 @@
 **[Architecture](architecture.md)** --
 **[Data Model](data_model.md)** --
 **UI Model** --
-**[Implementation](implementation.md)**
+**[Implementation](implementation.md)** --
+**[Context Menu](context_menu.md)**
 
 ## Overview
 
 navMate runs three UI surfaces within a single process:
 
-- **winBrowser** — navMate database tree: browse, edit, and upload collections
+- **winDatabase** — navMate database tree: browse, edit, and upload collections
 - **winE80** — live E80 device tree: view and delete routes, groups, and waypoints
 - **Leaflet canvas** — geographic map view *(planned; not yet implemented)*
 
-winBrowser and winE80 are the operative UI. They open as separate panels inside
+winDatabase and winE80 are the operative UI. They open as separate panels inside
 the main notebook frame and together form a two-window transfer interface: items
-can be uploaded from Browser → E80, and items can be deleted from either side
+can be uploaded from Database → E80, and items can be deleted from either side
 independently. The Leaflet canvas is a planned third surface; the architectural
 design is described below but it does not exist yet.
 
 ---
 
-## winBrowser — Collection Tree
+## winDatabase — Collection Tree
 
-`winBrowser.pm` presents the navMate SQLite database as a lazily-loaded wx tree.
+`winDatabase.pm` presents the navMate SQLite database as a lazily-loaded wx tree.
 Top-level nodes are root collections; child nodes are loaded on first expand
 (`EVT_TREE_ITEM_EXPANDING`). A right-click context menu provides all edit and
 transfer operations.
@@ -43,12 +44,12 @@ transfer operations.
 
 ### Layout
 
-Both winBrowser and winE80 are `Wx::SplitterWindow` with a wx tree on the left
+Both winDatabase and winE80 are `Wx::SplitterWindow` with a wx tree on the left
 and a read-only monospaced text detail pane on the right. Selecting a tree node
 populates the detail pane. Multi-select (`wxTR_MULTIPLE`) is supported in both
 windows; Ctrl+click and Shift+click work normally.
 
-### winBrowser Context Menu
+### winDatabase Context Menu
 
 | Node | Copy | Delete | New | Other |
 |---|---|---|---|---|
@@ -128,10 +129,10 @@ the tree but no delete or modify operations exist for them.
 
 ### winE80 Context Menu — Copy, Paste, New
 
-The same `nmClipboard` machinery as winBrowser:
+The same `nmClipboard` machinery as winDatabase:
 
 - **Copy** — copies the right-clicked node into the clipboard as a copy intent
-  (waypoint, track, etc.); paste to Browser is then enabled
+  (waypoint, track, etc.); paste to Database is then enabled
 - **Paste** — enabled when `canPaste` returns true for the clipboard intent and
   the target node type; currently only waypoint paste to E80 is implemented
 - **New** — New Group and New Waypoint are offered on group-area nodes; New Route
@@ -152,7 +153,7 @@ all routing goes through nmClipboard.
 $clipboard = {
     intent  => 'waypoint' | 'waypoints' | 'route' | 'routes' |
                'track'    | 'tracks'    | 'group' | 'groups' | 'all',
-    source  => 'browser' | 'e80',
+    source  => 'database' | 'e80',
     items   => [ { type => '...', uuid => '...', data => {...} }, ... ]
 }
 ```
@@ -177,7 +178,7 @@ dispatches to:
 
 - `nmOps::doCopy` — sets `$clipboard` via `nmClipboard::setCopy`
 - `nmOps::doDelete` — routes to the correct `_delete*` or `_remove*` function in
-  `nmOpsE80.pm` (E80 leg) or `nmOpsDB.pm` (browser leg)
+  `nmOpsE80.pm` (E80 leg) or `nmOpsDB.pm` (database leg)
 - `nmOps::doPaste` — routes to `_paste*` functions
 - `nmOps::doNew` — routes to `_new*` functions
 
@@ -188,9 +189,9 @@ The clipboard status is reflected in the application status bar via
 
 **Implemented:**
 - Copy: waypoint (single), track (single) — from either panel
-- Paste waypoint: to browser, to E80 (creates in named group or My Waypoints)
-- Paste track: to browser
-- All delete operations listed in the winBrowser and winE80 tables above
+- Paste waypoint: to database, to E80 (creates in named group or My Waypoints)
+- Paste track: to database
+- All delete operations listed in the winDatabase and winE80 tables above
 
 **Not yet implemented (shows "not yet implemented" dialog):**
 - Copy: group, groups, route, routes, all
@@ -218,7 +219,7 @@ implemented; the wx tree windows are the operative UI for all geographic context
 - **Routes** — dashed polyline connecting ordered waypoints
 - **Tracks** — solid colored polyline
 
-Collections are not rendered in Leaflet; they exist only in the browser tree.
+Collections are not rendered in Leaflet; they exist only in the database tree.
 
 ### Intended Visibility Model
 
@@ -257,7 +258,7 @@ settings file alongside the main database (not in the database itself).
 - winE80 expanded node keys — stored as a comma-joined string of node keys
   (UUIDs, `header:groups`, `header:routes`, `header:tracks`, `my_waypoints`, etc.)
 - winE80 sash position (tree / detail split)
-- winBrowser sash position
+- winDatabase sash position
 
 **Planned (not yet persisted):**
 - Collection tree checkbox states (visibility)

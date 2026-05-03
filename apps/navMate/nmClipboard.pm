@@ -10,7 +10,7 @@
 #   undef = empty
 #   { intent  => 'waypoint'|'waypoints'|'track'|'tracks'|
 #                'group'|'groups'|'route'|'routes'|'all',
-#     source  => 'browser'|'e80',
+#     source  => 'database'|'e80',
 #     items   => [ { type=>'waypoint'|'route'|'track'|'group',
 #                    uuid=>'...', data=>{...} }, ... ] }
 
@@ -20,6 +20,7 @@ use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils qw(display warning error getAppFrame $UTILS_COLOR_LIGHT_MAGENTA);
+use c_db;
 
 
 BEGIN
@@ -27,42 +28,42 @@ BEGIN
 	use Exporter qw( import );
 	our @EXPORT = qw(
 
-		$CMD_COPY_WAYPOINT
-		$CMD_COPY_WAYPOINTS
-		$CMD_COPY_GROUP
-		$CMD_COPY_GROUPS
-		$CMD_COPY_ROUTE
-		$CMD_COPY_ROUTES
-		$CMD_COPY_TRACK
-		$CMD_COPY_TRACKS
-		$CMD_COPY_ALL
+		$CTX_CMD_COPY_WAYPOINT
+		$CTX_CMD_COPY_WAYPOINTS
+		$CTX_CMD_COPY_GROUP
+		$CTX_CMD_COPY_GROUPS
+		$CTX_CMD_COPY_ROUTE
+		$CTX_CMD_COPY_ROUTES
+		$CTX_CMD_COPY_TRACK
+		$CTX_CMD_COPY_TRACKS
+		$CTX_CMD_COPY_ALL
 
-		$CMD_CUT_WAYPOINT
-		$CMD_CUT_WAYPOINTS
-		$CMD_CUT_GROUP
-		$CMD_CUT_GROUPS
-		$CMD_CUT_ROUTE
-		$CMD_CUT_ROUTES
-		$CMD_CUT_TRACK
-		$CMD_CUT_TRACKS
-		$CMD_CUT_ALL
+		$CTX_CMD_CUT_WAYPOINT
+		$CTX_CMD_CUT_WAYPOINTS
+		$CTX_CMD_CUT_GROUP
+		$CTX_CMD_CUT_GROUPS
+		$CTX_CMD_CUT_ROUTE
+		$CTX_CMD_CUT_ROUTES
+		$CTX_CMD_CUT_TRACK
+		$CTX_CMD_CUT_TRACKS
+		$CTX_CMD_CUT_ALL
 
-		$CMD_PASTE
-		$CMD_PASTE_NEW
+		$CTX_CMD_PASTE
+		$CTX_CMD_PASTE_NEW
 
-		$CMD_DELETE_WAYPOINT
-		$CMD_DELETE_GROUP
-		$CMD_DELETE_GROUP_WPS
-		$CMD_DELETE_ROUTE
-		$CMD_REMOVE_ROUTEPOINT
-		$CMD_DELETE_TRACK
-		$CMD_DELETE_BRANCH
-		$CMD_DELETE_ALL
+		$CTX_CMD_DELETE_WAYPOINT
+		$CTX_CMD_DELETE_GROUP
+		$CTX_CMD_DELETE_GROUP_WPS
+		$CTX_CMD_DELETE_ROUTE
+		$CTX_CMD_REMOVE_ROUTEPOINT
+		$CTX_CMD_DELETE_TRACK
+		$CTX_CMD_DELETE_BRANCH
+		$CTX_CMD_DELETE_ALL
 
-		$CMD_NEW_WAYPOINT
-		$CMD_NEW_GROUP
-		$CMD_NEW_ROUTE
-		$CMD_NEW_BRANCH
+		$CTX_CMD_NEW_WAYPOINT
+		$CTX_CMD_NEW_GROUP
+		$CTX_CMD_NEW_ROUTE
+		$CTX_CMD_NEW_BRANCH
 
 		allCopyCmds
 		allCutCmds
@@ -84,97 +85,97 @@ BEGIN
 }
 
 
-our $CMD_COPY_WAYPOINT  = 10010;
-our $CMD_COPY_WAYPOINTS = 10011;
-our $CMD_COPY_GROUP     = 10020;
-our $CMD_COPY_GROUPS    = 10021;
-our $CMD_COPY_ROUTE     = 10030;
-our $CMD_COPY_ROUTES    = 10031;
-our $CMD_COPY_TRACK     = 10040;
-our $CMD_COPY_TRACKS    = 10041;
-our $CMD_COPY_ALL       = 10099;
+our $CTX_CMD_COPY_WAYPOINT  = 10010;
+our $CTX_CMD_COPY_WAYPOINTS = 10011;
+our $CTX_CMD_COPY_GROUP     = 10020;
+our $CTX_CMD_COPY_GROUPS    = 10021;
+our $CTX_CMD_COPY_ROUTE     = 10030;
+our $CTX_CMD_COPY_ROUTES    = 10031;
+our $CTX_CMD_COPY_TRACK     = 10040;
+our $CTX_CMD_COPY_TRACKS    = 10041;
+our $CTX_CMD_COPY_ALL       = 10099;
 
-our $CMD_CUT_WAYPOINT  = 10110;
-our $CMD_CUT_WAYPOINTS = 10111;
-our $CMD_CUT_GROUP     = 10120;
-our $CMD_CUT_GROUPS    = 10121;
-our $CMD_CUT_ROUTE     = 10130;
-our $CMD_CUT_ROUTES    = 10131;
-our $CMD_CUT_TRACK     = 10140;
-our $CMD_CUT_TRACKS    = 10141;
-our $CMD_CUT_ALL       = 10199;
+our $CTX_CMD_CUT_WAYPOINT  = 10110;
+our $CTX_CMD_CUT_WAYPOINTS = 10111;
+our $CTX_CMD_CUT_GROUP     = 10120;
+our $CTX_CMD_CUT_GROUPS    = 10121;
+our $CTX_CMD_CUT_ROUTE     = 10130;
+our $CTX_CMD_CUT_ROUTES    = 10131;
+our $CTX_CMD_CUT_TRACK     = 10140;
+our $CTX_CMD_CUT_TRACKS    = 10141;
+our $CTX_CMD_CUT_ALL       = 10199;
 
-our $CMD_PASTE          = 10300;
-our $CMD_PASTE_NEW      = 10301;
+our $CTX_CMD_PASTE          = 10300;
+our $CTX_CMD_PASTE_NEW      = 10301;
 
-our $CMD_DELETE_WAYPOINT   = 10410;
-our $CMD_DELETE_GROUP      = 10420;
-our $CMD_DELETE_GROUP_WPS  = 10421;
-our $CMD_DELETE_ROUTE      = 10430;
-our $CMD_REMOVE_ROUTEPOINT = 10431;
-our $CMD_DELETE_TRACK      = 10440;
-our $CMD_DELETE_BRANCH     = 10450;
-our $CMD_DELETE_ALL        = 10499;
+our $CTX_CMD_DELETE_WAYPOINT   = 10410;
+our $CTX_CMD_DELETE_GROUP      = 10420;
+our $CTX_CMD_DELETE_GROUP_WPS  = 10421;
+our $CTX_CMD_DELETE_ROUTE      = 10430;
+our $CTX_CMD_REMOVE_ROUTEPOINT = 10431;
+our $CTX_CMD_DELETE_TRACK      = 10440;
+our $CTX_CMD_DELETE_BRANCH     = 10450;
+our $CTX_CMD_DELETE_ALL        = 10499;
 
-our $CMD_NEW_WAYPOINT   = 10510;
-our $CMD_NEW_GROUP      = 10520;
-our $CMD_NEW_ROUTE      = 10530;
-our $CMD_NEW_BRANCH     = 10550;
+our $CTX_CMD_NEW_WAYPOINT   = 10510;
+our $CTX_CMD_NEW_GROUP      = 10520;
+our $CTX_CMD_NEW_ROUTE      = 10530;
+our $CTX_CMD_NEW_BRANCH     = 10550;
 
 
 my %CMD_COPY_INTENT = (
-	$CMD_COPY_WAYPOINT  => 'waypoint',
-	$CMD_COPY_WAYPOINTS => 'waypoints',
-	$CMD_COPY_GROUP     => 'group',
-	$CMD_COPY_GROUPS    => 'groups',
-	$CMD_COPY_ROUTE     => 'route',
-	$CMD_COPY_ROUTES    => 'routes',
-	$CMD_COPY_TRACK     => 'track',
-	$CMD_COPY_TRACKS    => 'tracks',
-	$CMD_COPY_ALL       => 'all',
+	$CTX_CMD_COPY_WAYPOINT  => 'waypoint',
+	$CTX_CMD_COPY_WAYPOINTS => 'waypoints',
+	$CTX_CMD_COPY_GROUP     => 'group',
+	$CTX_CMD_COPY_GROUPS    => 'groups',
+	$CTX_CMD_COPY_ROUTE     => 'route',
+	$CTX_CMD_COPY_ROUTES    => 'routes',
+	$CTX_CMD_COPY_TRACK     => 'track',
+	$CTX_CMD_COPY_TRACKS    => 'tracks',
+	$CTX_CMD_COPY_ALL       => 'all',
 );
 
 my %CMD_CUT_INTENT = (
-	$CMD_CUT_WAYPOINT  => 'waypoint',
-	$CMD_CUT_WAYPOINTS => 'waypoints',
-	$CMD_CUT_GROUP     => 'group',
-	$CMD_CUT_GROUPS    => 'groups',
-	$CMD_CUT_ROUTE     => 'route',
-	$CMD_CUT_ROUTES    => 'routes',
-	$CMD_CUT_TRACK     => 'track',
-	$CMD_CUT_TRACKS    => 'tracks',
-	$CMD_CUT_ALL       => 'all',
+	$CTX_CMD_CUT_WAYPOINT  => 'waypoint',
+	$CTX_CMD_CUT_WAYPOINTS => 'waypoints',
+	$CTX_CMD_CUT_GROUP     => 'group',
+	$CTX_CMD_CUT_GROUPS    => 'groups',
+	$CTX_CMD_CUT_ROUTE     => 'route',
+	$CTX_CMD_CUT_ROUTES    => 'routes',
+	$CTX_CMD_CUT_TRACK     => 'track',
+	$CTX_CMD_CUT_TRACKS    => 'tracks',
+	$CTX_CMD_CUT_ALL       => 'all',
 );
 
 my @ALL_COPY_CMDS = (
-	$CMD_COPY_WAYPOINT,  $CMD_COPY_WAYPOINTS,
-	$CMD_COPY_GROUP,     $CMD_COPY_GROUPS,
-	$CMD_COPY_ROUTE,     $CMD_COPY_ROUTES,
-	$CMD_COPY_TRACK,     $CMD_COPY_TRACKS,
-	$CMD_COPY_ALL,
+	$CTX_CMD_COPY_WAYPOINT,  $CTX_CMD_COPY_WAYPOINTS,
+	$CTX_CMD_COPY_GROUP,     $CTX_CMD_COPY_GROUPS,
+	$CTX_CMD_COPY_ROUTE,     $CTX_CMD_COPY_ROUTES,
+	$CTX_CMD_COPY_TRACK,     $CTX_CMD_COPY_TRACKS,
+	$CTX_CMD_COPY_ALL,
 );
 
 my @ALL_CUT_CMDS = (
-	$CMD_CUT_WAYPOINT,  $CMD_CUT_WAYPOINTS,
-	$CMD_CUT_GROUP,     $CMD_CUT_GROUPS,
-	$CMD_CUT_ROUTE,     $CMD_CUT_ROUTES,
-	$CMD_CUT_TRACK,     $CMD_CUT_TRACKS,
-	$CMD_CUT_ALL,
+	$CTX_CMD_CUT_WAYPOINT,  $CTX_CMD_CUT_WAYPOINTS,
+	$CTX_CMD_CUT_GROUP,     $CTX_CMD_CUT_GROUPS,
+	$CTX_CMD_CUT_ROUTE,     $CTX_CMD_CUT_ROUTES,
+	$CTX_CMD_CUT_TRACK,     $CTX_CMD_CUT_TRACKS,
+	$CTX_CMD_CUT_ALL,
 );
 
 my @ALL_NEW_CMDS = (
-	$CMD_NEW_WAYPOINT, $CMD_NEW_GROUP, $CMD_NEW_ROUTE, $CMD_NEW_BRANCH,
+	$CTX_CMD_NEW_WAYPOINT, $CTX_CMD_NEW_GROUP, $CTX_CMD_NEW_ROUTE, $CTX_CMD_NEW_BRANCH,
 );
 
 my @ALL_DELETE_CMDS = (
-	$CMD_DELETE_WAYPOINT,
-	$CMD_DELETE_GROUP,
-	$CMD_DELETE_GROUP_WPS,
-	$CMD_DELETE_ROUTE,
-	$CMD_REMOVE_ROUTEPOINT,
-	$CMD_DELETE_TRACK,
-	$CMD_DELETE_BRANCH,
-	$CMD_DELETE_ALL,
+	$CTX_CMD_DELETE_WAYPOINT,
+	$CTX_CMD_DELETE_GROUP,
+	$CTX_CMD_DELETE_GROUP_WPS,
+	$CTX_CMD_DELETE_ROUTE,
+	$CTX_CMD_REMOVE_ROUTEPOINT,
+	$CTX_CMD_DELETE_TRACK,
+	$CTX_CMD_DELETE_BRANCH,
+	$CTX_CMD_DELETE_ALL,
 );
 
 our $clipboard = undef;
@@ -218,7 +219,7 @@ sub getClipboardText
 {
 	return '' if !$clipboard;
 	my $n    = scalar @{$clipboard->{items}};
-	my $src  = $clipboard->{source} eq 'browser' ? 'B' : 'E80';
+	my $src  = $clipboard->{source} eq 'database' ? 'DB' : 'E80';
 	my $verb = $clipboard->{cut} ? "cut:$clipboard->{intent}" : $clipboard->{intent};
 	return "[$src] $verb ($n)";
 }
@@ -238,11 +239,11 @@ sub _updateStatusBar
 sub _analyzeNodes
 {
 	my ($panel, @nodes) = @_;
-	my %c = map { $_ => 0 } qw(wp route track group branch header);
+	my %c = map { $_ => 0 } qw(wp route track group branch header header_groups header_routes header_tracks);
 	for my $n (@nodes)
 	{
 		my $t = $n->{type} // '';
-		if ($panel eq 'browser')
+		if ($panel eq 'database')
 		{
 			if ($t eq 'route_point')
 			{
@@ -268,7 +269,14 @@ sub _analyzeNodes
 			$c{route}++  if $t eq 'route';
 			$c{track}++  if $t eq 'track';
 			$c{group}++  if $t eq 'group' || $t eq 'my_waypoints';
-			$c{header}++ if $t eq 'header';
+			if ($t eq 'header')
+			{
+				my $k = $n->{kind} // '';
+				$c{header}++;
+				$c{header_groups}++ if $k eq 'groups';
+				$c{header_routes}++ if $k eq 'routes';
+				$c{header_tracks}++ if $k eq 'tracks';
+			}
 		}
 	}
 	return %c;
@@ -279,20 +287,24 @@ sub _analyzeNodes
 # getNewMenuItems
 #----------------------------------------------------
 # Returns list of { id, label } for New-object operations.
-# winBrowser always offers all four; winE80 is context-sensitive
+# winDatabase always offers all four; winE80 is context-sensitive
 # (tracks header and track nodes offer nothing — TRACK API is read-only).
 
 sub getNewMenuItems
 {
 	my ($panel, $right_click_node) = @_;
 
-	if ($panel eq 'browser')
+	if ($panel eq 'database')
 	{
 		return (
-			{ id => $CMD_NEW_BRANCH,   label => 'New Branch'   },
-			{ id => $CMD_NEW_GROUP,    label => 'New Group'    },
-			{ id => $CMD_NEW_ROUTE,    label => 'New Route'    },
-			{ id => $CMD_NEW_WAYPOINT, label => 'New Waypoint' },
+			{ id => $CTX_CMD_NEW_BRANCH, label => 'New Branch' },
+		) if ($right_click_node->{type} // '') eq 'root';
+
+		return (
+			{ id => $CTX_CMD_NEW_BRANCH,   label => 'New Branch'   },
+			{ id => $CTX_CMD_NEW_GROUP,    label => 'New Group'    },
+			{ id => $CTX_CMD_NEW_ROUTE,    label => 'New Route'    },
+			{ id => $CTX_CMD_NEW_WAYPOINT, label => 'New Waypoint' },
 		);
 	}
 
@@ -301,21 +313,21 @@ sub getNewMenuItems
 	my $kind = $right_click_node->{kind} // '';
 
 	return (
-		{ id => $CMD_NEW_GROUP,    label => 'New Group'    },
-		{ id => $CMD_NEW_WAYPOINT, label => 'New Waypoint' },
+		{ id => $CTX_CMD_NEW_GROUP,    label => 'New Group'    },
+		{ id => $CTX_CMD_NEW_WAYPOINT, label => 'New Waypoint' },
 	) if $t eq 'header' && $kind eq 'groups';
 
 	return (
-		{ id => $CMD_NEW_WAYPOINT, label => 'New Waypoint' },
+		{ id => $CTX_CMD_NEW_WAYPOINT, label => 'New Waypoint' },
 	) if $t eq 'my_waypoints' || $t eq 'group';
 
 	return (
-		{ id => $CMD_NEW_ROUTE, label => 'New Route' },
+		{ id => $CTX_CMD_NEW_ROUTE, label => 'New Route' },
 	) if $t eq 'header' && $kind eq 'routes';
 
 	return (
-		{ id => $CMD_NEW_ROUTE,    label => 'New Route'    },
-		{ id => $CMD_NEW_WAYPOINT, label => 'New Waypoint' },
+		{ id => $CTX_CMD_NEW_ROUTE,    label => 'New Route'    },
+		{ id => $CTX_CMD_NEW_WAYPOINT, label => 'New Waypoint' },
 	) if $t eq 'route';
 
 	return ();  # tracks header, track nodes — read-only
@@ -338,63 +350,130 @@ sub getDeleteMenuItems
 	my $ot   = ($right_click_node->{data} // {})->{obj_type}  // '';
 	my $nt   = ($right_click_node->{data} // {})->{node_type} // '';
 
-	if ($panel eq 'browser')
+	if ($panel eq 'database')
 	{
-		return ({ id => $CMD_REMOVE_ROUTEPOINT, label => 'Remove RoutePoint' })
+		return () if ($t // '') eq 'root';
+
+		return ({ id => $CTX_CMD_REMOVE_ROUTEPOINT, label => 'Remove RoutePoint' })
 			if $t eq 'route_point';
+
+		my $dbh = connectDB();
 
 		if ($t eq 'object')
 		{
-			return ({ id => $CMD_DELETE_WAYPOINT, label => $n > 1 ? 'Delete Waypoints' : 'Delete Waypoint' })
-				if $ot eq 'waypoint';
-
-			return ({ id => $CMD_DELETE_ROUTE, label => $n > 1 ? 'Delete Routes' : 'Delete Route' })
+			if ($ot eq 'waypoint')
+			{
+				my $in_routes = 0;
+				if ($dbh)
+				{
+					for my $node (@nodes)
+					{
+						my $uuid = ($node->{data} // {})->{uuid};
+						next if !$uuid;
+						if (getWaypointRouteRefCount($dbh, $uuid) > 0)
+						{
+							$in_routes = 1;
+							last;
+						}
+					}
+				}
+				disconnectDB($dbh) if $dbh;
+				return () if $in_routes;
+				return ({ id => $CTX_CMD_DELETE_WAYPOINT,
+				          label => $n > 1 ? 'Delete Waypoints' : 'Delete Waypoint' });
+			}
+			disconnectDB($dbh) if $dbh;
+			return ({ id => $CTX_CMD_DELETE_ROUTE, label => $n > 1 ? 'Delete Routes' : 'Delete Route' })
 				if $ot eq 'route';
-
-			return ({ id => $CMD_DELETE_TRACK, label => $n > 1 ? 'Delete Tracks' : 'Delete Track' })
+			return ({ id => $CTX_CMD_DELETE_TRACK, label => $n > 1 ? 'Delete Tracks' : 'Delete Track' })
 				if $ot eq 'track';
+			return ();
 		}
 
 		if ($t eq 'collection')
 		{
-			return (
-				{ id => $CMD_DELETE_GROUP,     label => $n > 1 ? 'Delete Groups'             : 'Delete Group'             },
-				{ id => $CMD_DELETE_GROUP_WPS, label => $n > 1 ? 'Delete Groups + Waypoints' : 'Delete Group + Waypoints' },
-			) if $nt eq 'group';
-
-			return ({ id => $CMD_DELETE_BRANCH, label => 'Delete Branch' });
+			if ($nt eq 'group')
+			{
+				my ($all_empty, $any_in_routes) = (1, 0);
+				if ($dbh)
+				{
+					for my $node (@nodes)
+					{
+						my $uuid = ($node->{data} // {})->{uuid};
+						next if !$uuid;
+						my $counts = getCollectionCounts($dbh, $uuid);
+						my $total  = $counts->{collections} + $counts->{waypoints}
+						           + $counts->{routes}      + $counts->{tracks};
+						$all_empty = 0 if $total > 0;
+						next if $any_in_routes;
+						for my $wp (@{getGroupWaypoints($dbh, $uuid) // []})
+						{
+							if (getWaypointRouteRefCount($dbh, $wp->{uuid}) > 0)
+							{
+								$any_in_routes = 1;
+								last;
+							}
+						}
+					}
+				}
+				disconnectDB($dbh) if $dbh;
+				my @result;
+				push @result, { id => $CTX_CMD_DELETE_GROUP,
+				                label => $n > 1 ? 'Delete Groups' : 'Delete Group' }
+					if $all_empty;
+				push @result, { id => $CTX_CMD_DELETE_GROUP_WPS,
+				                label => $n > 1 ? 'Delete Groups + Waypoints' : 'Delete Group + Waypoints' }
+					unless $any_in_routes;
+				return @result;
+			}
+			else  # branch
+			{
+				my $uuid = ($right_click_node->{data} // {})->{uuid};
+				my $show  = 1;
+				if ($uuid && $dbh)
+				{
+					my $counts = getCollectionCounts($dbh, $uuid);
+					my $total  = $counts->{collections} + $counts->{waypoints}
+					           + $counts->{routes}      + $counts->{tracks};
+					$show = 0 if $total > 0;
+				}
+				disconnectDB($dbh) if $dbh;
+				return $show ? ({ id => $CTX_CMD_DELETE_BRANCH, label => 'Delete Branch' }) : ();
+			}
 		}
+
+		disconnectDB($dbh) if $dbh;
 	}
 	else  # e80
 	{
 		return (
-			{ id => $CMD_REMOVE_ROUTEPOINT, label => 'Remove RoutePoint' },
-			{ id => $CMD_DELETE_WAYPOINT,   label => 'Delete Waypoint'   },
+			{ id => $CTX_CMD_REMOVE_ROUTEPOINT, label => 'Remove RoutePoint' },
+			{ id => $CTX_CMD_DELETE_WAYPOINT,   label => 'Delete Waypoint'   },
 		) if $t eq 'route_point';
 
-		return ({ id => $CMD_DELETE_WAYPOINT, label => $n > 1 ? 'Delete Waypoints' : 'Delete Waypoint' })
+		return ({ id => $CTX_CMD_DELETE_WAYPOINT, label => $n > 1 ? 'Delete Waypoints' : 'Delete Waypoint' })
 			if $t eq 'waypoint';
 
-		return ({ id => $CMD_DELETE_ROUTE, label => $n > 1 ? 'Delete Routes' : 'Delete Route' })
+		return ({ id => $CTX_CMD_DELETE_ROUTE, label => $n > 1 ? 'Delete Routes' : 'Delete Route' })
 			if $t eq 'route';
 
 		return (
-			{ id => $CMD_DELETE_GROUP,     label => $n > 1 ? 'Delete Groups'             : 'Delete Group'             },
-			{ id => $CMD_DELETE_GROUP_WPS, label => $n > 1 ? 'Delete Groups + Waypoints' : 'Delete Group + Waypoints' },
+			{ id => $CTX_CMD_DELETE_GROUP,     label => $n > 1 ? 'Delete Groups'             : 'Delete Group'             },
+			{ id => $CTX_CMD_DELETE_GROUP_WPS, label => $n > 1 ? 'Delete Groups + Waypoints' : 'Delete Group + Waypoints' },
 		) if $t eq 'group';
 
-		return ({ id => $CMD_DELETE_GROUP_WPS, label => 'Delete Group + Waypoints' })
+		return ({ id => $CTX_CMD_DELETE_GROUP_WPS, label => 'Delete Group + Waypoints' })
 			if $t eq 'my_waypoints';
 
-		return ({ id => $CMD_DELETE_TRACK, label => $n > 1 ? 'Delete Tracks' : 'Delete Track' })
+		return ({ id => $CTX_CMD_DELETE_TRACK, label => $n > 1 ? 'Delete Tracks' : 'Delete Track' })
 			if $t eq 'track';
 
-		return ({ id => $CMD_DELETE_ROUTE, label => 'Delete Routes' })
+		return ({ id => $CTX_CMD_DELETE_ROUTE, label => 'Delete Routes' })
 			if $t eq 'header' && $kind eq 'routes';
 
 		return (
-			{ id => $CMD_DELETE_GROUP,     label => 'Delete Groups'             },
-			{ id => $CMD_DELETE_GROUP_WPS, label => 'Delete Groups + Waypoints' },
+			{ id => $CTX_CMD_DELETE_GROUP,     label => 'Delete Groups'             },
+			{ id => $CTX_CMD_DELETE_GROUP_WPS, label => 'Delete Groups + Waypoints' },
 		) if $t eq 'header' && $kind eq 'groups';
 	}
 
@@ -426,40 +505,49 @@ sub getCopyMenuItems
 	if ($only_wp)
 	{
 		push @items, $c{wp} == 1
-			? { id => $CMD_COPY_WAYPOINT,  label => 'Copy Waypoint'  }
-			: { id => $CMD_COPY_WAYPOINTS, label => 'Copy Waypoints' };
+			? { id => $CTX_CMD_COPY_WAYPOINT,  label => 'Copy Waypoint'  }
+			: { id => $CTX_CMD_COPY_WAYPOINTS, label => 'Copy Waypoints' };
 	}
-	elsif ($only_track)
+	elsif ($only_track && $panel eq 'e80')
 	{
 		push @items, $c{track} == 1
-			? { id => $CMD_COPY_TRACK,  label => 'Copy Track'  }
-			: { id => $CMD_COPY_TRACKS, label => 'Copy Tracks' };
+			? { id => $CTX_CMD_COPY_TRACK,  label => 'Copy Track'  }
+			: { id => $CTX_CMD_COPY_TRACKS, label => 'Copy Tracks' };
 	}
 	elsif ($only_route)
 	{
 		push @items, $c{route} == 1
-			? { id => $CMD_COPY_ROUTE,  label => 'Copy Route'  }
-			: { id => $CMD_COPY_ROUTES, label => 'Copy Routes' };
-		push @items, { id => $CMD_COPY_WAYPOINTS, label => 'Copy Waypoints' };
+			? { id => $CTX_CMD_COPY_ROUTE,  label => 'Copy Route'  }
+			: { id => $CTX_CMD_COPY_ROUTES, label => 'Copy Routes' };
+		push @items, { id => $CTX_CMD_COPY_WAYPOINTS, label => 'Copy Waypoints' };
 	}
 	elsif ($only_group)
 	{
 		push @items, $c{group} == 1
-			? { id => $CMD_COPY_GROUP,  label => 'Copy Group'  }
-			: { id => $CMD_COPY_GROUPS, label => 'Copy Groups' };
-		push @items, { id => $CMD_COPY_WAYPOINTS, label => 'Copy Waypoints' };
+			? { id => $CTX_CMD_COPY_GROUP,  label => 'Copy Group'  }
+			: { id => $CTX_CMD_COPY_GROUPS, label => 'Copy Groups' };
+		push @items, { id => $CTX_CMD_COPY_WAYPOINTS, label => 'Copy Waypoints' };
 	}
-	elsif ($c{branch} || $c{header})
+	elsif ($c{branch} || $c{header_groups})
 	{
-		push @items, { id => $CMD_COPY_ALL,       label => 'Copy All'       };
-		push @items, { id => $CMD_COPY_GROUPS,    label => 'Copy Groups'    };
-		push @items, { id => $CMD_COPY_ROUTES,    label => 'Copy Routes'    };
-		push @items, { id => $CMD_COPY_WAYPOINTS, label => 'Copy Waypoints' };
-		push @items, { id => $CMD_COPY_TRACKS,    label => 'Copy Tracks'    };
+		push @items, { id => $CTX_CMD_COPY_ALL,       label => 'Copy All'       };
+		push @items, { id => $CTX_CMD_COPY_GROUPS,    label => 'Copy Groups'    };
+		push @items, { id => $CTX_CMD_COPY_ROUTES,    label => 'Copy Routes'    };
+		push @items, { id => $CTX_CMD_COPY_WAYPOINTS, label => 'Copy Waypoints' };
+		push @items, { id => $CTX_CMD_COPY_TRACKS,    label => 'Copy Tracks'    } if $panel eq 'e80';
+	}
+	elsif ($c{header_routes})
+	{
+		push @items, { id => $CTX_CMD_COPY_ROUTES,    label => 'Copy Routes'    };
+		push @items, { id => $CTX_CMD_COPY_WAYPOINTS, label => 'Copy Waypoints' };
+	}
+	elsif ($c{header_tracks})
+	{
+		push @items, { id => $CTX_CMD_COPY_TRACKS, label => 'Copy Tracks' };
 	}
 	elsif ($c{wp})
 	{
-		push @items, { id => $CMD_COPY_WAYPOINTS, label => 'Copy Waypoints' };
+		push @items, { id => $CTX_CMD_COPY_WAYPOINTS, label => 'Copy Waypoints' };
 	}
 
 	return @items;
@@ -489,40 +577,49 @@ sub getCutMenuItems
 	if ($only_wp)
 	{
 		push @items, $c{wp} == 1
-			? { id => $CMD_CUT_WAYPOINT,  label => 'Cut Waypoint'  }
-			: { id => $CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
+			? { id => $CTX_CMD_CUT_WAYPOINT,  label => 'Cut Waypoint'  }
+			: { id => $CTX_CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
 	}
 	elsif ($only_track)
 	{
 		push @items, $c{track} == 1
-			? { id => $CMD_CUT_TRACK,  label => 'Cut Track'  }
-			: { id => $CMD_CUT_TRACKS, label => 'Cut Tracks' };
+			? { id => $CTX_CMD_CUT_TRACK,  label => 'Cut Track'  }
+			: { id => $CTX_CMD_CUT_TRACKS, label => 'Cut Tracks' };
 	}
 	elsif ($only_route)
 	{
 		push @items, $c{route} == 1
-			? { id => $CMD_CUT_ROUTE,  label => 'Cut Route'  }
-			: { id => $CMD_CUT_ROUTES, label => 'Cut Routes' };
-		push @items, { id => $CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
+			? { id => $CTX_CMD_CUT_ROUTE,  label => 'Cut Route'  }
+			: { id => $CTX_CMD_CUT_ROUTES, label => 'Cut Routes' };
+		push @items, { id => $CTX_CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
 	}
 	elsif ($only_group)
 	{
 		push @items, $c{group} == 1
-			? { id => $CMD_CUT_GROUP,  label => 'Cut Group'  }
-			: { id => $CMD_CUT_GROUPS, label => 'Cut Groups' };
-		push @items, { id => $CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
+			? { id => $CTX_CMD_CUT_GROUP,  label => 'Cut Group'  }
+			: { id => $CTX_CMD_CUT_GROUPS, label => 'Cut Groups' };
+		push @items, { id => $CTX_CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
 	}
-	elsif ($c{branch} || $c{header})
+	elsif ($c{branch} || $c{header_groups})
 	{
-		push @items, { id => $CMD_CUT_ALL,       label => 'Cut All'       };
-		push @items, { id => $CMD_CUT_GROUPS,    label => 'Cut Groups'    };
-		push @items, { id => $CMD_CUT_ROUTES,    label => 'Cut Routes'    };
-		push @items, { id => $CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
-		push @items, { id => $CMD_CUT_TRACKS,    label => 'Cut Tracks'    };
+		push @items, { id => $CTX_CMD_CUT_ALL,       label => 'Cut All'       };
+		push @items, { id => $CTX_CMD_CUT_GROUPS,    label => 'Cut Groups'    };
+		push @items, { id => $CTX_CMD_CUT_ROUTES,    label => 'Cut Routes'    };
+		push @items, { id => $CTX_CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
+		push @items, { id => $CTX_CMD_CUT_TRACKS,    label => 'Cut Tracks'    };
+	}
+	elsif ($c{header_routes})
+	{
+		push @items, { id => $CTX_CMD_CUT_ROUTES,    label => 'Cut Routes'    };
+		push @items, { id => $CTX_CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
+	}
+	elsif ($c{header_tracks})
+	{
+		push @items, { id => $CTX_CMD_CUT_TRACKS, label => 'Cut Tracks' };
 	}
 	elsif ($c{wp})
 	{
-		push @items, { id => $CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
+		push @items, { id => $CTX_CMD_CUT_WAYPOINTS, label => 'Cut Waypoints' };
 	}
 
 	return @items;
@@ -533,8 +630,8 @@ sub getCutMenuItems
 # _canPasteBase / canPaste / canPasteNew
 #----------------------------------------------------
 # _canPasteBase: pure target-type compatibility, no source guard.
-# canPaste:      adds source guard (browser->browser non-cut = no-op, disabled).
-# canPasteNew:   calls _canPasteBase directly so it stays enabled for intra-browser
+# canPaste:      adds source guard (database->database non-cut = no-op, disabled).
+# canPasteNew:   calls _canPasteBase directly so it stays enabled for intra-database
 #                copy (Paste New is the correct duplication path there).
 
 sub _canPasteBase
@@ -547,29 +644,31 @@ sub _canPasteBase
 
 	if ($intent =~ /^waypoints?$/)
 	{
-		return 1 if $panel eq 'browser';
+		return 1 if $panel eq 'database';
 		return 1 if $panel eq 'e80'
-			&& $t =~ /^(header|my_waypoints|group|route|waypoint|route_point)$/;
+			&& ($t =~ /^(my_waypoints|group|route|waypoint|route_point)$/
+				|| ($t eq 'header' && ($target_node->{kind} // '') eq 'groups'));
 	}
 	elsif ($intent =~ /^groups?$/)
 	{
-		return 1 if $panel eq 'browser' && $t eq 'collection';
+		return 1 if $panel eq 'database' && ($t eq 'collection' || $t eq 'root');
 		return 1 if $panel eq 'e80'
 			&& $t eq 'header' && ($target_node->{kind} // '') eq 'groups';
 	}
 	elsif ($intent =~ /^routes?$/)
 	{
-		return 1 if $panel eq 'browser' && $t eq 'collection';
+		return 1 if $panel eq 'database' && ($t eq 'collection' || $t eq 'root');
 		return 1 if $panel eq 'e80'
 			&& $t eq 'header' && ($target_node->{kind} // '') eq 'routes';
 	}
 	elsif ($intent =~ /^tracks?$/)
 	{
-		return 1 if $panel eq 'browser' && $t eq 'collection';
+		return 1 if $panel eq 'database' && ($t eq 'collection' || $t eq 'root');
 	}
 	elsif ($intent eq 'all')
 	{
-		return 1 if $panel eq 'browser' && $t eq 'collection';
+		return 1 if $panel eq 'database' && ($t eq 'collection' || $t eq 'root');
+		return 1 if $panel eq 'e80' && $t eq 'root';
 	}
 
 	return 0;
@@ -580,7 +679,10 @@ sub canPaste
 {
 	my ($target_node, $panel) = @_;
 	return 0 if !$clipboard;
-	return 0 if $clipboard->{source} eq 'browser' && $panel eq 'browser' && !$clipboard->{cut};
+	return 0 if $clipboard->{source} eq 'database' && $panel eq 'database' && !$clipboard->{cut};
+	# D-CT-ALL → DB: only allow for non-root collection targets (move branch contents)
+	return 0 if $clipboard->{intent} eq 'all' && $clipboard->{source} eq 'database' && $panel eq 'database'
+		     && ($target_node->{type} // '') ne 'collection';
 	return _canPasteBase($target_node, $panel);
 }
 
@@ -591,6 +693,13 @@ sub canPasteNew
 	return 0 if !$clipboard;
 	return 0 if $clipboard->{cut};
 	return 0 if $clipboard->{intent} =~ /^tracks?$/;
+	# D-CP-ALL → non-root DB collection: allow (duplicate branch contents with fresh UUIDs).
+	# All other ALL intent combinations: block.
+	if ($clipboard->{intent} eq 'all')
+	{
+		return 0 if $clipboard->{source} ne 'database' || $panel ne 'database';
+		return 0 if ($target_node->{type} // '') ne 'collection';
+	}
 	return _canPasteBase($target_node, $panel);
 }
 
@@ -602,23 +711,23 @@ sub canPasteNew
 sub _cmdLabel
 {
 	my ($cmd_id) = @_;
-	return "PASTE"           if $cmd_id == $CMD_PASTE;
-	return "PASTE NEW"       if $cmd_id == $CMD_PASTE_NEW;
+	return "PASTE"           if $cmd_id == $CTX_CMD_PASTE;
+	return "PASTE NEW"       if $cmd_id == $CTX_CMD_PASTE_NEW;
 	my $ci = $CMD_COPY_INTENT{$cmd_id};
 	return "COPY " . uc($ci) if $ci;
 	my $xi = $CMD_CUT_INTENT{$cmd_id};
 	return "CUT " . uc($xi)  if $xi;
-	return "DELETE WAYPOINT"   if $cmd_id == $CMD_DELETE_WAYPOINT;
-	return "DELETE GROUP"      if $cmd_id == $CMD_DELETE_GROUP;
-	return "DELETE GROUP+WPS"  if $cmd_id == $CMD_DELETE_GROUP_WPS;
-	return "DELETE ROUTE"      if $cmd_id == $CMD_DELETE_ROUTE;
-	return "REMOVE ROUTEPOINT" if $cmd_id == $CMD_REMOVE_ROUTEPOINT;
-	return "DELETE TRACK"      if $cmd_id == $CMD_DELETE_TRACK;
-	return "DELETE BRANCH"     if $cmd_id == $CMD_DELETE_BRANCH;
-	return "NEW WAYPOINT"      if $cmd_id == $CMD_NEW_WAYPOINT;
-	return "NEW GROUP"         if $cmd_id == $CMD_NEW_GROUP;
-	return "NEW ROUTE"         if $cmd_id == $CMD_NEW_ROUTE;
-	return "NEW BRANCH"        if $cmd_id == $CMD_NEW_BRANCH;
+	return "DELETE WAYPOINT"   if $cmd_id == $CTX_CMD_DELETE_WAYPOINT;
+	return "DELETE GROUP"      if $cmd_id == $CTX_CMD_DELETE_GROUP;
+	return "DELETE GROUP+WPS"  if $cmd_id == $CTX_CMD_DELETE_GROUP_WPS;
+	return "DELETE ROUTE"      if $cmd_id == $CTX_CMD_DELETE_ROUTE;
+	return "REMOVE ROUTEPOINT" if $cmd_id == $CTX_CMD_REMOVE_ROUTEPOINT;
+	return "DELETE TRACK"      if $cmd_id == $CTX_CMD_DELETE_TRACK;
+	return "DELETE BRANCH"     if $cmd_id == $CTX_CMD_DELETE_BRANCH;
+	return "NEW WAYPOINT"      if $cmd_id == $CTX_CMD_NEW_WAYPOINT;
+	return "NEW GROUP"         if $cmd_id == $CTX_CMD_NEW_GROUP;
+	return "NEW ROUTE"         if $cmd_id == $CTX_CMD_NEW_ROUTE;
+	return "NEW BRANCH"        if $cmd_id == $CTX_CMD_NEW_BRANCH;
 	return "CMD_$cmd_id";
 }
 
@@ -630,11 +739,11 @@ sub onContextMenuCommand
 	my $label = _cmdLabel($cmd_id);
 	display(-1, 0, "===== $label ($panel) STARTED =====", 0, $UTILS_COLOR_LIGHT_MAGENTA);
 
-	if ($cmd_id == $CMD_PASTE)
+	if ($cmd_id == $CTX_CMD_PASTE)
 	{
 		nmOps::doPaste($panel, $right_click_node, $tree);
 	}
-	elsif ($cmd_id == $CMD_PASTE_NEW)
+	elsif ($cmd_id == $CTX_CMD_PASTE_NEW)
 	{
 		nmOps::doPasteNew($panel, $right_click_node, $tree);
 	}

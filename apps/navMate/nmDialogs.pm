@@ -10,18 +10,36 @@ use warnings;
 use threads;
 use threads::shared;
 use Wx qw(:everything);
-use Pub::Utils qw(warning);
+use Pub::Utils qw(warning getAppFrame);
+use Pub::WX::Dialogs;
 
 
 BEGIN
 {
 	use Exporter qw(import);
 	our @EXPORT = qw(
+		$suppress_confirm
+		confirmDialog
 		showNewBranch
 		showNewGroup
 		showNewRoute
 		showNewWaypoint
 	);
+}
+
+
+our $suppress_confirm :shared = 0;
+
+
+sub confirmDialog
+{
+	my ($win, $msg, $title) = @_;
+	return 1 if $suppress_confirm;
+	$win = getAppFrame() if !$win;
+	my $dlg = Wx::MessageDialog->new($win, $msg, $title, wxYES | wxNO | wxCENTRE);
+	my $rslt = $dlg->ShowModal();
+	$dlg->Destroy();
+	return ($rslt == wxID_YES) ? 1 : 0;
 }
 
 
@@ -115,8 +133,7 @@ sub _showDialog
 			$val =~ s/^\s+|\s+$//g;
 			if ($c->{spec}{required} && $val eq '')
 			{
-				Wx::MessageBox($c->{spec}{label} . " is required.",
-					$title, wxOK | wxICON_WARNING, $parent);
+				okDialog($parent, $c->{spec}{label} . " is required.", $title);
 				$ok = 0;
 				last;
 			}

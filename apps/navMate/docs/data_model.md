@@ -5,7 +5,8 @@
 **[Architecture](architecture.md)** --
 **Data Model** --
 **[UI Model](ui_model.md)** --
-**[Implementation](implementation.md)**
+**[Implementation](implementation.md)** --
+**[Context Menu](context_menu.md)**
 
 ## Core Objects — WRT
 

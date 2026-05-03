@@ -2,7 +2,7 @@
 #---------------------------------------------
 # nmOpsDB.pm
 #---------------------------------------------
-# Browser-side (DB) context-menu operations for navMate.
+# Database-side (DB) context-menu operations for navMate.
 # Continuation of package nmOps (loaded by nmOps.pm).
 
 package nmOps;
@@ -10,6 +10,7 @@ use strict;
 use warnings;
 use Wx qw(:everything);
 use Pub::Utils qw(display warning error);
+use Pub::WX::Dialogs;
 use c_db;
 use a_defs;
 use a_utils;
@@ -20,14 +21,13 @@ use nmDialogs;
 # New items
 #----------------------------------------------------
 
-sub _newBrowserWaypoint
+sub _newDatabaseWaypoint
 {
 	my ($node, $tree) = @_;
 
 	if (($node->{type} // '') ne 'collection')
 	{
-		Wx::MessageBox("Right-click a folder to create a new Waypoint.",
-			"New Waypoint", wxOK | wxICON_INFORMATION, $tree);
+		warning(0, 0, "IMPLEMENTATION ERROR: _newDatabaseWaypoint: target is not a collection");
 		return;
 	}
 
@@ -38,10 +38,10 @@ sub _newBrowserWaypoint
 	my $lon = parseLatLon($data->{lon});
 	if (!(defined $lat && defined $lon))
 	{
-		Wx::MessageBox(
+		okDialog($tree,
 			"Could not parse Latitude or Longitude.\n" .
 			"Use decimal degrees (9.3617 N) or degrees and minutes (9 21.702 N).",
-			"New Waypoint", wxOK | wxICON_WARNING, $tree);
+			"New Waypoint");
 		return;
 	}
 
@@ -62,7 +62,7 @@ sub _newBrowserWaypoint
 		collection_uuid => $node->{data}{uuid},
 	);
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
@@ -70,10 +70,9 @@ sub _newCollection
 {
 	my ($node, $tree, $label, $node_type) = @_;
 
-	if (($node->{type} // '') ne 'collection')
+	if (($node->{type} // '') !~ /^(collection|root)$/)
 	{
-		Wx::MessageBox("Right-click a folder to create a new $label.",
-			"New $label", wxOK | wxICON_INFORMATION, $tree);
+		warning(0, 0, "IMPLEMENTATION ERROR: _newCollection: target is neither collection nor root");
 		return;
 	}
 
@@ -86,18 +85,17 @@ sub _newCollection
 	return if !$dbh;
 	insertCollection($dbh, $data->{name}, $node->{data}{uuid}, $node_type, $data->{comment});
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
-sub _newBrowserRoute
+sub _newDatabaseRoute
 {
 	my ($node, $tree) = @_;
 
 	if (($node->{type} // '') ne 'collection')
 	{
-		Wx::MessageBox("Right-click a folder to create a new Route.",
-			"New Route", wxOK | wxICON_INFORMATION, $tree);
+		warning(0, 0, "IMPLEMENTATION ERROR: _newDatabaseRoute: target is not a collection");
 		return;
 	}
 
@@ -108,7 +106,7 @@ sub _newBrowserRoute
 	return if !$dbh;
 	insertRoute($dbh, $data->{name}, _parseColor($data->{color}), $data->{comment}, $node->{data}{uuid});
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
@@ -116,7 +114,7 @@ sub _newBrowserRoute
 # Remove / Delete
 #----------------------------------------------------
 
-sub _deleteBrowserWaypoints
+sub _deleteDatabaseWaypoints
 {
 	my ($nodes, $tree) = @_;
 	my $dbh = connectDB();
@@ -126,9 +124,7 @@ sub _deleteBrowserWaypoints
 		if (getWaypointRouteRefCount($dbh, $node->{data}{uuid}) > 0)
 		{
 			disconnectDB($dbh);
-			Wx::MessageBox(
-				"One or more waypoints are used in routes — remove them from routes first.",
-				"Delete Waypoints", wxOK | wxICON_WARNING, $tree);
+			warning(0, 0, "IMPLEMENTATION ERROR: _deleteDatabaseWaypoints: waypoint in route reached delete handler");
 			return;
 		}
 	}
@@ -137,18 +133,16 @@ sub _deleteBrowserWaypoints
 	my $msg = $n == 1
 		? "Delete waypoint '$nodes->[0]{data}{name}'?"
 		: "Delete $n waypoints?";
-	my $rc = Wx::MessageBox($msg, "Confirm Delete",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return if $rc != wxYES;
+	return if !confirmDialog($tree, $msg, "Confirm Delete");
 	$dbh = connectDB();
 	return if !$dbh;
 	deleteWaypoint($dbh, $_->{data}{uuid}) for @$nodes;
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
-sub _deleteBrowserCollection
+sub _deleteDatabaseCollection
 {
 	my ($node, $tree, $label) = @_;
 
@@ -164,24 +158,21 @@ sub _deleteBrowserCollection
 	          + $counts->{routes}      + $counts->{tracks};
 	if ($total > 0)
 	{
-		Wx::MessageBox("'$name' is not empty — use a more specific delete command.",
-			"Delete $label", wxOK | wxICON_WARNING, $tree);
+		warning(0, 0, "IMPLEMENTATION ERROR: _deleteDatabaseCollection: non-empty collection reached delete handler");
 		return;
 	}
 
-	my $rc = Wx::MessageBox("Delete $label '$name'?", "Confirm Delete",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return if $rc != wxYES;
+	return if !confirmDialog($tree, "Delete $label '$name'?", "Confirm Delete");
 
 	$dbh = connectDB();
 	return if !$dbh;
 	deleteCollection($dbh, $uuid);
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
-sub _deleteBrowserGroups
+sub _deleteDatabaseGroups
 {
 	my ($nodes, $tree) = @_;
 	my $dbh = connectDB();
@@ -194,8 +185,7 @@ sub _deleteBrowserGroups
 		if ($total > 0)
 		{
 			disconnectDB($dbh);
-			Wx::MessageBox("'$node->{data}{name}' is not empty — use a more specific delete command.",
-				"Delete Group", wxOK | wxICON_WARNING, $tree);
+			warning(0, 0, "IMPLEMENTATION ERROR: _deleteDatabaseGroups: non-empty group reached delete handler");
 			return;
 		}
 	}
@@ -204,18 +194,16 @@ sub _deleteBrowserGroups
 	my $msg = $n == 1
 		? "Delete group '$nodes->[0]{data}{name}'?"
 		: "Delete $n groups?";
-	my $rc = Wx::MessageBox($msg, "Confirm Delete",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return if $rc != wxYES;
+	return if !confirmDialog($tree, $msg, "Confirm Delete");
 	$dbh = connectDB();
 	return if !$dbh;
 	deleteCollection($dbh, $_->{data}{uuid}) for @$nodes;
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
-sub _deleteBrowserGroupsAndWPs
+sub _deleteDatabaseGroupsAndWPs
 {
 	my ($nodes, $tree) = @_;
 	my $dbh = connectDB();
@@ -231,9 +219,7 @@ sub _deleteBrowserGroupsAndWPs
 			if (getWaypointRouteRefCount($dbh, $wp->{uuid}) > 0)
 			{
 				disconnectDB($dbh);
-				Wx::MessageBox(
-					"One or more groups have waypoints in routes — remove them from routes first.",
-					"Delete Groups + Waypoints", wxOK | wxICON_WARNING, $tree);
+				warning(0, 0, "IMPLEMENTATION ERROR: _deleteDatabaseGroupsAndWPs: waypoint in route reached delete handler");
 				return;
 			}
 		}
@@ -255,9 +241,7 @@ sub _deleteBrowserGroupsAndWPs
 			? "Delete $n groups and their $total_wps waypoint(s)? Cannot be undone."
 			: "Delete $n groups? Cannot be undone.";
 	}
-	my $rc = Wx::MessageBox($msg, "Delete Groups + Waypoints",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return if $rc != wxYES;
+	return if !confirmDialog($tree, $msg, "Delete Groups + Waypoints");
 	$dbh = connectDB();
 	return if !$dbh;
 	for my $node (@$nodes)
@@ -267,30 +251,28 @@ sub _deleteBrowserGroupsAndWPs
 		deleteCollection($dbh, $uuid);
 	}
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
-sub _removeBrowserRoutePoint
+sub _removeDatabaseRoutePoint
 {
 	my ($node, $tree) = @_;
 
 	my $wp   = $node->{data};
 	my $name = $wp ? ($wp->{name} // $node->{uuid}) : $node->{uuid};
 
-	my $rc = Wx::MessageBox("Remove '$name' from route?", "Remove RoutePoint",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return if $rc != wxYES;
+	return if !confirmDialog($tree, "Remove '$name' from route?", "Remove RoutePoint");
 
 	my $dbh = connectDB();
 	return if !$dbh;
 	removeRoutePoint($dbh, $node->{route_uuid}, $node->{position});
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
-sub _deleteBrowserRoutes
+sub _deleteDatabaseRoutes
 {
 	my ($nodes, $tree) = @_;
 	my $n = scalar @$nodes;
@@ -309,32 +291,28 @@ sub _deleteBrowserRoutes
 	{
 		$msg = "Delete $n routes? Their waypoints will remain. Cannot be undone.";
 	}
-	my $rc = Wx::MessageBox($msg, "Delete Route",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return if $rc != wxYES;
+	return if !confirmDialog($tree, $msg, "Delete Route");
 	my $dbh = connectDB();
 	return if !$dbh;
 	deleteRoute($dbh, $_->{data}{uuid}) for @$nodes;
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
-sub _deleteBrowserTracks
+sub _deleteDatabaseTracks
 {
 	my ($nodes, $tree) = @_;
 	my $n   = scalar @$nodes;
 	my $msg = $n == 1
 		? "Delete track '$nodes->[0]{data}{name}'?"
 		: "Delete $n tracks?";
-	my $rc = Wx::MessageBox($msg, "Confirm Delete",
-		wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, $tree);
-	return if $rc != wxYES;
+	return if !confirmDialog($tree, $msg, "Confirm Delete");
 	my $dbh = connectDB();
 	return if !$dbh;
 	deleteTrack($dbh, $_->{data}{uuid}) for @$nodes;
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
@@ -343,7 +321,7 @@ sub _deleteBrowserTracks
 #----------------------------------------------------
 
 sub _pasteOneWaypointToDB
-	# UUID-preserving inner helper used by all browser paste handlers.
+	# UUID-preserving inner helper used by all database paste handlers.
 	# Returns: 'created', 'replaced', 'skipped', 'no_change', 'aborted'.
 {
 	my ($dbh, $coll_uuid, $tree, $item, $source, $policy_ref, $title) = @_;
@@ -418,24 +396,23 @@ sub _pasteOneWaypointToDB
 }
 
 
-sub _pasteWaypointToBrowser
+sub _pasteWaypointToDatabase
 {
 	my ($node, $tree, $item, $cb) = @_;
 
-	if (($node->{type} // '') ne 'collection')
+	if (($node->{type} // '') !~ /^(collection|root)$/)
 	{
-		Wx::MessageBox("Right-click a folder to paste a waypoint.",
-			"Paste Waypoint", wxOK | wxICON_INFORMATION, $tree);
+		warning(0, 0, "IMPLEMENTATION ERROR: _pasteWaypointToDatabase: target is neither collection nor root");
 		return;
 	}
 
-	if ($cb->{source} eq 'browser' && $cb->{cut})
+	if ($cb->{source} eq 'database' && $cb->{cut})
 	{
 		my $dbh = connectDB();
 		return if !$dbh;
 		moveWaypoint($dbh, $item->{uuid}, $node->{data}{uuid});
 		disconnectDB($dbh);
-		_refreshBrowser();
+		_refreshDatabase();
 		return;
 	}
 
@@ -449,31 +426,30 @@ sub _pasteWaypointToBrowser
 	{
 		$cb->{source} eq 'e80'
 			? _cutE80Waypoint($item->{uuid}, $tree)
-			: _cutBrowserWaypoint($item->{uuid}, $tree);
+			: _cutDatabaseWaypoint($item->{uuid}, $tree);
 	}
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
-sub _pasteGroupToBrowser
+sub _pasteGroupToDatabase
 {
 	my ($node, $tree, $item, $cb) = @_;
 
-	if (($node->{type} // '') ne 'collection')
+	if (($node->{type} // '') !~ /^(collection|root)$/)
 	{
-		Wx::MessageBox("Right-click a folder to paste a group.",
-			"Paste Group", wxOK | wxICON_INFORMATION, $tree);
+		warning(0, 0, "IMPLEMENTATION ERROR: _pasteGroupToDatabase: target is neither collection nor root");
 		return;
 	}
 
-	if ($cb->{source} eq 'browser' && $cb->{cut})
+	if ($cb->{source} eq 'database' && $cb->{cut})
 	{
 		return if !$item->{uuid};
 		my $dbh = connectDB();
 		return if !$dbh;
 		moveCollection($dbh, $item->{uuid}, $node->{data}{uuid});
 		disconnectDB($dbh);
-		_refreshBrowser();
+		_refreshDatabase();
 		return;
 	}
 
@@ -509,7 +485,7 @@ sub _pasteGroupToBrowser
 		{
 			$source eq 'e80'
 				? _cutE80Waypoint($member->{uuid}, $tree)
-				: _cutBrowserWaypoint($member->{uuid}, $tree);
+				: _cutDatabaseWaypoint($member->{uuid}, $tree);
 		}
 	}
 
@@ -518,32 +494,31 @@ sub _pasteGroupToBrowser
 	{
 		$source eq 'e80'
 			? _cutE80Group($group_uuid, $tree)
-			: _cutBrowserGroup($group_uuid, $tree);
+			: _cutDatabaseGroup($group_uuid, $tree);
 	}
 
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
-sub _pasteRouteToBrowser
+sub _pasteRouteToDatabase
 {
 	my ($node, $tree, $item, $cb) = @_;
 
-	if (($node->{type} // '') ne 'collection')
+	if (($node->{type} // '') !~ /^(collection|root)$/)
 	{
-		Wx::MessageBox("Right-click a folder to paste a route.",
-			"Paste Route", wxOK | wxICON_INFORMATION, $tree);
+		warning(0, 0, "IMPLEMENTATION ERROR: _pasteRouteToDatabase: target is neither collection nor root");
 		return;
 	}
 
-	if ($cb->{source} eq 'browser' && $cb->{cut})
+	if ($cb->{source} eq 'database' && $cb->{cut})
 	{
 		my $dbh = connectDB();
 		return if !$dbh;
 		moveRoute($dbh, $item->{uuid}, $node->{data}{uuid});
 		disconnectDB($dbh);
-		_refreshBrowser();
+		_refreshDatabase();
 		return;
 	}
 
@@ -566,14 +541,14 @@ sub _pasteRouteToBrowser
 		{
 			$source eq 'e80'
 				? _cutE80Waypoint($member->{uuid}, $tree)
-				: _cutBrowserWaypoint($member->{uuid}, $tree);
+				: _cutDatabaseWaypoint($member->{uuid}, $tree);
 		}
 	}
 
 	if ($policy && $policy eq 'abort')
 	{
 		disconnectDB($dbh);
-		_refreshBrowser();
+		_refreshDatabase();
 		return;
 	}
 
@@ -606,34 +581,39 @@ sub _pasteRouteToBrowser
 	{
 		$source eq 'e80'
 			? _cutE80Route($route_uuid, $tree)
-			: _cutBrowserRoute($route_uuid, $tree);
+			: _cutDatabaseRoute($route_uuid, $tree);
 	}
 
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
-sub _pasteTrackToBrowser
+sub _pasteTrackToDatabase
 {
 	my ($node, $tree, $item, $cb) = @_;
 
-	if (($node->{type} // '') ne 'collection')
+	if (($node->{type} // '') !~ /^(collection|root)$/)
 	{
-		Wx::MessageBox("Right-click a folder to paste a track.",
-			"Paste Track", wxOK | wxICON_INFORMATION, $tree);
+		warning(0, 0, "IMPLEMENTATION ERROR: _pasteTrackToDatabase: target is neither collection nor root");
 		return;
 	}
 
 	my $coll_uuid = $node->{data}{uuid};
 
-	if ($cb->{source} eq 'browser' && $cb->{cut})
+	if ($cb->{source} eq 'database' && $cb->{cut})
 	{
 		my $dbh = connectDB();
 		return if !$dbh;
 		moveTrack($dbh, $item->{uuid}, $coll_uuid);
 		disconnectDB($dbh);
-		_refreshBrowser();
+		_refreshDatabase();
+		return;
+	}
+
+	if ($cb->{source} eq 'database' && !$cb->{cut})
+	{
+		warning(0, 0, "IMPLEMENTATION ERROR: _pasteTrackToDatabase: UUID-preserving DB-to-DB copy would create a duplicate; canPaste should have blocked this");
 		return;
 	}
 
@@ -670,9 +650,9 @@ sub _pasteTrackToBrowser
 	{
 		$cb->{source} eq 'e80'
 			? _cutE80Track($item->{uuid}, $tree)
-			: _cutBrowserTrack($item->{uuid}, $tree);
+			: _cutDatabaseTrack($item->{uuid}, $tree);
 	}
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
@@ -703,14 +683,13 @@ sub _insertFreshWaypoint
 }
 
 
-sub _pasteNewWaypointToBrowser
+sub _pasteNewWaypointToDatabase
 {
 	my ($node, $tree, $item, $cb) = @_;
 
-	if (($node->{type} // '') ne 'collection')
+	if (($node->{type} // '') !~ /^(collection|root)$/)
 	{
-		Wx::MessageBox("Right-click a folder to paste a waypoint.",
-			"Paste New Waypoint", wxOK | wxICON_INFORMATION, $tree);
+		warning(0, 0, "IMPLEMENTATION ERROR: _pasteNewWaypointToDatabase: target is neither collection nor root");
 		return;
 	}
 
@@ -718,18 +697,17 @@ sub _pasteNewWaypointToBrowser
 	return if !$dbh;
 	_insertFreshWaypoint($dbh, $node->{data}{uuid}, $item->{data}, $cb->{source});
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
-sub _pasteNewGroupToBrowser
+sub _pasteNewGroupToDatabase
 {
 	my ($node, $tree, $item, $cb) = @_;
 
-	if (($node->{type} // '') ne 'collection')
+	if (($node->{type} // '') !~ /^(collection|root)$/)
 	{
-		Wx::MessageBox("Right-click a folder to paste a group.",
-			"Paste New Group", wxOK | wxICON_INFORMATION, $tree);
+		warning(0, 0, "IMPLEMENTATION ERROR: _pasteNewGroupToDatabase: target is neither collection nor root");
 		return;
 	}
 
@@ -752,18 +730,17 @@ sub _pasteNewGroupToBrowser
 	}
 
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
-sub _pasteNewRouteToBrowser
+sub _pasteNewRouteToDatabase
 {
 	my ($node, $tree, $item, $cb) = @_;
 
-	if (($node->{type} // '') ne 'collection')
+	if (($node->{type} // '') !~ /^(collection|root)$/)
 	{
-		Wx::MessageBox("Right-click a folder to paste a route.",
-			"Paste New Route", wxOK | wxICON_INFORMATION, $tree);
+		warning(0, 0, "IMPLEMENTATION ERROR: _pasteNewRouteToDatabase: target is neither collection nor root");
 		return;
 	}
 
@@ -795,7 +772,7 @@ sub _pasteNewRouteToBrowser
 	}
 
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
@@ -803,7 +780,7 @@ sub _pasteNewRouteToBrowser
 # Cut — source deletion after successful paste
 #----------------------------------------------------
 
-sub _cutBrowserWaypoint
+sub _cutDatabaseWaypoint
 {
 	my ($uuid, $tree) = @_;
 	my $dbh = connectDB();
@@ -811,46 +788,54 @@ sub _cutBrowserWaypoint
 	if (getWaypointRouteRefCount($dbh, $uuid) > 0)
 	{
 		disconnectDB($dbh);
-		warning(0,0,"_cutBrowserWaypoint $uuid: in route(s) — not removed from source");
+		warning(0,0,"_cutDatabaseWaypoint $uuid: in route(s) — not removed from source");
 		return;
 	}
 	deleteWaypoint($dbh, $uuid);
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
-sub _cutBrowserGroup
+sub _cutDatabaseGroup
 {
 	my ($uuid, $tree) = @_;
 	return if !defined $uuid;
 	my $dbh = connectDB();
 	return if !$dbh;
+	my $counts    = getCollectionCounts($dbh, $uuid);
+	my $remaining = ($counts->{waypoints} // 0) + ($counts->{routes} // 0) + ($counts->{tracks} // 0);
+	if ($remaining > 0)
+	{
+		disconnectDB($dbh);
+		warning(0, 0, "_cutDatabaseGroup $uuid: $remaining member(s) still present (in route?) — group not removed from source");
+		return;
+	}
 	deleteCollection($dbh, $uuid);
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
-sub _cutBrowserRoute
+sub _cutDatabaseRoute
 {
 	my ($uuid, $tree) = @_;
 	my $dbh = connectDB();
 	return if !$dbh;
 	deleteRoute($dbh, $uuid);
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 
-sub _cutBrowserTrack
+sub _cutDatabaseTrack
 {
 	my ($uuid, $tree) = @_;
 	my $dbh = connectDB();
 	return if !$dbh;
 	deleteTrack($dbh, $uuid);
 	disconnectDB($dbh);
-	_refreshBrowser();
+	_refreshDatabase();
 }
 
 

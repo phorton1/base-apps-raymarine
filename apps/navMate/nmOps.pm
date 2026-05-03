@@ -4,7 +4,7 @@
 #---------------------------------------------
 # Context-menu operation dispatcher for navMate.
 # E80-side operations are in nmOpsE80.pm.
-# Browser-side (DB) operations are in nmOpsDB.pm.
+# Database-side (DB) operations are in nmOpsDB.pm.
 # All three files share package nmOps.
 
 package nmOps;
@@ -15,6 +15,7 @@ use threads::shared;
 use Wx qw(:everything);
 use Pub::Utils qw(display warning error getAppFrame);
 use Pub::WX::Dialogs;
+use apps::raymarine::NET::a_defs;
 use apps::raymarine::NET::c_RAYDP;
 use c_db;
 use a_defs;
@@ -48,10 +49,10 @@ our $dbg_ops     = 0;
 # Common helpers
 #----------------------------------------------------
 
-sub _refreshBrowser
+sub _refreshDatabase
 {
 	my $frame = getAppFrame();
-	my $pane  = $frame ? $frame->findPane($WIN_BROWSER) : undef;
+	my $pane  = $frame ? $frame->findPane($WIN_DATABASE) : undef;
 	$pane->refresh() if $pane;
 }
 
@@ -95,16 +96,14 @@ sub doRefresh
 
 	if (!($wpmgr && $track))
 	{
-		Wx::MessageBox("E80 not connected — cannot refresh.",
-			"Refresh E80", wxOK | wxICON_WARNING, $parent // getAppFrame());
+		okDialog($parent, "E80 not connected — cannot refresh.", "Refresh E80");
 		return;
 	}
 
 	if ($apps::raymarine::NET::d_WPMGR::query_in_progress ||
 	    $apps::raymarine::NET::d_TRACK::query_in_progress)
 	{
-		Wx::MessageBox("A query is already in progress — please wait.",
-			"Refresh E80", wxOK | wxICON_WARNING, $parent // getAppFrame());
+		okDialog($parent, "A query is already in progress — please wait.", "Refresh E80");
 		return;
 	}
 
@@ -130,26 +129,26 @@ sub doNew
 {
 	my ($cmd_id, $panel, $node, $tree) = @_;
 
-	if ($cmd_id == $nmClipboard::CMD_NEW_BRANCH)
+	if ($cmd_id == $nmClipboard::CTX_CMD_NEW_BRANCH)
 	{
 		_newCollection($node, $tree, 'Branch', $NODE_TYPE_BRANCH);
 	}
-	elsif ($cmd_id == $nmClipboard::CMD_NEW_GROUP)
+	elsif ($cmd_id == $nmClipboard::CTX_CMD_NEW_GROUP)
 	{
-		$panel eq 'browser'
+		$panel eq 'database'
 			? _newCollection($node, $tree, 'Group', $NODE_TYPE_GROUP)
 			: _newE80Group($node, $tree);
 	}
-	elsif ($cmd_id == $nmClipboard::CMD_NEW_ROUTE)
+	elsif ($cmd_id == $nmClipboard::CTX_CMD_NEW_ROUTE)
 	{
-		$panel eq 'browser'
-			? _newBrowserRoute($node, $tree)
+		$panel eq 'database'
+			? _newDatabaseRoute($node, $tree)
 			: _newE80Route($node, $tree);
 	}
-	elsif ($cmd_id == $nmClipboard::CMD_NEW_WAYPOINT)
+	elsif ($cmd_id == $nmClipboard::CTX_CMD_NEW_WAYPOINT)
 	{
-		$panel eq 'browser'
-			? _newBrowserWaypoint($node, $tree)
+		$panel eq 'database'
+			? _newDatabaseWaypoint($node, $tree)
 			: _newE80Waypoint($node, $tree);
 	}
 }
@@ -164,44 +163,44 @@ sub doDelete
 	my ($cmd_id, $panel, $node, $tree, @nodes) = @_;
 	@nodes = ($node) if !@nodes;
 
-	if ($cmd_id == $nmClipboard::CMD_REMOVE_ROUTEPOINT)
+	if ($cmd_id == $nmClipboard::CTX_CMD_REMOVE_ROUTEPOINT)
 	{
-		$panel eq 'browser'
-			? _removeBrowserRoutePoint($node, $tree)
+		$panel eq 'database'
+			? _removeDatabaseRoutePoint($node, $tree)
 			: _removeE80RoutePoint($node, $tree);
 	}
-	elsif ($cmd_id == $nmClipboard::CMD_DELETE_WAYPOINT)
+	elsif ($cmd_id == $nmClipboard::CTX_CMD_DELETE_WAYPOINT)
 	{
-		$panel eq 'browser'
-			? _deleteBrowserWaypoints(\@nodes, $tree)
+		$panel eq 'database'
+			? _deleteDatabaseWaypoints(\@nodes, $tree)
 			: _deleteE80Waypoints(\@nodes, $tree);
 	}
-	elsif ($cmd_id == $nmClipboard::CMD_DELETE_TRACK)
+	elsif ($cmd_id == $nmClipboard::CTX_CMD_DELETE_TRACK)
 	{
-		$panel eq 'browser'
-			? _deleteBrowserTracks(\@nodes, $tree)
+		$panel eq 'database'
+			? _deleteDatabaseTracks(\@nodes, $tree)
 			: _deleteE80Tracks(\@nodes, $tree);
 	}
-	elsif ($cmd_id == $nmClipboard::CMD_DELETE_BRANCH)
+	elsif ($cmd_id == $nmClipboard::CTX_CMD_DELETE_BRANCH)
 	{
-		_deleteBrowserCollection($node, $tree, 'Branch');
+		_deleteDatabaseCollection($node, $tree, 'Branch');
 	}
-	elsif ($cmd_id == $nmClipboard::CMD_DELETE_GROUP)
+	elsif ($cmd_id == $nmClipboard::CTX_CMD_DELETE_GROUP)
 	{
-		$panel eq 'browser'
-			? _deleteBrowserGroups(\@nodes, $tree)
+		$panel eq 'database'
+			? _deleteDatabaseGroups(\@nodes, $tree)
 			: _deleteE80Groups(\@nodes, $tree);
 	}
-	elsif ($cmd_id == $nmClipboard::CMD_DELETE_GROUP_WPS)
+	elsif ($cmd_id == $nmClipboard::CTX_CMD_DELETE_GROUP_WPS)
 	{
-		$panel eq 'browser'
-			? _deleteBrowserGroupsAndWPs(\@nodes, $tree)
+		$panel eq 'database'
+			? _deleteDatabaseGroupsAndWPs(\@nodes, $tree)
 			: _deleteE80GroupsAndWPs(\@nodes, $tree);
 	}
-	elsif ($cmd_id == $nmClipboard::CMD_DELETE_ROUTE)
+	elsif ($cmd_id == $nmClipboard::CTX_CMD_DELETE_ROUTE)
 	{
-		$panel eq 'browser'
-			? _deleteBrowserRoutes(\@nodes, $tree)
+		$panel eq 'database'
+			? _deleteDatabaseRoutes(\@nodes, $tree)
 			: _deleteE80Routes(\@nodes, $tree);
 	}
 	else
@@ -237,10 +236,27 @@ sub doCopy
 	{
 		_copyRoute($intent, $panel, $node, $tree, @nodes);
 	}
+	elsif ($intent eq 'all')
+	{
+		_copyAll($intent, $panel, $node, $tree, @nodes);
+	}
 	else
 	{
 		display(0, 0, "nmOps::doCopy: intent '$intent' not yet implemented");
 	}
+}
+
+
+sub _e80WpClipData
+	# E80 wpmgr records carry lat/lon as 1e7 scaled ints.
+	# Clipboard and API layer use decimal degrees.
+	# Call this on every E80 waypoint data hash before putting it in the clipboard.
+{
+	my ($data) = @_;
+	my $d = { %$data };
+	$d->{lat} = ($d->{lat} // 0) / $SCALE_LATLON;
+	$d->{lon} = ($d->{lon} // 0) / $SCALE_LATLON;
+	return $d;
 }
 
 
@@ -252,7 +268,7 @@ sub _copyWaypoint
 	if ($panel eq 'e80')
 	{
 		nmClipboard::setCopy($intent, 'e80', [
-			map { { type => 'waypoint', uuid => $_->{uuid}, data => $_->{data} } } @nodes
+			map { { type => 'waypoint', uuid => $_->{uuid}, data => _e80WpClipData($_->{data}) } } @nodes
 		]);
 	}
 	else
@@ -269,10 +285,10 @@ sub _copyWaypoint
 		disconnectDB($dbh);
 		if (!@items)
 		{
-			Wx::MessageBox("Could not load waypoint.", "Copy Waypoint", wxOK | wxICON_ERROR, $tree);
+			error("_copyWaypoint: could not load waypoint(s) from database");
 			return;
 		}
-		nmClipboard::setCopy($intent, 'browser', \@items);
+		nmClipboard::setCopy($intent, 'database', \@items);
 	}
 }
 
@@ -297,13 +313,13 @@ sub _copyTrack
 		if (!$track)
 		{
 			disconnectDB($dbh);
-			Wx::MessageBox("Could not load track.", "Copy Track", wxOK | wxICON_ERROR, $tree);
+			error("_copyTrack: could not load track $uuid from database");
 			return;
 		}
 		my $pts = getTrackPoints($dbh, $uuid);
 		disconnectDB($dbh);
 		$track->{points} = $pts // [];
-		nmClipboard::setCopy($intent, 'browser', [{
+		nmClipboard::setCopy($intent, 'database', [{
 			type => 'track',
 			uuid => $uuid,
 			data => $track,
@@ -322,7 +338,7 @@ sub _copyGroup
 		my $wpmgr = _wpmgr();
 		if (!$wpmgr)
 		{
-			Wx::MessageBox("E80 not connected.", "Copy Group", wxOK | wxICON_ERROR, $tree);
+			error("_copyGroup: WPMGR not connected");
 			return;
 		}
 		my $wps    = $wpmgr->{waypoints} // {};
@@ -340,7 +356,7 @@ sub _copyGroup
 					my @members;
 					for my $wp_uuid (@{$grp_data->{uuids} // []})
 					{
-						push @members, { type => 'waypoint', uuid => $wp_uuid, data => $wps->{$wp_uuid} };
+						push @members, { type => 'waypoint', uuid => $wp_uuid, data => _e80WpClipData($wps->{$wp_uuid}) };
 					}
 					push @items, { type => 'group', uuid => $g_uuid, data => $grp_data, members => \@members };
 				}
@@ -352,7 +368,7 @@ sub _copyGroup
 				my @members;
 				for my $wp_uuid (grep { !$grouped{$_} } keys %$wps)
 				{
-					push @members, { type => 'waypoint', uuid => $wp_uuid, data => $wps->{$wp_uuid} };
+					push @members, { type => 'waypoint', uuid => $wp_uuid, data => _e80WpClipData($wps->{$wp_uuid}) };
 				}
 				push @items, { type => 'group', uuid => undef, data => { name => 'My Waypoints' }, members => \@members };
 			}
@@ -363,7 +379,7 @@ sub _copyGroup
 				my @members;
 				for my $wp_uuid (@{$grp_data->{uuids} // []})
 				{
-					push @members, { type => 'waypoint', uuid => $wp_uuid, data => $wps->{$wp_uuid} };
+					push @members, { type => 'waypoint', uuid => $wp_uuid, data => _e80WpClipData($wps->{$wp_uuid}) };
 				}
 				push @items, { type => 'group', uuid => $uuid, data => $grp_data, members => \@members };
 			}
@@ -422,11 +438,11 @@ sub _copyGroup
 
 		if (!@items)
 		{
-			Wx::MessageBox("No groups found to copy.", "Copy Groups", wxOK | wxICON_INFORMATION, $tree);
+			warning(0, 0, "IMPLEMENTATION ERROR: _copyGroup: no groups found in database selection");
 			return;
 		}
-		display($dbg_ops, 0, "nmOps::_copyGroup browser: " . scalar(@items) . " group(s)");
-		nmClipboard::setCopy($intent, 'browser', \@items);
+		display($dbg_ops, 0, "nmOps::_copyGroup database: " . scalar(@items) . " group(s)");
+		nmClipboard::setCopy($intent, 'database', \@items);
 	}
 }
 
@@ -441,7 +457,7 @@ sub _copyRoute
 		my $wpmgr = _wpmgr();
 		if (!$wpmgr)
 		{
-			Wx::MessageBox("E80 not connected.", "Copy Route", wxOK | wxICON_ERROR, $tree);
+			error("_copyRoute: WPMGR not connected");
 			return;
 		}
 		my $wps    = $wpmgr->{waypoints} // {};
@@ -459,7 +475,7 @@ sub _copyRoute
 					my $pos = 0;
 					for my $wp_uuid (@{$route->{uuids} // []})
 					{
-						push @members, { type => 'waypoint', uuid => $wp_uuid, data => $wps->{$wp_uuid}, position => $pos++ };
+						push @members, { type => 'waypoint', uuid => $wp_uuid, data => _e80WpClipData($wps->{$wp_uuid}), position => $pos++ };
 					}
 					push @items, { type => 'route', uuid => $r_uuid, data => $route, members => \@members };
 				}
@@ -472,7 +488,7 @@ sub _copyRoute
 				my $pos = 0;
 				for my $wp_uuid (@{$route->{uuids} // []})
 				{
-					push @members, { type => 'waypoint', uuid => $wp_uuid, data => $wps->{$wp_uuid}, position => $pos++ };
+					push @members, { type => 'waypoint', uuid => $wp_uuid, data => _e80WpClipData($wps->{$wp_uuid}), position => $pos++ };
 				}
 				push @items, { type => 'route', uuid => $uuid, data => $route, members => \@members };
 			}
@@ -530,11 +546,11 @@ sub _copyRoute
 
 		if (!@items)
 		{
-			Wx::MessageBox("No routes found to copy.", "Copy Routes", wxOK | wxICON_INFORMATION, $tree);
+			warning(0, 0, "IMPLEMENTATION ERROR: _copyRoute: no routes found in database selection");
 			return;
 		}
-		display($dbg_ops, 0, "nmOps::_copyRoute browser: " . scalar(@items) . " route(s)");
-		nmClipboard::setCopy($intent, 'browser', \@items);
+		display($dbg_ops, 0, "nmOps::_copyRoute database: " . scalar(@items) . " route(s)");
+		nmClipboard::setCopy($intent, 'database', \@items);
 	}
 }
 
@@ -567,6 +583,11 @@ sub doCut
 	elsif ($intent =~ /^routes?$/)
 	{
 		_copyRoute($intent, $panel, $node, $tree, @nodes);
+		$nmClipboard::clipboard->{cut} = 1 if $nmClipboard::clipboard;
+	}
+	elsif ($intent eq 'all')
+	{
+		_copyAll($intent, $panel, $node, $tree, @nodes);
 		$nmClipboard::clipboard->{cut} = 1 if $nmClipboard::clipboard;
 	}
 	else
@@ -631,7 +652,7 @@ sub _wpFieldsDiffer
 {
 	my ($existing, $new_data, $source) = @_;
 	my @fields = qw(name comment lat lon sym);
-	push @fields, qw(wp_type color depth_cm) if $source eq 'browser';
+	push @fields, qw(wp_type color depth_cm) if $source eq 'database';
 	my @diffs;
 	for my $f (@fields)
 	{
@@ -665,7 +686,7 @@ sub doPaste
 	my $cb = $nmClipboard::clipboard;
 	if (!$cb)
 	{
-		Wx::MessageBox("Nothing to paste.", "Paste", wxOK | wxICON_INFORMATION, $tree);
+		warning(0, 0, "doPaste: clipboard is empty");
 		return;
 	}
 
@@ -673,28 +694,32 @@ sub doPaste
 	my @items  = @{$cb->{items} // []};
 	if (!@items)
 	{
-		Wx::MessageBox("Clipboard is empty.", "Paste", wxOK | wxICON_INFORMATION, $tree);
+		warning(0, 0, "doPaste: no items in clipboard");
 		return;
 	}
 	display($dbg_ops, 0, "nmOps::doPaste: intent=$intent panel=$panel items=" . scalar(@items));
 
-	if ($panel eq 'browser')
+	if ($panel eq 'database')
 	{
 		if ($intent =~ /^waypoints?$/)
 		{
-			_pasteWaypointToBrowser($node, $tree, $_, $cb) for @items;
+			_pasteWaypointToDatabase($node, $tree, $_, $cb) for @items;
 		}
 		elsif ($intent =~ /^tracks?$/)
 		{
-			_pasteTrackToBrowser($node, $tree, $_, $cb) for @items;
+			_pasteTrackToDatabase($node, $tree, $_, $cb) for @items;
 		}
 		elsif ($intent =~ /^groups?$/)
 		{
-			_pasteGroupToBrowser($node, $tree, $_, $cb) for @items;
+			_pasteGroupToDatabase($node, $tree, $_, $cb) for @items;
 		}
 		elsif ($intent =~ /^routes?$/)
 		{
-			_pasteRouteToBrowser($node, $tree, $_, $cb) for @items;
+			_pasteRouteToDatabase($node, $tree, $_, $cb) for @items;
+		}
+		elsif ($intent eq 'all')
+		{
+			_pasteAllToDatabase($node, $tree, $cb);
 		}
 		else
 		{
@@ -732,6 +757,10 @@ sub doPaste
 			}
 			_pasteRouteToE80($node, $tree, $_, $cb, $progress) for @items;
 		}
+		elsif ($intent eq 'all')
+		{
+			_pasteAllToE80($node, $tree, $cb);
+		}
 		else
 		{
 			_unimplementedPaste($intent, $panel, $tree);
@@ -751,7 +780,7 @@ sub doPasteNew
 	my $cb = $nmClipboard::clipboard;
 	if (!$cb)
 	{
-		Wx::MessageBox("Nothing to paste.", "Paste New", wxOK | wxICON_INFORMATION, $tree);
+		warning(0, 0, "doPasteNew: clipboard is empty");
 		return;
 	}
 
@@ -759,24 +788,28 @@ sub doPasteNew
 	my @items  = @{$cb->{items} // []};
 	if (!@items)
 	{
-		Wx::MessageBox("Clipboard is empty.", "Paste New", wxOK | wxICON_INFORMATION, $tree);
+		warning(0, 0, "doPasteNew: no items in clipboard");
 		return;
 	}
 	display($dbg_ops, 0, "nmOps::doPasteNew: intent=$intent panel=$panel items=" . scalar(@items));
 
-	if ($panel eq 'browser')
+	if ($panel eq 'database')
 	{
 		if ($intent =~ /^waypoints?$/)
 		{
-			_pasteNewWaypointToBrowser($node, $tree, $_, $cb) for @items;
+			_pasteNewWaypointToDatabase($node, $tree, $_, $cb) for @items;
 		}
 		elsif ($intent =~ /^groups?$/)
 		{
-			_pasteNewGroupToBrowser($node, $tree, $_, $cb) for @items;
+			_pasteNewGroupToDatabase($node, $tree, $_, $cb) for @items;
 		}
 		elsif ($intent =~ /^routes?$/)
 		{
-			_pasteNewRouteToBrowser($node, $tree, $_, $cb) for @items;
+			_pasteNewRouteToDatabase($node, $tree, $_, $cb) for @items;
+		}
+		elsif ($intent eq 'all')
+		{
+			_pasteNewAllToDatabase($node, $tree, $cb);
 		}
 		else
 		{
@@ -822,12 +855,190 @@ sub doPasteNew
 }
 
 
+sub _copyAll
+{
+	my ($intent, $panel, $node, $tree, @nodes) = @_;
+	@nodes = ($node) if !@nodes;
+
+	if ($panel eq 'e80')
+	{
+		my $wpmgr = _wpmgr();
+		if (!$wpmgr)
+		{
+			error("_copyAll: WPMGR not connected");
+			return;
+		}
+		my $wps    = $wpmgr->{waypoints} // {};
+		my $groups = $wpmgr->{groups}    // {};
+		my $routes = $wpmgr->{routes}    // {};
+		my @items;
+
+		for my $g_uuid (sort keys %$groups)
+		{
+			my $grp = $groups->{$g_uuid};
+			my @members;
+			for my $wp_uuid (@{$grp->{uuids} // []})
+			{
+				push @members, { type => 'waypoint', uuid => $wp_uuid, data => _e80WpClipData($wps->{$wp_uuid}) };
+			}
+			push @items, { type => 'group', uuid => $g_uuid, data => $grp, members => \@members };
+		}
+
+		for my $r_uuid (sort keys %$routes)
+		{
+			my $route = $routes->{$r_uuid};
+			my @members;
+			my $pos = 0;
+			for my $wp_uuid (@{$route->{uuids} // []})
+			{
+				push @members, { type => 'waypoint', uuid => $wp_uuid, data => _e80WpClipData($wps->{$wp_uuid}), position => $pos++ };
+			}
+			push @items, { type => 'route', uuid => $r_uuid, data => $route, members => \@members };
+		}
+
+		my %grouped;
+		$grouped{$_} = 1 for map { @{$_->{uuids} // []} } values %$groups;
+		for my $wp_uuid (sort grep { !$grouped{$_} } keys %$wps)
+		{
+			push @items, { type => 'waypoint', uuid => $wp_uuid, data => _e80WpClipData($wps->{$wp_uuid}) };
+		}
+
+		display($dbg_ops, 0, "nmOps::_copyAll e80: " . scalar(@items) . " item(s)");
+		nmClipboard::setCopy($intent, 'e80', \@items);
+	}
+	else
+	{
+		my $dbh = connectDB();
+		return if !$dbh;
+		my @items;
+
+		for my $n (@nodes)
+		{
+			my $branch_uuid = ($n->{data} // {})->{uuid};
+			my $children    = getCollectionChildren($dbh, $branch_uuid);
+			for my $child (@{$children // []})
+			{
+				next if ($child->{node_type} // '') ne 'group';
+				my $grp   = getCollection($dbh, $child->{uuid});
+				next if !$grp;
+				my $stubs = getGroupWaypoints($dbh, $child->{uuid});
+				my @members;
+				for my $stub (@{$stubs // []})
+				{
+					my $wp = getWaypoint($dbh, $stub->{uuid});
+					push @members, { type => 'waypoint', uuid => $stub->{uuid}, data => $wp } if $wp;
+				}
+				push @items, { type => 'group', uuid => $child->{uuid}, data => $grp, members => \@members };
+			}
+
+			my $objs = getCollectionObjects($dbh, $branch_uuid);
+			for my $obj (grep { ($_->{obj_type} // '') eq 'route' } @{$objs // []})
+			{
+				my $r_uuid = $obj->{uuid};
+				my $route  = getRoute($dbh, $r_uuid);
+				next if !$route;
+				my $stubs  = getRouteWaypoints($dbh, $r_uuid);
+				my @members;
+				for my $stub (@{$stubs // []})
+				{
+					my $wp = getWaypoint($dbh, $stub->{uuid});
+					push @members, { type => 'waypoint', uuid => $stub->{uuid}, data => $wp, position => $stub->{position} } if $wp;
+				}
+				push @items, { type => 'route', uuid => $r_uuid, data => $route, members => \@members };
+			}
+
+			for my $obj (grep { ($_->{obj_type} // '') eq 'track' } @{$objs // []})
+			{
+				my $t_uuid = $obj->{uuid};
+				my $track  = getTrack($dbh, $t_uuid);
+				next if !$track;
+				my $pts    = getTrackPoints($dbh, $t_uuid);
+				$track->{points} = $pts // [];
+				push @items, { type => 'track', uuid => $t_uuid, data => $track };
+			}
+
+			for my $obj (grep { ($_->{obj_type} // '') eq 'waypoint' } @{$objs // []})
+			{
+				my $wp = getWaypoint($dbh, $obj->{uuid});
+				push @items, { type => 'waypoint', uuid => $obj->{uuid}, data => $wp } if $wp;
+			}
+		}
+
+		disconnectDB($dbh);
+		display($dbg_ops, 0, "nmOps::_copyAll database: " . scalar(@items) . " item(s)");
+		nmClipboard::setCopy($intent, 'database', \@items);
+	}
+}
+
+
+sub _pasteAllToDatabase
+{
+	my ($node, $tree, $cb) = @_;
+	my @items = @{$cb->{items} // []};
+
+	for my $item (@items)
+	{
+		my $type = $item->{type} // '';
+		if ($type eq 'waypoint')
+		{
+			_pasteWaypointToDatabase($node, $tree, $item, $cb);
+		}
+		elsif ($type eq 'group')
+		{
+			_pasteGroupToDatabase($node, $tree, $item, $cb);
+		}
+		elsif ($type eq 'route')
+		{
+			_pasteRouteToDatabase($node, $tree, $item, $cb);
+		}
+		elsif ($type eq 'track')
+		{
+			_pasteTrackToDatabase($node, $tree, $item, $cb);
+		}
+		else
+		{
+			warning(0, 0, "_pasteAllToDatabase: unknown item type '$type'");
+		}
+	}
+}
+
+
+sub _pasteNewAllToDatabase
+{
+	my ($node, $tree, $cb) = @_;
+	my @items = @{$cb->{items} // []};
+
+	for my $item (@items)
+	{
+		my $type = $item->{type} // '';
+		if ($type eq 'waypoint')
+		{
+			_pasteNewWaypointToDatabase($node, $tree, $item, $cb);
+		}
+		elsif ($type eq 'group')
+		{
+			_pasteNewGroupToDatabase($node, $tree, $item, $cb);
+		}
+		elsif ($type eq 'route')
+		{
+			_pasteNewRouteToDatabase($node, $tree, $item, $cb);
+		}
+		elsif ($type eq 'track')
+		{
+			display($dbg_ops, 0, "_pasteNewAllToDatabase: skipping track (Paste New not supported for tracks)");
+		}
+		else
+		{
+			warning(0, 0, "_pasteNewAllToDatabase: unknown item type '$type'");
+		}
+	}
+}
+
+
 sub _unimplementedPaste
 {
 	my ($intent, $panel, $tree) = @_;
-	error(0,0,"nmOps::doPaste: '$intent' to $panel not implemented");
-	Wx::MessageBox("Paste '$intent' to $panel is not yet implemented.",
-		"Paste", wxOK | wxICON_ERROR, $tree);
+	warning(0, 0, "IMPLEMENTATION WARNING: paste intent='$intent' panel='$panel' not implemented; canPaste/canPasteNew should have blocked this");
 }
 
 
