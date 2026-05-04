@@ -24,7 +24,8 @@ use Wx::Event qw(
 	EVT_TREE_ITEM_RIGHT_CLICK
 	EVT_LEFT_DCLICK
 	EVT_RIGHT_DOWN
-	EVT_MENU);
+	EVT_MENU
+	EVT_TEXT);
 use Pub::WX::Dialogs;
 use POSIX qw(strftime);
 use Pub::Utils qw(display warning error);
@@ -41,6 +42,9 @@ use base qw(Wx::SplitterWindow Pub::WX::Window);
 
 my $DUMMY = '__dummy__';
 
+my $CTX_CMD_SHOW_MAP = 10560;
+my $CTX_CMD_HIDE_MAP = 10561;
+
 my %rendered_uuids;
 my $last_clear_version = 0;
 
@@ -54,14 +58,32 @@ sub new
 	$this->{tree} = Wx::TreeCtrl->new($this, -1, wxDefaultPosition, wxDefaultSize,
 		wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxTR_MULTIPLE);
 
-	$this->{detail} = Wx::TextCtrl->new($this, -1, '', wxDefaultPosition, wxDefaultSize,
+	my $detail_panel = Wx::Panel->new($this, -1);
+	$this->{detail_panel} = $detail_panel;
+
+	my $color_panel = Wx::Panel->new($detail_panel, -1);
+	$this->{color_panel} = $color_panel;
+	my $color_sizer = Wx::BoxSizer->new(wxHORIZONTAL);
+	$color_sizer->Add(Wx::StaticText->new($color_panel, -1, 'Color:'), 0,
+		wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
+	$this->{color_ctrl} = Wx::TextCtrl->new($color_panel, -1, '', wxDefaultPosition, [40, -1]);
+	$color_sizer->Add($this->{color_ctrl}, 0, wxALIGN_CENTER_VERTICAL);
+	$color_panel->SetSizer($color_sizer);
+	$color_panel->Hide();
+
+	$this->{detail} = Wx::TextCtrl->new($detail_panel, -1, '', wxDefaultPosition, wxDefaultSize,
 		wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
 
 	my $font = Wx::Font->new(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
 	$this->{detail}->SetFont($font);
 
+	my $detail_vsizer = Wx::BoxSizer->new(wxVERTICAL);
+	$detail_vsizer->Add($color_panel, 0, wxEXPAND | wxALL, 4);
+	$detail_vsizer->Add($this->{detail}, 1, wxEXPAND);
+	$detail_panel->SetSizer($detail_vsizer);
+
 	my $sash = ($data && ref($data) eq 'HASH' && $data->{sash}) ? $data->{sash} : 250;
-	$this->SplitVertically($this->{tree}, $this->{detail}, $sash);
+	$this->SplitVertically($this->{tree}, $detail_panel, $sash);
 	$this->SetSashGravity(0);
 
 	my %init_expanded;
@@ -83,6 +105,9 @@ sub new
 	EVT_MENU($this, $COMMAND_UPLOAD_E80, \&_onUploadE80);   # vestigial
 	EVT_MENU($this, $_, \&_onContextMenuCommand)
 		for (allCopyCmds(), allCutCmds(), $CTX_CMD_PASTE, $CTX_CMD_PASTE_NEW, allDeleteCmds(), allNewCmds());
+	EVT_MENU($this, $CTX_CMD_SHOW_MAP, \&_onShowMap);
+	EVT_MENU($this, $CTX_CMD_HIDE_MAP, \&_onHideMap);
+	EVT_TEXT($this, $this->{color_ctrl}, \&_onColorEdit);
 
 	_loadTopLevel($this);
 
@@ -286,7 +311,14 @@ sub onTreeSelect
 	my $node = $item_data->GetData();
 	return if ref $node ne 'HASH';
 
-	if ($node->{type} eq 'root') { $this->{detail}->SetValue(''); return; }
+	if ($node->{type} eq 'root')
+	{
+		$this->{_edit_track_uuid} = undef;
+		$this->{color_panel}->Hide();
+		$this->{detail_panel}->Layout();
+		$this->{detail}->SetValue('');
+		return;
+	}
 
 	my $dbh = connectDB();
 	if ($node->{type} eq 'collection')
@@ -315,6 +347,9 @@ sub _fmt
 sub _showCollection
 {
 	my ($dbh, $this, $coll_stub) = @_;
+	$this->{_edit_track_uuid} = undef;
+	$this->{color_panel}->Hide();
+	$this->{detail_panel}->Layout();
 	my $coll   = getCollection($dbh, $coll_stub->{uuid});
 	my $counts = getCollectionCounts($dbh, $coll->{uuid});
 	my $text   = '';
@@ -335,11 +370,18 @@ sub _showCollection
 sub _showObject
 {
 	my ($dbh, $this, $obj_stub) = @_;
+	$this->{_edit_track_uuid} = undef;
+	$this->{color_panel}->Hide();
 	my $text = '';
 
 	if ($obj_stub->{obj_type} eq 'track')
 	{
 		my $t = getTrack($dbh, $obj_stub->{uuid});
+		$this->{_color_updating} = 1;
+		$this->{color_ctrl}->SetValue(defined $t->{color} ? "$t->{color}" : '');
+		$this->{_color_updating} = 0;
+		$this->{_edit_track_uuid} = $t->{uuid};
+		$this->{color_panel}->Show(1);
 		my $ts_start = $t->{ts_start}
 			? strftime("%Y-%m-%d %H:%M UTC", gmtime($t->{ts_start}))
 			: '(none)';
@@ -394,6 +436,7 @@ sub _showObject
 		}
 	}
 
+	$this->{detail_panel}->Layout();
 	$this->{detail}->SetValue($text);
 }
 
@@ -401,6 +444,9 @@ sub _showObject
 sub _showRoutePoint
 {
 	my ($this, $node) = @_;
+	$this->{_edit_track_uuid} = undef;
+	$this->{color_panel}->Hide();
+	$this->{detail_panel}->Layout();
 	my $wp   = $node->{data};
 	my $text = '';
 	$text .= _fmt('position',   $node->{position});
@@ -410,6 +456,25 @@ sub _showRoutePoint
 	$text .= _fmt('lat',        formatLatLon($wp->{lat} // 0, 1));
 	$text .= _fmt('lon',        formatLatLon($wp->{lon} // 0, 0));
 	$this->{detail}->SetValue($text);
+}
+
+
+#---------------------------------
+# track color editor
+#---------------------------------
+
+sub _onColorEdit
+{
+	my ($this, $event) = @_;
+	return if $this->{_color_updating};
+	return if !$this->{_edit_track_uuid};
+	my $text = $this->{color_ctrl}->GetValue();
+	return if $text !~ /^\d+$/;
+	my $color = int($text);
+	return if $color < 0 || $color > 5;
+	my $dbh = connectDB();
+	$dbh->do("UPDATE tracks SET color=? WHERE uuid=?", [$color, $this->{_edit_track_uuid}]);
+	disconnectDB($dbh);
 }
 
 
@@ -465,13 +530,24 @@ sub _renderCollection
 		$last_clear_version = $cv;
 	}
 
+	if ($rendered_uuids{$uuid})
+	{
+		my @children = ref($rendered_uuids{$uuid}) eq 'ARRAY' ? @{$rendered_uuids{$uuid}} : ();
+		my @remove = ($uuid, @children);
+		delete $rendered_uuids{$_} for @remove;
+		removeRenderFeatures(\@remove);
+		return;
+	}
+
 	my $wrgt = getCollectionWRGTs($dbh, $uuid);
 	my @features;
+	my @rendered_objects;
 
 	for my $wp (@{$wrgt->{waypoints}})
 	{
 		next if $rendered_uuids{$wp->{uuid}};
 		$rendered_uuids{$wp->{uuid}} = 1;
+		push @rendered_objects, $wp->{uuid};
 		push @features, {
 			type       => 'Feature',
 			properties => {
@@ -503,6 +579,7 @@ sub _renderCollection
 		my $pts = getTrackPoints($dbh, $t->{uuid});
 		next if !@$pts;
 		$rendered_uuids{$t->{uuid}} = 1;
+		push @rendered_objects, $t->{uuid};
 		my @coords = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
 		push @features, {
 			type       => 'Feature',
@@ -530,6 +607,7 @@ sub _renderCollection
 		my $pts = getRouteWaypoints($dbh, $r->{uuid});
 		next if !@$pts;
 		$rendered_uuids{$r->{uuid}} = 1;
+		push @rendered_objects, $r->{uuid};
 		my @coords   = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
 		my @rp_names = map { $_->{name} // '' } @$pts;
 		push @features, {
@@ -551,6 +629,7 @@ sub _renderCollection
 		};
 	}
 
+	$rendered_uuids{$uuid} = \@rendered_objects;
 	addRenderFeatures(\@features) if @features;
 
 	openMapBrowser() if !isBrowserConnected();
@@ -568,7 +647,12 @@ sub _renderObject
 		$last_clear_version = $cv;
 	}
 
-	return if $rendered_uuids{$obj->{uuid}};
+	if ($rendered_uuids{$obj->{uuid}})
+	{
+		delete $rendered_uuids{$obj->{uuid}};
+		removeRenderFeatures([$obj->{uuid}]);
+		return;
+	}
 
 	my @features;
 
@@ -696,6 +780,12 @@ sub onTreeRightClick
 	my $node = $item_data->GetData();
 	return if ref $node ne 'HASH';
 
+	if (!$this->{tree}->IsSelected($item))
+	{
+		$this->{tree}->UnselectAll();
+		$this->{tree}->SelectItem($item, 1);
+	}
+
 	$this->{_right_click_node} = $node;
 	my $menu = _buildContextMenu($this, $node);
 	$this->PopupMenu($menu, [-1,-1]);
@@ -753,6 +843,13 @@ sub _buildContextMenu
 		$menu->Append($COMMAND_UPLOAD_E80, 'Upload to E80');
 	}
 
+	if ($node_type ne 'root')
+	{
+		$menu->AppendSeparator();
+		$menu->Append($CTX_CMD_SHOW_MAP, 'Show on Map');
+		$menu->Append($CTX_CMD_HIDE_MAP, 'Hide on Map');
+	}
+
 	return $menu;
 }
 
@@ -763,6 +860,70 @@ sub _onContextMenuCommand
 	onContextMenuCommand(
 		$event->GetId(), 'database', $this->{_right_click_node}, $this->{tree},
 		@{$this->{_context_nodes} // []});
+}
+
+
+sub _onShowMap
+{
+	my ($this, $event) = @_;
+	my @nodes = @{$this->{_context_nodes} // []};
+	return if !@nodes;
+	my $dbh = connectDB();
+	for my $node (@nodes)
+	{
+		if ($node->{type} eq 'collection')
+		{
+			my $uuid = $node->{data}{uuid};
+			next if $rendered_uuids{$uuid};
+			_renderCollection($dbh, $this, $uuid);
+		}
+		elsif ($node->{type} eq 'object')
+		{
+			next if $rendered_uuids{$node->{data}{uuid}};
+			_renderObject($dbh, $this, $node->{data});
+		}
+		elsif ($node->{type} eq 'route_point')
+		{
+			next if $rendered_uuids{$node->{uuid}};
+			_renderObject($dbh, $this, { obj_type => 'waypoint', uuid => $node->{uuid} });
+		}
+	}
+	disconnectDB($dbh);
+}
+
+
+sub _onHideMap
+{
+	my ($this, $event) = @_;
+	my @nodes = @{$this->{_context_nodes} // []};
+	return if !@nodes;
+	my @remove;
+	for my $node (@nodes)
+	{
+		if ($node->{type} eq 'collection')
+		{
+			my $uuid = $node->{data}{uuid};
+			next if !$rendered_uuids{$uuid};
+			my @children = ref($rendered_uuids{$uuid}) eq 'ARRAY' ? @{$rendered_uuids{$uuid}} : ();
+			push @remove, $uuid, @children;
+			delete $rendered_uuids{$_} for ($uuid, @children);
+		}
+		elsif ($node->{type} eq 'object')
+		{
+			my $uuid = $node->{data}{uuid};
+			next if !$rendered_uuids{$uuid};
+			push @remove, $uuid;
+			delete $rendered_uuids{$uuid};
+		}
+		elsif ($node->{type} eq 'route_point')
+		{
+			my $uuid = $node->{uuid};
+			next if !$rendered_uuids{$uuid};
+			push @remove, $uuid;
+			delete $rendered_uuids{$uuid};
+		}
+	}
+	removeRenderFeatures(\@remove) if @remove;
 }
 
 

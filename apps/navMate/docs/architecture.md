@@ -164,7 +164,11 @@ See [Data Model](data_model.md) for schema detail.
 
 Google Earth was the accidental archive for many years — not because it was suited
 to the task but because nothing better existed. The Leaflet canvas replaces GE as
-navMate's primary geographic visualization surface.
+navMate's primary geographic visualization surface. navMate uses Google Maps satellite
+tiles (Maps JavaScript API, `lyrs=y`), which provide sub-meter resolution imagery —
+confirmed at the Panama deployment area — achieving full imagery parity with GE for
+geographic editing and track verification work. GE is no longer needed as a
+visualization or editing surface.
 
 KML survives in two roles:
 
@@ -172,11 +176,11 @@ KML survives in two roles:
 `My Places.kml` export. This is a one-time migration from GE to navMate, not an
 ongoing relationship.
 
-**Export** — navMate can produce a reorganized, deduplicated KML that supersedes
-the original `My Places.kml` as a clean GE archive. This export is a first-class
-deliverable: it represents the same lifelong geographic knowledge in a better-organized
-form, and retains value even independent of the full navMate application. KML export
-is not an afterthought; it is a peer use case alongside the Leaflet UI.
+**Export** — navMate can produce a reorganized, deduplicated KML as a standalone
+geographic archive. This export is a first-class deliverable: it represents the same
+lifelong geographic knowledge in a better-organized form, and retains value even
+independent of the full navMate application. KML export is not an afterthought; it
+is a peer use case alongside the Leaflet UI.
 
 ## Distribution Path
 

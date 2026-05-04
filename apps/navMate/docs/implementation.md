@@ -80,9 +80,10 @@ Requires the tree (Phase 3) and map (Phase 4) to be useful.
 
 ### Phase 6 — Domain Layer (`f_kml.pm`, `f_wrgt.pm`)  planned
 
-- Production KML import/export with round-trip UUID embedding via `<ExtendedData>`
+- Production KML import/export; UUID embedding via `<ExtendedData>` for backup/recovery
+  re-import (deferred — not required for the primary export-only use case)
 - WRT business logic — collection tree operations, working set operations
-- KML export: reorganized, deduplicated output suitable as a clean GE archive
+- KML export: reorganized, deduplicated output as a standalone geographic archive
 
 ### Phase 7 — Transport (`j_transport.pm`)  planned
 

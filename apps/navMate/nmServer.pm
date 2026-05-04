@@ -51,6 +51,7 @@ BEGIN
 		startNavMateServer
 		dispatchNavMateCommand
 		addRenderFeatures
+		removeRenderFeatures
 		clearRenderMap
 		isBrowserConnected
 		openMapBrowser
@@ -88,6 +89,19 @@ sub addRenderFeatures
 	my $existing = decode_json($features_json);
 	push @$existing, @$features_ref;
 	$features_json = encode_json($existing);
+	$map_version++;
+}
+
+
+sub removeRenderFeatures
+{
+	my ($uuids_ref) = @_;
+	return if !@$uuids_ref;
+	my %remove = map { $_ => 1 } @$uuids_ref;
+	lock($map_version);
+	my $existing = decode_json($features_json);
+	my @kept = grep { !$remove{$_->{properties}{uuid} // ''} } @$existing;
+	$features_json = encode_json(\@kept);
 	$map_version++;
 }
 

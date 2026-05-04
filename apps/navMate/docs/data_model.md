@@ -299,8 +299,9 @@ a first-class deliverable independent of the Leaflet UI: a clean, well-structure
 version of the same geographic knowledge, useful even if the application never
 reaches full production.
 
-**Round-trip identity.** navMate embeds its UUID in every exported KML object via
-`<ExtendedData>`:
+**Round-trip identity.** For backup and disaster-recovery scenarios (re-import of a
+navMate KML export into a fresh database), navMate embeds its UUID in every exported
+KML object via `<ExtendedData>`:
 
 ```xml
 <ExtendedData>

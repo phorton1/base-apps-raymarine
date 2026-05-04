@@ -21,6 +21,7 @@ use apps::raymarine::NET::c_RAYDP;
 use w_resources;
 use nmServer;
 use nmOps;
+use nmOldE80;
 use nmTest;
 use winDatabase;
 use winE80;
@@ -44,7 +45,8 @@ sub new
 	EVT_MENU($this, $COMMAND_OPEN_MAP,     \&onCommand);
 	EVT_MENU($this, $COMMAND_IMPORT_KML,   \&onCommand);
 	EVT_MENU($this, $COMMAND_REFRESH_E80,  \&onCommand);
-	EVT_MENU($this, $COMMAND_REFRESH_DB,   \&onCommand);
+	EVT_MENU($this, $COMMAND_REFRESH_DB,       \&onCommand);
+	EVT_MENU($this, $COMMAND_IMPORT_OLDE80,    \&onCommand);
 	EVT_IDLE($this, \&onIdle);
 
 	my $sb = Wx::StatusBar->new($this, -1);
@@ -252,6 +254,12 @@ sub onCommand
 	}
 	elsif ($id == $COMMAND_REFRESH_DB)
 	{
+		my $database = $this->findPane($WIN_DATABASE);
+		$database->refresh() if $database;
+	}
+	elsif ($id == $COMMAND_IMPORT_OLDE80)
+	{
+		doImportOldE80Residue();
 		my $database = $this->findPane($WIN_DATABASE);
 		$database->refresh() if $database;
 	}
