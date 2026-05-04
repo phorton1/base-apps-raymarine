@@ -66,6 +66,25 @@ See the **[NET protocols documentation](../../NET/docs/readme.md)** for the
 underlying RAYNET protocol library, and **[shark](../../apps/shark/docs/shark.md)**
 for the companion engineering tool.
 
+## Third-Party Libraries
+
+- **[Leaflet](https://leafletjs.com/)** (v1.9.4) — open-source JavaScript library
+  for the interactive map canvas (BSD 2-Clause license). Tile imagery sourced
+  separately from Google Maps and Esri.
+- **[Google Maps](https://developers.google.com/maps)** — satellite tile imagery
+  via the Maps JavaScript API (`lyrs=s`). Requires a Google Maps Platform API key;
+  usage subject to Google Maps Platform Terms of Service.
+- **[Esri](https://www.esri.com/)** — place name label overlay tiles via the
+  ArcGIS Online REST tile service. Free for display use; attribution required.
+
+## License
+
+Copyright (C) 2026 Patrick Horton
+
+navMate is free software, released under the
+[GNU General Public License v3](../LICENSE.TXT) or any later version.
+See [LICENSE.TXT](../LICENSE.TXT) or <https://www.gnu.org/licenses/> for details.
+
 ---
 
 **Next:** [Architecture](architecture.md)

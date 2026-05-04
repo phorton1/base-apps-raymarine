@@ -120,6 +120,14 @@ Windows PC running Raytech:
 RNS does **not** use or mirror E80 tracks. It can facilitate extracting tracks
 from the E80 indirectly via ARCHIVE.FSH read from a CF card.
 
+## License
+
+Copyright (C) 2026 Patrick Horton
+
+This repository is free software, released under the
+[GNU General Public License v3](../LICENSE.TXT) or any later version.
+See [LICENSE.TXT](../LICENSE.TXT) or <https://www.gnu.org/licenses/> for details.
+
 ---
 
 **Next:** [Home](../../docs/readme.md)

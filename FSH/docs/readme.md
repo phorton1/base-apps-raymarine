@@ -241,6 +241,14 @@ in-place update of an existing FSH file.
 required for encoding track points) uses a linear approximation rather than the correct
 ellipsoidal inverse. Read-back coordinates will not round-trip exactly.
 
+## License
+
+Copyright (C) 2026 Patrick Horton
+
+This repository is free software, released under the
+[GNU General Public License v3](../LICENSE.TXT) or any later version.
+See [LICENSE.TXT](../LICENSE.TXT) or <https://www.gnu.org/licenses/> for details.
+
 ---
 
 **Next:** [Home](../../docs/readme.md)

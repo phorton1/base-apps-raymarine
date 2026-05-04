@@ -153,6 +153,14 @@ Probe files for implemented protocols are in `NET/probes/`. The probe system was
 the primary tool for discovering command semantics by sending structured guesses
 to the E80 and observing responses.
 
+## License
+
+Copyright (C) 2026 Patrick Horton
+
+This repository is free software, released under the
+[GNU General Public License v3](../LICENSE.TXT) or any later version.
+See [LICENSE.TXT](../LICENSE.TXT) or <https://www.gnu.org/licenses/> for details.
+
 ---
 
 **Next:** [Cables](ethernet_cables.md)

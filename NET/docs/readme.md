@@ -175,6 +175,14 @@ DBNAV, RAYDP) are unaffected and continue to use the `doParse` path.
   Physical connection requirements: shielded ethernet cables, the E80/E120
   ethernet port, and the 3D-printed field-installable waterproof connector.
 
+## License
+
+Copyright (C) 2026 Patrick Horton
+
+This repository is free software, released under the
+[GNU General Public License v3](../LICENSE.TXT) or any later version.
+See [LICENSE.TXT](../LICENSE.TXT) or <https://www.gnu.org/licenses/> for details.
+
 ---
 
 **Next:** [RAYNET](RAYNET.md)

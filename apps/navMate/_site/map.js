@@ -2,11 +2,16 @@
 // Leaflet client. Polls /poll?v=N at 1Hz; on version change fetches /geojson
 // and re-renders all features. Additive accumulation is server-side.
 
-// ---- Esri tile layers (free, no API key) ----
+// ---- Google Maps satellite base + Esri labels overlay ----
 
 const imageryLayer = L.tileLayer(
-    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    { attribution: 'Tiles &copy; Esri', maxNativeZoom: 19, maxZoom: 22 }
+    'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}&key=AIzaSyCApJ-27s7aNpIplcjaIbMsRcvWz42ZjR4',
+    {
+        subdomains: ['0','1','2','3'],
+        attribution: '&copy; Google',
+        maxNativeZoom: 20,
+        maxZoom: 22,
+    }
 );
 const labelsLayer = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
