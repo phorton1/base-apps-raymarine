@@ -236,6 +236,7 @@ sub handle_request
 		return json_response($request, { ok => 1, queued => 1 });
 	}
 
+	$request->{uri} = '/anchor.png' if $uri eq '/favicon.ico';
 	return $this->SUPER::handle_request($client,$request);
 }
 

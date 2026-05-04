@@ -27,7 +27,7 @@ use nmTest;
 use winDatabase;
 use winE80;
 use winMonitor;
-use _import_kml;
+use nmOneTimeImport;
 use base qw(Pub::WX::Frame);
 
 
@@ -348,6 +348,9 @@ sub _doImportDB
 sub _doImportKML
 {
 	my ($this) = @_;
+	return if !yesNoDialog($this,
+		"This will DELETE and rebuild the entire navMate database from KML files.\n\nAre you sure?",
+		'OneTimeImportKML');
 	display(0,0,"winMain: ImportKML starting");
 	my $rc = c_db::resetDB();
 	if ($rc <= 0)
@@ -355,7 +358,7 @@ sub _doImportKML
 		warning(0,0,"winMain: ImportKML aborted — resetDB returned $rc");
 		return;
 	}
-	_import_kml::run();
+	nmOneTimeImport::run();
 	my $database = $this->findPane($WIN_DATABASE);
 	$database->refresh() if $database;
 	display(0,0,"winMain: ImportKML done");

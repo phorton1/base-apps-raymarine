@@ -1,8 +1,8 @@
 #-----------------------------------------
-# migrate/_import_kml.pm
+# nmOneTimeImport.pm
 #-----------------------------------------
 # Called from winMain File->Import KML menu item.
-# run() parses C:/junk/My Places.kml and imports every top-level Folder
+# run() parses C:/junk/navMate.kml and imports every top-level Folder
 # and Document found there.  GE folder names become collection names directly.
 #
 # Folder hierarchy rules:
@@ -13,7 +13,7 @@
 #   - After all sources are imported, promoteWaypointOnlyBranches() promotes
 #     any branch collection with only direct waypoints to node_type='group'.
 
-package _import_kml;
+package nmOneTimeImport;
 use strict;
 use warnings;
 use XML::Simple;
@@ -24,7 +24,7 @@ use a_utils;
 use c_db;
 
 
-my $MY_PLACES_KML = 'C:/junk/My Places.kml';
+my $NAVMATE_KML = 'C:/junk/navMate.kml';
 
 my $xs = XML::Simple->new(
 	KeyAttr       => [],
@@ -39,7 +39,7 @@ sub run
 	my $dbh = connectDB();
 	_run($dbh);
 	disconnectDB($dbh);
-	display(0,0,"_import_kml done");
+	display(0,0,"nmOneTimeImport done");
 }
 
 
@@ -50,17 +50,17 @@ sub run
 sub _run
 {
 	my ($dbh) = @_;
-	die "_import_kml: not found: $MY_PLACES_KML" if !-f $MY_PLACES_KML;
-	display(0,0,"importing $MY_PLACES_KML");
-	my $data = $xs->XMLin($MY_PLACES_KML);
+	die "nmOneTimeImport: not found: $NAVMATE_KML" if !-f $NAVMATE_KML;
+	display(0,0,"importing $NAVMATE_KML");
+	my $data = $xs->XMLin($NAVMATE_KML);
 	my $root = $data->{Document}[0]
-		or die "no root Document in $MY_PLACES_KML";
+		or die "no root Document in $NAVMATE_KML";
 	my $style_colors = _buildStyleMap($root);
 
-	# My Places.kml wraps everything in a single "My Places" Folder.
+	# navMate.kml wraps everything in a single "navMate" Folder.
 	# Descend into it so its children become the top-level sources.
 	my $top_folders = $root->{Folder} // [];
-	my $container   = (@$top_folders == 1 && ($top_folders->[0]{name}//'') =~ /^My Places/i)
+	my $container   = (@$top_folders == 1 && ($top_folders->[0]{name}//'') =~ /^navMate/i)
 	                ? $top_folders->[0]
 	                : $root;
 
@@ -68,13 +68,13 @@ sub _run
 	{
 		next if ($folder->{name} // '') =~ /\(no import\)/i;
 		eval { _importTopLevel($dbh, $folder, $style_colors) };
-		error("_import_kml: folder '" . ($folder->{name}//'?') . "' failed: $@") if $@;
+		error("nmOneTimeImport: folder '" . ($folder->{name}//'?') . "' failed: $@") if $@;
 	}
 	for my $doc (@{$container->{Document} // []})
 	{
 		next if ($doc->{name} // '') =~ /\(no import\)/i;
 		eval { _importTopLevel($dbh, $doc, $style_colors) };
-		error("_import_kml: document '" . ($doc->{name}//'?') . "' failed: $@") if $@;
+		error("nmOneTimeImport: document '" . ($doc->{name}//'?') . "' failed: $@") if $@;
 	}
 
 	promoteWaypointOnlyBranches($dbh);
@@ -108,6 +108,11 @@ sub _importTopLevel
 		my $doc_uuid = findCollection($dbh, $doc_name, $top_coll)
 		            // insertCollection($dbh, $doc_name, $top_coll, $NODE_TYPE_BRANCH, '');
 		my $doc_ctx  = { %$ctx, coll_uuid => $doc_uuid };
+		if ($doc_name eq 'Final_Sumwood_Route')
+		{
+			_importSumwoodRoute($doc, $doc_ctx);
+			next;
+		}
 		for my $sub (@{$doc->{Folder}    // []}) { _walkFolder($sub, $doc_ctx) }
 		for my $pm  (@{$doc->{Placemark} // []}) { _importPlacemark($pm, $doc_ctx) }
 	}
@@ -132,6 +137,7 @@ sub _walkFolder
 	my $node_type = $NODE_TYPE_BRANCH;
 	if    ($name =~ /^routes$/i)  { $node_type = 'routes' }
 	elsif ($name =~ /Route$/i)    { _importRouteFolder($folder, $ctx); return; }
+	elsif ($name =~ /^RonAzul$/i) { _importRonAzul($folder, $ctx); return; }
 	elsif ($name =~ /^tracks?$/i) { $node_type = 'tracks' }
 
 	# Named sub-folder inside a routes context with no explicit type → one route
@@ -363,6 +369,83 @@ sub _importRouteFromLine
 		}
 	}
 	display(0,1,"  route '$route_name': $found/" . scalar(@pts) . " vertices matched");
+}
+
+
+#---------------------------------
+# _importSumwoodRoute
+#---------------------------------
+# Special case for the Final_Sumwood_Route Document inside Michelle.
+# Walks sub-folders normally, imports Point placemarks as waypoints, then
+# builds a route named 'best' from those same waypoints by coordinate match.
+# The LineString placemark 'best' is skipped (coordinates don't match m001-m046).
+
+sub _importSumwoodRoute
+{
+	my ($doc, $ctx) = @_;
+	my $dbh = $ctx->{dbh};
+
+	for my $sub (@{$doc->{Folder} // []}) { _walkFolder($sub, $ctx) }
+
+	my @all_pms   = grep { ($_->{name}//'') !~ /~$/ } @{$doc->{Placemark} // []};
+	my @point_pms = grep { exists $_->{Point}      } @all_pms;
+	my @line_pms  = grep { exists $_->{LineString} } @all_pms;
+
+	for my $pm (@point_pms) { _importPlacemark($pm, $ctx) }
+
+	my $color      = @line_pms ? _resolveColor($ctx->{style_colors}, $line_pms[0]{styleUrl}) : 0;
+	my $route_uuid = insertRoute($dbh, 'best', $color, '', $ctx->{coll_uuid});
+	my $pos = 0;
+	for my $pm (@point_pms)
+	{
+		my $raw = $pm->{Point}{coordinates} // '';
+		$raw =~ s/^\s+|\s+$//g;
+		my ($lon, $lat) = split /,/, $raw;
+		next unless defined $lat && defined $lon;
+		my $wp_uuid = findWaypointByLatLon($dbh, $lat+0, $lon+0);
+		appendRouteWaypoint($dbh, $route_uuid, $wp_uuid, $pos++) if $wp_uuid;
+	}
+	display(0,1,"  route 'best': $pos pts");
+}
+
+
+#---------------------------------
+# _importRonAzul
+#---------------------------------
+# Special case for the RonAzul Folder inside Michelle.
+# Creates a RonAzul collection, imports Point placemarks as waypoints into it,
+# then builds a route named 'RonAzul' in the same collection.
+# The LineString placemark RonAzulKenAndVonnes is skipped.
+
+sub _importRonAzul
+{
+	my ($folder, $ctx) = @_;
+	my $dbh  = $ctx->{dbh};
+	my $name = 'RonAzul';
+
+	my $coll_uuid = findCollection($dbh, $name, $ctx->{coll_uuid})
+	             // insertCollection($dbh, $name, $ctx->{coll_uuid}, $NODE_TYPE_GROUP, '');
+	my $child_ctx = { %$ctx, coll_uuid => $coll_uuid };
+
+	my @all_pms   = grep { ($_->{name}//'') !~ /~$/ } @{$folder->{Placemark} // []};
+	my @point_pms = grep { exists $_->{Point}      } @all_pms;
+	my @line_pms  = grep { exists $_->{LineString} } @all_pms;
+
+	for my $pm (@point_pms) { _importPlacemark($pm, $child_ctx) }
+
+	my $color      = @line_pms ? _resolveColor($ctx->{style_colors}, $line_pms[0]{styleUrl}) : 0;
+	my $route_uuid = insertRoute($dbh, $name, $color, '', $coll_uuid);
+	my $pos = 0;
+	for my $pm (@point_pms)
+	{
+		my $raw = $pm->{Point}{coordinates} // '';
+		$raw =~ s/^\s+|\s+$//g;
+		my ($lon, $lat) = split /,/, $raw;
+		next unless defined $lat && defined $lon;
+		my $wp_uuid = findWaypointByLatLon($dbh, $lat+0, $lon+0);
+		appendRouteWaypoint($dbh, $route_uuid, $wp_uuid, $pos++) if $wp_uuid;
+	}
+	display(0,1,"  route '$name': $pos pts");
 }
 
 
