@@ -37,6 +37,7 @@ BEGIN
 		doPaste
 		doPasteNew
 		doRefresh
+		abgrToE80Index
 	);
 }
 
@@ -68,8 +69,34 @@ sub _newNavUUID
 sub _parseColor
 {
 	my ($s) = @_;
-	return 0 if !(defined $s && $s ne '');
-	return ($s =~ /^0[xX]/) ? hex($s) : ($s + 0);
+	return undef if !(defined($s) && $s ne '');
+	return $s;
+}
+
+sub abgrToE80Index
+{
+	my ($abgr) = @_;
+	return 0 if !($abgr && length($abgr) >= 8);
+	my $rr = hex(substr($abgr, 6, 2));
+	my $gg = hex(substr($abgr, 4, 2));
+	my $bb = hex(substr($abgr, 2, 2));
+	my @targets = (
+		[255,   0,   0],   # 0 RED
+		[255, 255,   0],   # 1 YELLOW
+		[  0, 255,   0],   # 2 GREEN
+		[  0,   0, 255],   # 3 BLUE
+		[255,   0, 255],   # 4 PURPLE
+		[255, 255, 255],   # 5 WHITE
+	);
+	my ($best_idx, $best_dist) = (0, 9e99);
+	for my $i (0 .. $#targets)
+	{
+		my $d = ($rr - $targets[$i][0])**2
+		      + ($gg - $targets[$i][1])**2
+		      + ($bb - $targets[$i][2])**2;
+		$best_idx = $i if $d < $best_dist and do { $best_dist = $d; 1 };
+	}
+	return $best_idx;
 }
 
 sub _wpmgr

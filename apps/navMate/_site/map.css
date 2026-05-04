@@ -21,17 +21,8 @@ html, body { margin: 0; padding: 0; height: 100%; }
 .leaflet-dragging .leaflet-grab { cursor: default !important; }
 .leaflet-interactive      { cursor: crosshair !important; }
 
-/* Waypoint marker: small red transparent-fill circle */
-.nm-wp-marker {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    border: 2px solid #cc0000;
-    background: rgba(204, 0, 0, 0.20);
-}
 .nm-wp-hover {
-    border-color: #ffffff !important;
-    background: rgba(255, 255, 255, 0.35) !important;
+    filter: drop-shadow(0 0 4px white) brightness(1.5);
 }
 
 /* Overlay controls stacked below the zoom buttons */
@@ -72,8 +63,8 @@ html, body { margin: 0; padding: 0; height: 100%; }
 
 /* Sounding waypoints: depth number */
 .nm-sounding {
-    color: #333;
-    font-size: 10px;
+    color: white;
+    font-size: 12px;
     white-space: nowrap;
     cursor: default;
     pointer-events: none;
@@ -81,6 +72,7 @@ html, body { margin: 0; padding: 0; height: 100%; }
 .nm-sounding-shallow {
     color: red;
     font-weight: bold;
+    font-size: 13px;
 }
 
 /* WP / RP name overlay labels (toggled by checkboxes) */

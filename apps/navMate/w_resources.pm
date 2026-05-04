@@ -30,6 +30,8 @@ BEGIN
 		$COMMAND_EXPORT_DB_TEXT
 		$COMMAND_IMPORT_DB_TEXT
 		$COMMAND_REFRESH_E80_DATA
+		$COMMAND_EXPORT_KML
+		$COMMAND_IMPORT_KML_NM
 	);
 }
 
@@ -48,6 +50,8 @@ our $COMMAND_REFRESH_DB    = 10022;
 our $COMMAND_IMPORT_OLDE80 = 10024;
 our $COMMAND_EXPORT_DB_TEXT = 10025;
 our $COMMAND_IMPORT_DB_TEXT = 10026;
+our $COMMAND_EXPORT_KML     = 10028;
+our $COMMAND_IMPORT_KML_NM  = 10029;
 
 
 my $pane_data = {
@@ -70,6 +74,8 @@ my $command_data = {
 	$COMMAND_IMPORT_OLDE80  => ['Import oldE80 Residue', 'Analyze oldE80 tracks and insert novel runs into DB'],
 	$COMMAND_EXPORT_DB_TEXT => ['ExportToText', 'Export navMate database to a text backup file'],
 	$COMMAND_IMPORT_DB_TEXT => ['ImportFromText', 'Replace navMate database from a text backup file'],
+	$COMMAND_EXPORT_KML     => ['Export KML', 'Export navMate database to a KML file for Google Earth'],
+	$COMMAND_IMPORT_KML_NM  => ['Import KML', 'Additive re-import from a navMate KML file'],
 };
 
 my @collection_context_menu = (
@@ -98,6 +104,9 @@ my $database_menu = [
 	$ID_SEPARATOR,
 	$COMMAND_EXPORT_DB_TEXT,
 	$COMMAND_IMPORT_DB_TEXT,
+	$ID_SEPARATOR,
+	$COMMAND_EXPORT_KML,
+	$COMMAND_IMPORT_KML_NM,
 ];
 
 my $e80_menu = [

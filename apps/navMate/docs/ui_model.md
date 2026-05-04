@@ -6,7 +6,9 @@
 **[Data Model](data_model.md)** --
 **UI Model** --
 **[Implementation](implementation.md)** --
-**[Context Menu](context_menu.md)**
+**[Context Menu](context_menu.md)** --
+**[KML Specification](kml_specification.md)** --
+**[GE Notes](ge_notes.md)**
 
 ## Overview
 
@@ -14,7 +16,7 @@ navMate runs three UI surfaces within a single process:
 
 - **winDatabase** — navMate database tree: browse, edit, and upload collections
 - **winE80** — live E80 device tree: view and delete routes, groups, and waypoints
-- **Leaflet canvas** — geographic map view *(planned; not yet implemented)*
+- **Leaflet canvas** — geographic map view (partially implemented)
 
 winDatabase and winE80 are the operative UI. They open as separate panels inside
 the main notebook frame and together form a two-window transfer interface: items
@@ -69,6 +71,8 @@ waypoints, routes, and groups in the collection.
 | Command | Description |
 |---|---|
 | Refresh Window | Reload the database tree from the current navMate.db |
+| Import KML | Import (or re-import) `navMate.kml`; reconciles by UUID, additive |
+| Export KML | Export full database to `navMate.kml` with ExtendedData UUID embedding |
 | ExportToText | Export the entire database to a `.txt` backup file (one INSERT per table) |
 | ImportFromText | Replace the entire database from a `.txt` backup file; prompts for confirmation |
 

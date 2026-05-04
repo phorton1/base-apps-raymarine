@@ -112,7 +112,7 @@ my $db_def = {
 		"uuid            TEXT PRIMARY KEY",
 		"name            TEXT NOT NULL",
 		"comment         TEXT DEFAULT ''",
-		"color           INTEGER DEFAULT 0",
+		"color           TEXT DEFAULT NULL",
 		"collection_uuid TEXT NOT NULL",
 	],
 
@@ -126,7 +126,7 @@ my $db_def = {
 	tracks => [
 		"uuid            TEXT PRIMARY KEY",
 		"name            TEXT NOT NULL",
-		"color           INTEGER DEFAULT 0",
+		"color           TEXT DEFAULT NULL",
 		"ts_start        INTEGER NOT NULL",
 		"ts_end          INTEGER",
 		"ts_source       TEXT NOT NULL",

@@ -469,11 +469,9 @@ sub _onColorEdit
 	return if $this->{_color_updating};
 	return if !$this->{_edit_track_uuid};
 	my $text = $this->{color_ctrl}->GetValue();
-	return if $text !~ /^\d+$/;
-	my $color = int($text);
-	return if $color < 0 || $color > 5;
+	return if $text !~ /^[0-9a-fA-F]{8}$/;
 	my $dbh = connectDB();
-	$dbh->do("UPDATE tracks SET color=? WHERE uuid=?", [$color, $this->{_edit_track_uuid}]);
+	$dbh->do("UPDATE tracks SET color=? WHERE uuid=?", [$text, $this->{_edit_track_uuid}]);
 	disconnectDB($dbh);
 }
 
@@ -516,6 +514,7 @@ sub _onTreeDblClick
 		_renderObject($dbh, $this, { obj_type => 'waypoint', uuid => $node->{uuid} });
 	}
 	disconnectDB($dbh);
+	openMapBrowser() if !isBrowserConnected();
 }
 
 
@@ -587,7 +586,7 @@ sub _renderCollection
 				uuid            => $t->{uuid},
 				name            => $t->{name} // '',
 				obj_type        => 'track',
-				color           => ($t->{color}       // 0) + 0,
+				color           => $t->{color},
 				point_count     => ($t->{point_count} // 0) + 0,
 				ts_start        => ($t->{ts_start}    // 0) + 0,
 				ts_end          => ($t->{ts_end}      // 0) + 0,
@@ -616,7 +615,7 @@ sub _renderCollection
 				uuid            => $r->{uuid},
 				name            => $r->{name} // '',
 				obj_type        => 'route',
-				color           => ($r->{color} // 0) + 0,
+				color           => $r->{color},
 				wp_count        => scalar(@$pts) + 0,
 				rp_names        => \@rp_names,
 				comment         => $r->{comment} // '',
@@ -631,8 +630,6 @@ sub _renderCollection
 
 	$rendered_uuids{$uuid} = \@rendered_objects;
 	addRenderFeatures(\@features) if @features;
-
-	openMapBrowser() if !isBrowserConnected();
 }
 
 
@@ -699,7 +696,7 @@ sub _renderObject
 					uuid            => $t->{uuid},
 					name            => $t->{name} // '',
 					obj_type        => 'track',
-					color           => ($t->{color}       // 0) + 0,
+					color           => $t->{color},
 					point_count     => ($t->{point_count} // 0) + 0,
 					ts_start        => ($t->{ts_start}    // 0) + 0,
 					ts_end          => ($t->{ts_end}      // 0) + 0,
@@ -728,7 +725,7 @@ sub _renderObject
 					uuid            => $r->{uuid},
 					name            => $r->{name} // '',
 					obj_type        => 'route',
-					color           => ($r->{color} // 0) + 0,
+					color           => $r->{color},
 					wp_count        => scalar(@$pts) + 0,
 					rp_names        => \@rp_names,
 					comment         => $r->{comment} // '',
@@ -743,8 +740,6 @@ sub _renderObject
 	}
 
 	addRenderFeatures(\@features) if @features;
-
-	openMapBrowser() if !isBrowserConnected();
 }
 
 
@@ -889,6 +884,7 @@ sub _onShowMap
 		}
 	}
 	disconnectDB($dbh);
+	openMapBrowser() if !isBrowserConnected();
 }
 
 

@@ -28,6 +28,7 @@ use winDatabase;
 use winE80;
 use winMonitor;
 use nmOneTimeImport;
+use nmKML;
 use base qw(Pub::WX::Frame);
 
 
@@ -51,6 +52,8 @@ sub new
 	EVT_MENU($this, $COMMAND_IMPORT_OLDE80,    \&onCommand);
 	EVT_MENU($this, $COMMAND_EXPORT_DB_TEXT,   \&onCommand);
 	EVT_MENU($this, $COMMAND_IMPORT_DB_TEXT,   \&onCommand);
+	EVT_MENU($this, $COMMAND_EXPORT_KML,       \&onCommand);
+	EVT_MENU($this, $COMMAND_IMPORT_KML_NM,    \&onCommand);
 	EVT_IDLE($this, \&onIdle);
 
 	my $sb = Wx::StatusBar->new($this, -1);
@@ -280,6 +283,14 @@ sub onCommand
 	{
 		_doImportDB($this);
 	}
+	elsif ($id == $COMMAND_EXPORT_KML)
+	{
+		_doExportKML($this);
+	}
+	elsif ($id == $COMMAND_IMPORT_KML_NM)
+	{
+		_doImportKMLNM($this);
+	}
 }
 
 
@@ -339,6 +350,54 @@ sub _doImportDB
 			my $database = $this->findPane($WIN_DATABASE);
 			$database->refresh() if $database;
 			display(0,0,"winMain: import complete");
+		}
+	}
+	$dialog->Destroy();
+}
+
+
+sub _doExportKML
+{
+	my ($this) = @_;
+	my $default_dir = readConfig('kml_dir') || '';
+	my $dialog = Wx::FileDialog->new(
+		$this, 'Export KML',
+		$default_dir, 'navMate.kml',
+		'KML files (*.kml)|*.kml|All files (*.*)|*.*',
+		wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+	if ($dialog->ShowModal() == wxID_OK)
+	{
+		my $filename = $dialog->GetPath();
+		writeConfig('kml_dir', $dialog->GetDirectory());
+		eval { nmKML::exportKML($filename) };
+		error("Export KML failed: $@") if $@;
+	}
+	$dialog->Destroy();
+}
+
+
+sub _doImportKMLNM
+{
+	my ($this) = @_;
+	my $default_dir = readConfig('kml_dir') || '';
+	my $dialog = Wx::FileDialog->new(
+		$this, 'Import KML',
+		$default_dir, '',
+		'KML files (*.kml)|*.kml|All files (*.*)|*.*',
+		wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+	if ($dialog->ShowModal() == wxID_OK)
+	{
+		my $filename = $dialog->GetPath();
+		writeConfig('kml_dir', $dialog->GetDirectory());
+		eval { nmKML::importKML($filename) };
+		if ($@)
+		{
+			error("Import KML failed: $@");
+		}
+		else
+		{
+			my $database = $this->findPane($WIN_DATABASE);
+			$database->refresh() if $database;
 		}
 	}
 	$dialog->Destroy();

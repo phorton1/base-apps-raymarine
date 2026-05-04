@@ -265,7 +265,7 @@ sub _newE80Route
 		name      => $data->{name},
 		uuid      => $uuid,
 		comment   => $data->{comment},
-		color     => _parseColor($data->{color}),
+		color     => abgrToE80Index($data->{color}),
 		waypoints => [],
 	});
 }

@@ -598,7 +598,7 @@ sub _pasteRouteToDatabase
 	{
 		insertRouteUUID($dbh, $route_uuid,
 			$route_data->{name}    // '',
-			$route_data->{color}   // 0,
+			$route_data->{color},
 			$route_data->{comment} // '',
 			$target_uuid);
 	}
@@ -606,7 +606,7 @@ sub _pasteRouteToDatabase
 	{
 		updateRoute($dbh, $route_uuid,
 			$route_data->{name}    // '',
-			$route_data->{color}   // 0,
+			$route_data->{color},
 			$route_data->{comment} // '');
 	}
 
@@ -667,7 +667,7 @@ sub _pasteTrackToDatabase
 	return if !$dbh;
 	my $track_uuid = insertTrack($dbh,
 		name            => $track->{name} // '',
-		color           => $track->{color} // 0,
+		color           => $track->{color},
 		ts_start        => $ts_start,
 		ts_end          => $ts_end,
 		ts_source       => $ts_source,
@@ -801,7 +801,7 @@ sub _pasteNewRouteToDatabase
 
 	my $new_route_uuid = insertRoute($dbh,
 		$route_data->{name}    // '',
-		$route_data->{color}   // 0,
+		$route_data->{color},
 		$route_data->{comment} // '',
 		$target_uuid);
 

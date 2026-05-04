@@ -6,7 +6,9 @@
 **[Data Model](data_model.md)** --
 **[UI Model](ui_model.md)** --
 **[Implementation](implementation.md)** --
-**[Context Menu](context_menu.md)**
+**[Context Menu](context_menu.md)** --
+**[KML Specification](kml_specification.md)** --
+**[GE Notes](ge_notes.md)**
 
 **navMate** is a desktop application for managing a mariner's complete navigation
 data — waypoints, groups, routes, and tracks — across a lifetime of voyaging, across
@@ -41,26 +43,31 @@ base, data model, and UI are the product. Everything else is a boundary adapter.
   selection operations, session state persistence.
 
 - **[Implementation](implementation.md)** —
-  Module naming conventions, code organization, bottom-up implementation sequence
-  by phase.
+  Module naming conventions, as-built module status, pending schema migrations.
+
+- **[KML Specification](kml_specification.md)** —
+  KML file structure, style naming and templates, ExtendedData tags, object-to-KML
+  mapping for collections, waypoints, routes, and tracks; re-import semantics.
+
+- **[GE Notes](ge_notes.md)** —
+  Google Earth round-trip workflow, safe and unsafe GE editing operations, the
+  additive-only re-import asymmetry, track editing policy.
 
 ## Status
 
-navMate implementation is underway. Foundation layers (schema, CRUD, wx panels, embedded
-HTTP server) are built. Upload to E80 via WPMGR is implemented (`nmUpload.pm`): waypoints,
-routes, and groups are uploaded from the collection tree context menu in `winDatabase.pm`.
-A companion E80-side panel (`winE80.pm`) is under development. Basic Leaflet rendering of
-routes and waypoints is partially built.
+navMate foundation layers are built: schema, CRUD, wx panels, embedded HTTP server,
+WPMGR upload, E80-side panel, context menu operations, and clipboard. Basic Leaflet
+rendering of routes and waypoints is partially built. The one-time KML migration from
+`navMate.kml` is complete (`nmOneTimeImport.pm`); the baseline navMate.db is
+established.
 
 The underlying **NET transport layer** was redesigned in 2026-04 from a per-`recv()`
 packet model to a **stream-based message extraction model** (see
 [NET documentation](../../NET/docs/readme.md)). Upload to E80 — including delete of
 routes with many waypoints — is confirmed working end-to-end.
 
-Current focus: Leaflet renderer expansion (tracks, wp_type-based rendering,
-click-to-select detail), `winE80.pm` E80-side panel, and import redesign from
-`My Places.kml`. All 8 historical KML source folders have been fully characterized;
-import rules are defined.
+Current focus: KML import/export (`nmKML.pm`), schema migration for color fields,
+and Leaflet renderer expansion.
 
 See the **[NET protocols documentation](../../NET/docs/readme.md)** for the
 underlying RAYNET protocol library, and **[shark](../../apps/shark/docs/shark.md)**

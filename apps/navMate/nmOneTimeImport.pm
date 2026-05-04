@@ -50,11 +50,19 @@ sub run
 sub _run
 {
 	my ($dbh) = @_;
-	die "nmOneTimeImport: not found: $NAVMATE_KML" if !-f $NAVMATE_KML;
+	if (!-f $NAVMATE_KML)
+	{
+		error("nmOneTimeImport: not found: $NAVMATE_KML");
+		return;
+	}
 	display(0,0,"importing $NAVMATE_KML");
 	my $data = $xs->XMLin($NAVMATE_KML);
-	my $root = $data->{Document}[0]
-		or die "no root Document in $NAVMATE_KML";
+	my $root = $data->{Document}[0];
+	if (!$root)
+	{
+		error("nmOneTimeImport: no root Document in $NAVMATE_KML");
+		return;
+	}
 	my $style_colors = _buildStyleMap($root);
 
 	# navMate.kml wraps everything in a single "navMate" Folder.
@@ -223,11 +231,13 @@ sub _importWaypoint
 		$wp_type  = $WP_TYPE_SOUNDING;
 		$depth_cm = int($name * 30.48);
 	}
+	my $color = _resolveColor($ctx->{style_colors}, $pm->{styleUrl});
 
 	return insertWaypoint($ctx->{dbh},
 		name            => $name,
 		wp_type         => $wp_type,
 		depth_cm        => $depth_cm,
+		color           => $color,
 		lat             => $lat + 0,
 		lon             => $lon + 0,
 		created_ts      => $import_ts,
@@ -297,7 +307,7 @@ sub _importRouteFolder
 		my $dbh   = $ctx->{dbh};
 		my $color = @line_pms
 			? _resolveColor($ctx->{style_colors}, $line_pms[0]{styleUrl})
-			: 0;
+			: _resolveColor($ctx->{style_colors}, $point_pms[0]{styleUrl});
 		my $sub_coll;   # lazy: created only if a waypoint has no existing home
 		my $route_uuid = insertRoute($dbh, $route_name, $color, '', $ctx->{coll_uuid});
 		my $pos     = 0;
@@ -316,6 +326,7 @@ sub _importRouteFolder
 				$wp_uuid = insertWaypoint($dbh,
 					name            => $pm->{name},
 					wp_type         => $WP_TYPE_NAV,
+					color           => _resolveColor($ctx->{style_colors}, $pm->{styleUrl}),
 					lat             => $lat + 0,
 					lon             => $lon + 0,
 					created_ts      => $import_ts,
@@ -433,7 +444,7 @@ sub _importRonAzul
 
 	for my $pm (@point_pms) { _importPlacemark($pm, $child_ctx) }
 
-	my $color      = @line_pms ? _resolveColor($ctx->{style_colors}, $line_pms[0]{styleUrl}) : 0;
+	my $color      = _resolveColor($ctx->{style_colors}, $point_pms[0]{styleUrl});
 	my $route_uuid = insertRoute($dbh, $name, $color, '', $coll_uuid);
 	my $pos = 0;
 	for my $pm (@point_pms)
@@ -455,6 +466,20 @@ sub _importRonAzul
 # Collects <Style id="..."><LineStyle><color> entries from the Document,
 # then resolves <StyleMap> "normal" pairs so both #style_id and
 # #stylemap_id keys are available.  Returns hashref of url→abgr_string.
+# Falls back to GE paddle/pushpin icon URL color name when no <color>
+# element is present.
+
+my %GE_ICON_COLORS = (
+	ltblu  => 'ffffff00',   # cyan
+	ylw    => 'ff00ffff',   # yellow
+	red    => 'ff0000ff',   # red
+	grn    => 'ff00ff00',   # green
+	blu    => 'ffff0000',   # blue
+	wht    => 'ffffffff',   # white
+	orange => 'ff0055ff',   # orange
+	pink   => 'ffff55ff',   # pink
+	purple => 'ff800080',   # purple
+);
 
 sub _buildStyleMap
 {
@@ -464,7 +489,18 @@ sub _buildStyleMap
 	for my $s (@{$doc->{Style} // []})
 	{
 		my $id    = $s->{id} // next;
-		my $color = $s->{LineStyle}{color} // next;
+		my $color = $s->{LineStyle}{color}
+		         // $s->{IconStyle}{color}
+		         // $s->{LabelStyle}{color};
+		if (!defined $color) {
+			my $is   = $s->{IconStyle};
+			my $icon = (ref($is) eq 'HASH') ? $is->{Icon} : undef;
+			my $href = (ref($icon) eq 'HASH') ? ($icon->{href} // '') : '';
+			if ($href =~ m{/kml/(?:paddle|pushpin)/(\w+)[-_]}) {
+				$color = $GE_ICON_COLORS{$1};
+			}
+		}
+		next unless defined $color;
 		$sc{"#$id"} = $color;
 	}
 
@@ -485,38 +521,6 @@ sub _buildStyleMap
 }
 
 
-#---------------------------------
-# _abgrToRouteColor
-#---------------------------------
-# Parses an 8-char ABGR hex string (Google Earth format: aabbggrr) and
-# returns the nearest E80 color index 0-5 by Euclidean distance in RGB.
-
-sub _abgrToRouteColor
-{
-	my ($abgr) = @_;
-	return 0 if !($abgr && length($abgr) >= 8);
-	my $rr = hex(substr($abgr, 6, 2));
-	my $gg = hex(substr($abgr, 4, 2));
-	my $bb = hex(substr($abgr, 2, 2));
-	my @targets = (
-		[255,   0,   0],   # 0 RED
-		[255, 255,   0],   # 1 YELLOW
-		[  0, 255,   0],   # 2 GREEN
-		[  0,   0, 255],   # 3 BLUE
-		[255,   0, 255],   # 4 PURPLE
-		[255, 255, 255],   # 5 WHITE
-	);
-	my ($best_idx, $best_dist) = (0, 9e99);
-	for my $i (0 .. $#targets)
-	{
-		my $d = ($rr-$targets[$i][0])**2
-		      + ($gg-$targets[$i][1])**2
-		      + ($bb-$targets[$i][2])**2;
-		if ($d < $best_dist) { $best_dist = $d; $best_idx = $i; }
-	}
-	return $best_idx;
-}
-
 
 #---------------------------------
 # _resolveColor
@@ -527,10 +531,8 @@ sub _abgrToRouteColor
 sub _resolveColor
 {
 	my ($style_colors, $style_url) = @_;
-	return 0 if !($style_url && $style_colors);
-	my $abgr = $style_colors->{$style_url};
-	return 0 if !$abgr;
-	return _abgrToRouteColor($abgr);
+	return undef if !($style_url && $style_colors);
+	return $style_colors->{$style_url};
 }
 
 

@@ -19,6 +19,7 @@ use threads;
 use Pub::Utils qw(display warning error);
 use apps::raymarine::NET::c_RAYDP;
 use c_db;
+use nmOps;
 
 
 BEGIN
@@ -102,7 +103,7 @@ sub uploadCollectionToE80
 		$wpmgr->createRoute({
 			name      => $r->{name},
 			uuid      => $r->{uuid},
-			color     => ($r->{color} // 0) + 0,
+			color     => abgrToE80Index($r->{color}),
 			waypoints => \@wp_uuids,
 			progress  => $progress_data,
 		});
@@ -175,7 +176,7 @@ sub uploadRouteToE80
 	$wpmgr->createRoute({
 		name      => $route_name,
 		uuid      => $route_uuid,
-		color     => ($route_color // 0) + 0,
+		color     => abgrToE80Index($route_color),
 		waypoints => \@wp_uuids,
 		progress  => $progress_data,
 	});

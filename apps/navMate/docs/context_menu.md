@@ -6,7 +6,9 @@
 **[Data Model](data_model.md)** --
 **[UI Model](ui_model.md)** --
 **[Implementation](implementation.md)** --
-**Context Menu**
+**Context Menu** --
+**[KML Specification](kml_specification.md)** --
+**[GE Notes](ge_notes.md)**
 
 ## Overview
 

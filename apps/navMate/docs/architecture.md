@@ -6,7 +6,9 @@
 **[Data Model](data_model.md)** --
 **[UI Model](ui_model.md)** --
 **[Implementation](implementation.md)** --
-**[Context Menu](context_menu.md)**
+**[Context Menu](context_menu.md)** --
+**[KML Specification](kml_specification.md)** --
+**[GE Notes](ge_notes.md)**
 
 ## Primary Statement
 
@@ -166,21 +168,17 @@ Google Earth was the accidental archive for many years — not because it was su
 to the task but because nothing better existed. The Leaflet canvas replaces GE as
 navMate's primary geographic visualization surface. navMate uses Google Maps satellite
 tiles (Maps JavaScript API, `lyrs=y`), which provide sub-meter resolution imagery —
-confirmed at the Panama deployment area — achieving full imagery parity with GE for
-geographic editing and track verification work. GE is no longer needed as a
-visualization or editing surface.
+confirmed at the Panama deployment area.
 
-KML survives in two roles:
+GE remains a useful editing and archival canvas. navMate exports `navMate.kml` as a
+complete snapshot of the database; GE can open, annotate, and re-export this file;
+navMate re-imports the updated file reconciling changes by UUID. This bidirectional
+KML workflow is documented in [KML Specification](kml_specification.md) and
+[GE Notes](ge_notes.md).
 
-**Import** — the initial population of navMate's database comes from GE's
-`My Places.kml` export. This is a one-time migration from GE to navMate, not an
-ongoing relationship.
-
-**Export** — navMate can produce a reorganized, deduplicated KML as a standalone
-geographic archive. This export is a first-class deliverable: it represents the same
-lifelong geographic knowledge in a better-organized form, and retains value even
-independent of the full navMate application. KML export is not an afterthought; it
-is a peer use case alongside the Leaflet UI.
+KML is a first-class transport, not an afterthought. The exported KML represents the
+same lifelong geographic knowledge in a portable, self-contained form that retains
+independent value even outside the navMate application.
 
 ## Distribution Path
 
@@ -215,7 +213,8 @@ this zone.
 | `a_defs.pm` | lower | built | constants, type vocabulary |
 | `a_utils.pm` | lower | built | $data_dir/$temp_dir setup, UUID generation |
 | `c_db.pm` | lower | built | SQLite schema, raw CRUD, promoteWaypointOnlyBranches |
-| `f_kml.pm` | lower | planned | production KML import/export with round-trip UUID |
+| `nmKML.pm` | app | planned | KML import/export with ExtendedData UUID round-trip |
+| `nmOneTimeImport.pm` | app | built | one-time KML migration from `navMate.kml` into SQLite |
 | `f_wrgt.pm` | lower | planned | WRGT business logic, collection operations |
 | `j_transport.pm` | lower | planned | NET adapter, session-level transport |
 | `navMate.pm` | boundary | built | wx init, main loop |
@@ -228,13 +227,12 @@ this zone.
 | `w_frame.pm` | app | built | wx frame/panel base utilities |
 | `w_resources.pm` | app | built | wx resource constants (IDs, menus, context menus) |
 
-**`migrate/`** — one-time import scripts (KML pipeline, phorton.com enrichment).
-Version-controlled but not production modules. Currently: `_import_kml.pm` (imports
-`C:/junk/My Places.kml` into SQLite), `_enrich_phorton.pm`.
+**`migrate/`** — vestigial. `_enrich_phorton.pm` remains for reference; it is not
+used. The KML migration is handled by `nmOneTimeImport.pm` in the main folder.
 
 **`_site/`** — Leaflet applet HTML/JS, served by `nmServer.pm`'s embedded HTTP
 server. Not a Perl layer.
 
 ---
 
-**Next:** [Data Model](data_model.md) — [UI Model](ui_model.md) — [Implementation](implementation.md)
+**Next:** [Data Model](data_model.md) — [UI Model](ui_model.md) — [Implementation](implementation.md) — [KML Specification](kml_specification.md) — [GE Notes](ge_notes.md)

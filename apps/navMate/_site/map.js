@@ -80,9 +80,11 @@ const OverlayControl = L.Control.extend({
             fetch('/clear', { method: 'POST' }).catch(() => {});
         });
 
-        div.appendChild(makeRow('labels',  'Labels',   true));
-        div.appendChild(makeRow('wpnames', 'WP names', false));
-        div.appendChild(makeRow('rpnames', 'RP names', false));
+        div.appendChild(makeRow('labels',    'Labels',    true));
+        div.appendChild(makeRow('wps',      'WPs',       true));
+        div.appendChild(makeRow('wpnames',  'WP names',  false));
+        div.appendChild(makeRow('rpnames',  'RP names',  false));
+        div.appendChild(makeRow('soundings','Soundings', true));
         L.DomEvent.disableClickPropagation(div);
         L.DomEvent.disableScrollPropagation(div);
         return div;
@@ -148,21 +150,20 @@ function isAutoZoom() {
     return cb ? cb.checked : true;
 }
 
-function makeWpIcon() {
+function makeColoredWpIcon(color) {
+    const css = abgrToCSS(color);
     return L.divIcon({
-        className:   'nm-wp-marker',
+        className:   '',
+        html:        '<svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="' + css + '"/></svg>',
         iconSize:    [12, 12],
         iconAnchor:  [6, 6],
         popupAnchor: [0, -8]
     });
 }
 
-const wpIcon = makeWpIcon();
-
-const E80_COLORS = ['#ff0000', '#ffff00', '#00ff00', '#0000ff', '#ff00ff', '#ffffff'];
-
-function e80Color(idx) {
-    return E80_COLORS[(idx >= 0 && idx < E80_COLORS.length) ? idx : 0];
+function abgrToCSS(abgr) {
+    if (!abgr || typeof abgr !== 'string' || abgr.length < 8) return '#ffffff';
+    return '#' + abgr.slice(6,8) + abgr.slice(4,6) + abgr.slice(2,4);
 }
 
 // ---- Render all features from a GeoJSON FeatureCollection ----
@@ -176,9 +177,11 @@ function rerender() {
     if (lastGeojson) renderAll(lastGeojson);
 }
 
-function isLabels()  { const cb = document.getElementById('labels');  return cb ? cb.checked : true;  }
-function isWpNames() { const cb = document.getElementById('wpnames'); return cb ? cb.checked : false; }
-function isRpNames() { const cb = document.getElementById('rpnames'); return cb ? cb.checked : false; }
+function isLabels()    { const cb = document.getElementById('labels');    return cb ? cb.checked : true;  }
+function isWPs()       { const cb = document.getElementById('wps');       return cb ? cb.checked : true;  }
+function isWpNames()   { const cb = document.getElementById('wpnames');   return cb ? cb.checked : false; }
+function isRpNames()   { const cb = document.getElementById('rpnames');   return cb ? cb.checked : false; }
+function isSoundings() { const cb = document.getElementById('soundings'); return cb ? cb.checked : true;  }
 
 function renderAll(geojson) {
     renderLayer.clearLayers();
@@ -202,16 +205,21 @@ function renderAll(geojson) {
         if (props.uuid) renderedUuids.add(props.uuid);
 
         if (geom.type === 'Point') {
-            if (!isLabels()) return;
             const [lon, lat] = geom.coordinates;
-            const wpType = props.wp_type || 'nav';
+            const wpType  = props.wp_type || 'nav';
+            const isNavWp = (wpType !== 'label' && wpType !== 'sounding');
+
+            if (wpType === 'label'    && !isLabels())              return;
+            if (wpType === 'sounding' && !isSoundings())           return;
+            if (isNavWp               && !isWPs() && !isWpNames()) return;
+
             let m;
             if (wpType === 'label') {
                 const displayName = (props.name || '').replace(/~.*$/, '');
                 m = L.marker([lat, lon], {
                     icon: L.divIcon({
                         className:  'nm-label',
-                        html: escHtml(displayName),
+                        html: '<span style="color:' + abgrToCSS(props.color) + '">' + escHtml(displayName) + '</span>',
                         iconSize:   [0, 0],
                         iconAnchor: [0, 8],
                     })
@@ -226,25 +234,27 @@ function renderAll(geojson) {
                         iconAnchor: [0, 8],
                     })
                 });
-            } else {
-                m = L.marker([lat, lon], { icon: wpIcon });
+            } else if (isWPs()) {
+                m = L.marker([lat, lon], { icon: makeColoredWpIcon(props.color) });
             }
-            const isNavWp = (wpType !== 'label' && wpType !== 'sounding');
-            m.on('mouseover', () => {
-                if (isNavWp) m.getElement()?.classList.add('nm-wp-hover');
-                showInfo(props);
-            });
-            m.on('mouseout', () => {
-                if (isNavWp) m.getElement()?.classList.remove('nm-wp-hover');
-                hideInfo();
-            });
-            m.addTo(renderLayer);
+
+            if (m) {
+                m.on('mouseover', () => {
+                    if (isNavWp) m.getElement()?.classList.add('nm-wp-hover');
+                    showInfo(props);
+                });
+                m.on('mouseout', () => {
+                    if (isNavWp) m.getElement()?.classList.remove('nm-wp-hover');
+                    hideInfo();
+                });
+                m.addTo(renderLayer);
+            }
             if (isNew) newLatLngs.push([lat, lon]);
-            if (isWpNames() && props.name) {
+            if (isNavWp && isWpNames() && props.name) {
                 L.marker([lat, lon], {
                     icon: L.divIcon({
                         className:  'nm-wp-name',
-                        html:       escHtml(props.name),
+                        html:       '<span style="color:' + abgrToCSS(props.color) + '">' + escHtml(props.name) + '</span>',
                         iconSize:   [0, 0],
                         iconAnchor: [-8, 5],
                     })
@@ -254,7 +264,7 @@ function renderAll(geojson) {
         else if (geom.type === 'LineString') {
             if (!geom.coordinates.length) return;
             const coords = geom.coordinates.map(([lon, lat]) => [lat, lon]);
-            const color  = e80Color(props.color);
+            const color  = abgrToCSS(props.color);
             const line   = L.polyline(coords, { color: color, weight: 2 });
             if (props.obj_type === 'track') {
                 const total = coords.length;
@@ -294,7 +304,7 @@ function renderAll(geojson) {
                         L.marker([lat, lon], {
                             icon: L.divIcon({
                                 className:  'nm-rp-name',
-                                html:       escHtml(rpName),
+                                html:       '<span style="color:' + abgrToCSS(props.color) + '">' + escHtml(rpName) + '</span>',
                                 iconSize:   [0, 0],
                                 iconAnchor: [-6, 5],
                             })

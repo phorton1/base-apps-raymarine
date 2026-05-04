@@ -6,7 +6,9 @@
 **Data Model** --
 **[UI Model](ui_model.md)** --
 **[Implementation](implementation.md)** --
-**[Context Menu](context_menu.md)**
+**[Context Menu](context_menu.md)** --
+**[KML Specification](kml_specification.md)** --
+**[GE Notes](ge_notes.md)**
 
 ## Core Objects — WRT
 
@@ -96,7 +98,7 @@ waypoints (
   lon               REAL NOT NULL,       -- degrees WGS84
   sym               INTEGER DEFAULT 0,   -- E80 icon index 0-39; see NET/docs/WPMGR.md
   wp_type           TEXT NOT NULL DEFAULT 'nav',  -- see Waypoint Types
-  color             TEXT DEFAULT NULL,   -- resolved hex color (#rrggbb); NULL = type default
+  color             TEXT DEFAULT NULL,   -- aabbggrr hex (GE byte order); NULL = type default
   depth_cm          INTEGER DEFAULT 0,   -- non-zero only for sounding waypoints
   created_ts        INTEGER NOT NULL,    -- Unix epoch seconds; never NULL
   ts_source         TEXT NOT NULL,       -- see Timestamp Sources
@@ -135,7 +137,7 @@ routes (
   uuid              TEXT PRIMARY KEY,
   name              TEXT NOT NULL,
   comment           TEXT DEFAULT '',
-  color             INTEGER DEFAULT 0,
+  color             TEXT DEFAULT NULL,   -- aabbggrr hex (GE byte order)
   collection_uuid   TEXT NOT NULL REFERENCES collections(uuid)
 )
 
@@ -157,7 +159,7 @@ independently queryable and reusable across multiple routes. Route geometry
 tracks (
   uuid              TEXT PRIMARY KEY,
   name              TEXT NOT NULL,
-  color             INTEGER DEFAULT 0,
+  color             TEXT DEFAULT NULL,   -- aabbggrr hex (GE byte order)
   ts_start          INTEGER NOT NULL,    -- never NULL; may be import time if no source timestamp
   ts_end            INTEGER,
   ts_source         TEXT NOT NULL,       -- see Timestamp Sources
@@ -285,59 +287,41 @@ no timestamp in their KML export. These receive `ts_source = 'import'`.
 
 ## KML as a Transport Layer
 
-KML serves two roles at the navMate boundary:
+KML is a bidirectional transport between navMate's SQLite database and Google Earth.
+The full KML structure and round-trip semantics are specified in
+[KML Specification](kml_specification.md). The Google Earth workflow — including safe
+and unsafe GE editing operations — is documented in [GE Notes](ge_notes.md).
 
-**Import** — the initial population of navMate's database comes from KML. The
-historical source is a single `My Places.kml` exported from Google Earth, which
-accumulated years of navigation data. navMate's config-driven importer parses this
-file folder by folder, applying per-folder rules derived from thorough characterization
-of each folder's content and semantics. GE is not an ongoing source; after initial
-import, navMate is authoritative.
+**Import** — `nmKML.pm` (planned) imports `navMate.kml`, reconciling objects against
+the existing database by `nm_uuid` in `<ExtendedData>`. New objects are created; existing
+objects are updated (name, color, parent collection). Re-import is additive: objects in
+the DB but absent from the KML are not deleted.
 
-**Export** — navMate can export a reorganized, deduplicated KML back to GE. This is
-a first-class deliverable independent of the Leaflet UI: a clean, well-structured
-version of the same geographic knowledge, useful even if the application never
-reaches full production.
+**Export** — `nmKML.pm` exports the full database as `navMate.kml`: a `<Document>`
+containing all `<Style>` definitions followed by a single `<Folder name="navMate">`
+mirroring the collection hierarchy. Every exported feature carries `nm_uuid` and
+`nm_type` in `<ExtendedData>` for round-trip identity.
 
-**Round-trip identity.** For backup and disaster-recovery scenarios (re-import of a
-navMate KML export into a fresh database), navMate embeds its UUID in every exported
-KML object via `<ExtendedData>`:
+**One-time migration** — the initial population of navMate's database was performed
+by `nmOneTimeImport.pm` from `C:/junk/navMate.kml`, a dedicated GE export of the
+navMate folder. This is a separate, non-recurring operation and is not described by
+the KML Specification.
 
-```xml
-<ExtendedData>
-  <Data name="navmate_uuid"><value>XX4E...</value></Data>
-</ExtendedData>
-```
-
-On re-import, presence of `navmate_uuid` means update the existing object. Absence
-triggers collision detection (name and coordinate proximity) or creation of a new object.
-
-**KML import rules:**
+**nmOneTimeImport KML classification rules** (applied during migration only):
 
 *Waypoint classification:*
-- Placemarks where name is an integer (e.g. `6`, `14`, `37`): `wp_type='sounding'`;
-  depth_cm = name × 30.48. Red label = critical shallow (typically depth_cm < 200, ~6 ft).
-- Placemarks with `#sn_noicon` style (invisible icon): `wp_type='label'` — geographic
-  area reference, not a navigation point.
-- Placemarks whose name contains `~`: `wp_type='label'`. Three sub-forms:
-  - `Name~` — geographic context label, appears on multiple story pages; the `~` is the disambiguator (not a zoom level)
-  - `Name~N` — same label name used on N different story pages; number ensures GE name uniqueness
-  - `Name~Date` — dated location annotation; the date is part of the place's identity
+- Name is an integer (e.g. `6`, `14`, `37`): `wp_type='sounding'`; `depth_cm` = name × 30.48
+- Name contains `~`: `wp_type='label'`
 - All other Point placemarks: `wp_type='nav'`
 
-*LineStrings (tracks and routes):*
-- Route LineString placemarks named `"Route"` inside a route folder: skip — visual aid only;
-  navMate generates route geometry from ordered `route_waypoints` on demand
-- Track companion Point placemarks (same name as a LineString in the same folder): skip the
-  Point, import only the LineString. This applies to OldE80 Tracks folder pairs.
+*LineStrings:*
+- LineString inside a folder whose name ends in `Route`, or inside a folder explicitly
+  handled as a route: import as a route (coordinate-matched to existing waypoints)
 - All other LineStrings: import as tracks
-- Duplicate track names within or across source folders: import all; overlapping tracks
-  of the same passage are GPS safety evidence, not errors to deduplicate
 
 *Color:*
-- Resolve `styleUrl` → Document-level Style/StyleMap at import time; store resolved hex in `color`
-- Document-local styles (inside imported `<Document>` sub-elements) are not visible to the
-  top-level resolver; affected objects receive `color = NULL`
+- Resolved from `styleUrl` → Document-level `<Style>` or `<StyleMap>` at import time
+- `LineStyle.color` and `IconStyle.color` both captured; stored as `aabbggrr` TEXT
 
 ## Sync Model
 
@@ -374,36 +358,24 @@ anti-pattern in the protocol notes.
 
 ## Data Migration
 
-The initial population of navMate's SQLite store comes from a single source:
-`C:/junk/My Places.kml` — a Google Earth export of all accumulated navigation data.
-This file contains eight named top-level folders, each fully characterized before
-import rules were written:
+The initial population of navMate's SQLite store was performed by `nmOneTimeImport.pm`
+from `C:/junk/navMate.kml` — a Google Earth export of the dedicated navMate GE folder.
+The imported content at migration time:
 
-| Folder | Content |
-|--------|---------|
-| Navigation | Current curated waypoints and routes; manually maintained |
-| all_data_from_old_chartplotter (OldE80) | ARCHIVE.FSH snapshot from E80-0A: Groups, Routes, Waypoints, Tracks sections |
+| Top-level folder | Content |
+|-----------------|---------|
+| Navigation | Curated waypoints and routes; manually maintained |
+| oldE80 | ARCHIVE.FSH snapshot from E80-0A: groups, routes, waypoints, tracks |
 | MiscBocas | Raw E80 track exports; local Bocas passages |
-| Michelle 2010-2012 | Voyage tracks, Places, depth soundings, and a Document-embedded route |
-| Cartagena Trip End 2009 | 7 dated E80 tracks; the Bocas→Cartagena round trip |
-| Tooling Around Bocas 2009 | 14 tracks; earliest Bocas exploration |
-| RhapsodyLogs (ends May 31, 2009) | 9-part voyage log; San Diego→Panama Canal→Bocas |
-| MandalaLogs | California coast (2005-2006); same structure as RhapsodyLogs |
+| Michelle | Voyage tracks, depth soundings, places, and the Final_Sumwood_Route |
+| Cartagena2009 | Dated E80 tracks; the Bocas→Cartagena round trip |
+| Bocas 2009 | Earliest Bocas exploration tracks |
 
-Import is config-driven: each folder has explicit per-folder rules covering which
-objects to import, how to classify them (wp_type, color), and which to skip. Folders
-with known structure (Navigation, OldE80) have fully declared rules. Loosely
-structured folders (MiscBocas, MandalaLogs) use structural heuristics with per-folder
-overrides.
+RhapsodyLogs and MandalaLogs were not yet present in the navMate GE folder at
+migration time and are pending addition and re-import.
 
-OldE80 requires special handling: its Tracks folder stores each track as a
-Point+LineString pair (E80 start-marker + track data); only the LineString is imported.
-Its Routes folders contain a `"Route"` LineString plus waypoint copies — the LineString
-is skipped and waypoints are matched by coordinate to existing records.
-
-After the initial KML import, a second pass enriches RhapsodyLogs and MandalaLogs
-tracks with temporal metadata from phorton.com's `map_data/` index files. Those index
-files link track names and source folders to dated voyage story pages. Matched tracks
-get `ts_start`/`ts_end` back-filled and `ts_source = 'phorton'`.
+The migration is non-recurring. Once the canonical import is complete and
+RhapsodyLogs/MandalaLogs are included, `nmOneTimeImport.pm` is retired and
+`nmKML.pm` handles all subsequent KML import/export operations.
 
 ---
