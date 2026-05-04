@@ -27,6 +27,9 @@ BEGIN
 		$COMMAND_REFRESH_E80
 		$COMMAND_REFRESH_DB
 		$COMMAND_IMPORT_OLDE80
+		$COMMAND_EXPORT_DB_TEXT
+		$COMMAND_IMPORT_DB_TEXT
+		$COMMAND_REFRESH_E80_DATA
 	);
 }
 
@@ -39,9 +42,12 @@ our $WIN_MONITOR = 10006;
 our $COMMAND_OPEN_MAP    = 10002;
 our $COMMAND_IMPORT_KML  = 10003;
 our $COMMAND_UPLOAD_E80  = 10004;
-our $COMMAND_REFRESH_E80   = 10023;
+our $COMMAND_REFRESH_E80      = 10023;
+our $COMMAND_REFRESH_E80_DATA = 10027;
 our $COMMAND_REFRESH_DB    = 10022;
 our $COMMAND_IMPORT_OLDE80 = 10024;
+our $COMMAND_EXPORT_DB_TEXT = 10025;
+our $COMMAND_IMPORT_DB_TEXT = 10026;
 
 
 my $pane_data = {
@@ -58,9 +64,12 @@ my $command_data = {
 	$COMMAND_OPEN_MAP    => ['Open Map',    'Open the Leaflet map in a browser'],
 	$COMMAND_IMPORT_KML  => ['Import KML',  'Delete and rebuild database from KML files'],
 	$COMMAND_UPLOAD_E80  => ['Upload to E80', 'Upload collection to E80 plotter'],
-	$COMMAND_REFRESH_E80 => ['Refresh',     'Re-query all waypoints, routes, groups, and tracks from E80'],
-	$COMMAND_REFRESH_DB    => ['Refresh',          'Reload database window from current navMate.db'],
-	$COMMAND_IMPORT_OLDE80 => ['Import oldE80 Residue', 'Analyze oldE80 tracks and insert novel runs into DB'],
+	$COMMAND_REFRESH_E80      => ['Refresh Window', 'Reload E80 window from in-memory data'],
+	$COMMAND_REFRESH_DB       => ['Refresh Window', 'Reload database window from current navMate.db'],
+	$COMMAND_REFRESH_E80_DATA => ['Refresh E80',    'Re-query all waypoints, routes, groups, and tracks from E80'],
+	$COMMAND_IMPORT_OLDE80  => ['Import oldE80 Residue', 'Analyze oldE80 tracks and insert novel runs into DB'],
+	$COMMAND_EXPORT_DB_TEXT => ['ExportToText', 'Export navMate database to a text backup file'],
+	$COMMAND_IMPORT_DB_TEXT => ['ImportFromText', 'Replace navMate database from a text backup file'],
 };
 
 my @collection_context_menu = (
@@ -86,10 +95,14 @@ my $view_menu = [
 
 my $database_menu = [
 	$COMMAND_REFRESH_DB,
+	$ID_SEPARATOR,
+	$COMMAND_EXPORT_DB_TEXT,
+	$COMMAND_IMPORT_DB_TEXT,
 ];
 
 my $e80_menu = [
 	$COMMAND_REFRESH_E80,
+	$COMMAND_REFRESH_E80_DATA,
 ];
 
 my $utils_menu = [

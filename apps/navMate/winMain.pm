@@ -15,6 +15,7 @@ use Wx::Event qw(
 use Time::HiRes qw(time sleep);
 use lib 'migrate';
 use Pub::Utils qw(display warning error _def);
+use Pub::WX::AppConfig;
 use Pub::WX::Frame;
 use Pub::WX::Dialogs;
 use apps::raymarine::NET::c_RAYDP;
@@ -44,9 +45,12 @@ sub new
 	EVT_MENU($this, $WIN_MONITOR,      \&onCommand);
 	EVT_MENU($this, $COMMAND_OPEN_MAP,     \&onCommand);
 	EVT_MENU($this, $COMMAND_IMPORT_KML,   \&onCommand);
-	EVT_MENU($this, $COMMAND_REFRESH_E80,  \&onCommand);
+	EVT_MENU($this, $COMMAND_REFRESH_E80,      \&onCommand);
+	EVT_MENU($this, $COMMAND_REFRESH_E80_DATA, \&onCommand);
 	EVT_MENU($this, $COMMAND_REFRESH_DB,       \&onCommand);
 	EVT_MENU($this, $COMMAND_IMPORT_OLDE80,    \&onCommand);
+	EVT_MENU($this, $COMMAND_EXPORT_DB_TEXT,   \&onCommand);
+	EVT_MENU($this, $COMMAND_IMPORT_DB_TEXT,   \&onCommand);
 	EVT_IDLE($this, \&onIdle);
 
 	my $sb = Wx::StatusBar->new($this, -1);
@@ -250,6 +254,11 @@ sub onCommand
 	}
 	elsif ($id == $COMMAND_REFRESH_E80)
 	{
+		my $e80 = $this->findPane($WIN_E80);
+		$e80->refresh() if $e80;
+	}
+	elsif ($id == $COMMAND_REFRESH_E80_DATA)
+	{
 		doRefresh($this);
 	}
 	elsif ($id == $COMMAND_REFRESH_DB)
@@ -263,6 +272,76 @@ sub onCommand
 		my $database = $this->findPane($WIN_DATABASE);
 		$database->refresh() if $database;
 	}
+	elsif ($id == $COMMAND_EXPORT_DB_TEXT)
+	{
+		_doExportDB($this);
+	}
+	elsif ($id == $COMMAND_IMPORT_DB_TEXT)
+	{
+		_doImportDB($this);
+	}
+}
+
+
+sub _doExportDB
+{
+	my ($this) = @_;
+	my $default_dir = readConfig('db_backup_dir') || '';
+	my $dialog = Wx::FileDialog->new(
+		$this, 'Export Database',
+		$default_dir, 'navMate_backup.txt',
+		'Text files (*.txt)|*.txt|All files (*.*)|*.*',
+		wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+	if ($dialog->ShowModal() == wxID_OK)
+	{
+		my $filename = $dialog->GetPath();
+		writeConfig('db_backup_dir', $dialog->GetDirectory());
+		my $dbh = c_db::connectDB();
+		if ($dbh)
+		{
+			display(0,0,"winMain: exporting database to $filename");
+			my $progress = Pub::WX::ProgressDialog->new($this, 'Exporting Database...', 0, 9);
+			$dbh->exportDatabaseText($filename, $progress);
+			$progress->Destroy();
+			c_db::disconnectDB($dbh);
+			display(0,0,"winMain: export complete");
+		}
+	}
+	$dialog->Destroy();
+}
+
+
+sub _doImportDB
+{
+	my ($this) = @_;
+	return if !yesNoDialog($this,
+		"This will REPLACE the entire navMate database with the contents of the backup file.\n\nAre you sure?",
+		'Import Database');
+	my $default_dir = readConfig('db_backup_dir') || '';
+	my $dialog = Wx::FileDialog->new(
+		$this, 'Import Database',
+		$default_dir, '',
+		'Text files (*.txt)|*.txt|All files (*.*)|*.*',
+		wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+	if ($dialog->ShowModal() == wxID_OK)
+	{
+		my $filename = $dialog->GetPath();
+		writeConfig('db_backup_dir', $dialog->GetDirectory());
+		display(0,0,"winMain: importing database from $filename");
+		c_db::resetDB();
+		my $dbh = c_db::connectDB();
+		if ($dbh)
+		{
+			my $progress = Pub::WX::ProgressDialog->new($this, 'Importing Database...', 0, 9);
+			$dbh->importDatabase($filename, $progress);
+			$progress->Destroy();
+			c_db::disconnectDB($dbh);
+			my $database = $this->findPane($WIN_DATABASE);
+			$database->refresh() if $database;
+			display(0,0,"winMain: import complete");
+		}
+	}
+	$dialog->Destroy();
 }
 
 

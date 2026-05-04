@@ -64,6 +64,16 @@ windows; Ctrl+click and Shift+click work normally.
 `nmUpload::uploadCollectionToE80` with a shared progress dialog. Uploads all
 waypoints, routes, and groups in the collection.
 
+### Database Menu
+
+| Command | Description |
+|---|---|
+| Refresh Window | Reload the database tree from the current navMate.db |
+| ExportToText | Export the entire database to a `.txt` backup file (one INSERT per table) |
+| ImportFromText | Replace the entire database from a `.txt` backup file; prompts for confirmation |
+
+ExportToText and ImportFromText both show a progress dialog ticking once per table (9 tables total). ImportFromText calls `resetDB()` before importing to ensure a clean schema.
+
 **Paste** is always shown in the menu and enabled via `nmClipboard::canPaste`.
 
 ---

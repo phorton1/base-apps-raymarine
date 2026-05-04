@@ -292,7 +292,11 @@ sub query_one
 		if !$reply->{is_dict} || !$reply->{dict_uuids};
 	my $uuids = $reply->{dict_uuids};
 
-	$progress->{total} += scalar(@$uuids) if $progress;
+	if ($progress)
+	{
+		$progress->{total} += scalar(@$uuids);
+		$progress->{done}++;
+	}
 
 	my $hash_name = lc($what_name)."s";
 	my $hash = $this->{$hash_name};

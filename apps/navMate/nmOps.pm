@@ -107,7 +107,7 @@ sub doRefresh
 		return;
 	}
 
-	my $progress = Pub::WX::ProgressDialog::newProgressData(0, 2);
+	my $progress = Pub::WX::ProgressDialog::newProgressData(4, 2);
 	$progress->{active} = 1;
 
 	$wpmgr->queueRefresh($progress);

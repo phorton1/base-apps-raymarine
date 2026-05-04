@@ -556,7 +556,11 @@ sub get_tracks
 
 	my $uuids = $reply->{dict_uuids};
 	$query_in_progress += scalar(@$uuids);
-	$progress->{total} += scalar(@$uuids) if $progress;
+	if ($progress)
+	{
+		$progress->{total} += scalar(@$uuids);
+		$progress->{done}++;
+	}
 
 	my $num = 0;
 	for my $uuid (@$uuids)
