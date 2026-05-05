@@ -8,6 +8,24 @@ NEW_ROUTE (10530), and NEW_BRANCH (10550) all open name-input dialogs that block
 test machinery.  Any test that requires creating a new object must be run manually via
 the UI.
 
+## Database shape requirements
+
+The test database must have a specific shape for the full test plan to exercise all
+code paths. The runbook holds the concrete named nodes chosen to satisfy this shape;
+this section describes what is required structurally:
+
+- **Isolated waypoints** — at least two waypoints that are not members of any group
+  or referenced in any route (for clean copy/paste/delete without side effects)
+- **A group with no route references** — a group whose member WPs are not in any route
+  (for DEL-GR+WPS success path in §2.5)
+- **A group whose members ARE in a route** — for DEL-GR+WPS blocked path in §2.6
+- **A branch with WPs not referenced outside it** — for safe DEL-BR in §2.7
+- **A branch containing groups whose WPs are also referenced by routes** — for the
+  all-paste ordering dependency test in §3.7 (groups paste first; route paste finds
+  WPs already present → `no_change` idempotency)
+- **At least one route with a known member WP** — for DEL-WP blocked guard in §5.1
+- **At least one track** — for track cut/paste and guard tests
+
 
 ## 1. Initialize to known state
 
@@ -289,9 +307,10 @@ groups whose WPs are also referenced by routes. `_pasteAllToE80` must handle the
 dependency correctly regardless of item order — each route paste calls
 `_pasteOneWaypointToE80` per member (idempotent: existing WP → `no_change`).
 
-Use the Navigation/Routes sub-branch which has Agua and Michelle groups + routes
-(same WPs in both). Popa group WPs are already on E80 from §3.0 — their paste should
-produce `no_change` for each WP, with the group created correctly.
+The branch used must satisfy the shape requirement: groups with WPs that are also
+route members, plus at least one group whose WPs are already on the E80 from §3.0
+(to exercise the `no_change` idempotency path). See runbook for the specific
+named branch chosen.
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=ROUTES_BR_UUID&cmd=10099"
@@ -299,11 +318,9 @@ curl -s "http://localhost:9883/api/test?panel=e80&select=root&right_click=root&c
 ```
 
 Expected:
-- Agua group and WPs appear on E80 (UUIDs preserved)
-- Michelle group and WPs appear on E80 (large — ProgressDialog expected)
-- Popa group created; Popa WPs produce `no_change` in log (already on E80 from §3.0)
-- Agua route created with correct WP UUIDs (WPs already existed from group paste)
-- Michelle route created with correct WP UUIDs
+- All groups and their WPs appear on E80 (UUIDs preserved)
+- Groups already on E80 from §3.0: their WPs produce `no_change` in log
+- All routes created with correct WP UUIDs (WPs already existed from group paste)
 - No duplicate WPs — each UUID appears exactly once
 
 ---
@@ -397,8 +414,7 @@ curl -s "http://localhost:9883/api/test?panel=database&select=DST_UUID&right_cli
 
 Expected: track inserted in DB; TRACK_CMD_ERASE sent to E80; track disappears from
 winE80 Tracks after refresh. This is the end-to-end verification of the erase path.
-If it works: add `e80-track-erase` to context_bugs.md Closed.
-If not: add a real bug entry with the observed failure.
+If it fails, it gets an Issues entry in last_testrun.md — see Recording Results below.
 
 ---
 
@@ -480,3 +496,31 @@ curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_c
 Expected: paste rejected by `canPaste` (`cut=1 && source=database && panel=e80`); E80
 unchanged; source WP remains in DB. The database is the authoritative repository —
 uploads to E80 are always copies, never cuts.
+
+
+## Recording Results
+
+Each test cycle produces `apps/navMate/docs/notes/last_testrun.md`. The format:
+
+**Header** — cycle number, date, wall-clock start and end times.
+
+**Summary** — one line per §section with its overall result.
+
+**Full results table** — every step in this test plan listed with a Status:
+- `PASS` — completed as expected
+- `FAIL` — blocked, data corrupted, or catastrophic
+- `PARTIAL` — some sub-steps passed, others did not
+- `PASSED_BUT` — passed with notable caveats (unexpected warning, workaround required, fragile timing)
+- `NOT_RUN` — step was skipped (teensyBoat unavailable, prerequisite failed, etc.)
+
+**Issues section** — one prose subsection per FAIL, PARTIAL, or PASSED_BUT item. This section is
+**always present**, even on a clean cycle (marked "none"). For each entry, include:
+- Which test step (§X.Y and its name)
+- The nodes involved by [Name] from the runbook UUID table
+- What was expected vs. what actually happened
+- The data state left behind — what is corrupted, missing, or unexpectedly changed
+- Whether it is a known bug (name the open_bugs.md entry) or new
+- Whether it is catastrophic (prevents subsequent steps from running)
+
+This section is a triage guide for the next session, not a log dump. Write it so that
+someone reading it cold can understand exactly what went wrong and where things stand.

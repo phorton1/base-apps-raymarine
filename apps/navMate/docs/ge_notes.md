@@ -19,7 +19,7 @@ changes into navMate.
 
 ## Round-Trip Workflow
 
-1. **Export from navMate** — File → Export KML produces `navMate.kml`, containing all
+1. **Export from navMate** — Database → Export KML produces `navMate.kml`, containing all
    navMate data under a single `<Folder name="navMate">` inside a `<Document>` wrapper.
 
 2. **Open in GE** — GE loads the file into Temporary Places as a Document node

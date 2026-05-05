@@ -199,17 +199,9 @@ dispatches to:
 The clipboard status is reflected in the application status bar via
 `nmClipboard::getClipboardText`.
 
-### Implemented vs. Planned
-
-**Implemented:**
-- Copy: waypoint (single), track (single) — from either panel
-- Paste waypoint: to database, to E80 (creates in named group or My Waypoints)
-- Paste track: to database
-- All delete operations listed in the winDatabase and winE80 tables above
-
-**Not yet implemented (shows "not yet implemented" dialog):**
-- Copy: group, groups, route, routes, all
-- Paste: route, group, tracks to E80, and all multi-item variants
+The full context menu feature is implemented across both panels. For the complete
+specification of every operation, clipboard state, and paste compatibility matrix,
+see [Context Menu](context_menu.md).
 
 ### Cut Semantics
 
@@ -219,10 +211,11 @@ Items that are skipped or fail to paste remain in the source.
 
 ---
 
-## Leaflet Canvas *(planned)*
+## Leaflet Canvas *(partial)*
 
-The Leaflet canvas is the planned primary geographic surface. It is not yet
-implemented; the wx tree windows are the operative UI for all geographic context.
+The Leaflet canvas is the primary geographic surface. Basic rendering of routes
+and waypoints is partially implemented; the wx tree windows remain the operative
+UI for all geographic context until the full model described below is built.
 
 ### Intended Rendering
 

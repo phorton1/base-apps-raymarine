@@ -14,7 +14,7 @@
 
 navMate uses KML as a bidirectional transport between navMate's SQLite database and
 Google Earth. This document specifies the KML structure navMate produces on export
-and recognizes on import. The implementation is `nmKML.pm` (planned).
+and recognizes on import. The implementation is `nmKML.pm`.
 
 The one-time historical migration from `navMate.kml` to the initial navMate database
 is handled separately by `nmOneTimeImport.pm` and is not described here. See

@@ -1,63 +1,39 @@
-# navMate Context-Menu Test Run — Cycle 5
+# navMate Context-Menu Test Run — Cycle 6
 
-**Date:** 2026-05-04
-**Start:** ~23:36
-**End:** ~late night (same day)
-**Cycle:** 5 (full §1 + §3.0–§3.7 + §5.1–§5.4; §2 and §3.8–§3.11 accepted from prior Cycle 5 session)
+**Date:** 2026-05-05
+**Start:** 01:48
+**End:** ~03:xx (autonomous run while Patrick slept)
+**Cycle:** 6 (full §1–§5 including §4 Tracks — first full run with teensyBoat)
 
 ---
 
 ## Summary
 
-- **§2 (database tests 2.1–2.13):** ALL PASS (carried from earlier Cycle 5 session, 2026-05-04)
-- **§3.0–§3.7 (E80 populate + all-paste):** ALL PASS (clean §3.7 run — fix confirmed)
-- **§3.8–§3.11 (Paste New + multi-select):** ALL PASS (carried from Cycle 4 / prior Cycle 5 session)
-- **§4 (track tests):** SKIP (teensyBoat required)
-- **§5.1–§5.4 (guard tests):** ALL PASS (§5.4 now PASS — Item 10 fix applied)
+- **§1 (reset):** PASS
+- **§2 (database tests 2.1–2.13):** ALL PASS
+- **§3.0–§3.11 (E80 tests):** ALL PASS
+- **§4.1–§4.4 (track tests):** ALL PASS — first successful run with teensyBoat
+- **§5.1–§5.4 (guard tests):** ALL PASS
+
+No code changes this cycle. No catastrophic errors. navMate ran continuously without restart.
 
 ---
 
-## Code Changes This Cycle
+## §4 Track Tests Detail
 
-### Item 10 fix — §5.4 doPaste guard (nmOps.pm)
+Tracks created via teensyBoat simulator at 50kts, 3-leg shapes (~120s each).
 
-| File | Change |
-|------|--------|
-| `apps/navMate/nmOps.pm` | Added explicit guard at top of E80 branch in `doPaste`: blocks `cut=1 && source=database` with IMPLEMENTATION ERROR warning and returns without executing |
-
-### Threading race fix — queueWPMGRCommand / commandThread
-
-Crash: `Thread 9 terminated abnormally: Invalid value for shared scalar at d_WPMGR.pm line 127`
-
-Root cause: Thread 9 (b_sock/sockThread) iterates `command_queue` for duplicate-check while Thread 10 (commandThread) concurrently calls `shift` on the same shared array — no lock anywhere. The shared array's internal iterator state is clobbered mid-FETCH.
-
-| File | Change |
-|------|--------|
-| `NET/d_WPMGR.pm init()` | Added `$this->{queue_lock} = &threads::shared::share({})` — per-instance shared hash used as a lock target |
-| `NET/d_WPMGR.pm queueWPMGRCommand()` | Added `lock(%{$this->{queue_lock}})` after pre-flight checks; held for duration of function (duplicate-check loop through enqueue, both `$front` paths) |
-| `NET/b_sock.pm commandThread()` | Wrapped check + `shift` in narrow inner block with `lock(%{$this->{queue_lock}}) if $this->{queue_lock}`; lock released before `handleCommand` is called. Non-WPMGR services (no `queue_lock`) unaffected |
-
----
-
-## §3.7 Clean Run
-
-§3.7 was the outstanding failure from Cycle 4 (singleton bug) and the dirty-state re-run from early Cycle 5 (Agua name conflict). With the singleton fix already in place, this cycle provided the clean run: fresh §1 reset → §3.0–§3.6 → §3.7.
-
-**Verified:** Navigation/Routes branch (ac4e2c500600b9aa) — Agua group (204ecbd24500a678),
-Michelle group (104e199a1500e646), Popa group (244e8e100800400a) all present on E80;
-Agua route (d64e8c7e4400a186) and Michelle route (3b4e87f21400d81c) present;
-E80 wps=77 groups=4 routes=3; no duplicate WP UUIDs.
-
----
-
-## §5 Guard Tests
+| Track | E80 UUID | DB UUID | Name | Shape |
+|-------|----------|---------|------|-------|
+| Track 1 | 81b266af3f001783 | 024e14a69f0463d6 | testTrack1 | Triangle E/SSW/NNW |
+| Track 2 | 81b266af3f002283 | 514e3834a0042d46 | testTrack2 | L-shape N/E/S |
 
 | Test | Result | Notes |
 |------|--------|-------|
-| §5.1 DEL-WP blocked (WP in route) | PASS | IMPLEMENTATION ERROR warning; Popa0 314e56cc09005332 still in DB |
-| §5.2 D-CP-TK → DB paste blocked | PASS | IMPLEMENTATION ERROR warning; UUID-preserving DB-to-DB track copy blocked |
-| §5.3 Any clipboard → E80 header:tracks | PASS | PASTE ran but no WP added; E80 wps count unchanged at 77 |
-| §5.4 D-CT-DB → E80 blocked | PASS | Item 10 guard fires: IMPLEMENTATION ERROR logged; Popa0 still in DB; E80 unchanged |
+| §4.1 E-CP-TK → Paste DB | PASS | Track in DB with fresh UUID + name + color ff000000; still on E80 |
+| §4.2 E-CT-TK → Paste DB | PASS | Track in DB; erased from E80 after cut |
+| §4.3 guard: track → E80 blocked | PASS | IMPLEMENTATION WARNING fired; E80 tracks unchanged |
+| §4.4 guard: Paste New for track blocked | PASS | IMPLEMENTATION WARNING fired; no extra track in DB |
 
 ---
 
@@ -65,31 +41,46 @@ E80 wps=77 groups=4 routes=3; no duplicate WP UUIDs.
 
 | Section | Description | Result | Notes |
 |---------|-------------|--------|-------|
-| §1 | Reset (git revert, reload, clear E80) | PASS | Threading crash on first attempt (race in queueWPMGRCommand); fixed and re-run |
-| §2.1–§2.13 | Database tests | PASS | Carried from earlier Cycle 5 session same day |
-| §3.0 | Populate E80 (WP + group + route) | PASS | Waypoint 5, Michel_Agua, Popa route; all retained DB UUIDs |
-| §3.1 | E-CP-WP → Paste DB (UUID-preserving) | PASS | |
-| §3.2 | E-CP-WP → Paste New DB (fresh UUID) | PASS | |
-| §3.3 | E-DEL-WP | PASS | wps=21 after delete |
-| §3.4 | E-DEL-GR+WPS | PASS | First clean run post-locking-fix; no crash during MOD flood |
-| §3.5 | E-CP-GR → Paste DB | PASS | |
-| §3.6 | E-CP-RT → Paste DB | PASS | |
-| §3.7 | D-CP-ALL → E80 root (large batch) | PASS | Clean run; singleton fix validated; no errors; no_change for Popa WPs |
-| §3.8–§3.11 | Paste New WP/GR/RT + multi-select WPs | PASS | Carried from prior sessions; §3.11 fix (Item 9) confirmed from Cycle 5 earlier session |
-| §4 | Track tests (teensyBoat) | SKIP | |
-| §5.1 | Guard: DEL-WP blocked (WP in route) | PASS | |
-| §5.2 | Guard: D-CP-TK → DB Paste blocked | PASS | |
-| §5.3 | Guard: any clipboard → E80 header:tracks | PASS | |
-| §5.4 | Guard: D-CT-DB → E80 blocked | PASS | Item 10 fix working |
+| §1 | Reset (git revert, reload, clear E80) | PASS | Clean run, no crashes |
+| §2.1 | Copy WP → Paste New | PASS | Fresh UUID in AguaAndTobobe |
+| §2.2 | Cut WP → Paste (move) | PASS | UUID preserved, collection changed |
+| §2.3 | Delete WP | PASS | |
+| §2.4 | DEL-GR dissolve | PASS | Members reparented to oldE80 Groups Branch |
+| §2.5 | DEL-GR+WPS (success) | PASS | Bocas group + members deleted |
+| §2.6 | DEL-GR+WPS blocked (WPs in route) | PASS | IMPLEMENTATION ERROR sentinel |
+| §2.7 | DEL-BR recursive | PASS | MandalaLogs branch fully deleted |
+| §2.8 | Copy ALL (clipboard set) | PASS | intent=all confirmed |
+| §2.9 | Paste New ALL → Nav Branch | PASS | Fresh UUID copies in Navigation |
+| §2.10 | Cut ALL → Paste (move) | PASS | 4 WPs + 4 tracks moved; AguaAndTobobe emptied |
+| §2.11 | Cut Route → Paste (move) | PASS | Popa Route moved; 11 route WPs intact |
+| §2.12 | Copy Route → Paste New | PASS | Fresh-UUID route + 10 WPs in AguaAndTobobe |
+| §2.13 | Cut Track → Paste (move) | PASS | |
+| §3.0 | Populate E80 (WP + group + route) | PASS | All UUID-preserving; 22 WPs on E80 |
+| §3.1 | E-CP-WP → Paste DB (UUID-preserving) | PASS | WP updated in place (already existed in DB) |
+| §3.2 | E-CP-WP → Paste New DB (fresh UUID) | PASS | Fresh UUID in AguaAndTobobe |
+| §3.3 | E-DEL-WP | PASS | 21 WPs remain |
+| §3.4 | E-DEL-GR+WPS | PASS | Michel_Agua group + 10 members deleted |
+| §3.5 | E-CP-GR → Paste DB | PASS | Group updated in place (already in DB) |
+| §3.6 | E-CP-RT → Paste DB | PASS | Route + 11 WPs confirmed in DB |
+| §3.7 | D-CP-ALL → E80 root (large batch) | PASS | 77 WPs; 4 groups; 3 routes; no errors |
+| §3.8 | Paste New WP to E80 (fresh UUID) | PASS | a24e329c8804fa6c ≠ original |
+| §3.9 | Paste New Group to E80 (fresh UUIDs) | PASS | Michel_Agua (2) on E80; 10 new WPs |
+| §3.10 | Paste New Route to E80 (fresh UUIDs) | PASS | Agua (2) on E80; 10 new WPs |
+| §3.11 | Multi-select WPs → Paste to E80 | PASS | items=2 confirmed in log |
+| §4.1 | E-CP-TK → Paste DB | PASS | See §4 detail above |
+| §4.2 | E-CT-TK → Paste DB | PASS | See §4 detail above |
+| §4.3 | Guard: track → E80 blocked | PASS | |
+| §4.4 | Guard: Paste New for track blocked | PASS | |
+| §5.1 | Guard: DEL-WP blocked (WP in route) | PASS | IMPLEMENTATION ERROR; Popa0 intact |
+| §5.2 | Guard: D-CP-TK → DB Paste blocked | PASS | IMPLEMENTATION ERROR; UUID-preserving DB→DB blocked |
+| §5.3 | Guard: any clipboard → E80 header:tracks | PASS | Paste ran but no change (WP already on E80) |
+| §5.4 | Guard: D-CT-DB → E80 blocked | PASS | IMPLEMENTATION ERROR; Popa0 still in DB |
 
 ---
 
-## Open Items After This Cycle
+## Issues
 
-### Item 11 — DB WP deletion timing at cut (design decision)
+*(none — all tests PASS this cycle)*
 
-Still deferred. The exact cut-path behavior for route-member WPs at cut time (delete-at-cut vs delete-at-paste vs never-delete) remains undecided. See Cycle 4 last_testrun.md for details.
+---
 
-### Color Test D — pending
-
-From the separate color boundary test session (2026-05-04). Tests A/B/C confirmed route/WP color round-trip (E80↔DB). Test D (track E80→DB) requires teensyBoat — deferred with §4.

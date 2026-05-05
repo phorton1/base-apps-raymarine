@@ -242,6 +242,13 @@ The `uuid_counter` entry is incremented atomically within the same transaction a
 each new object INSERT, ensuring the counter and the database objects it identifies
 never diverge.
 
+## Text Backup
+
+`ExportToText` and `ImportFromText` (available in the Database menu) provide a
+plain-text backup of the full database — one INSERT per row across all tables.
+This is a general-purpose backup utility, independent of any KML or E80 transport.
+ImportFromText calls `resetDB()` before importing to ensure a clean schema.
+
 ## Design Decisions
 
 **lat/lon as REAL degrees — no northing/easting in the schema.** The 1e7 integer
@@ -285,97 +292,29 @@ non-reversible — it records that the phorton.com enrichment has been applied.
 GE-created objects (waypoints or tracks added interactively in Google Earth) carry
 no timestamp in their KML export. These receive `ts_source = 'import'`.
 
-## KML as a Transport Layer
+## KML and GE
 
-KML is a bidirectional transport between navMate's SQLite database and Google Earth.
-The full KML structure and round-trip semantics are specified in
-[KML Specification](kml_specification.md). The Google Earth workflow — including safe
-and unsafe GE editing operations — is documented in [GE Notes](ge_notes.md).
-
-**Import** — `nmKML.pm` (planned) imports `navMate.kml`, reconciling objects against
-the existing database by `nm_uuid` in `<ExtendedData>`. New objects are created; existing
-objects are updated (name, color, parent collection). Re-import is additive: objects in
-the DB but absent from the KML are not deleted.
-
-**Export** — `nmKML.pm` exports the full database as `navMate.kml`: a `<Document>`
-containing all `<Style>` definitions followed by a single `<Folder name="navMate">`
-mirroring the collection hierarchy. Every exported feature carries `nm_uuid` and
-`nm_type` in `<ExtendedData>` for round-trip identity.
-
-**One-time migration** — the initial population of navMate's database was performed
-by `nmOneTimeImport.pm` from `C:/junk/navMate.kml`, a dedicated GE export of the
-navMate folder. This is a separate, non-recurring operation and is not described by
-the KML Specification.
-
-**nmOneTimeImport KML classification rules** (applied during migration only):
-
-*Waypoint classification:*
-- Name is an integer (e.g. `6`, `14`, `37`): `wp_type='sounding'`; `depth_cm` = name × 30.48
-- Name contains `~`: `wp_type='label'`
-- All other Point placemarks: `wp_type='nav'`
-
-*LineStrings:*
-- LineString inside a folder whose name ends in `Route`, or inside a folder explicitly
-  handled as a route: import as a route (coordinate-matched to existing waypoints)
-- All other LineStrings: import as tracks
-
-*Color:*
-- Resolved from `styleUrl` → Document-level `<Style>` or `<StyleMap>` at import time
-- `LineStyle.color` and `IconStyle.color` both captured; stored as `aabbggrr` TEXT
+navMate uses KML as a bidirectional transport with Google Earth. The full KML
+structure, round-trip semantics, and GE workflow are documented in
+[KML Specification](kml_specification.md) and [GE Notes](ge_notes.md).
 
 ## Sync Model
 
 navMate operates fully — browse, edit, organize, build working sets — with no
 transport active. The local SQLite database is always sufficient for local work.
-A transport is an optional, user-activated session concern, not a permanent
-connection navMate depends on.
-
-When a live transport is active and the user initiates sync, navMate reconciles
-its local UUID set against the transport's UUID set:
-
-- Objects navMate has that the transport does not → candidates for push
-- Objects the transport has that navMate does not → candidates for pull
-- UUID collisions with differing content → conflicts requiring resolution policy
-
-Different transport types have different sync models:
-
-| Transport | Activation | Sync model |
-|-----------|------------|------------|
-| RAYNET/E80 | Live connection, user-initiated | UUID set reconciliation via WPMGR |
-| KML/GE | File open or export dialog | Import with collision detection; export with UUID embedding |
-| FSH file | File open or export dialog | Batch import; track export for manual E80 load |
-
-UUID reconciliation applies only to live transports. File-based transports use
-import/export operations — they do not maintain a UUID set to reconcile against.
-
-WPMGR handles waypoints, routes, and groups bidirectionally over RAYNET. Track
-downloads use the TRACK protocol and are one-directional (pull only) — that is a
-property of the RAYNET transport layer, not of the schema.
-
-Conflict resolution policy is an **open design question.** RNS's approach
-(user-visible per-item "send to network" flags) is documented as a reference
-anti-pattern in the protocol notes.
+Transports are optional, user-activated concerns, not permanent connections
+navMate depends on.
 
 ## Data Migration
 
-The initial population of navMate's SQLite store was performed by `nmOneTimeImport.pm`
-from `C:/junk/navMate.kml` — a Google Earth export of the dedicated navMate GE folder.
-The imported content at migration time:
+The initial database was populated from a Google Earth export by `nmOneTimeImport.pm`.
+The migration is substantially complete. `nmOneTimeImport.pm` is retained as a
+fallback should subsequent changes to the original GE source data require re-import.
 
-| Top-level folder | Content |
-|-----------------|---------|
-| Navigation | Curated waypoints and routes; manually maintained |
-| oldE80 | ARCHIVE.FSH snapshot from E80-0A: groups, routes, waypoints, tracks |
-| MiscBocas | Raw E80 track exports; local Bocas passages |
-| Michelle | Voyage tracks, depth soundings, places, and the Final_Sumwood_Route |
-| Cartagena2009 | Dated E80 tracks; the Bocas→Cartagena round trip |
-| Bocas 2009 | Earliest Bocas exploration tracks |
-
-RhapsodyLogs and MandalaLogs were not yet present in the navMate GE folder at
-migration time and are pending addition and re-import.
-
-The migration is non-recurring. Once the canonical import is complete and
-RhapsodyLogs/MandalaLogs are included, `nmOneTimeImport.pm` is retired and
-`nmKML.pm` handles all subsequent KML import/export operations.
+navMate is intended to be the primary UX for managing navigation data, but key
+editing tooling — tree node ordering and generalized property editors — is not yet
+built. Until that tooling exists, the GE/KML round-trip workflow remains a
+practical editing path alongside the application. `nmKML.pm` handles all ongoing
+KML import/export operations.
 
 ---

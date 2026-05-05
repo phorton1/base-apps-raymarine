@@ -34,8 +34,7 @@ base, data model, and UI are the product. Everything else is a boundary adapter.
 
 - **[Data Model](data_model.md)** —
   SQLite schema: collections hierarchy, WRT tables (Waypoints, Routes, Tracks),
-  waypoint types, working sets, UUID strategy, sync model, timestamp sources,
-  KML import/export.
+  waypoint types, working sets, UUID strategy, timestamp sources, design decisions.
 
 - **[UI Model](ui_model.md)** —
   Three concurrent UI surfaces (console, wx panels, Leaflet canvas), collection
@@ -43,7 +42,13 @@ base, data model, and UI are the product. Everything else is a boundary adapter.
   selection operations, session state persistence.
 
 - **[Implementation](implementation.md)** —
-  Module naming conventions, as-built module status, pending schema migrations.
+  Module inventory by layer: foundation, data transport, context operations,
+  HTTP server, and wx UI.
+
+- **[Context Menu](context_menu.md)** —
+  Full specification of every context menu configuration across both panels,
+  clipboard state vocabulary, paste compatibility matrix, operation semantics,
+  and HTTP test machinery.
 
 - **[KML Specification](kml_specification.md)** —
   KML file structure, style naming and templates, ExtendedData tags, object-to-KML
@@ -52,26 +57,6 @@ base, data model, and UI are the product. Everything else is a boundary adapter.
 - **[GE Notes](ge_notes.md)** —
   Google Earth round-trip workflow, safe and unsafe GE editing operations, the
   additive-only re-import asymmetry, track editing policy.
-
-## Status
-
-navMate foundation layers are built: schema, CRUD, wx panels, embedded HTTP server,
-WPMGR upload, E80-side panel, context menu operations, and clipboard. Basic Leaflet
-rendering of routes and waypoints is partially built. The one-time KML migration from
-`navMate.kml` is complete (`nmOneTimeImport.pm`); the baseline navMate.db is
-established.
-
-The underlying **NET transport layer** was redesigned in 2026-04 from a per-`recv()`
-packet model to a **stream-based message extraction model** (see
-[NET documentation](../../NET/docs/readme.md)). Upload to E80 — including delete of
-routes with many waypoints — is confirmed working end-to-end.
-
-Current focus: KML import/export (`nmKML.pm`), schema migration for color fields,
-and Leaflet renderer expansion.
-
-See the **[NET protocols documentation](../../NET/docs/readme.md)** for the
-underlying RAYNET protocol library, and **[shark](../../apps/shark/docs/shark.md)**
-for the companion engineering tool.
 
 ## Third-Party Libraries
 
