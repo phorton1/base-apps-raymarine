@@ -99,6 +99,12 @@ sub abgrToE80Index
 	return $best_idx;
 }
 
+my @E80_ROUTE_INDEX_TO_ABGR = qw(ff0000ff ff00ffff ff00ff00 ffff0000 ffff00ff ffffffff);
+my @E80_TRACK_INDEX_TO_ABGR = qw(ff0000ff ff00ffff ff00ff00 ffff0000 ffff00ff ff000000);
+
+sub e80RouteIndexToAbgr { $E80_ROUTE_INDEX_TO_ABGR[$_[0] // 0] // $E80_ROUTE_INDEX_TO_ABGR[0] }
+sub e80TrackIndexToAbgr { $E80_TRACK_INDEX_TO_ABGR[$_[0] // 0] // $E80_TRACK_INDEX_TO_ABGR[0] }
+
 sub _wpmgr
 {
 	return $raydp ? $raydp->findImplementedService('WPMGR') : undef;

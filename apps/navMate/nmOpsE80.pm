@@ -902,7 +902,9 @@ sub _pasteRouteToE80
 				name      => $route_data->{name}    // '',
 				uuid      => $route_uuid,
 				comment   => $route_data->{comment} // '',
-				color     => $route_data->{color}   // 0,
+				color     => $cb->{source} eq 'database'
+					? abgrToE80Index($route_data->{color})
+					: ($route_data->{color} // 0),
 				waypoints => \@wp_uuids,
 				progress  => $progress,
 			});
@@ -1109,7 +1111,9 @@ sub _pasteNewRouteToE80
 				name      => $route_name,
 				uuid      => $new_route_uuid,
 				comment   => $route_data->{comment} // '',
-				color     => $route_data->{color}   // 0,
+				color     => $cb->{source} eq 'database'
+					? abgrToE80Index($route_data->{color})
+					: ($route_data->{color} // 0),
 				waypoints => \@new_wp_uuids,
 				progress  => $progress,
 			});

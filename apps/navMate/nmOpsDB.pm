@@ -594,11 +594,14 @@ sub _pasteRouteToDatabase
 
 	# Insert or update the route record; route=set replaces the waypoint list.
 	my $existing_route = getRoute($dbh, $route_uuid);
+	my $route_color = $cb->{source} eq 'e80'
+		? e80RouteIndexToAbgr($route_data->{color})
+		: $route_data->{color};
 	if (!$existing_route)
 	{
 		insertRouteUUID($dbh, $route_uuid,
 			$route_data->{name}    // '',
-			$route_data->{color},
+			$route_color,
 			$route_data->{comment} // '',
 			$target_uuid);
 	}
@@ -606,7 +609,7 @@ sub _pasteRouteToDatabase
 	{
 		updateRoute($dbh, $route_uuid,
 			$route_data->{name}    // '',
-			$route_data->{color},
+			$route_color,
 			$route_data->{comment} // '');
 	}
 
@@ -665,9 +668,12 @@ sub _pasteTrackToDatabase
 
 	my $dbh = connectDB();
 	return if !$dbh;
+	my $track_color = $cb->{source} eq 'e80'
+		? e80TrackIndexToAbgr($track->{color})
+		: $track->{color};
 	my $track_uuid = insertTrack($dbh,
 		name            => $track->{name} // '',
-		color           => $track->{color},
+		color           => $track_color,
 		ts_start        => $ts_start,
 		ts_end          => $ts_end,
 		ts_source       => $ts_source,
