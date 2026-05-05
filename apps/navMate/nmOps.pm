@@ -143,14 +143,15 @@ sub doRefresh
 	my $progress = Pub::WX::ProgressDialog::newProgressData(4, 2);
 	$progress->{active} = 1;
 
-	$wpmgr->queueRefresh($progress);
-	$track->queueRefresh($progress);
-
-	Pub::WX::ProgressDialog->new(
+	my $dlg = Pub::WX::ProgressDialog->new(
 		$parent // getAppFrame(),
 		'Refreshing E80...',
 		1,
 		$progress);
+	return if !$dlg;
+
+	$wpmgr->queueRefresh($progress);
+	$track->queueRefresh($progress);
 }
 
 
@@ -761,9 +762,28 @@ sub doPaste
 	}
 	elsif ($panel eq 'e80')
 	{
+		if ($cb->{cut} && ($cb->{source} // '') eq 'database')
+		{
+			warning(0, 0, "IMPLEMENTATION ERROR: D-CT-DB->E80 paste reached doPaste; canPaste should have blocked this");
+			return;
+		}
 		if ($intent =~ /^waypoints?$/)
 		{
-			_pasteWaypointToE80($node, $tree, $_, $cb) for @items;
+			my %pending_names;
+			my $progress = undef;
+			if (@items > 1)
+			{
+				my $node_type  = $node->{type} // '';
+				my $group_uuid =
+					($node_type eq 'group')       ? $node->{uuid}       :
+					($node_type eq 'waypoint')    ? $node->{group_uuid} :
+					($node_type eq 'route_point') ? $node->{group_uuid} : undef;
+				my $total = scalar(@items) * (1 + ($group_uuid ? 1 : 0));
+				$progress = _openE80Progress("Paste Waypoints", $total,
+					{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
+				return if !$progress;
+			}
+			_pasteWaypointToE80($node, $tree, $_, $cb, undef, \%pending_names, $progress) for @items;
 		}
 		elsif ($intent =~ /^groups?$/)
 		{
@@ -774,6 +794,7 @@ sub doPaste
 				$total += scalar(@{$_->{members} // []}) + ($_->{uuid} ? 1 : 0) for @items;
 				$progress = _openE80Progress("Paste Groups", $total,
 					{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
+				return if !$progress;
 			}
 			_pasteGroupToE80($node, $tree, $_, $cb, $progress) for @items;
 		}
@@ -786,7 +807,8 @@ sub doPaste
 				$total += (2 * scalar(@{$_->{members} // []})) + 1 for @items;
 				$progress = _openE80Progress("Paste Routes", $total,
 					{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
-				$progress->{_counting_get_items} = 1 if $progress;
+				return if !$progress;
+				$progress->{_counting_get_items} = 1;
 			}
 			_pasteRouteToE80($node, $tree, $_, $cb, $progress) for @items;
 		}
@@ -864,6 +886,7 @@ sub doPasteNew
 				$total += scalar(@{$_->{members} // []}) + 1 for @items;
 				$progress = _openE80Progress("Paste New Groups", $total,
 					{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
+				return if !$progress;
 			}
 			_pasteNewGroupToE80($node, $tree, $_, $cb, $progress) for @items;
 		}
@@ -876,7 +899,8 @@ sub doPasteNew
 				$total += (2 * scalar(@{$_->{members} // []})) + 1 for @items;
 				$progress = _openE80Progress("Paste New Routes", $total,
 					{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
-				$progress->{_counting_get_items} = 1 if $progress;
+				return if !$progress;
+				$progress->{_counting_get_items} = 1;
 			}
 			_pasteNewRouteToE80($node, $tree, $_, $cb, $progress) for @items;
 		}

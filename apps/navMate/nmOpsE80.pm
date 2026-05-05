@@ -126,7 +126,8 @@ sub _openE80Progress
 	$progress->{cancel_label} = $opts->{cancel_label} if $opts && $opts->{cancel_label};
 	$progress->{cancel_msg}   = $opts->{cancel_msg}   if $opts && $opts->{cancel_msg};
 	$progress->{active} = 1;
-	Pub::WX::ProgressDialog->new(getAppFrame(), $title, 1, $progress);
+	my $dlg = Pub::WX::ProgressDialog->new(getAppFrame(), $title, 1, $progress);
+	return undef if !$dlg;
 	return $progress;
 }
 
@@ -339,6 +340,7 @@ sub _deleteE80Groups
 	return if !confirmDialog($tree, $msg, "Delete Group");
 	my $total_ops = $n + $total_wps;
 	my $progress  = _openE80Progress("Delete Group", $total_ops);
+	return if !$progress;
 	$progress->{_counting_get_items} = 1;
 	$wpmgr->deleteGroup($_->{uuid}, $progress) for @$nodes;
 }
@@ -397,6 +399,7 @@ sub _deleteE80GroupsAndWPs
 			"Delete all $n ungrouped waypoint(s) from E80? Cannot be undone.",
 			"Delete Group + Waypoints");
 		my $progress = _openE80Progress("Delete Group + Waypoints", scalar @members);
+		return if !$progress;
 		$wpmgr->deleteWaypoint($_, $progress, 1) for @members;
 		return;
 	}
@@ -438,6 +441,7 @@ sub _deleteE80GroupsAndWPs
 	display($dbg_e80_ops,0,"nmOps::_deleteE80GroupsAndWPs n=$n total_wps=$total_wps");
 	my $total_ops = (2 * $total_wps) + $n;
 	my $progress  = _openE80Progress("Delete Groups + Waypoints", $total_ops);
+	return if !$progress;
 	$progress->{_counting_get_items} = 1;
 	$wpmgr->deleteGroup($_->{uuid}, $progress) for @grps;
 	for my $node (@grps)
@@ -513,6 +517,7 @@ sub _deleteE80Routes
 	return if !confirmDialog($tree, $msg, "Delete Route");
 	my $total_ops = $n + $total_pts;
 	my $progress  = _openE80Progress("Delete Route", $total_ops);
+	return if !$progress;
 	$progress->{_counting_get_items} = 1;
 	$wpmgr->deleteRoute($_->{uuid}, $progress) for @$nodes;
 }
@@ -638,7 +643,7 @@ sub _pasteOneWaypointToE80
 
 sub _pasteWaypointToE80
 {
-	my ($node, $tree, $item, $cb, $pending_uuids, $pending_names) = @_;
+	my ($node, $tree, $item, $cb, $pending_uuids, $pending_names, $shared_progress) = @_;
 
 	my $wpmgr = _wpmgr();
 	if (!$wpmgr)
@@ -654,9 +659,18 @@ sub _pasteWaypointToE80
 		($node_type eq 'waypoint')    ? $node->{group_uuid} :
 		($node_type eq 'route_point') ? $node->{group_uuid} : undef;
 
-	my $total    = 1 + ($group_uuid ? 1 : 0);
-	my $progress = _openE80Progress("Paste Waypoint", $total,
-		{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
+	my $progress;
+	if ($shared_progress)
+	{
+		$progress = $shared_progress;
+	}
+	else
+	{
+		my $total = 1 + ($group_uuid ? 1 : 0);
+		$progress = _openE80Progress("Paste Waypoint", $total,
+			{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
+		return if !$progress;
+	}
 
 	my $policy = undef;
 	my $result = _pasteOneWaypointToE80($wpmgr, $tree, $item, \$policy, 'Paste Waypoint', $progress, $pending_uuids, $pending_names);
@@ -713,6 +727,7 @@ sub _pasteNewWaypointToE80
 	my $total    = 1 + ($group_uuid ? 1 : 0);
 	my $progress = _openE80Progress("Paste New Waypoint", $total,
 		{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
+	return if !$progress;
 
 	my $new_uuid = _newNavUUID();
 	if (!$new_uuid)
@@ -778,6 +793,7 @@ sub _pasteGroupToE80
 		$progress = _openE80Progress("Paste Group", $total,
 			{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
 	}
+	return if !$progress;
 
 	my $policy      = undef;
 	my $any_skipped = 0;
@@ -866,8 +882,9 @@ sub _pasteRouteToE80
 		my $total = (2 * scalar(@$members)) + 1;
 		$progress = _openE80Progress("Paste Route", $total,
 			{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
+		return if !$progress;
+		$progress->{_counting_get_items} = 1;
 	}
-	$progress->{_counting_get_items} = 1 if $progress;
 
 	my $policy = undef;
 	for my $member (@$members)
@@ -931,23 +948,38 @@ sub _pasteAllToE80
 		return;
 	}
 
+	my $total = 0;
+	for my $item (@items)
+	{
+		my $type    = $item->{type} // '';
+		my $members = $item->{members} // [];
+		if    ($type eq 'waypoint') { $total += 1; }
+		elsif ($type eq 'group')    { $total += scalar(@$members) + ($item->{uuid} ? 1 : 0); }
+		elsif ($type eq 'route')    { $total += scalar(@$members) + 1; }
+	}
+
+	my $progress = _openE80Progress("Paste All", $total,
+		{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
+	return if !$progress;
+
 	my %pending_uuids;
 	my %pending_names;
 
 	for my $item (@items)
 	{
+		last if $progress->{cancelled};
 		my $type = $item->{type} // '';
 		if ($type eq 'waypoint')
 		{
-			_pasteWaypointToE80($node, $tree, $item, $cb, \%pending_uuids, \%pending_names);
+			_pasteWaypointToE80($node, $tree, $item, $cb, \%pending_uuids, \%pending_names, $progress);
 		}
 		elsif ($type eq 'group')
 		{
-			_pasteGroupToE80($node, $tree, $item, $cb, undef, \%pending_uuids, \%pending_names);
+			_pasteGroupToE80($node, $tree, $item, $cb, $progress, \%pending_uuids, \%pending_names);
 		}
 		elsif ($type eq 'route')
 		{
-			_pasteRouteToE80($node, $tree, $item, $cb, undef, \%pending_uuids, \%pending_names);
+			_pasteRouteToE80($node, $tree, $item, $cb, $progress, \%pending_uuids, \%pending_names);
 		}
 		elsif ($type eq 'track')
 		{
@@ -989,6 +1021,7 @@ sub _pasteNewGroupToE80
 		$progress = _openE80Progress("Paste New Group", scalar(@$members) + 1,
 			{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
 	}
+	return if !$progress;
 
 	my %pending_names;
 	my @new_wp_uuids;
@@ -1066,6 +1099,7 @@ sub _pasteNewRouteToE80
 		$progress = _openE80Progress("Paste New Route", scalar(@$members) + 1,
 			{cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
 	}
+	return if !$progress;
 
 	my %pending_names;
 	my @new_wp_uuids;

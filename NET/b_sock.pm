@@ -910,12 +910,17 @@ sub commandThread
 	while ($this->{running} &&
 		   !$this->{destroyed})
 	{
-		if ($this->{running} &&
-			$this->{connected} &&
-			!$this->{shutdown} &&
-			@{$this->{command_queue}})
+		my $command;
 		{
-			my $command = shift @{$this->{command_queue}};
+			lock(%{$this->{queue_lock}}) if $this->{queue_lock};
+			$command = shift @{$this->{command_queue}}
+				if $this->{running} &&
+				   $this->{connected} &&
+				   !$this->{shutdown} &&
+				   @{$this->{command_queue}};
+		}
+		if ($command)
+		{
 			display($dbg_cmd,0,"b_sock commandThread($this->{name}) starting command($command->{name})");
 
 			# implicit knowledge of tcpProbe addon

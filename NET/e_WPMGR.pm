@@ -139,6 +139,11 @@ sub parseMessage
 	$rule = $WPMGR_PARSE_RULES{$D | $C} if !$rule;
 	if ($rule)
 	{
+		if ($rule->{is_event})
+		{
+			$this->resetTransaction();
+			$this->{tx}{what} = $W;
+		}
 		my $offset = 4;
 		for my $piece (@{$rule->{pieces}})
 		{

@@ -66,6 +66,7 @@ sub init
 	$this->{groups} = shared_clone({});
 		# hashes of buffers by uuid, where the
 		# buffer starts with the big_len
+	$this->{queue_lock} = &threads::shared::share({});
 	return $this;
 }
 
@@ -112,6 +113,8 @@ sub queueWPMGRCommand
 	return error("No 'this' in queueWPMGRCommand") if !$this;
 	return error("Not started") if !$this->{started};
 	return error("Not running") if !$this->{running};
+
+	lock(%{$this->{queue_lock}});
 
 	my $cmd_name = apiCommandName($api_command);
 
@@ -580,6 +583,8 @@ sub handleEvent
 	# the proper reply to a modify_item call.
 {
 	my ($this,$packet) = @_;
+	# warning(0,0,"WPMGR handleEvent mods="._def($packet->{mods})." item="._def($packet->{item}));
+
 	my $mods = $packet->{mods};
 	return $packet if
 		!$mods ||
