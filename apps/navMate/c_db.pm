@@ -69,6 +69,11 @@ BEGIN
 		moveRoute
 		moveTrack
 		isDBReady
+		getCollectionVisibleState
+		setTerminalVisible
+		setCollectionVisibleRecursive
+		clearAllVisible
+		getAllVisibleFeatures
 	);
 }
 
@@ -90,6 +95,7 @@ my $db_def = {
 		"parent_uuid TEXT",
 		"node_type   TEXT NOT NULL DEFAULT 'branch'",
 		"comment     TEXT DEFAULT ''",
+		"visible     INTEGER NOT NULL DEFAULT 0",
 	],
 
 	waypoints => [
@@ -98,7 +104,6 @@ my $db_def = {
 		"comment         TEXT DEFAULT ''",
 		"lat             REAL NOT NULL",
 		"lon             REAL NOT NULL",
-		"sym             INTEGER DEFAULT 0",
 		"wp_type         TEXT NOT NULL DEFAULT 'label'",
 		"color           TEXT",
 		"depth_cm        INTEGER DEFAULT 0",
@@ -106,6 +111,10 @@ my $db_def = {
 		"ts_source       TEXT NOT NULL",
 		"source          TEXT",
 		"collection_uuid TEXT NOT NULL",
+		"visible         INTEGER NOT NULL DEFAULT 0",
+		"db_version      INTEGER NOT NULL DEFAULT 1",
+		"e80_version     INTEGER",
+		"kml_version     INTEGER",
 	],
 
 	routes => [
@@ -114,6 +123,10 @@ my $db_def = {
 		"comment         TEXT DEFAULT ''",
 		"color           TEXT DEFAULT NULL",
 		"collection_uuid TEXT NOT NULL",
+		"visible         INTEGER NOT NULL DEFAULT 0",
+		"db_version      INTEGER NOT NULL DEFAULT 1",
+		"e80_version     INTEGER",
+		"kml_version     INTEGER",
 	],
 
 	route_waypoints => [
@@ -132,6 +145,10 @@ my $db_def = {
 		"ts_source       TEXT NOT NULL",
 		"point_count     INTEGER",
 		"collection_uuid TEXT NOT NULL",
+		"visible         INTEGER NOT NULL DEFAULT 0",
+		"db_version      INTEGER NOT NULL DEFAULT 1",
+		"e80_version     INTEGER",
+		"kml_version     INTEGER",
 	],
 
 	track_points => [
@@ -191,6 +208,27 @@ sub openDB
 
 	my $rec    = $dbh->get_record("SELECT value FROM key_values WHERE key='schema_version'");
 	my $stored = $rec ? $rec->{value} : '0.0';
+
+	if ($stored eq '7.0' || $stored eq '8.0')
+	{
+		display(0,0,"c_db::openDB migrating schema $stored → 9.0");
+		if ($stored eq '7.0')
+		{
+			for my $table (qw(collections waypoints routes tracks))
+			{
+				$dbh->do("ALTER TABLE $table ADD COLUMN visible INTEGER NOT NULL DEFAULT 0", []);
+			}
+		}
+		for my $table (qw(waypoints routes tracks))
+		{
+			$dbh->do("ALTER TABLE $table ADD COLUMN db_version  INTEGER NOT NULL DEFAULT 1", []);
+			$dbh->do("ALTER TABLE $table ADD COLUMN e80_version INTEGER", []);
+			$dbh->do("ALTER TABLE $table ADD COLUMN kml_version INTEGER", []);
+		}
+		$dbh->do("UPDATE key_values SET value='9.0' WHERE key='schema_version'", []);
+		$stored = '9.0';
+		display(0,0,"c_db::openDB migration to 9.0 complete");
+	}
 
 	my ($stored_major)   = split(/\./, $stored);
 	my ($expected_major) = split(/\./, $SCHEMA_VERSION);
@@ -398,15 +436,14 @@ sub insertWaypoint
 	my $uuid = $a{uuid} // newUUID($dbh);
 	$dbh->do(qq{
 		INSERT INTO waypoints
-			(uuid, name, comment, lat, lon, sym, wp_type, color, depth_cm,
+			(uuid, name, comment, lat, lon, wp_type, color, depth_cm,
 			 created_ts, ts_source, source, collection_uuid)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)},
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)},
 		[$uuid,
 		$a{name},
 		$a{comment}         // '',
 		$a{lat},
 		$a{lon},
-		$a{sym}             // 0,
 		$a{wp_type}         // $WP_TYPE_NAV,
 		$a{color},
 		$a{depth_cm}        // 0,
@@ -423,14 +460,13 @@ sub updateWaypoint
 	my ($dbh, $uuid, %a) = @_;
 	$dbh->do(qq{
 		UPDATE waypoints SET
-			name=?, comment=?, lat=?, lon=?, sym=?, wp_type=?, color=?,
+			name=?, comment=?, lat=?, lon=?, wp_type=?, color=?,
 			depth_cm=?, created_ts=?, ts_source=?, source=?
 		WHERE uuid=?},
 		[$a{name},
 		$a{comment}  // '',
 		$a{lat},
 		$a{lon},
-		$a{sym}      // 0,
 		$a{wp_type}  // $WP_TYPE_NAV,
 		$a{color},
 		$a{depth_cm} // 0,
@@ -651,17 +687,17 @@ sub getCollectionObjects
 	my ($dbh, $coll_uuid) = @_;
 	my @objects;
 	my $wps = $dbh->get_records(
-		"SELECT uuid, name, 'waypoint' AS obj_type, lat, lon, sym, wp_type, color
+		"SELECT uuid, name, 'waypoint' AS obj_type, lat, lon, wp_type, color, visible
 		 FROM waypoints WHERE collection_uuid=? ORDER BY rowid",
 		[$coll_uuid]);
 	push @objects, @$wps;
 	my $routes = $dbh->get_records(
-		"SELECT uuid, name, color, 'route' AS obj_type
+		"SELECT uuid, name, color, 'route' AS obj_type, visible
 		 FROM routes WHERE collection_uuid=? ORDER BY rowid",
 		[$coll_uuid]);
 	push @objects, @$routes;
 	my $tracks = $dbh->get_records(
-		"SELECT uuid, name, color, 'track' AS obj_type, ts_start, ts_end, ts_source, point_count
+		"SELECT uuid, name, color, 'track' AS obj_type, ts_start, ts_end, ts_source, point_count, visible
 		 FROM tracks WHERE collection_uuid=? ORDER BY rowid",
 		[$coll_uuid]);
 	push @objects, @$tracks;
@@ -691,7 +727,7 @@ sub getCollection
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, parent_uuid, node_type, comment FROM collections WHERE uuid=?",
+		"SELECT uuid, name, parent_uuid, node_type, comment, visible FROM collections WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -704,7 +740,7 @@ sub getTrack
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, collection_uuid FROM tracks WHERE uuid=?",
+		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, collection_uuid, visible FROM tracks WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -717,7 +753,7 @@ sub getWaypoint
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, comment, lat, lon, sym, wp_type, color, depth_cm, created_ts, ts_source, source, collection_uuid FROM waypoints WHERE uuid=?",
+		"SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm, created_ts, ts_source, source, collection_uuid, visible FROM waypoints WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -730,7 +766,7 @@ sub getRoute
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, comment, color, collection_uuid FROM routes WHERE uuid=?",
+		"SELECT uuid, name, comment, color, collection_uuid, visible FROM routes WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -766,8 +802,8 @@ sub getCollectionWRGTs
 		)
 	};
 	my $wps = $dbh->get_records(
-		$cte . "SELECT uuid, name, comment, lat, lon, sym, wp_type, color, depth_cm,
-		        created_ts, ts_source, source, collection_uuid
+		$cte . "SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm,
+		        created_ts, ts_source, source, collection_uuid, visible
 		        FROM waypoints WHERE collection_uuid IN (SELECT uuid FROM tree)",
 		[$uuid]);
 	my $routes = $dbh->get_records(
@@ -788,11 +824,146 @@ sub getCollectionWRGTs
 
 
 #---------------------------------
+# getCollectionVisibleState
+#---------------------------------
+# Returns 0 (none visible), 1 (all visible), or 2 (some visible) for the
+# terminal objects (waypoints, routes, tracks) under $uuid and all
+# descendant collections.  Empty collections return 0.
+
+sub getCollectionVisibleState
+{
+	my ($dbh, $uuid) = @_;
+	my $cte = qq{
+		WITH RECURSIVE tree(uuid) AS (
+			SELECT uuid FROM collections WHERE uuid=?
+			UNION ALL
+			SELECT c.uuid FROM collections c JOIN tree ON c.parent_uuid=tree.uuid
+		)
+	};
+	my $row = $dbh->get_record(
+		$cte . qq{
+			SELECT SUM(total) AS total, SUM(vis) AS vis FROM (
+				SELECT COUNT(*) AS total, SUM(visible) AS vis
+				FROM waypoints WHERE collection_uuid IN (SELECT uuid FROM tree)
+				UNION ALL
+				SELECT COUNT(*), SUM(visible)
+				FROM routes WHERE collection_uuid IN (SELECT uuid FROM tree)
+				UNION ALL
+				SELECT COUNT(*), SUM(visible)
+				FROM tracks WHERE collection_uuid IN (SELECT uuid FROM tree)
+			)
+		},
+		[$uuid]);
+	my $total = ($row && defined $row->{total}) ? $row->{total} + 0 : 0;
+	my $vis   = ($row && defined $row->{vis})   ? $row->{vis}   + 0 : 0;
+	return 0 if $total == 0 || $vis == 0;
+	return 1 if $vis == $total;
+	return 2;
+}
+
+
+#---------------------------------
+# setTerminalVisible
+#---------------------------------
+# Set visible flag on a single terminal node (waypoint, route, or track).
+
+sub setTerminalVisible
+{
+	my ($dbh, $uuid, $obj_type, $visible) = @_;
+	my $table = $obj_type eq 'waypoint' ? 'waypoints'
+	          : $obj_type eq 'route'    ? 'routes'
+	          :                           'tracks';
+	$dbh->do("UPDATE $table SET visible=? WHERE uuid=?", [$visible, $uuid]);
+	return 1;
+}
+
+
+#---------------------------------
+# setCollectionVisibleRecursive
+#---------------------------------
+# Set visible on all terminal descendants AND the collection itself.
+
+sub setCollectionVisibleRecursive
+{
+	my ($dbh, $uuid, $visible) = @_;
+	my $cte = qq{
+		WITH RECURSIVE tree(uuid) AS (
+			SELECT uuid FROM collections WHERE uuid=?
+			UNION ALL
+			SELECT c.uuid FROM collections c JOIN tree ON c.parent_uuid=tree.uuid
+		)
+	};
+	$dbh->do($cte . "UPDATE waypoints SET visible=? WHERE collection_uuid IN (SELECT uuid FROM tree)",
+		[$uuid, $visible]);
+	$dbh->do($cte . "UPDATE routes SET visible=? WHERE collection_uuid IN (SELECT uuid FROM tree)",
+		[$uuid, $visible]);
+	$dbh->do($cte . "UPDATE tracks SET visible=? WHERE collection_uuid IN (SELECT uuid FROM tree)",
+		[$uuid, $visible]);
+	$dbh->do($cte . "UPDATE collections SET visible=? WHERE uuid IN (SELECT uuid FROM tree)",
+		[$uuid, $visible]);
+	return 1;
+}
+
+
+#---------------------------------
+# clearAllVisible
+#---------------------------------
+# Set visible=0 on every object in the database.
+
+sub clearAllVisible
+{
+	my ($dbh) = @_;
+	$dbh->do("UPDATE collections SET visible=0", []);
+	$dbh->do("UPDATE waypoints  SET visible=0", []);
+	$dbh->do("UPDATE routes     SET visible=0", []);
+	$dbh->do("UPDATE tracks     SET visible=0", []);
+	return 1;
+}
+
+
+#---------------------------------
+# getAllVisibleFeatures
+#---------------------------------
+# Returns all visible=1 terminal objects with enough data for Leaflet rendering.
+# Routes include their ordered waypoints; tracks include their points.
+
+sub getAllVisibleFeatures
+{
+	my ($dbh) = @_;
+	my $wps = $dbh->get_records(
+		"SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm,
+		 created_ts, ts_source, source, collection_uuid
+		 FROM waypoints WHERE visible=1",
+		[]);
+	my $routes = $dbh->get_records(
+		"SELECT uuid, name, comment, color, collection_uuid FROM routes WHERE visible=1",
+		[]);
+	my $tracks = $dbh->get_records(
+		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, collection_uuid
+		 FROM tracks WHERE visible=1",
+		[]);
+	for my $r (@{$routes // []})
+	{
+		$r->{waypoints} = getRouteWaypoints($dbh, $r->{uuid});
+	}
+	for my $t (@{$tracks // []})
+	{
+		$t->{points} = getTrackPoints($dbh, $t->{uuid});
+	}
+	return {
+		waypoints => $wps    // [],
+		routes    => $routes // [],
+		tracks    => $tracks // [],
+	};
+}
+
+
+#---------------------------------
 # getCollectionGroups
 #---------------------------------
 # Returns all node_type='group' collections in the sub-tree rooted at
 # $coll_uuid, with their member waypoints.
-# Returns arrayref of { uuid, name, waypoints => [{uuid,name,lat,lon,sym}] }.
+# Returns arrayref of { uuid, name, waypoints => [{uuid,name,lat,lon}] }.
 
 sub getCollectionGroups
 {
@@ -805,7 +976,7 @@ sub getCollectionGroups
 		)
 		SELECT col.uuid AS coll_uuid, col.name AS coll_name,
 		       w.uuid   AS wp_uuid,   w.name   AS wp_name,
-		       w.lat, w.lon, w.sym
+		       w.lat, w.lon
 		FROM tree t
 		JOIN collections col ON col.uuid=t.uuid AND col.node_type='group'
 		JOIN waypoints w ON w.collection_uuid=col.uuid
@@ -827,7 +998,6 @@ sub getCollectionGroups
 			name => $row->{wp_name},
 			lat  => $row->{lat},
 			lon  => $row->{lon},
-			sym  => $row->{sym},
 		};
 	}
 	return \@groups;

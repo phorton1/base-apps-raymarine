@@ -22,12 +22,14 @@ use Wx::Event qw(
 	EVT_TREE_SEL_CHANGED
 	EVT_TREE_ITEM_EXPANDING
 	EVT_TREE_ITEM_RIGHT_CLICK
-	EVT_LEFT_DCLICK
 	EVT_RIGHT_DOWN
 	EVT_MENU
 	EVT_TEXT
 	EVT_BUTTON
-	EVT_CHOICE);
+	EVT_CHOICE
+	EVT_CHECKBOX
+	EVT_LEFT_DOWN
+	EVT_SIZE);
 use Pub::WX::Dialogs;
 use POSIX qw(strftime);
 use Pub::Utils qw(display warning error);
@@ -62,109 +64,119 @@ sub new
 	$this->{tree} = Wx::TreeCtrl->new($this, -1, wxDefaultPosition, wxDefaultSize,
 		wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxTR_MULTIPLE);
 
+	# checkbox state images: index 0=unchecked(state 1), 1=checked(state 2), 2=indeterminate(state 3)
+	my $state_imgs = Wx::ImageList->new(13, 13);
+	$state_imgs->Add(_makeCheckBitmap(0));
+	$state_imgs->Add(_makeCheckBitmap(1));
+	$state_imgs->Add(_makeCheckBitmap(2));
+	$this->{tree}->SetStateImageList($state_imgs);
+	$this->{_state_imgs} = $state_imgs;
+
 	# inner splitter: editor panel (top) + detail panel (bottom)
 	my $right_split = Wx::SplitterWindow->new($this, -1);
 	$this->{right_split} = $right_split;
+
+	# --- editor panel layout constants ---
+	my $ED_MARGIN        = 8;
+	my $ED_LABEL_W       = 60;
+	my $ED_COL_GAP       = 8;
+	my $ED_CTRL_X        = $ED_MARGIN + $ED_LABEL_W + $ED_COL_GAP;
+	my $ED_CTRL_H        = 23;
+	my $ED_ROW_GAP       = 2;
+	my $ED_ROW_H         = $ED_CTRL_H + $ED_ROW_GAP;
+	my $ED_HEADER_SIZE   = $ED_MARGIN + $ED_ROW_H;
+	my $ED_BOTTOM_MARGIN = 8;
+	my $ED_MAX_ROWS      = 7;
+	my $ED_TITLE_W       = 80;
+	my $ED_VIS_X         = $ED_CTRL_X + $ED_TITLE_W + 8;
+	$this->{_ed_ctrl_x}  = $ED_CTRL_X;
+	$this->{_ed_ctrl_h}  = $ED_CTRL_H;
+	$this->{_ed_margin}  = $ED_MARGIN;
+
+	my $ED_INITIAL_SASH  = $ED_HEADER_SIZE + $ED_MAX_ROWS * $ED_ROW_H + $ED_BOTTOM_MARGIN;
+
+	# helper: y position of row N (0-based)
+	my $ey = sub { $ED_HEADER_SIZE + $_[0] * $ED_ROW_H };
 
 	# --- editor panel ---
 	my $editor_panel = Wx::Panel->new($right_split, -1);
 	$this->{editor_panel} = $editor_panel;
 
-	$this->{ed_title} = Wx::StaticText->new($editor_panel, -1, '');
+	# header row: Save button (label col) + bold type title (ctrl col)
+	$this->{ed_save} = Wx::Button->new($editor_panel, -1, 'Save',
+		[$ED_MARGIN, $ED_MARGIN], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_save}->Enable(0);
+
+	$this->{ed_title} = Wx::StaticText->new($editor_panel, -1, '',
+		[$ED_CTRL_X, $ED_MARGIN], [$ED_TITLE_W, $ED_CTRL_H]);
 	$this->{ed_title}->SetFont(
 		Wx::Font->new(-1, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
 
-	my $ed_sizer = Wx::FlexGridSizer->new(0, 2, 4, 8);
-	$ed_sizer->AddGrowableCol(1);
-	$this->{ed_sizer} = $ed_sizer;
+	$this->{ed_visible} = Wx::CheckBox->new($editor_panel, -1, 'Visible',
+		[$ED_VIS_X, $ED_MARGIN], [-1, $ED_CTRL_H], wxCHK_3STATE);
+	$this->{ed_visible}->Show(0);
 
-	# name row
-	$this->{ed_lbl_name} = Wx::StaticText->new($editor_panel, -1, 'Name');
-	$this->{ed_name}     = Wx::TextCtrl->new($editor_panel, -1, '');
-	$ed_sizer->Add($this->{ed_lbl_name}, 0, wxALIGN_CENTER_VERTICAL);
-	$ed_sizer->Add($this->{ed_name},     1, wxEXPAND);
+	# name row (row 0)
+	$this->{ed_lbl_name} = Wx::StaticText->new($editor_panel, -1, 'Name',
+		[$ED_MARGIN, $ey->(0)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_name} = Wx::TextCtrl->new($editor_panel, -1, '',
+		[$ED_CTRL_X, $ey->(0)], [200, $ED_CTRL_H]);
 
-	# comment row
-	$this->{ed_lbl_comment} = Wx::StaticText->new($editor_panel, -1, 'Comment');
-	$this->{ed_comment}     = Wx::TextCtrl->new($editor_panel, -1, '');
-	$ed_sizer->Add($this->{ed_lbl_comment}, 0, wxALIGN_CENTER_VERTICAL);
-	$ed_sizer->Add($this->{ed_comment},     1, wxEXPAND);
+	# comment row (row 1)
+	$this->{ed_lbl_comment} = Wx::StaticText->new($editor_panel, -1, 'Comment',
+		[$ED_MARGIN, $ey->(1)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_comment} = Wx::TextCtrl->new($editor_panel, -1, '',
+		[$ED_CTRL_X, $ey->(1)], [200, $ED_CTRL_H]);
 
-	# lat row: TextCtrl + DDM static label
-	$this->{ed_lbl_lat} = Wx::StaticText->new($editor_panel, -1, 'Lat');
-	my $lat_panel = Wx::Panel->new($editor_panel, -1);
-	$this->{ed_lat_panel} = $lat_panel;
-	my $lat_hsizer = Wx::BoxSizer->new(wxHORIZONTAL);
-	$this->{ed_lat}     = Wx::TextCtrl->new($lat_panel, -1, '', wxDefaultPosition, [110, -1]);
-	$this->{ed_lat_ddm} = Wx::StaticText->new($lat_panel, -1, '');
-	$lat_hsizer->Add($this->{ed_lat},     0, wxRIGHT, 8);
-	$lat_hsizer->Add($this->{ed_lat_ddm}, 1, wxALIGN_CENTER_VERTICAL);
-	$lat_panel->SetSizer($lat_hsizer);
-	$ed_sizer->Add($this->{ed_lbl_lat}, 0, wxALIGN_CENTER_VERTICAL);
-	$ed_sizer->Add($lat_panel,          1, wxEXPAND);
+	# lat row (row 2): TextCtrl + DDM label
+	$this->{ed_lbl_lat} = Wx::StaticText->new($editor_panel, -1, 'Lat',
+		[$ED_MARGIN, $ey->(2)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_lat} = Wx::TextCtrl->new($editor_panel, -1, '',
+		[$ED_CTRL_X, $ey->(2)], [110, $ED_CTRL_H]);
+	$this->{ed_lat_ddm} = Wx::StaticText->new($editor_panel, -1, '',
+		[$ED_CTRL_X + 110 + 6, $ey->(2)], [-1, $ED_CTRL_H]);
 
-	# lon row: TextCtrl + DDM static label
-	$this->{ed_lbl_lon} = Wx::StaticText->new($editor_panel, -1, 'Lon');
-	my $lon_panel = Wx::Panel->new($editor_panel, -1);
-	$this->{ed_lon_panel} = $lon_panel;
-	my $lon_hsizer = Wx::BoxSizer->new(wxHORIZONTAL);
-	$this->{ed_lon}     = Wx::TextCtrl->new($lon_panel, -1, '', wxDefaultPosition, [110, -1]);
-	$this->{ed_lon_ddm} = Wx::StaticText->new($lon_panel, -1, '');
-	$lon_hsizer->Add($this->{ed_lon},     0, wxRIGHT, 8);
-	$lon_hsizer->Add($this->{ed_lon_ddm}, 1, wxALIGN_CENTER_VERTICAL);
-	$lon_panel->SetSizer($lon_hsizer);
-	$ed_sizer->Add($this->{ed_lbl_lon}, 0, wxALIGN_CENTER_VERTICAL);
-	$ed_sizer->Add($lon_panel,          1, wxEXPAND);
+	# lon row (row 3): TextCtrl + DDM label
+	$this->{ed_lbl_lon} = Wx::StaticText->new($editor_panel, -1, 'Lon',
+		[$ED_MARGIN, $ey->(3)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_lon} = Wx::TextCtrl->new($editor_panel, -1, '',
+		[$ED_CTRL_X, $ey->(3)], [110, $ED_CTRL_H]);
+	$this->{ed_lon_ddm} = Wx::StaticText->new($editor_panel, -1, '',
+		[$ED_CTRL_X + 110 + 6, $ey->(3)], [-1, $ED_CTRL_H]);
 
-	# wp_type row: Choice
-	$this->{ed_lbl_wp_type} = Wx::StaticText->new($editor_panel, -1, 'Type');
-	$this->{ed_wp_type}     = Wx::Choice->new($editor_panel, -1, wxDefaultPosition, wxDefaultSize,
+	# wp_type row (row 4)
+	$this->{ed_lbl_wp_type} = Wx::StaticText->new($editor_panel, -1, 'Type',
+		[$ED_MARGIN, $ey->(4)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_wp_type} = Wx::Choice->new($editor_panel, -1,
+		[$ED_CTRL_X, $ey->(4)], [-1, $ED_CTRL_H],
 		[$WP_TYPE_NAV, $WP_TYPE_LABEL, $WP_TYPE_SOUNDING]);
-	$ed_sizer->Add($this->{ed_lbl_wp_type}, 0, wxALIGN_CENTER_VERTICAL);
-	$ed_sizer->Add($this->{ed_wp_type},     0);
 
-	# color row: swatch panel + Pick button
-	$this->{ed_lbl_color} = Wx::StaticText->new($editor_panel, -1, 'Color');
-	my $color_row = Wx::Panel->new($editor_panel, -1);
-	$this->{ed_color_panel} = $color_row;
-	my $color_row_sizer = Wx::BoxSizer->new(wxHORIZONTAL);
-	$this->{ed_color_swatch} = Wx::Panel->new($color_row, -1, wxDefaultPosition, [28, 20],
-		wxSIMPLE_BORDER);
-	my $pick_btn = Wx::Button->new($color_row, -1, 'Pick...');
-	$this->{ed_pick_btn} = $pick_btn;
-	$color_row_sizer->Add($this->{ed_color_swatch}, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-	$color_row_sizer->Add($pick_btn,                0, wxALIGN_CENTER_VERTICAL);
-	$color_row->SetSizer($color_row_sizer);
-	$ed_sizer->Add($this->{ed_lbl_color}, 0, wxALIGN_CENTER_VERTICAL);
-	$ed_sizer->Add($color_row,            0);
+	# color row (row 5): swatch + Pick button
+	$this->{ed_lbl_color} = Wx::StaticText->new($editor_panel, -1, 'Color',
+		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_color_swatch} = Wx::Panel->new($editor_panel, -1,
+		[$ED_CTRL_X, $ey->(5) + 1], [28, 20], wxSIMPLE_BORDER);
+	$this->{ed_pick_btn} = Wx::Button->new($editor_panel, -1, 'Pick...',
+		[$ED_CTRL_X + 28 + 6, $ey->(5)], [-1, $ED_CTRL_H]);
 
-	# depth row: TextCtrl + unit label (ft or m per pref)
-	$this->{ed_lbl_depth} = Wx::StaticText->new($editor_panel, -1, 'Depth');
-	my $depth_panel = Wx::Panel->new($editor_panel, -1);
-	$this->{ed_depth_panel} = $depth_panel;
-	my $depth_hsizer = Wx::BoxSizer->new(wxHORIZONTAL);
-	$this->{ed_depth} = Wx::TextCtrl->new($depth_panel, -1, '', wxDefaultPosition, [70, -1]);
+	# depth row (row 6): TextCtrl + unit label
+	$this->{ed_lbl_depth} = Wx::StaticText->new($editor_panel, -1, 'Depth',
+		[$ED_MARGIN, $ey->(6)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_depth} = Wx::TextCtrl->new($editor_panel, -1, '',
+		[$ED_CTRL_X, $ey->(6)], [70, $ED_CTRL_H]);
 	my $depth_unit = getPref($PREF_DEPTH_DISPLAY) == $DEPTH_DISPLAY_FEET ? 'ft' : 'm';
-	$this->{ed_depth_unit} = Wx::StaticText->new($depth_panel, -1, $depth_unit);
-	$depth_hsizer->Add($this->{ed_depth},      0, wxRIGHT, 6);
-	$depth_hsizer->Add($this->{ed_depth_unit}, 0, wxALIGN_CENTER_VERTICAL);
-	$depth_panel->SetSizer($depth_hsizer);
-	$ed_sizer->Add($this->{ed_lbl_depth}, 0, wxALIGN_CENTER_VERTICAL);
-	$ed_sizer->Add($depth_panel,          0);
+	$this->{ed_depth_unit} = Wx::StaticText->new($editor_panel, -1, $depth_unit,
+		[$ED_CTRL_X + 70 + 6, $ey->(6)], [-1, $ED_CTRL_H]);
 
-	# save button, right-aligned below the grid
-	$this->{ed_save} = Wx::Button->new($editor_panel, -1, 'Save');
-	$this->{ed_save}->Enable(0);
-	my $save_row = Wx::BoxSizer->new(wxHORIZONTAL);
-	$save_row->AddStretchSpacer(1);
-	$save_row->Add($this->{ed_save}, 0);
-
-	my $ed_outer = Wx::BoxSizer->new(wxVERTICAL);
-	$ed_outer->Add($this->{ed_title}, 0, wxLEFT | wxTOP | wxRIGHT, 8);
-	$ed_outer->Add($ed_sizer,         0, wxEXPAND | wxALL, 8);
-	$ed_outer->AddStretchSpacer(1);
-	$ed_outer->Add($save_row,         0, wxEXPAND | wxBOTTOM | wxRIGHT, 8);
-	$editor_panel->SetSizer($ed_outer);
+	EVT_SIZE($editor_panel, sub {
+		my ($panel, $event) = @_;
+		$event->Skip();
+		my $w = $panel->GetSize()->GetWidth();
+		my $ctrl_w = $w - $this->{_ed_ctrl_x} - $this->{_ed_margin};
+		$ctrl_w = 80 if $ctrl_w < 80;
+		$this->{ed_name}->SetSize($ctrl_w, $this->{_ed_ctrl_h});
+		$this->{ed_comment}->SetSize($ctrl_w, $this->{_ed_ctrl_h});
+	});
 
 	_clearEditor($this);
 
@@ -179,8 +191,8 @@ sub new
 	$detail_vsizer->Add($this->{detail}, 1, wxEXPAND);
 	$detail_panel->SetSizer($detail_vsizer);
 
-	$right_split->SplitHorizontally($editor_panel, $detail_panel, 0);
-	$right_split->SetSashGravity(0.5);
+	$right_split->SplitHorizontally($editor_panel, $detail_panel, $ED_INITIAL_SASH);
+	$right_split->SetSashGravity(0);
 
 	my $sash = ($data && ref($data) eq 'HASH' && $data->{sash}) ? $data->{sash} : 250;
 	$this->SplitVertically($this->{tree}, $right_split, $sash);
@@ -200,7 +212,6 @@ sub new
 	EVT_TREE_ITEM_EXPANDING($this,     $this->{tree}, \&onTreeExpanding);
 	EVT_TREE_ITEM_RIGHT_CLICK($this,   $this->{tree}, \&onTreeRightClick);
 	EVT_RIGHT_DOWN($this->{tree},      sub { _onTreeRightDown($this, @_) });
-	EVT_LEFT_DCLICK($this->{tree}, sub { _onTreeDblClick($this, @_) });
 
 	EVT_MENU($this, $COMMAND_UPLOAD_E80, \&_onUploadE80);   # vestigial
 	EVT_MENU($this, $_, \&_onContextMenuCommand)
@@ -213,8 +224,10 @@ sub new
 	EVT_TEXT($this,   $this->{ed_lon},     \&_onLonEdit);
 	EVT_TEXT($this,   $this->{ed_depth},   \&_onFieldChanged);
 	EVT_CHOICE($this, $this->{ed_wp_type}, \&_onFieldChanged);
-	EVT_BUTTON($this, $this->{ed_save},    \&_onSave);
-	EVT_BUTTON($this, $this->{ed_pick_btn}, \&_onColorPick);
+	EVT_BUTTON($this,   $this->{ed_save},    \&_onSave);
+	EVT_BUTTON($this,   $this->{ed_pick_btn}, \&_onColorPick);
+	EVT_CHECKBOX($this, $this->{ed_visible},  \&_onEdVisibleChanged);
+	EVT_LEFT_DOWN($this->{tree}, sub { _onTreeLeftDown($this, @_) });
 
 	_loadTopLevel($this);
 
@@ -303,6 +316,7 @@ sub _addCollectionItem
 	my $total = $counts->{collections} + $counts->{waypoints}
 	          + $counts->{routes}      + $counts->{tracks};
 	$tree->AppendItem($item, $DUMMY) if $total;
+	$tree->SetItemState($item, getCollectionVisibleState($dbh, $coll->{uuid}));
 
 	return $item;
 }
@@ -328,6 +342,7 @@ sub _addObjectItem
 	}
 	my $item = $this->{tree}->AppendItem($parent, $label, -1, -1,
 		Wx::TreeItemData->new({ type => 'object', data => $obj }));
+	$this->{tree}->SetItemState($item, ($obj->{visible} // 0) ? 1 : 0);
 	$this->{tree}->AppendItem($item, $DUMMY) if $obj->{obj_type} eq 'route' && $n > 0;
 }
 
@@ -429,16 +444,19 @@ sub onTreeSelect
 	my $dbh = connectDB();
 	if ($node->{type} eq 'collection')
 	{
+		$this->{_edit_item} = $item;
 		_loadEditor($this, $dbh, $node);
 		_showCollection($dbh, $this, $node->{data});
 	}
 	elsif ($node->{type} eq 'object')
 	{
+		$this->{_edit_item} = $item;
 		_loadEditor($this, $dbh, $node);
 		_showObject($dbh, $this, $node->{data});
 	}
 	elsif ($node->{type} eq 'route_point')
 	{
+		$this->{_edit_item} = undef;
 		_clearEditor($this);
 		_showRoutePoint($this, $node);
 	}
@@ -509,7 +527,6 @@ sub _showObject
 		$text .= _fmt('lon',             formatLatLon($w->{lon}, 0));
 		$text .= _fmt('wp_type',         $w->{wp_type});
 		$text .= _fmt('color',           $w->{color});
-		$text .= _fmt('sym',             $w->{sym});
 		$text .= _fmt('depth_cm',        $w->{depth_cm});
 		$text .= _fmt('created_ts',      $ts);
 		$text .= _fmt('ts_source',       $w->{ts_source});
@@ -561,9 +578,449 @@ sub _showRoutePoint
 
 sub _ed_show_row
 {
-	my ($sizer, $label, $ctrl, $show) = @_;
-	$sizer->Show($label, $show ? 1 : 0);
-	$sizer->Show($ctrl,  $show ? 1 : 0);
+	my ($label, $ctrl, $show) = @_;
+	$label->Show($show ? 1 : 0);
+	$ctrl->Show($show ? 1 : 0);
+}
+
+
+#---------------------------------
+# checkbox state bitmaps
+#---------------------------------
+# state: 0=unchecked, 1=checked, 2=indeterminate
+# ImageList index 0→tree state 1, 1→state 2, 2→state 3
+
+sub _makeCheckBitmap
+{
+	my ($state) = @_;
+	my $bmp = Wx::Bitmap->new(13, 13);
+	my $dc  = Wx::MemoryDC->new();
+	$dc->SelectObject($bmp);
+	$dc->SetBackground(Wx::Brush->new(Wx::Colour->new(255,255,255), wxSOLID));
+	$dc->Clear();
+	$dc->SetPen(Wx::Pen->new(Wx::Colour->new(100,100,100), 1, wxSOLID));
+	$dc->SetBrush(Wx::Brush->new(Wx::Colour->new(255,255,255), wxSOLID));
+	$dc->DrawRectangle(1, 1, 11, 11);
+	if ($state == 1)
+	{
+		$dc->SetPen(Wx::Pen->new(Wx::Colour->new(0,0,180), 2, wxSOLID));
+		$dc->DrawLine(2, 6, 5, 10);
+		$dc->DrawLine(5, 10, 11, 2);
+	}
+	elsif ($state == 2)
+	{
+		$dc->SetPen(Wx::Pen->new(Wx::Colour->new(0,0,180), 1, wxSOLID));
+		$dc->SetBrush(Wx::Brush->new(Wx::Colour->new(0,0,180), wxSOLID));
+		$dc->DrawRectangle(3, 3, 7, 7);
+	}
+	$dc->SelectObject(wxNullBitmap);
+	return $bmp;
+}
+
+
+#---------------------------------
+# tree checkbox handling
+#---------------------------------
+
+sub _onTreeLeftDown
+{
+	my ($this, $tree, $event) = @_;
+	my ($item, $flags) = $tree->HitTest($event->GetPosition());
+	if ($item && $item->IsOk() && ($flags & wxTREE_HITTEST_ONITEMSTATEICON))
+	{
+		_onCheckboxClick($this, $item);
+		return;
+	}
+	$event->Skip();
+}
+
+
+sub _onCheckboxClick
+{
+	my ($this, $item) = @_;
+	my $item_data = $this->{tree}->GetItemData($item);
+	return if !$item_data;
+	my $node = $item_data->GetData();
+	return if ref $node ne 'HASH';
+	return if $node->{type} eq 'root' || $node->{type} eq 'route_point';
+
+	my $cur_state   = $this->{tree}->GetItemState($item);
+	my $new_visible = ($cur_state == 1) ? 0 : 1;
+
+	my $dbh = connectDB();
+	if ($node->{type} eq 'collection')
+	{
+		my $uuid = $node->{data}{uuid};
+		setCollectionVisibleRecursive($dbh, $uuid, $new_visible);
+		$this->{tree}->SetItemState($item, $new_visible ? 1 : 0);
+		_refreshLoadedSubtree($this, $item, $new_visible);
+		if ($new_visible)
+		{
+			_pushCollectionToLeaflet($dbh, $this, $uuid);
+		}
+		else
+		{
+			_pullCollectionFromLeaflet($dbh, $this, $uuid);
+		}
+	}
+	elsif ($node->{type} eq 'object')
+	{
+		my $uuid     = $node->{data}{uuid};
+		my $obj_type = $node->{data}{obj_type};
+		setTerminalVisible($dbh, $uuid, $obj_type, $new_visible);
+		$this->{tree}->SetItemState($item, $new_visible ? 1 : 0);
+		$node->{data}{visible} = $new_visible;
+		if ($new_visible)
+		{
+			_pushObjToLeaflet($dbh, $this, $node->{data});
+		}
+		else
+		{
+			_pullFromLeaflet($this, $uuid);
+		}
+	}
+	_refreshAncestorStates($dbh, $this, $item);
+
+	# sync editor visible checkbox if this item is currently loaded in the editor
+	my $node_uuid = $node->{data}{uuid} // '';
+	my $edit_uuid = $this->{_edit_uuid} // '';
+	if ($node_uuid && $edit_uuid && $node_uuid eq $edit_uuid)
+	{
+		my $vs = ($node->{type} eq 'collection')
+			? getCollectionVisibleState($dbh, $node->{data}{uuid})
+			: $new_visible;
+		$this->{ed_visible}->Set3StateValue(
+			$vs == 1 ? wxCHK_CHECKED :
+			$vs == 2 ? wxCHK_UNDETERMINED :
+			           wxCHK_UNCHECKED);
+	}
+	disconnectDB($dbh);
+}
+
+
+sub _refreshAncestorStates
+{
+	my ($dbh, $this, $item) = @_;
+	my $tree   = $this->{tree};
+	my $parent = $tree->GetItemParent($item);
+	while ($parent && $parent->IsOk())
+	{
+		my $d = $tree->GetItemData($parent);
+		last if !$d;
+		my $node = $d->GetData();
+		last if ref $node ne 'HASH' || ($node->{type} // '') eq 'root';
+		my $uuid = ($node->{data} // {})->{uuid};
+		last if !$uuid;
+		$tree->SetItemState($parent, getCollectionVisibleState($dbh, $uuid));
+		$parent = $tree->GetItemParent($parent);
+	}
+}
+
+
+sub _refreshLoadedSubtree
+{
+	my ($this, $item, $visible) = @_;
+	my $tree  = $this->{tree};
+	my $state = $visible ? 1 : 0;
+	my ($child, $cookie) = $tree->GetFirstChild($item);
+	while ($child && $child->IsOk())
+	{
+		my $d = $tree->GetItemData($child);
+		if ($d)
+		{
+			my $node = $d->GetData();
+			if (ref $node eq 'HASH')
+			{
+				if ($node->{type} eq 'object')
+				{
+					$tree->SetItemState($child, $state);
+					$node->{data}{visible} = $visible;
+				}
+				elsif ($node->{type} eq 'collection')
+				{
+					$tree->SetItemState($child, $state);
+					_refreshLoadedSubtree($this, $child, $visible);
+				}
+			}
+		}
+		($child, $cookie) = $tree->GetNextChild($item, $cookie);
+	}
+}
+
+
+#---------------------------------
+# Leaflet push/pull
+#---------------------------------
+
+sub _pushObjToLeaflet
+{
+	my ($dbh, $this, $obj, $accumulator) = @_;
+	my $uuid     = $obj->{uuid};
+	my $obj_type = $obj->{obj_type};
+	my @features;
+
+	if ($obj_type eq 'waypoint')
+	{
+		my $w = getWaypoint($dbh, $uuid);
+		return if !$w;
+		$rendered_uuids{$uuid} = 1;
+		push @features, {
+			type       => 'Feature',
+			properties => {
+				uuid            => $w->{uuid},
+				name            => $w->{name}      // '',
+				obj_type        => 'waypoint',
+				wp_type         => $w->{wp_type}   // 'nav',
+				color           => $w->{color},
+				depth_cm        => ($w->{depth_cm}  // 0) + 0,
+				lat             => ($w->{lat}        // 0) + 0,
+				lon             => ($w->{lon}        // 0) + 0,
+				comment         => $w->{comment}    // '',
+				created_ts      => ($w->{created_ts} // 0) + 0,
+				ts_source       => $w->{ts_source}  // '',
+				source          => $w->{source}     // '',
+				collection_uuid => $w->{collection_uuid} // '',
+			},
+			geometry => { type => 'Point', coordinates => [$w->{lon}+0, $w->{lat}+0] },
+		};
+	}
+	elsif ($obj_type eq 'track')
+	{
+		my $t   = getTrack($dbh, $uuid);
+		my $pts = getTrackPoints($dbh, $uuid);
+		return if !$t || !@$pts;
+		$rendered_uuids{$uuid} = 1;
+		push @features, {
+			type       => 'Feature',
+			properties => {
+				uuid            => $t->{uuid},
+				name            => $t->{name}        // '',
+				obj_type        => 'track',
+				color           => $t->{color},
+				point_count     => ($t->{point_count} // 0) + 0,
+				ts_start        => ($t->{ts_start}    // 0) + 0,
+				ts_end          => ($t->{ts_end}      // 0) + 0,
+				ts_source       => $t->{ts_source}   // '',
+				collection_uuid => $t->{collection_uuid} // '',
+			},
+			geometry => { type => 'LineString',
+				coordinates => [map { [$_->{lon}+0, $_->{lat}+0] } @$pts] },
+		};
+	}
+	elsif ($obj_type eq 'route')
+	{
+		my $r   = getRoute($dbh, $uuid);
+		my $pts = getRouteWaypoints($dbh, $uuid);
+		return if !$r || !@$pts;
+		$rendered_uuids{$uuid} = 1;
+		my @rp_names = map { $_->{name} // '' } @$pts;
+		push @features, {
+			type       => 'Feature',
+			properties => {
+				uuid            => $r->{uuid},
+				name            => $r->{name}    // '',
+				obj_type        => 'route',
+				color           => $r->{color},
+				wp_count        => scalar(@$pts) + 0,
+				rp_names        => \@rp_names,
+				comment         => $r->{comment} // '',
+				collection_uuid => $r->{collection_uuid} // '',
+			},
+			geometry => { type => 'LineString',
+				coordinates => [map { [$_->{lon}+0, $_->{lat}+0] } @$pts] },
+		};
+	}
+	if ($accumulator) { push @$accumulator, @features } else { addRenderFeatures(\@features) if @features }
+}
+
+
+sub _pullFromLeaflet
+{
+	my ($this, $uuid) = @_;
+	return if !$rendered_uuids{$uuid};
+	my @children = ref($rendered_uuids{$uuid}) eq 'ARRAY' ? @{$rendered_uuids{$uuid}} : ();
+	my @remove   = ($uuid, @children);
+	delete $rendered_uuids{$_} for @remove;
+	removeRenderFeatures(\@remove);
+}
+
+
+sub _pushCollectionToLeaflet
+{
+	my ($dbh, $this, $uuid) = @_;
+	my $wrgt = getCollectionWRGTs($dbh, $uuid);
+	my @accumulator;
+	_pushObjToLeaflet($dbh, $this, { %$_, obj_type => 'waypoint' }, \@accumulator) for @{$wrgt->{waypoints}};
+	_pushObjToLeaflet($dbh, $this, { %$_, obj_type => 'route'    }, \@accumulator) for @{$wrgt->{routes}};
+	_pushObjToLeaflet($dbh, $this, { %$_, obj_type => 'track'    }, \@accumulator) for @{$wrgt->{tracks}};
+	addRenderFeatures(\@accumulator) if @accumulator;
+}
+
+
+sub _pullCollectionFromLeaflet
+{
+	my ($dbh, $this, $uuid) = @_;
+	my $wrgt = getCollectionWRGTs($dbh, $uuid);
+	my @accumulator;
+	for my $obj (@{$wrgt->{waypoints}}, @{$wrgt->{routes}}, @{$wrgt->{tracks}})
+	{
+		my $obj_uuid = $obj->{uuid};
+		next if !$rendered_uuids{$obj_uuid};
+		my @children = ref($rendered_uuids{$obj_uuid}) eq 'ARRAY' ? @{$rendered_uuids{$obj_uuid}} : ();
+		push @accumulator, $obj_uuid, @children;
+		delete $rendered_uuids{$_} for ($obj_uuid, @children);
+	}
+	removeRenderFeatures(\@accumulator) if @accumulator;
+}
+
+
+#---------------------------------
+# browser connect / clear map
+#---------------------------------
+
+sub onBrowserConnect
+{
+	my ($this) = @_;
+	clearRenderMap();
+	$last_clear_version = getClearVersion();
+	%rendered_uuids = ();
+	my $dbh = connectDB();
+	my $vis  = getAllVisibleFeatures($dbh);
+	my @features;
+	for my $w (@{$vis->{waypoints}})
+	{
+		$rendered_uuids{$w->{uuid}} = 1;
+		push @features, {
+			type       => 'Feature',
+			properties => {
+				uuid            => $w->{uuid},
+				name            => $w->{name}        // '',
+				obj_type        => 'waypoint',
+				wp_type         => $w->{wp_type}     // 'nav',
+				color           => $w->{color},
+				depth_cm        => ($w->{depth_cm}    // 0) + 0,
+				lat             => ($w->{lat}          // 0) + 0,
+				lon             => ($w->{lon}          // 0) + 0,
+				comment         => $w->{comment}      // '',
+				created_ts      => ($w->{created_ts}   // 0) + 0,
+				ts_source       => $w->{ts_source}    // '',
+				source          => $w->{source}       // '',
+				collection_uuid => $w->{collection_uuid} // '',
+			},
+			geometry => { type => 'Point', coordinates => [$w->{lon}+0, $w->{lat}+0] },
+		};
+	}
+	for my $r (@{$vis->{routes}})
+	{
+		my $pts = $r->{waypoints} // [];
+		next if !@$pts;
+		$rendered_uuids{$r->{uuid}} = 1;
+		my @rp_names = map { $_->{name} // '' } @$pts;
+		push @features, {
+			type       => 'Feature',
+			properties => {
+				uuid            => $r->{uuid},
+				name            => $r->{name}    // '',
+				obj_type        => 'route',
+				color           => $r->{color},
+				wp_count        => scalar(@$pts) + 0,
+				rp_names        => \@rp_names,
+				comment         => $r->{comment} // '',
+				collection_uuid => $r->{collection_uuid} // '',
+			},
+			geometry => { type => 'LineString',
+				coordinates => [map { [$_->{lon}+0, $_->{lat}+0] } @$pts] },
+		};
+	}
+	for my $t (@{$vis->{tracks}})
+	{
+		my $pts = $t->{points} // [];
+		next if !@$pts;
+		$rendered_uuids{$t->{uuid}} = 1;
+		push @features, {
+			type       => 'Feature',
+			properties => {
+				uuid            => $t->{uuid},
+				name            => $t->{name}        // '',
+				obj_type        => 'track',
+				color           => $t->{color},
+				point_count     => ($t->{point_count} // 0) + 0,
+				ts_start        => ($t->{ts_start}    // 0) + 0,
+				ts_end          => ($t->{ts_end}      // 0) + 0,
+				ts_source       => $t->{ts_source}   // '',
+				collection_uuid => $t->{collection_uuid} // '',
+			},
+			geometry => { type => 'LineString',
+				coordinates => [map { [$_->{lon}+0, $_->{lat}+0] } @$pts] },
+		};
+	}
+	disconnectDB($dbh);
+	addRenderFeatures(\@features) if @features;
+}
+
+
+sub onClearMap
+{
+	my ($this) = @_;
+	my $dbh = connectDB();
+	clearAllVisible($dbh);
+	disconnectDB($dbh);
+	clearRenderMap();
+	$last_clear_version = getClearVersion();
+	%rendered_uuids = ();
+	$this->refresh();
+}
+
+
+#---------------------------------
+# editor visible checkbox
+#---------------------------------
+
+sub _onEdVisibleChanged
+{
+	my ($this, $event) = @_;
+	return if $this->{_loading_editor};
+	my $uuid     = $this->{_edit_uuid};
+	my $type     = $this->{_edit_type};
+	my $obj_type = $this->{_edit_obj_type} // '';
+	return if !$uuid;
+
+	my $cb = $this->{ed_visible}->Get3StateValue();
+	return if $cb == wxCHK_UNDETERMINED;
+	my $new_visible = ($cb == wxCHK_CHECKED) ? 1 : 0;
+
+	my $dbh = connectDB();
+	if ($type eq 'collection')
+	{
+		setCollectionVisibleRecursive($dbh, $uuid, $new_visible);
+		my $vs = getCollectionVisibleState($dbh, $uuid);
+		$this->{ed_visible}->Set3StateValue(
+			$vs == 1 ? wxCHK_CHECKED :
+			$vs == 2 ? wxCHK_UNDETERMINED :
+			           wxCHK_UNCHECKED);
+		my $item = $this->{_edit_item};
+		if ($item && $item->IsOk())
+		{
+			$this->{tree}->SetItemState($item, $vs);
+			_refreshLoadedSubtree($this, $item, $new_visible);
+			_refreshAncestorStates($dbh, $this, $item);
+		}
+		if ($new_visible) { _pushCollectionToLeaflet($dbh, $this, $uuid) }
+		else              { _pullCollectionFromLeaflet($dbh, $this, $uuid) }
+	}
+	else
+	{
+		setTerminalVisible($dbh, $uuid, $obj_type, $new_visible);
+		my $item = $this->{_edit_item};
+		if ($item && $item->IsOk())
+		{
+			$this->{tree}->SetItemState($item, $new_visible ? 1 : 0);
+			_refreshAncestorStates($dbh, $this, $item);
+		}
+		if ($new_visible) { _pushObjToLeaflet($dbh, $this, { uuid => $uuid, obj_type => $obj_type }) }
+		else              { _pullFromLeaflet($this, $uuid) }
+	}
+	disconnectDB($dbh);
 }
 
 
@@ -574,17 +1031,21 @@ sub _clearEditor
 	$this->{_edit_type}     = undef;
 	$this->{_edit_obj_type} = undef;
 	$this->{_edit_color}    = undef;
+	$this->{_edit_item}     = undef;
 	$this->{_editor_dirty}  = 0;
 	$this->{ed_title}->SetLabel('');
-	my $ed = $this->{ed_sizer};
-	_ed_show_row($ed, $this->{ed_lbl_name},    $this->{ed_name},        0);
-	_ed_show_row($ed, $this->{ed_lbl_comment}, $this->{ed_comment},     0);
-	_ed_show_row($ed, $this->{ed_lbl_lat},     $this->{ed_lat_panel},   0);
-	_ed_show_row($ed, $this->{ed_lbl_lon},     $this->{ed_lon_panel},   0);
-	_ed_show_row($ed, $this->{ed_lbl_wp_type}, $this->{ed_wp_type},     0);
-	_ed_show_row($ed, $this->{ed_lbl_color},   $this->{ed_color_panel}, 0);
-	_ed_show_row($ed, $this->{ed_lbl_depth},   $this->{ed_depth_panel}, 0);
-	$this->{editor_panel}->Layout();
+	$this->{ed_visible}->Show(0);
+	_ed_show_row($this->{ed_lbl_name},    $this->{ed_name},        0);
+	_ed_show_row($this->{ed_lbl_comment}, $this->{ed_comment},     0);
+	_ed_show_row($this->{ed_lbl_lat},     $this->{ed_lat},         0);
+	$this->{ed_lat_ddm}->Show(0);
+	_ed_show_row($this->{ed_lbl_lon},     $this->{ed_lon},         0);
+	$this->{ed_lon_ddm}->Show(0);
+	_ed_show_row($this->{ed_lbl_wp_type}, $this->{ed_wp_type},     0);
+	_ed_show_row($this->{ed_lbl_color},   $this->{ed_color_swatch},0);
+	$this->{ed_pick_btn}->Show(0);
+	_ed_show_row($this->{ed_lbl_depth},   $this->{ed_depth},       0);
+	$this->{ed_depth_unit}->Show(0);
 	$this->{ed_save}->Enable(0);
 }
 
@@ -623,14 +1084,17 @@ sub _loadEditor
 		: ucfirst($obj_type);
 	$this->{ed_title}->SetLabel($title);
 
-	my $ed = $this->{ed_sizer};
-	_ed_show_row($ed, $this->{ed_lbl_name},    $this->{ed_name},        $show_name);
-	_ed_show_row($ed, $this->{ed_lbl_comment}, $this->{ed_comment},     $show_comment);
-	_ed_show_row($ed, $this->{ed_lbl_lat},     $this->{ed_lat_panel},   $show_latlon);
-	_ed_show_row($ed, $this->{ed_lbl_lon},     $this->{ed_lon_panel},   $show_latlon);
-	_ed_show_row($ed, $this->{ed_lbl_wp_type}, $this->{ed_wp_type},     $show_wptype);
-	_ed_show_row($ed, $this->{ed_lbl_color},   $this->{ed_color_panel}, $show_color);
-	_ed_show_row($ed, $this->{ed_lbl_depth},   $this->{ed_depth_panel}, $show_depth);
+	_ed_show_row($this->{ed_lbl_name},    $this->{ed_name},         $show_name);
+	_ed_show_row($this->{ed_lbl_comment}, $this->{ed_comment},      $show_comment);
+	_ed_show_row($this->{ed_lbl_lat},     $this->{ed_lat},          $show_latlon);
+	$this->{ed_lat_ddm}->Show($show_latlon ? 1 : 0);
+	_ed_show_row($this->{ed_lbl_lon},     $this->{ed_lon},          $show_latlon);
+	$this->{ed_lon_ddm}->Show($show_latlon ? 1 : 0);
+	_ed_show_row($this->{ed_lbl_wp_type}, $this->{ed_wp_type},      $show_wptype);
+	_ed_show_row($this->{ed_lbl_color},   $this->{ed_color_swatch}, $show_color);
+	$this->{ed_pick_btn}->Show($show_color ? 1 : 0);
+	_ed_show_row($this->{ed_lbl_depth},   $this->{ed_depth},        $show_depth);
+	$this->{ed_depth_unit}->Show($show_depth ? 1 : 0);
 
 	$this->{_loading_editor} = 1;
 
@@ -670,8 +1134,22 @@ sub _loadEditor
 		$this->{ed_depth}->SetValue($disp);
 	}
 
+	$this->{ed_visible}->Show(1);
+	if ($type eq 'collection')
+	{
+		my $vs = getCollectionVisibleState($dbh, $uuid);
+		$this->{ed_visible}->Set3StateValue(
+			$vs == 1 ? wxCHK_CHECKED :
+			$vs == 2 ? wxCHK_UNDETERMINED :
+			           wxCHK_UNCHECKED);
+	}
+	else
+	{
+		$this->{ed_visible}->Set3StateValue(
+			($data->{visible} // 0) ? wxCHK_CHECKED : wxCHK_UNCHECKED);
+	}
+
 	$this->{_loading_editor} = 0;
-	$this->{editor_panel}->Layout();
 	$this->{ed_save}->Enable(0);
 }
 
@@ -823,7 +1301,6 @@ sub _onSave
 			wp_type    => $wp_type,
 			color      => $this->{_edit_color},
 			depth_cm   => $depth_cm,
-			sym        => $w->{sym},
 			created_ts => $w->{created_ts},
 			ts_source  => $w->{ts_source},
 			source     => $w->{source});
@@ -846,51 +1323,9 @@ sub _onSave
 }
 
 
-#---------------------------------
-# double-click → render in Leaflet
-#---------------------------------
-# Single click on +/- expands/collapses as normal.
-# Double-click on item label sends that collection to the map.
-# NOT calling $event->Skip() suppresses the default expand/collapse.
-
-sub _onTreeDblClick
-{
-	my ($this, $tree, $event) = @_;
-	my $pt = $event->GetPosition();
-	my ($item, $flags) = $tree->HitTest($pt);
-
-	if (!($item && $item->IsOk() && ($flags & wxTREE_HITTEST_ONITEMLABEL)))
-	{
-		$event->Skip();
-		return;
-	}
-
-	my $item_data = $tree->GetItemData($item);
-	return if !$item_data;
-	my $node = $item_data->GetData();
-	return if ref $node ne 'HASH';
-
-	my $dbh = connectDB();
-	if ($node->{type} eq 'collection')
-	{
-		_renderCollection($dbh, $this, $node->{data}{uuid});
-	}
-	elsif ($node->{type} eq 'object')
-	{
-		_renderObject($dbh, $this, $node->{data});
-	}
-	elsif ($node->{type} eq 'route_point')
-	{
-		_renderObject($dbh, $this, { obj_type => 'waypoint', uuid => $node->{uuid} });
-	}
-	disconnectDB($dbh);
-	openMapBrowser() if !isBrowserConnected();
-}
-
-
 sub _renderCollection
 {
-	my ($dbh, $this, $uuid) = @_;
+	my ($dbh, $this, $uuid, $accumulator) = @_;
 
 	my $cv = getClearVersion();
 	if ($cv != $last_clear_version)
@@ -926,7 +1361,6 @@ sub _renderCollection
 				wp_type         => $wp->{wp_type} // 'nav',
 				color           => $wp->{color},
 				depth_cm        => ($wp->{depth_cm}   // 0) + 0,
-				sym             => ($wp->{sym}         // 0) + 0,
 				lat             => ($wp->{lat}         // 0) + 0,
 				lon             => ($wp->{lon}         // 0) + 0,
 				comment         => $wp->{comment}      // '',
@@ -999,13 +1433,13 @@ sub _renderCollection
 	}
 
 	$rendered_uuids{$uuid} = \@rendered_objects;
-	addRenderFeatures(\@features) if @features;
+	if ($accumulator) { push @$accumulator, @features } else { addRenderFeatures(\@features) if @features }
 }
 
 
 sub _renderObject
 {
-	my ($dbh, $this, $obj) = @_;
+	my ($dbh, $this, $obj, $accumulator) = @_;
 
 	my $cv = getClearVersion();
 	if ($cv != $last_clear_version)
@@ -1037,7 +1471,6 @@ sub _renderObject
 				wp_type         => $w->{wp_type}  // 'nav',
 				color           => $w->{color},
 				depth_cm        => ($w->{depth_cm}   // 0) + 0,
-				sym             => ($w->{sym}         // 0) + 0,
 				lat             => ($w->{lat}         // 0) + 0,
 				lon             => ($w->{lon}         // 0) + 0,
 				comment         => $w->{comment}      // '',
@@ -1109,7 +1542,7 @@ sub _renderObject
 		}
 	}
 
-	addRenderFeatures(\@features) if @features;
+	if ($accumulator) { push @$accumulator, @features } else { addRenderFeatures(\@features) if @features }
 }
 
 
@@ -1234,25 +1667,27 @@ sub _onShowMap
 	my @nodes = @{$this->{_context_nodes} // []};
 	return if !@nodes;
 	my $dbh = connectDB();
+	my @accumulator;
 	for my $node (@nodes)
 	{
 		if ($node->{type} eq 'collection')
 		{
 			my $uuid = $node->{data}{uuid};
 			next if $rendered_uuids{$uuid};
-			_renderCollection($dbh, $this, $uuid);
+			_renderCollection($dbh, $this, $uuid, \@accumulator);
 		}
 		elsif ($node->{type} eq 'object')
 		{
 			next if $rendered_uuids{$node->{data}{uuid}};
-			_renderObject($dbh, $this, $node->{data});
+			_renderObject($dbh, $this, $node->{data}, \@accumulator);
 		}
 		elsif ($node->{type} eq 'route_point')
 		{
 			next if $rendered_uuids{$node->{uuid}};
-			_renderObject($dbh, $this, { obj_type => 'waypoint', uuid => $node->{uuid} });
+			_renderObject($dbh, $this, { obj_type => 'waypoint', uuid => $node->{uuid} }, \@accumulator);
 		}
 	}
+	addRenderFeatures(\@accumulator) if @accumulator;
 	disconnectDB($dbh);
 	openMapBrowser() if !isBrowserConnected();
 }

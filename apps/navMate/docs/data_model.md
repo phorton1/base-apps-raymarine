@@ -69,7 +69,8 @@ collections (
   name          TEXT NOT NULL,
   parent_uuid   TEXT REFERENCES collections(uuid),  -- NULL = root-level node
   node_type     TEXT NOT NULL DEFAULT 'branch',     -- 'branch' or 'group'
-  comment       TEXT DEFAULT ''
+  comment       TEXT DEFAULT '',
+  visible       INTEGER NOT NULL DEFAULT 0
 )
 ```
 
@@ -96,7 +97,6 @@ waypoints (
   comment           TEXT DEFAULT '',
   lat               REAL NOT NULL,       -- degrees WGS84
   lon               REAL NOT NULL,       -- degrees WGS84
-  sym               INTEGER DEFAULT 0,   -- E80 icon index 0-39; see NET/docs/WPMGR.md
   wp_type           TEXT NOT NULL DEFAULT 'nav',  -- see Waypoint Types
   color             TEXT DEFAULT NULL,   -- aabbggrr hex (GE byte order); NULL = type default
   depth_cm          INTEGER DEFAULT 0,   -- non-zero only for sounding waypoints
@@ -104,7 +104,11 @@ waypoints (
   ts_source         TEXT NOT NULL,       -- see Timestamp Sources
   source_file       TEXT,                -- originating KML path when sourced from KML
   source            TEXT,                -- 'kml', 'e80', 'user'
-  collection_uuid   TEXT NOT NULL REFERENCES collections(uuid)
+  collection_uuid   TEXT NOT NULL REFERENCES collections(uuid),
+  visible           INTEGER NOT NULL DEFAULT 0,
+  db_version        INTEGER NOT NULL DEFAULT 1,
+  e80_version       INTEGER,             -- NULL = never synced to E80
+  kml_version       INTEGER              -- NULL = never exported via versioned KML
 )
 ```
 
@@ -138,7 +142,11 @@ routes (
   name              TEXT NOT NULL,
   comment           TEXT DEFAULT '',
   color             TEXT DEFAULT NULL,   -- aabbggrr hex (GE byte order)
-  collection_uuid   TEXT NOT NULL REFERENCES collections(uuid)
+  collection_uuid   TEXT NOT NULL REFERENCES collections(uuid),
+  visible           INTEGER NOT NULL DEFAULT 0,
+  db_version        INTEGER NOT NULL DEFAULT 1,
+  e80_version       INTEGER,             -- NULL = never synced to E80
+  kml_version       INTEGER              -- NULL = never exported via versioned KML
 )
 
 route_waypoints (
@@ -165,7 +173,11 @@ tracks (
   ts_source         TEXT NOT NULL,       -- see Timestamp Sources
   point_count       INTEGER,
   source_file       TEXT,                -- KML filename when sourced from KML
-  collection_uuid   TEXT NOT NULL REFERENCES collections(uuid)
+  collection_uuid   TEXT NOT NULL REFERENCES collections(uuid),
+  visible           INTEGER NOT NULL DEFAULT 0,
+  db_version        INTEGER NOT NULL DEFAULT 1,
+  e80_version       INTEGER,             -- NULL = never synced to E80
+  kml_version       INTEGER              -- NULL = never exported via versioned KML
 )
 
 track_points (
@@ -235,7 +247,7 @@ Initial entries:
 
 | key | Purpose |
 |-----|---------|
-| `schema_version` | Integer; incremented on schema migrations |
+| `schema_version` | Current value `'9.0'`; `openDB` in `c_db.pm` migrates known prior versions in place |
 | `uuid_counter` | Integer; persistent counter for navMate UUID generation (bytes 4–5 of the UUID) |
 
 The `uuid_counter` entry is incremented atomically within the same transaction as
@@ -273,6 +285,21 @@ not inlined as route geometry. The same waypoint can appear in multiple routes.
 one collection. `collection_uuid` is `NOT NULL` on all three WRT tables. Collections
 are typed via `node_type`: `'branch'` for general organizer folders, `'group'` for
 waypoint-only leaf collections that map to E80 WPMGR groups.
+
+**`visible` is a display preference, not a sync field.** Every WRT object and
+collection carries a `visible` column (default 0). Toggling visibility updates the
+Leaflet canvas but does not bump `db_version`. Visibility is navMate-local and is
+not propagated to any transport.
+
+**Version columns are transport-specific fields in core tables.** `db_version`,
+`e80_version`, and `kml_version` are present on `waypoints`, `routes`, and `tracks`
+(not on `collections` or `route_waypoints`). `db_version` starts at 1 on INSERT and
+increments on every non-visibility UPDATE. `e80_version` and `kml_version` are NULL
+until the first sync; each is set to `db_version` at time of successful sync.
+Version numbers are not stored on the E80 itself — `e80_version` is initialized at
+connect time from a token in the E80 comment field (encoding TBD pending E80
+character-set and length-limit verification). The alternative junction-table design
+was rejected in favor of simplicity given the small, slow-moving transport list.
 
 ## Timestamp Sources
 

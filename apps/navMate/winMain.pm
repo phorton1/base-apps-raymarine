@@ -54,6 +54,7 @@ sub new
 	EVT_MENU($this, $COMMAND_IMPORT_DB_TEXT,   \&onCommand);
 	EVT_MENU($this, $COMMAND_EXPORT_KML,       \&onCommand);
 	EVT_MENU($this, $COMMAND_IMPORT_KML_NM,    \&onCommand);
+	EVT_MENU($this, $COMMAND_CLEAR_MAP,        \&onCommand);
 	EVT_IDLE($this, \&onIdle);
 
 	my $sb = Wx::StatusBar->new($this, -1);
@@ -101,6 +102,17 @@ sub onIdle
 	{
 		my $test_cmd = pollTestCommand();
 		dispatchTestCommand($this, $test_cmd) if $test_cmd;
+	}
+
+	if (pollBrowserConnectEvent())
+	{
+		my $database = $this->findPane($WIN_DATABASE);
+		$database->onBrowserConnect() if $database;
+	}
+	if (pollClearMapPending())
+	{
+		my $database = $this->findPane($WIN_DATABASE);
+		$database->onClearMap() if $database;
 	}
 
 	my $wpmgr_on = ($raydp && $raydp->findImplementedService('WPMGR', 1)) ? 1 : 0;
@@ -290,6 +302,11 @@ sub onCommand
 	elsif ($id == $COMMAND_IMPORT_KML_NM)
 	{
 		_doImportKMLNM($this);
+	}
+	elsif ($id == $COMMAND_CLEAR_MAP)
+	{
+		my $database = $this->findPane($WIN_DATABASE);
+		$database->onClearMap() if $database;
 	}
 }
 

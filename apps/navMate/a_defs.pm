@@ -43,7 +43,7 @@ our $NAVMATE_DATABASE = 'C:/dat/Rhapsody/navMate.db';
 
 # Schema version: integer part = breaking change (reimport required),
 # decimal part = non-breaking change (advisory).
-our $SCHEMA_VERSION = '7.0';
+our $SCHEMA_VERSION = '9.0';
 
 # waypoints.wp_type values
 our $WP_TYPE_NAV      = 'nav';

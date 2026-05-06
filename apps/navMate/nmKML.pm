@@ -450,7 +450,6 @@ sub _importWaypoint
 				comment    => $ex->{comment},
 				lat        => $lat + 0,
 				lon        => $lon + 0,
-				sym        => $ex->{sym},
 				wp_type    => $ex->{wp_type},
 				color      => $color // $ex->{color},
 				depth_cm   => $ex->{depth_cm},

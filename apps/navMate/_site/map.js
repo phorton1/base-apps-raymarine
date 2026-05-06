@@ -168,8 +168,9 @@ function abgrToCSS(abgr) {
 
 // ---- Render all features from a GeoJSON FeatureCollection ----
 
-// Track UUIDs already rendered so autozoom only moves to newly added items.
-let renderedUuids = new Set();
+// Track UUIDs from the previous render; autozoom fires only for UUIDs absent
+// from the previous call, so toggle-off then toggle-on re-triggers zoom correctly.
+let prevRenderedUuids = new Set();
 
 let lastGeojson = null;
 
@@ -190,19 +191,20 @@ function renderAll(geojson) {
 
     // Server cleared — reset our UUID tracking.
     if (features.length === 0) {
-        renderedUuids = new Set();
+        prevRenderedUuids = new Set();
         return;
     }
 
     const newLatLngs = [];
+    const currentUuids = new Set();
 
     features.forEach(f => {
         const geom  = f.geometry;
         const props = f.properties || {};
         if (!geom) return;
 
-        const isNew = !renderedUuids.has(props.uuid);
-        if (props.uuid) renderedUuids.add(props.uuid);
+        const isNew = !prevRenderedUuids.has(props.uuid);
+        if (props.uuid) currentUuids.add(props.uuid);
 
         if (geom.type === 'Point') {
             const [lon, lat] = geom.coordinates;
@@ -314,6 +316,8 @@ function renderAll(geojson) {
             }
         }
     });
+
+    prevRenderedUuids = currentUuids;
 
     if (isAutoZoom() && newLatLngs.length) {
         if (newLatLngs.length === 1) {

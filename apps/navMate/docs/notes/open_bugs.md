@@ -17,13 +17,26 @@ and HTTP threads remain alive; `/api/log` and the `db` command still work.
 **What is known:**
 - First observed well before 2026-05-04; recurred multiple times across sessions.
 - Not reproducible on demand.
-- Always occurred while E80 was connected and active (sending events).
+- Previously always occurred while E80 was connected and active (sending events).
+- Also observed 2026-05-06 during visibility checkbox toggling with NO E80
+  connected — triggering `_pullCollectionFromLeaflet` on a large collection.
+  This widens the known trigger conditions beyond E80 activity.
 - Candidates: shared-variable deadlock under lock contention, Perl GC
   interaction with wx, or a downstream effect of a threading race. The
   queue_lock race was fixed 2026-05-04 — unclear whether that was the
   root cause or unrelated.
 - Key diagnostic data when it occurs: last log entry before wx went silent,
   and whether any WPMGR commands were in flight at the time.
+
+**Inter-process symptom (2026-05-06, visibility context):** The frozen wxApp
+was unblocked by pressing Return in a *separate, unrelated* cmd.exe window
+(the Claude Code session — completely independent process, no shared console,
+no IPC with navMate). This is not understood. The same phenomenon was
+observed twice in the same session. Patrick has a dim memory of seeing
+this cross-window unblocking behavior in other wxPerl apps with HTTP server
+threads, suggesting it may be a general property of how Perl thread locks
+interact with the Windows message pump or console subsystem — not specific
+to navMate's code. No root cause identified.
 
 **Status:** Unresolved. TOP PRIORITY when next reproducible.
 

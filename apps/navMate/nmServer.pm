@@ -37,11 +37,13 @@ my $SITE_DIR    = dirname(abs_path(__FILE__)) . '/_site';
 
 my $nm_server;
 
-my $map_version    :shared = 0;
-my $last_poll_time :shared = 0;
-my $features_json  :shared = '[]';
-my $clear_version  :shared = 0;
-my $test_pending   :shared = '';
+my $map_version           :shared = 0;
+my $last_poll_time        :shared = 0;
+my %features_by_uuid      :shared;
+my $clear_version         :shared = 0;
+my $test_pending          :shared = '';
+my $browser_connect_event :shared = 0;
+my $clear_map_pending     :shared = 0;
 
 
 BEGIN
@@ -57,6 +59,8 @@ BEGIN
 		openMapBrowser
 		getClearVersion
 		pollTestCommand
+		pollBrowserConnectEvent
+		pollClearMapPending
 	);
 }
 
@@ -85,10 +89,9 @@ sub addRenderFeatures
 {
 	my ($features_ref) = @_;
 	return if !@$features_ref;
+	my %encoded = map { $_->{properties}{uuid} => encode_json($_) } @$features_ref;
 	lock($map_version);
-	my $existing = decode_json($features_json);
-	push @$existing, @$features_ref;
-	$features_json = encode_json($existing);
+	$features_by_uuid{$_} = $encoded{$_} for keys %encoded;
 	$map_version++;
 }
 
@@ -97,11 +100,8 @@ sub removeRenderFeatures
 {
 	my ($uuids_ref) = @_;
 	return if !@$uuids_ref;
-	my %remove = map { $_ => 1 } @$uuids_ref;
 	lock($map_version);
-	my $existing = decode_json($features_json);
-	my @kept = grep { !$remove{$_->{properties}{uuid} // ''} } @$existing;
-	$features_json = encode_json(\@kept);
+	delete $features_by_uuid{$_} for @$uuids_ref;
 	$map_version++;
 }
 
@@ -109,7 +109,7 @@ sub removeRenderFeatures
 sub clearRenderMap
 {
 	lock($map_version);
-	$features_json = '[]';
+	%features_by_uuid = ();
 	$clear_version++;
 	$map_version++;
 }
@@ -143,6 +143,24 @@ sub pollTestCommand
 }
 
 
+sub pollBrowserConnectEvent
+{
+	lock($browser_connect_event);
+	return 0 if !$browser_connect_event;
+	$browser_connect_event = 0;
+	return 1;
+}
+
+
+sub pollClearMapPending
+{
+	lock($clear_map_pending);
+	return 0 if !$clear_map_pending;
+	$clear_map_pending = 0;
+	return 1;
+}
+
+
 #---------------------------------
 # HTTP server
 #---------------------------------
@@ -172,22 +190,28 @@ sub handle_request
 	{
 		my $cv;
 		{ lock($map_version); $cv = $map_version + 0; }
+		if (time() - $last_poll_time >= 3)
+		{
+			lock($browser_connect_event);
+			$browser_connect_event++;
+		}
 		$last_poll_time = time();
 		return json_response($request,{ version => $cv });
 	}
 	elsif ($uri eq '/geojson')
 	{
-		my $json;
-		{ lock($map_version); $json = $features_json; }
-		my $features = decode_json($json);
+		my @feature_jsons;
+		{ lock($map_version); @feature_jsons = values %features_by_uuid; }
+		my @features = map { decode_json($_) } @feature_jsons;
 		return json_response($request,{
 			type     => 'FeatureCollection',
-			features => $features,
+			features => \@features,
 		});
 	}
 	elsif ($uri eq '/clear')
 	{
 		clearRenderMap();
+		{ lock($clear_map_pending); $clear_map_pending = 1; }
 		return json_response($request,{ ok => 1 });
 	}
 	elsif ($uri eq '/api/query')

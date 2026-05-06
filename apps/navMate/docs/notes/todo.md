@@ -1,22 +1,44 @@
 # navMate Todo
 
-Ordered roughly by priority. [name] identifiers cross-reference open_bugs.md,
-design_vision.md, or docs/ where those hold canonical context. Items without
-a canonical home carry their own context here.
+[name] identifiers cross-reference open_bugs.md, design_vision.md, or docs/
+where those hold canonical context. Items without a canonical home carry their
+own context here.
 
 ---
 
-## Near Term
+## Next
 
-### [Test winDatabase editor UI]
-nmPrefs.pm, navMate.pm, and winDatabase.pm were rewritten to add the editor
-panel (name/comment/lat/lon/wp_type/color/depth fields, Save button, DDM live
-labels, color picker). All code is in place; first run and full field-by-field
-test needed. See ui_model.md § "winDatabase Editor Panel" for the full spec.
+### [Update /api/nmdb response]
+Update nmServer.pm queries behind /api/nmdb to return `visible` and versioning
+columns (`db_version`, `e80_version`, `kml_version`) for waypoints, routes, and
+tracks; return `visible` for collections. Update the test runbook column reference
+table to match.
+
+### [em dash encoding]
+Systemic replace of UTF-8 em-dash encoding (`â€"`) with ASCII double-hyphen (`--`)
+throughout all `.pm` files.
+
+---
+
+## Soon
+
+### [Delete E88 Tracks]
+There is no Delete Tracks command on the Tracks folder on the E80 but there is a Delete Track
+command on the individual tracks.  There should be a Delete Tracks command in the context menu.
 
 ### [WPMGR post-delete GET_ITEM error fix]
 Known fix — see open_bugs.md. One-liner in the GET_ITEM/waitReply failure
 path for 'mod_item' commands.
+
+### [db_version increment wiring]
+Wire `db_version = db_version + 1` in `updateWaypoint`, `updateRoute`, track
+UPDATE, `clearRouteWaypoints`, and `move*` functions. Columns exist in schema 9.0
+with `DEFAULT 1`; increment logic not yet written. Part of the sync feature --
+dedicate a full session to this when ready.
+
+---
+
+## Then
 
 ### [Item 11 cut timing]
 Design decision: currently a DB waypoint is deleted at cut time, not deferred
@@ -45,7 +67,6 @@ Replace skip-if-exists logic with UUID-diff MOD_ITEM: when a UUID exists
 on both sides, send a full record re-send. Policy: push = navMate wins,
 pull = E80 wins. Step E remaining piece. Not yet implemented.
 
-
 ### [E80 name collision auto-rename]
 E80 enforces name uniqueness at hardware level. NEW_ITEM returns success=0
 (not FIN) when a WP with the same name already exists under any UUID.
@@ -67,13 +88,3 @@ the E80 panel so it is dormant, but real.
 
 ### [oldE80 archaeology]
 Patrick-managed. Full checklist in `docs/notes/oldE80-Fixup.md`.
-
----
-
-## Deferred
-
-### [sym removal from waypoints schema]
-`sym` is E80-specific and has no meaning in the navMate data model. Remove the
-column with a `$SCHEMA_VERSION` bump and migration (DROP COLUMN available in
-SQLite 3.35+). Prerequisite: migration strategy from `[schema migration strategy]`
-in design_vision.md must be settled first.

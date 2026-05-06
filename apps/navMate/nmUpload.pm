@@ -89,7 +89,7 @@ sub uploadCollectionToE80
 			uuid     => $wp->{uuid},
 			lat      => $wp->{lat},
 			lon      => $wp->{lon},
-			sym      => $wp->{sym} // 25,
+			sym      => 0,
 			ts       => $wp->{created_ts} // 0,
 			comment  => $wp->{comment} // '',
 			progress => $progress_data,
@@ -165,7 +165,7 @@ sub uploadRouteToE80
 			uuid     => $wp->{uuid},
 			lat      => $wp->{lat},
 			lon      => $wp->{lon},
-			sym      => $wp->{sym} // 25,
+			sym      => 0,
 			ts       => $wp->{created_ts} // 0,
 			comment  => $wp->{comment} // '',
 			progress => $progress_data,
@@ -213,7 +213,7 @@ sub uploadWaypointToE80
 	$wpmgr->createWaypoint({
 		name     => $wp->{name}, uuid => $wp->{uuid},
 		lat      => $wp->{lat},  lon  => $wp->{lon},
-		sym      => $wp->{sym}  // 25,
+		sym      => 0,
 		ts       => $wp->{created_ts},
 		progress => $progress_data,
 	});

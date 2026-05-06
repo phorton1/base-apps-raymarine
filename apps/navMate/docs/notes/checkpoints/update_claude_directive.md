@@ -151,6 +151,30 @@ structural issues → `design_vision.md`. When in doubt: if someone could pick
 it up and start working on it today, it's a todo. If it needs more design
 thinking first, it's design_vision.
 
+**todo.md has no "Deferred" category.** Everything in todo.md is work that
+will eventually be done. "Deferred" implies a decision to never do it, which
+has no place here. Use "Later" for low-priority items. Category structure is
+Patrick's call — do not invent new section headers.
+
+**Never add git or data management tasks to todo.md.** Patrick manages git
+(commits, pushes, branches) and database baselines independently of the
+documented todo list. todo.md covers implementation features only. Items like
+"commit X to git", "push DB baseline", or "tag release" do not belong here.
+
+**When a design_vision.md item is addressed by a checkpoint, update it — don't
+automatically remove it.** If a vision item has been fully implemented as
+designed, remove it. If only part was implemented, or a different approach was
+taken, revise the section to reflect what remains or what changed. When in
+doubt about intent, leave it and note the status. design_vision.md is also
+periodically cleaned up by Patrick directly — not all upkeep falls to the
+update Claude.
+
+**Only add to open_bugs.md when a bug is specifically characterized.** A
+checkpoint phrase like "bugs found, not yet characterized" produces zero
+entries. open_bugs.md requires: a name, observable symptoms, and at least
+some hypothesis or known detail. Placeholder or speculative entries ("there
+may be issues in X") are not appropriate.
+
 Update `session_state.md → working_docs_updated` when done.
 
 ---
@@ -206,6 +230,23 @@ If yes — evict. Memory holds only what **cannot** live in a technical document
 Scan the memory entry for open items (unfixed bugs, un-captured todos). If
 found but NOT yet in working docs — add to working docs first, then evict.
 Never lose an open item by evicting its only record.
+
+### Stale interface/API memory — promote to todo, then delete
+
+When a checkpoint reveals that a memory entry describing mutable system state
+(API response shape, column list, endpoint behavior) is now out of date, the
+correct action is: add a todo item to implement the correct state, then delete
+the memory entry. Do not update the memory to the new current state — that is
+just another snapshot that will go stale. The implementation will self-document
+once done.
+
+### Don't add "already handled" notes to runbooks or reference memory
+
+If a checkpoint says something is already resolved (migration ran, baseline
+will be committed, etc.), there is nothing for the user to do differently.
+Don't add a note to runbooks or reference memory files. Only add to runbooks
+when there is a new procedural requirement — something the user must do
+differently going forward.
 
 Update `session_state.md → memory_updated` when done.
 

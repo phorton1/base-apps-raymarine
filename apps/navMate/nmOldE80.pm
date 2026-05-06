@@ -212,7 +212,6 @@ sub doImportOldE80Residue
 				lon             => $wp->{lon},
 				wp_type         => $WP_TYPE_NAV,
 				color           => undef,
-				sym             => 0,
 				depth_cm        => 0,
 				created_ts      => 0,
 				ts_source       => $TS_SOURCE_IMPORT,

@@ -685,7 +685,7 @@ sub _resolveConflict
 sub _wpFieldsDiffer
 {
 	my ($existing, $new_data, $source) = @_;
-	my @fields = qw(name comment lat lon sym);
+	my @fields = qw(name comment lat lon);
 	push @fields, qw(wp_type color depth_cm) if $source eq 'database';
 	my @diffs;
 	for my $f (@fields)

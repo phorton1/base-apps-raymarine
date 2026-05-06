@@ -16,7 +16,7 @@ navMate links the [NET](../../../NET/docs/readme.md) library directly into its p
 
 ## Foundation layer — a_, c_
 
-`a_defs.pm` and `a_utils.pm` form the no-dependency base. `a_defs` defines constants, type vocabulary, and the current schema version. `a_utils` provides UUID generation and establishes `$data_dir` and `$temp_dir` for the process. `c_db.pm` is the SQLite layer — it owns the schema DDL and all raw CRUD operations against navMate.db, including the `promoteWaypointOnlyBranches` post-import pass. `nmPrefs.pm` is the preferences module; it wraps `Pub::Prefs` and re-exports its full API (except `initPrefs`), adding navMate-specific constants (`$DEPTH_DISPLAY_METERS`, `$DEPTH_DISPLAY_FEET`, `$PREF_DEPTH_DISPLAY`) and `init_prefs()`, which calls `Pub::Prefs::initPrefs` against `$data_dir/navMate.prefs` with `$DEPTH_DISPLAY_FEET` as the default. Callers `use nmPrefs` and get the complete `Pub::Prefs` API; no caller needs `use Pub::Prefs` directly. Nothing in this layer carries any wx dependency; it is exercisable from a console-only process.
+`a_defs.pm` and `a_utils.pm` form the no-dependency base. `a_defs` defines constants, type vocabulary, and the current schema version. `a_utils` provides UUID generation and establishes `$data_dir` and `$temp_dir` for the process. `c_db.pm` is the SQLite layer — it owns the schema DDL and all raw CRUD operations against navMate.db, including the `promoteWaypointOnlyBranches` post-import pass and an in-place migration runner in `openDB` that upgrades known prior schema versions to the current `'9.0'`. Exported visibility functions: `getCollectionVisibleState`, `setTerminalVisible`, `setCollectionVisibleRecursive`, `clearAllVisible`, `getAllVisibleFeatures`. `nmPrefs.pm` is the preferences module; it wraps `Pub::Prefs` and re-exports its full API (except `initPrefs`), adding navMate-specific constants (`$DEPTH_DISPLAY_METERS`, `$DEPTH_DISPLAY_FEET`, `$PREF_DEPTH_DISPLAY`) and `init_prefs()`, which calls `Pub::Prefs::initPrefs` against `$data_dir/navMate.prefs` with `$DEPTH_DISPLAY_FEET` as the default. Callers `use nmPrefs` and get the complete `Pub::Prefs` API; no caller needs `use Pub::Prefs` directly. Nothing in this layer carries any wx dependency; it is exercisable from a console-only process.
 
 ## Data transport — nmKML, nmUpload, nmOneTimeImport, nmOldE80
 
@@ -32,15 +32,15 @@ These modules implement the context menu feature spanning both panels.
 
 ## HTTP server — nmServer
 
-`nmServer.pm` extends `h_server.pm` from the NET library to provide navMate's embedded HTTP server on port 9883. It exposes the `/api/` endpoints: ring buffer log, command dispatch, database queries (`/api/nmdb`), GeoJSON features for Leaflet, and test dispatch. The Leaflet applet HTML/JS in `_site/` is served by this module.
+`nmServer.pm` extends `h_server.pm` from the NET library to provide navMate's embedded HTTP server on port 9883. It exposes the `/api/` endpoints: ring buffer log, command dispatch, database queries (`/api/nmdb`), GeoJSON features for Leaflet, and test dispatch. The Leaflet applet HTML/JS in `_site/` is served by this module. The `/poll` handler detects browser reconnect (gap ≥ 3 s since last poll) and signals via `pollBrowserConnectEvent()`; the `/clear` handler sets a flag consumed by `pollClearMapPending()`. Both are polled from `winMain::onIdle`.
 
 ## wx layer — navMate.pm, winMain, winDatabase, winE80, winMonitor, w_frame, w_resources
 
 `navMate.pm` is the wx process boundary — it initializes the wx application and runs the main loop. `winMain.pm` owns the top-level frame and menu dispatch; its `onIdle` handler is the heartbeat that drives WPMGR callbacks, tree refresh, and test dispatch.
 
-`winDatabase.pm` presents the navMate SQLite database as a lazily-loaded wx tree with a read-only detail pane; it is the primary interface for browsing, organizing, and uploading data. `winE80.pm` presents the live E80 device state as a tree rebuilt whenever the NET version counter increments. `winMonitor.pm` is the console/log monitor panel.
+`winDatabase.pm` presents the navMate SQLite database as a lazily-loaded wx tree with an editor panel and read-only detail pane. The editor uses absolute positioning with named constants; the tree carries per-node visibility state images (unchecked/checked/indeterminate). `onBrowserConnect` and `onClearMap` handle Leaflet sync events dispatched from `winMain::onIdle`. `winE80.pm` presents the live E80 device state as a tree rebuilt whenever the NET version counter increments. `winMonitor.pm` is the console/log monitor panel.
 
-`w_frame.pm` and `w_resources.pm` provide shared wx base utilities and resource constants (IDs, menu constants) used across all window modules.
+`w_frame.pm` and `w_resources.pm` provide shared wx base utilities and resource constants (IDs, menu constants) used across all window modules. `w_resources.pm` exports `$COMMAND_CLEAR_MAP = 10030` (View menu).
 
 ## Standalone tools
 

@@ -54,13 +54,20 @@ in both windows; Ctrl+click and Shift+click work normally.
 
 **winDatabase right pane** — a nested `Wx::SplitterWindow` (`right_split`) with
 an editor panel on top and the monospaced detail `TextCtrl` on the bottom (sash
-initialized at 50%, not persisted).
+opens at `$ED_INITIAL_SASH`; gravity 0 keeps the editor pane fixed on window resize).
 
 #### winDatabase Editor Panel
 
-A bold title `StaticText` (displaying "Waypoint", "Route", "Track", "Branch", or
-"Group") sits above a `FlexGridSizer` with rows for name, comment, lat, lon,
-wp_type, color, and depth. Rows are shown or hidden based on node type:
+The editor panel uses absolute positioning with named layout constants. All
+controls are placed directly on the panel at computed positions — no intermediate
+sub-panels. Name and comment (the long-string controls) resize with the panel.
+
+**Header row:** The **Save** button occupies the upper-left (label column). A
+bold title `StaticText` (displaying "Waypoint", "Route", "Track", "Branch", or
+"Group") sits to its right (ctrl column). A **Visible** three-state checkbox
+(`ed_visible`, `wxCHK_3STATE`) is placed to the right of the title.
+
+**Field rows** are shown or hidden by `_ed_show_row` based on node type:
 
 | Node type | Visible rows |
 |---|---|
@@ -76,13 +83,24 @@ Control details:
 - **wp_type** — `Wx::Choice` with nav / label / sounding strings
 - **color** — 28×20 swatch `Panel` (`wxSIMPLE_BORDER`) plus "Pick…" `Button`; opens `Wx::ColourDialog`; value round-trips as aabbggrr with alpha byte preserved; `_setColorSwatch()` converts aabbggrr → `Wx::Colour` for display
 - **depth** — `TextCtrl` [70px] plus a static unit label ("ft" or "m") from `$PREF_DEPTH_DISPLAY` (read at panel creation); `depth_cm = 0` displays as empty string; ft↔cm multiply/divide by 30.48, m↔cm multiply/divide by 100
+- **Visible** checkbox — three-state; value loaded from the DB `visible` field; shown for all node types except route_point
 
-A **Save** button sits right-aligned below the grid. It is disabled when the
-editor is clean and enabled on any field change. Dirty state is silently
-discarded on node focus change. `_onSave` writes to the database via `c_db`
-wrappers (`updateWaypoint`, `updateRoute`) where available and direct SQL for
-collections and tracks, then calls `$this->refresh()` to reload the tree and
-editor.
+**Save button:** Disabled when the editor is clean; enabled on any field change.
+Dirty state is silently discarded on node focus change. `_onSave` writes to the
+database via `c_db` wrappers where available and direct SQL for collections and
+tracks, then calls `$this->refresh()` to reload the tree and editor.
+
+#### Tree Visibility Checkboxes
+
+Each tree node displays a three-state checkbox icon (unchecked / checked / indeterminate).
+
+- **Object nodes** (waypoint, route, track): checked or unchecked from the `visible` DB column
+- **Collection nodes**: indeterminate when only some descendants are visible, determined
+  by a recursive DB query across all descendants
+
+Clicking the checkbox icon toggles `visible` for terminal nodes or bulk-sets all
+descendants for collection nodes, updates the Leaflet canvas accordingly, and
+refreshes ancestor checkbox states.
 
 ### winDatabase Context Menu
 
@@ -112,6 +130,13 @@ waypoints, routes, and groups in the collection.
 ExportToText and ImportFromText both show a progress dialog ticking once per table (9 tables total). ImportFromText calls `resetDB()` before importing to ensure a clean schema.
 
 **Paste** is always shown in the menu and enabled via `nmClipboard::canPaste`.
+
+### View Menu
+
+| Command | Description |
+|---|---|
+| Open Map | Opens the Leaflet canvas in the default browser |
+| Clear Map | Sets `visible=0` on all four tables, clears the Leaflet canvas, and refreshes all tree checkboxes to unchecked; also triggered by the Leaflet `/clear` HTTP command |
 
 ---
 
@@ -261,15 +286,21 @@ UI for all geographic context until the full model described below is built.
 
 Collections are not rendered in Leaflet; they exist only in the database tree.
 
-### Intended Visibility Model
+### Visibility Model
 
-A wx tree panel alongside the Leaflet canvas will present collections with
-three-state checkboxes (checked / unchecked / partial). Checkbox state drives
-what appears on the canvas:
+Visibility state is persisted in the `visible` column of navMate.db (0 = hidden,
+1 = visible; default 0 on all new objects). The winDatabase tree displays all
+nodes with three-state checkboxes; checking or unchecking a node immediately
+updates the DB and the Leaflet canvas:
 
-- Checking a collection checks all descendants (and shows them)
-- Unchecking a collection hides all descendants regardless of depth
-- Partial state when some but not all descendants are checked
+- Checking an object node sets `visible=1` and pushes a GeoJSON feature to Leaflet
+- Unchecking removes the feature from Leaflet
+- Checking a collection bulk-sets all descendants via `setCollectionVisibleRecursive`
+  and pushes their features; unchecking pulls them all
+- Collection nodes show indeterminate state when only some descendants are visible
+
+On browser connect, `onBrowserConnect` clears the Leaflet canvas and re-pushes all
+`visible=1` features, keeping the canvas in sync after page reload or reconnect.
 
 ### Intended Two-Layer Canvas
 
@@ -299,9 +330,10 @@ settings file alongside the main database (not in the database itself).
   (UUIDs, `header:groups`, `header:routes`, `header:tracks`, `my_waypoints`, etc.)
 - winE80 sash position (tree / detail split)
 - winDatabase sash position
+- Collection tree visibility state — `visible` column in navMate.db (0/1 for all
+  WRT objects and collections; persists across sessions)
 
 **Planned (not yet persisted):**
-- Collection tree checkbox states (visibility)
 - Currently active working set
 - Last Leaflet viewport (center coordinates and zoom level)
 - Full window geometry and panel layout

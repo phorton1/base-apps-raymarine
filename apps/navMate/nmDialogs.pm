@@ -78,7 +78,6 @@ sub showNewWaypoint
 		{ key => 'name',    label => 'Name:',       required => 1 },
 		{ key => 'lat',     label => 'Latitude:',   required => 1 },
 		{ key => 'lon',     label => 'Longitude:',  required => 1 },
-		{ key => 'sym',     label => 'Symbol:',     default  => '0' },
 		{ key => 'comment', label => 'Comment:'                    },
 	]);
 }

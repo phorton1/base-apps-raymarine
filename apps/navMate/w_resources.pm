@@ -32,6 +32,7 @@ BEGIN
 		$COMMAND_REFRESH_E80_DATA
 		$COMMAND_EXPORT_KML
 		$COMMAND_IMPORT_KML_NM
+		$COMMAND_CLEAR_MAP
 	);
 }
 
@@ -52,6 +53,7 @@ our $COMMAND_EXPORT_DB_TEXT = 10025;
 our $COMMAND_IMPORT_DB_TEXT = 10026;
 our $COMMAND_EXPORT_KML     = 10028;
 our $COMMAND_IMPORT_KML_NM  = 10029;
+our $COMMAND_CLEAR_MAP      = 10030;
 
 
 my $pane_data = {
@@ -76,6 +78,7 @@ my $command_data = {
 	$COMMAND_IMPORT_DB_TEXT => ['ImportFromText', 'Replace navMate database from a text backup file'],
 	$COMMAND_EXPORT_KML     => ['Export KML', 'Export navMate database to a KML file for Google Earth'],
 	$COMMAND_IMPORT_KML_NM  => ['Import KML', 'Additive re-import from a navMate KML file'],
+	$COMMAND_CLEAR_MAP      => ['Clear Map',  'Set all visible=0 and clear the Leaflet map'],
 };
 
 my @collection_context_menu = (
@@ -95,6 +98,7 @@ my $view_menu = [
 	$WIN_MONITOR,
 	$ID_SEPARATOR,
 	$COMMAND_OPEN_MAP,
+	$COMMAND_CLEAR_MAP,
 	$ID_SEPARATOR,
 	@{$resources->{view_menu}},
 ];
