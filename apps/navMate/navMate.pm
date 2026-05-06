@@ -28,6 +28,7 @@ use apps::raymarine::NET::e_wp_api;
 
 use a_defs;
 use a_utils;
+use nmPrefs;
 use c_db;
 use nmServer;
 use apps::raymarine::NET::s_serial;
@@ -38,6 +39,7 @@ use base 'Wx::App';
 
 $ini_file = "$temp_dir/$appName.ini";
 $appClientName = 'navMate';
+init_prefs();
 
 
 #---------------------------------

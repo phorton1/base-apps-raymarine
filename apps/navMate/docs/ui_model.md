@@ -46,10 +46,43 @@ transfer operations.
 
 ### Layout
 
-Both winDatabase and winE80 are `Wx::SplitterWindow` with a wx tree on the left
-and a read-only monospaced text detail pane on the right. Selecting a tree node
-populates the detail pane. Multi-select (`wxTR_MULTIPLE`) is supported in both
-windows; Ctrl+click and Shift+click work normally.
+Both windows are `Wx::SplitterWindow` with a wx tree on the left. Selecting a
+tree node populates the right pane. Multi-select (`wxTR_MULTIPLE`) is supported
+in both windows; Ctrl+click and Shift+click work normally.
+
+**winE80 right pane** — a single read-only monospaced detail `TextCtrl`.
+
+**winDatabase right pane** — a nested `Wx::SplitterWindow` (`right_split`) with
+an editor panel on top and the monospaced detail `TextCtrl` on the bottom (sash
+initialized at 50%, not persisted).
+
+#### winDatabase Editor Panel
+
+A bold title `StaticText` (displaying "Waypoint", "Route", "Track", "Branch", or
+"Group") sits above a `FlexGridSizer` with rows for name, comment, lat, lon,
+wp_type, color, and depth. Rows are shown or hidden based on node type:
+
+| Node type | Visible rows |
+|---|---|
+| Collection | name, comment |
+| Waypoint | name, comment, lat, lon, wp_type, color, depth |
+| Route | name, comment, color |
+| Track | name, color |
+| Route point | none (`_clearEditor`) |
+
+Control details:
+- **name, comment** — plain `TextCtrl`
+- **lat, lon** — `TextCtrl` [110px] with a live DDM `StaticText` label (e.g. `9°26.142' N`) that updates on every keystroke; `parseLatLon()` accepts DD or DDM with optional leading minus or N/S/E/W suffix
+- **wp_type** — `Wx::Choice` with nav / label / sounding strings
+- **color** — 28×20 swatch `Panel` (`wxSIMPLE_BORDER`) plus "Pick…" `Button`; opens `Wx::ColourDialog`; value round-trips as aabbggrr with alpha byte preserved; `_setColorSwatch()` converts aabbggrr → `Wx::Colour` for display
+- **depth** — `TextCtrl` [70px] plus a static unit label ("ft" or "m") from `$PREF_DEPTH_DISPLAY` (read at panel creation); `depth_cm = 0` displays as empty string; ft↔cm multiply/divide by 30.48, m↔cm multiply/divide by 100
+
+A **Save** button sits right-aligned below the grid. It is disabled when the
+editor is clean and enabled on any field change. Dirty state is silently
+discarded on node focus change. `_onSave` writes to the database via `c_db`
+wrappers (`updateWaypoint`, `updateRoute`) where available and direct SQL for
+collections and tracks, then calls `$this->refresh()` to reload the tree and
+editor.
 
 ### winDatabase Context Menu
 

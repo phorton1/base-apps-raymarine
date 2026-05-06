@@ -8,6 +8,12 @@ a canonical home carry their own context here.
 
 ## Near Term
 
+### [Test winDatabase editor UI]
+nmPrefs.pm, navMate.pm, and winDatabase.pm were rewritten to add the editor
+panel (name/comment/lat/lon/wp_type/color/depth fields, Save button, DDM live
+labels, color picker). All code is in place; first run and full field-by-field
+test needed. See ui_model.md § "winDatabase Editor Panel" for the full spec.
+
 ### [WPMGR post-delete GET_ITEM error fix]
 Known fix — see open_bugs.md. One-liner in the GET_ITEM/waitReply failure
 path for 'mod_item' commands.

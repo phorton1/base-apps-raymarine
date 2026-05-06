@@ -25,14 +25,18 @@ use Wx::Event qw(
 	EVT_LEFT_DCLICK
 	EVT_RIGHT_DOWN
 	EVT_MENU
-	EVT_TEXT);
+	EVT_TEXT
+	EVT_BUTTON
+	EVT_CHOICE);
 use Pub::WX::Dialogs;
 use POSIX qw(strftime);
 use Pub::Utils qw(display warning error);
 use Pub::WX::Window;
 use Pub::WX::Menu;
 use c_db;
+use a_defs;
 use a_utils;
+use nmPrefs;
 use nmServer;
 use nmUpload;
 use nmClipboard;
@@ -58,32 +62,128 @@ sub new
 	$this->{tree} = Wx::TreeCtrl->new($this, -1, wxDefaultPosition, wxDefaultSize,
 		wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxTR_MULTIPLE);
 
-	my $detail_panel = Wx::Panel->new($this, -1);
+	# inner splitter: editor panel (top) + detail panel (bottom)
+	my $right_split = Wx::SplitterWindow->new($this, -1);
+	$this->{right_split} = $right_split;
+
+	# --- editor panel ---
+	my $editor_panel = Wx::Panel->new($right_split, -1);
+	$this->{editor_panel} = $editor_panel;
+
+	$this->{ed_title} = Wx::StaticText->new($editor_panel, -1, '');
+	$this->{ed_title}->SetFont(
+		Wx::Font->new(-1, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
+
+	my $ed_sizer = Wx::FlexGridSizer->new(0, 2, 4, 8);
+	$ed_sizer->AddGrowableCol(1);
+	$this->{ed_sizer} = $ed_sizer;
+
+	# name row
+	$this->{ed_lbl_name} = Wx::StaticText->new($editor_panel, -1, 'Name');
+	$this->{ed_name}     = Wx::TextCtrl->new($editor_panel, -1, '');
+	$ed_sizer->Add($this->{ed_lbl_name}, 0, wxALIGN_CENTER_VERTICAL);
+	$ed_sizer->Add($this->{ed_name},     1, wxEXPAND);
+
+	# comment row
+	$this->{ed_lbl_comment} = Wx::StaticText->new($editor_panel, -1, 'Comment');
+	$this->{ed_comment}     = Wx::TextCtrl->new($editor_panel, -1, '');
+	$ed_sizer->Add($this->{ed_lbl_comment}, 0, wxALIGN_CENTER_VERTICAL);
+	$ed_sizer->Add($this->{ed_comment},     1, wxEXPAND);
+
+	# lat row: TextCtrl + DDM static label
+	$this->{ed_lbl_lat} = Wx::StaticText->new($editor_panel, -1, 'Lat');
+	my $lat_panel = Wx::Panel->new($editor_panel, -1);
+	$this->{ed_lat_panel} = $lat_panel;
+	my $lat_hsizer = Wx::BoxSizer->new(wxHORIZONTAL);
+	$this->{ed_lat}     = Wx::TextCtrl->new($lat_panel, -1, '', wxDefaultPosition, [110, -1]);
+	$this->{ed_lat_ddm} = Wx::StaticText->new($lat_panel, -1, '');
+	$lat_hsizer->Add($this->{ed_lat},     0, wxRIGHT, 8);
+	$lat_hsizer->Add($this->{ed_lat_ddm}, 1, wxALIGN_CENTER_VERTICAL);
+	$lat_panel->SetSizer($lat_hsizer);
+	$ed_sizer->Add($this->{ed_lbl_lat}, 0, wxALIGN_CENTER_VERTICAL);
+	$ed_sizer->Add($lat_panel,          1, wxEXPAND);
+
+	# lon row: TextCtrl + DDM static label
+	$this->{ed_lbl_lon} = Wx::StaticText->new($editor_panel, -1, 'Lon');
+	my $lon_panel = Wx::Panel->new($editor_panel, -1);
+	$this->{ed_lon_panel} = $lon_panel;
+	my $lon_hsizer = Wx::BoxSizer->new(wxHORIZONTAL);
+	$this->{ed_lon}     = Wx::TextCtrl->new($lon_panel, -1, '', wxDefaultPosition, [110, -1]);
+	$this->{ed_lon_ddm} = Wx::StaticText->new($lon_panel, -1, '');
+	$lon_hsizer->Add($this->{ed_lon},     0, wxRIGHT, 8);
+	$lon_hsizer->Add($this->{ed_lon_ddm}, 1, wxALIGN_CENTER_VERTICAL);
+	$lon_panel->SetSizer($lon_hsizer);
+	$ed_sizer->Add($this->{ed_lbl_lon}, 0, wxALIGN_CENTER_VERTICAL);
+	$ed_sizer->Add($lon_panel,          1, wxEXPAND);
+
+	# wp_type row: Choice
+	$this->{ed_lbl_wp_type} = Wx::StaticText->new($editor_panel, -1, 'Type');
+	$this->{ed_wp_type}     = Wx::Choice->new($editor_panel, -1, wxDefaultPosition, wxDefaultSize,
+		[$WP_TYPE_NAV, $WP_TYPE_LABEL, $WP_TYPE_SOUNDING]);
+	$ed_sizer->Add($this->{ed_lbl_wp_type}, 0, wxALIGN_CENTER_VERTICAL);
+	$ed_sizer->Add($this->{ed_wp_type},     0);
+
+	# color row: swatch panel + Pick button
+	$this->{ed_lbl_color} = Wx::StaticText->new($editor_panel, -1, 'Color');
+	my $color_row = Wx::Panel->new($editor_panel, -1);
+	$this->{ed_color_panel} = $color_row;
+	my $color_row_sizer = Wx::BoxSizer->new(wxHORIZONTAL);
+	$this->{ed_color_swatch} = Wx::Panel->new($color_row, -1, wxDefaultPosition, [28, 20],
+		wxSIMPLE_BORDER);
+	my $pick_btn = Wx::Button->new($color_row, -1, 'Pick...');
+	$this->{ed_pick_btn} = $pick_btn;
+	$color_row_sizer->Add($this->{ed_color_swatch}, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
+	$color_row_sizer->Add($pick_btn,                0, wxALIGN_CENTER_VERTICAL);
+	$color_row->SetSizer($color_row_sizer);
+	$ed_sizer->Add($this->{ed_lbl_color}, 0, wxALIGN_CENTER_VERTICAL);
+	$ed_sizer->Add($color_row,            0);
+
+	# depth row: TextCtrl + unit label (ft or m per pref)
+	$this->{ed_lbl_depth} = Wx::StaticText->new($editor_panel, -1, 'Depth');
+	my $depth_panel = Wx::Panel->new($editor_panel, -1);
+	$this->{ed_depth_panel} = $depth_panel;
+	my $depth_hsizer = Wx::BoxSizer->new(wxHORIZONTAL);
+	$this->{ed_depth} = Wx::TextCtrl->new($depth_panel, -1, '', wxDefaultPosition, [70, -1]);
+	my $depth_unit = getPref($PREF_DEPTH_DISPLAY) == $DEPTH_DISPLAY_FEET ? 'ft' : 'm';
+	$this->{ed_depth_unit} = Wx::StaticText->new($depth_panel, -1, $depth_unit);
+	$depth_hsizer->Add($this->{ed_depth},      0, wxRIGHT, 6);
+	$depth_hsizer->Add($this->{ed_depth_unit}, 0, wxALIGN_CENTER_VERTICAL);
+	$depth_panel->SetSizer($depth_hsizer);
+	$ed_sizer->Add($this->{ed_lbl_depth}, 0, wxALIGN_CENTER_VERTICAL);
+	$ed_sizer->Add($depth_panel,          0);
+
+	# save button, right-aligned below the grid
+	$this->{ed_save} = Wx::Button->new($editor_panel, -1, 'Save');
+	$this->{ed_save}->Enable(0);
+	my $save_row = Wx::BoxSizer->new(wxHORIZONTAL);
+	$save_row->AddStretchSpacer(1);
+	$save_row->Add($this->{ed_save}, 0);
+
+	my $ed_outer = Wx::BoxSizer->new(wxVERTICAL);
+	$ed_outer->Add($this->{ed_title}, 0, wxLEFT | wxTOP | wxRIGHT, 8);
+	$ed_outer->Add($ed_sizer,         0, wxEXPAND | wxALL, 8);
+	$ed_outer->AddStretchSpacer(1);
+	$ed_outer->Add($save_row,         0, wxEXPAND | wxBOTTOM | wxRIGHT, 8);
+	$editor_panel->SetSizer($ed_outer);
+
+	_clearEditor($this);
+
+	# --- detail panel (read-only monospaced) ---
+	my $detail_panel = Wx::Panel->new($right_split, -1);
 	$this->{detail_panel} = $detail_panel;
-
-	my $color_panel = Wx::Panel->new($detail_panel, -1);
-	$this->{color_panel} = $color_panel;
-	my $color_sizer = Wx::BoxSizer->new(wxHORIZONTAL);
-	$color_sizer->Add(Wx::StaticText->new($color_panel, -1, 'Color:'), 0,
-		wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-	$this->{color_ctrl} = Wx::TextCtrl->new($color_panel, -1, '', wxDefaultPosition, [40, -1]);
-	$color_sizer->Add($this->{color_ctrl}, 0, wxALIGN_CENTER_VERTICAL);
-	$color_panel->SetSizer($color_sizer);
-	$color_panel->Hide();
-
 	$this->{detail} = Wx::TextCtrl->new($detail_panel, -1, '', wxDefaultPosition, wxDefaultSize,
 		wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
-
 	my $font = Wx::Font->new(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
 	$this->{detail}->SetFont($font);
-
 	my $detail_vsizer = Wx::BoxSizer->new(wxVERTICAL);
-	$detail_vsizer->Add($color_panel, 0, wxEXPAND | wxALL, 4);
 	$detail_vsizer->Add($this->{detail}, 1, wxEXPAND);
 	$detail_panel->SetSizer($detail_vsizer);
 
+	$right_split->SplitHorizontally($editor_panel, $detail_panel, 0);
+	$right_split->SetSashGravity(0.5);
+
 	my $sash = ($data && ref($data) eq 'HASH' && $data->{sash}) ? $data->{sash} : 250;
-	$this->SplitVertically($this->{tree}, $detail_panel, $sash);
+	$this->SplitVertically($this->{tree}, $right_split, $sash);
 	$this->SetSashGravity(0);
 
 	my %init_expanded;
@@ -107,7 +207,14 @@ sub new
 		for (allCopyCmds(), allCutCmds(), $CTX_CMD_PASTE, $CTX_CMD_PASTE_NEW, allDeleteCmds(), allNewCmds());
 	EVT_MENU($this, $CTX_CMD_SHOW_MAP, \&_onShowMap);
 	EVT_MENU($this, $CTX_CMD_HIDE_MAP, \&_onHideMap);
-	EVT_TEXT($this, $this->{color_ctrl}, \&_onColorEdit);
+	EVT_TEXT($this,   $this->{ed_name},    \&_onFieldChanged);
+	EVT_TEXT($this,   $this->{ed_comment}, \&_onFieldChanged);
+	EVT_TEXT($this,   $this->{ed_lat},     \&_onLatEdit);
+	EVT_TEXT($this,   $this->{ed_lon},     \&_onLonEdit);
+	EVT_TEXT($this,   $this->{ed_depth},   \&_onFieldChanged);
+	EVT_CHOICE($this, $this->{ed_wp_type}, \&_onFieldChanged);
+	EVT_BUTTON($this, $this->{ed_save},    \&_onSave);
+	EVT_BUTTON($this, $this->{ed_pick_btn}, \&_onColorPick);
 
 	_loadTopLevel($this);
 
@@ -157,6 +264,7 @@ sub refresh
 		_captureExpandedInto($this);
 		_captureSelectedInto($this);
 	}
+	_clearEditor($this);
 	$this->{detail}->SetValue('');
 	_loadTopLevel($this);
 }
@@ -313,9 +421,7 @@ sub onTreeSelect
 
 	if ($node->{type} eq 'root')
 	{
-		$this->{_edit_track_uuid} = undef;
-		$this->{color_panel}->Hide();
-		$this->{detail_panel}->Layout();
+		_clearEditor($this);
 		$this->{detail}->SetValue('');
 		return;
 	}
@@ -323,14 +429,17 @@ sub onTreeSelect
 	my $dbh = connectDB();
 	if ($node->{type} eq 'collection')
 	{
+		_loadEditor($this, $dbh, $node);
 		_showCollection($dbh, $this, $node->{data});
 	}
 	elsif ($node->{type} eq 'object')
 	{
+		_loadEditor($this, $dbh, $node);
 		_showObject($dbh, $this, $node->{data});
 	}
 	elsif ($node->{type} eq 'route_point')
 	{
+		_clearEditor($this);
 		_showRoutePoint($this, $node);
 	}
 	disconnectDB($dbh);
@@ -347,9 +456,6 @@ sub _fmt
 sub _showCollection
 {
 	my ($dbh, $this, $coll_stub) = @_;
-	$this->{_edit_track_uuid} = undef;
-	$this->{color_panel}->Hide();
-	$this->{detail_panel}->Layout();
 	my $coll   = getCollection($dbh, $coll_stub->{uuid});
 	my $counts = getCollectionCounts($dbh, $coll->{uuid});
 	my $text   = '';
@@ -370,18 +476,11 @@ sub _showCollection
 sub _showObject
 {
 	my ($dbh, $this, $obj_stub) = @_;
-	$this->{_edit_track_uuid} = undef;
-	$this->{color_panel}->Hide();
 	my $text = '';
 
 	if ($obj_stub->{obj_type} eq 'track')
 	{
 		my $t = getTrack($dbh, $obj_stub->{uuid});
-		$this->{_color_updating} = 1;
-		$this->{color_ctrl}->SetValue(defined $t->{color} ? "$t->{color}" : '');
-		$this->{_color_updating} = 0;
-		$this->{_edit_track_uuid} = $t->{uuid};
-		$this->{color_panel}->Show(1);
 		my $ts_start = $t->{ts_start}
 			? strftime("%Y-%m-%d %H:%M UTC", gmtime($t->{ts_start}))
 			: '(none)';
@@ -444,9 +543,6 @@ sub _showObject
 sub _showRoutePoint
 {
 	my ($this, $node) = @_;
-	$this->{_edit_track_uuid} = undef;
-	$this->{color_panel}->Hide();
-	$this->{detail_panel}->Layout();
 	my $wp   = $node->{data};
 	my $text = '';
 	$text .= _fmt('position',   $node->{position});
@@ -460,19 +556,293 @@ sub _showRoutePoint
 
 
 #---------------------------------
-# track color editor
+# editor panel
 #---------------------------------
 
-sub _onColorEdit
+sub _ed_show_row
+{
+	my ($sizer, $label, $ctrl, $show) = @_;
+	$sizer->Show($label, $show ? 1 : 0);
+	$sizer->Show($ctrl,  $show ? 1 : 0);
+}
+
+
+sub _clearEditor
+{
+	my ($this) = @_;
+	$this->{_edit_uuid}     = undef;
+	$this->{_edit_type}     = undef;
+	$this->{_edit_obj_type} = undef;
+	$this->{_edit_color}    = undef;
+	$this->{_editor_dirty}  = 0;
+	$this->{ed_title}->SetLabel('');
+	my $ed = $this->{ed_sizer};
+	_ed_show_row($ed, $this->{ed_lbl_name},    $this->{ed_name},        0);
+	_ed_show_row($ed, $this->{ed_lbl_comment}, $this->{ed_comment},     0);
+	_ed_show_row($ed, $this->{ed_lbl_lat},     $this->{ed_lat_panel},   0);
+	_ed_show_row($ed, $this->{ed_lbl_lon},     $this->{ed_lon_panel},   0);
+	_ed_show_row($ed, $this->{ed_lbl_wp_type}, $this->{ed_wp_type},     0);
+	_ed_show_row($ed, $this->{ed_lbl_color},   $this->{ed_color_panel}, 0);
+	_ed_show_row($ed, $this->{ed_lbl_depth},   $this->{ed_depth_panel}, 0);
+	$this->{editor_panel}->Layout();
+	$this->{ed_save}->Enable(0);
+}
+
+
+sub _loadEditor
+{
+	my ($this, $dbh, $node) = @_;
+	my $type     = $node->{type};
+	my $obj_type = ($node->{data} // {})->{obj_type} // '';
+	my $uuid     = ($node->{data} // {})->{uuid};
+
+	my $show_name    = ($type eq 'collection' || $type eq 'object');
+	my $show_comment = ($type eq 'collection'
+		|| $obj_type eq 'waypoint' || $obj_type eq 'route');
+	my $show_latlon  = ($obj_type eq 'waypoint');
+	my $show_wptype  = ($obj_type eq 'waypoint');
+	my $show_color   = ($obj_type eq 'waypoint'
+		|| $obj_type eq 'route' || $obj_type eq 'track');
+	my $show_depth   = ($obj_type eq 'waypoint');
+
+	my $data;
+	if    ($type eq 'collection')             { $data = getCollection($dbh, $uuid); }
+	elsif ($obj_type eq 'waypoint')           { $data = getWaypoint($dbh, $uuid);   }
+	elsif ($obj_type eq 'route')              { $data = getRoute($dbh, $uuid);      }
+	elsif ($obj_type eq 'track')              { $data = getTrack($dbh, $uuid);      }
+	$data //= $node->{data} // {};
+
+	$this->{_edit_uuid}     = $uuid;
+	$this->{_edit_type}     = $type;
+	$this->{_edit_obj_type} = $obj_type;
+	$this->{_edit_color}    = undef;
+	$this->{_editor_dirty}  = 0;
+
+	my $title = $type eq 'collection'
+		? ($data->{node_type} // '' eq $NODE_TYPE_GROUP ? 'Group' : 'Branch')
+		: ucfirst($obj_type);
+	$this->{ed_title}->SetLabel($title);
+
+	my $ed = $this->{ed_sizer};
+	_ed_show_row($ed, $this->{ed_lbl_name},    $this->{ed_name},        $show_name);
+	_ed_show_row($ed, $this->{ed_lbl_comment}, $this->{ed_comment},     $show_comment);
+	_ed_show_row($ed, $this->{ed_lbl_lat},     $this->{ed_lat_panel},   $show_latlon);
+	_ed_show_row($ed, $this->{ed_lbl_lon},     $this->{ed_lon_panel},   $show_latlon);
+	_ed_show_row($ed, $this->{ed_lbl_wp_type}, $this->{ed_wp_type},     $show_wptype);
+	_ed_show_row($ed, $this->{ed_lbl_color},   $this->{ed_color_panel}, $show_color);
+	_ed_show_row($ed, $this->{ed_lbl_depth},   $this->{ed_depth_panel}, $show_depth);
+
+	$this->{_loading_editor} = 1;
+
+	$this->{ed_name}->SetValue($data->{name} // '')       if $show_name;
+	$this->{ed_comment}->SetValue($data->{comment} // '') if $show_comment;
+
+	if ($show_latlon)
+	{
+		$this->{ed_lat}->SetValue(defined $data->{lat} ? sprintf('%.6f', $data->{lat}) : '');
+		$this->{ed_lon}->SetValue(defined $data->{lon} ? sprintf('%.6f', $data->{lon}) : '');
+		_updateLatDDM($this);
+		_updateLonDDM($this);
+	}
+
+	if ($show_wptype)
+	{
+		my $wp_type = $data->{wp_type} // $WP_TYPE_NAV;
+		my $idx = $wp_type eq $WP_TYPE_LABEL    ? 1
+		        : $wp_type eq $WP_TYPE_SOUNDING  ? 2
+		        :                                  0;
+		$this->{ed_wp_type}->SetSelection($idx);
+	}
+
+	_setColorSwatch($this, $data->{color}) if $show_color;
+
+	if ($show_depth)
+	{
+		my $cm   = $data->{depth_cm} // 0;
+		my $disp = '';
+		if ($cm)
+		{
+			my $pref = getPref($PREF_DEPTH_DISPLAY);
+			$disp = $pref == $DEPTH_DISPLAY_FEET
+				? sprintf('%.1f', $cm / 30.48)
+				: sprintf('%.2f', $cm / 100);
+		}
+		$this->{ed_depth}->SetValue($disp);
+	}
+
+	$this->{_loading_editor} = 0;
+	$this->{editor_panel}->Layout();
+	$this->{ed_save}->Enable(0);
+}
+
+
+sub _onFieldChanged
 {
 	my ($this, $event) = @_;
-	return if $this->{_color_updating};
-	return if !$this->{_edit_track_uuid};
-	my $text = $this->{color_ctrl}->GetValue();
-	return if $text !~ /^[0-9a-fA-F]{8}$/;
+	return if $this->{_loading_editor};
+	$this->{_editor_dirty} = 1;
+	$this->{ed_save}->Enable(1);
+}
+
+
+sub _onLatEdit
+{
+	my ($this, $event) = @_;
+	return if $this->{_loading_editor};
+	$this->{_editor_dirty} = 1;
+	$this->{ed_save}->Enable(1);
+	_updateLatDDM($this);
+}
+
+
+sub _onLonEdit
+{
+	my ($this, $event) = @_;
+	return if $this->{_loading_editor};
+	$this->{_editor_dirty} = 1;
+	$this->{ed_save}->Enable(1);
+	_updateLonDDM($this);
+}
+
+
+sub _updateLatDDM
+{
+	my ($this) = @_;
+	my $dd = parseLatLon($this->{ed_lat}->GetValue());
+	$this->{ed_lat_ddm}->SetLabel(defined $dd ? _ddm_label($dd, 1) : '');
+}
+
+
+sub _updateLonDDM
+{
+	my ($this) = @_;
+	my $dd = parseLatLon($this->{ed_lon}->GetValue());
+	$this->{ed_lon_ddm}->SetLabel(defined $dd ? _ddm_label($dd, 0) : '');
+}
+
+
+sub _ddm_label
+{
+	my ($dd, $is_lat) = @_;
+	my $abs = abs($dd);
+	my $dir = $is_lat ? ($dd >= 0 ? 'N' : 'S') : ($dd >= 0 ? 'E' : 'W');
+	my $deg = int($abs);
+	my $min = ($abs - $deg) * 60;
+	return sprintf("%d\x{00b0}%06.3f' %s", $deg, $min, $dir);
+}
+
+
+sub _setColorSwatch
+{
+	my ($this, $color) = @_;
+	$this->{_edit_color} = $color;
+	if (defined $color && $color =~ /^[0-9a-fA-F]{8}$/)
+	{
+		my $rr = hex(substr($color, 6, 2));
+		my $gg = hex(substr($color, 4, 2));
+		my $bb = hex(substr($color, 2, 2));
+		$this->{ed_color_swatch}->SetBackgroundColour(Wx::Colour->new($rr, $gg, $bb));
+	}
+	else
+	{
+		$this->{ed_color_swatch}->SetBackgroundColour(Wx::Colour->new(192, 192, 192));
+	}
+	$this->{ed_color_swatch}->Refresh();
+}
+
+
+sub _onColorPick
+{
+	my ($this, $event) = @_;
+	my $current = $this->{_edit_color} // 'FF0000FF';
+	my $aa = substr($current, 0, 2);
+	my $rr = hex(substr($current, 6, 2));
+	my $gg = hex(substr($current, 4, 2));
+	my $bb = hex(substr($current, 2, 2));
+
+	my $cd = Wx::ColourData->new();
+	$cd->SetColour(Wx::Colour->new($rr, $gg, $bb));
+	$cd->SetChooseFull(1);
+
+	my $dlg = Wx::ColourDialog->new($this, $cd);
+	if ($dlg->ShowModal() == wxID_OK)
+	{
+		my $c = $dlg->GetColourData()->GetColour();
+		_setColorSwatch($this, sprintf('%s%02x%02x%02x', $aa, $c->Blue(), $c->Green(), $c->Red()));
+		return if $this->{_loading_editor};
+		$this->{_editor_dirty} = 1;
+		$this->{ed_save}->Enable(1);
+	}
+	$dlg->Destroy();
+}
+
+
+sub _onSave
+{
+	my ($this, $event) = @_;
+	return if !$this->{_edit_uuid};
+
+	my $uuid     = $this->{_edit_uuid};
+	my $type     = $this->{_edit_type};
+	my $obj_type = $this->{_edit_obj_type} // '';
+
 	my $dbh = connectDB();
-	$dbh->do("UPDATE tracks SET color=? WHERE uuid=?", [$text, $this->{_edit_track_uuid}]);
+
+	if ($type eq 'collection')
+	{
+		$dbh->do("UPDATE collections SET name=?, comment=? WHERE uuid=?",
+			[$this->{ed_name}->GetValue(),
+			 $this->{ed_comment}->GetValue() || undef,
+			 $uuid]);
+	}
+	elsif ($type eq 'object' && $obj_type eq 'waypoint')
+	{
+		my $lat = parseLatLon($this->{ed_lat}->GetValue());
+		my $lon = parseLatLon($this->{ed_lon}->GetValue());
+		if (!defined $lat || !defined $lon)
+		{
+			disconnectDB($dbh);
+			warning(0, 0, "invalid lat/lon — save aborted");
+			return;
+		}
+		my @types   = ($WP_TYPE_NAV, $WP_TYPE_LABEL, $WP_TYPE_SOUNDING);
+		my $wp_type = $types[$this->{ed_wp_type}->GetSelection()] // $WP_TYPE_NAV;
+		my $depth_str = $this->{ed_depth}->GetValue();
+		my $depth_cm  = 0;
+		if ($depth_str ne '')
+		{
+			my $pref = getPref($PREF_DEPTH_DISPLAY);
+			$depth_cm = int($depth_str * ($pref == $DEPTH_DISPLAY_FEET ? 30.48 : 100) + 0.5);
+		}
+		my $w = getWaypoint($dbh, $uuid);
+		updateWaypoint($dbh, $uuid,
+			name       => $this->{ed_name}->GetValue(),
+			comment    => $this->{ed_comment}->GetValue() || undef,
+			lat        => $lat,
+			lon        => $lon,
+			wp_type    => $wp_type,
+			color      => $this->{_edit_color},
+			depth_cm   => $depth_cm,
+			sym        => $w->{sym},
+			created_ts => $w->{created_ts},
+			ts_source  => $w->{ts_source},
+			source     => $w->{source});
+	}
+	elsif ($type eq 'object' && $obj_type eq 'route')
+	{
+		updateRoute($dbh, $uuid,
+			$this->{ed_name}->GetValue(),
+			$this->{_edit_color},
+			$this->{ed_comment}->GetValue() || undef);
+	}
+	elsif ($type eq 'object' && $obj_type eq 'track')
+	{
+		$dbh->do("UPDATE tracks SET name=?, color=? WHERE uuid=?",
+			[$this->{ed_name}->GetValue(), $this->{_edit_color}, $uuid]);
+	}
+
 	disconnectDB($dbh);
+	$this->refresh();
 }
 
 

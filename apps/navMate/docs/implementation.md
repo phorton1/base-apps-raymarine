@@ -16,7 +16,7 @@ navMate links the [NET](../../../NET/docs/readme.md) library directly into its p
 
 ## Foundation layer — a_, c_
 
-`a_defs.pm` and `a_utils.pm` form the no-dependency base. `a_defs` defines constants, type vocabulary, and the current schema version. `a_utils` provides UUID generation and establishes `$data_dir` and `$temp_dir` for the process. `c_db.pm` is the SQLite layer — it owns the schema DDL and all raw CRUD operations against navMate.db, including the `promoteWaypointOnlyBranches` post-import pass. Nothing in this layer carries any wx dependency; it is exercisable from a console-only process.
+`a_defs.pm` and `a_utils.pm` form the no-dependency base. `a_defs` defines constants, type vocabulary, and the current schema version. `a_utils` provides UUID generation and establishes `$data_dir` and `$temp_dir` for the process. `c_db.pm` is the SQLite layer — it owns the schema DDL and all raw CRUD operations against navMate.db, including the `promoteWaypointOnlyBranches` post-import pass. `nmPrefs.pm` is the preferences module; it wraps `Pub::Prefs` and re-exports its full API (except `initPrefs`), adding navMate-specific constants (`$DEPTH_DISPLAY_METERS`, `$DEPTH_DISPLAY_FEET`, `$PREF_DEPTH_DISPLAY`) and `init_prefs()`, which calls `Pub::Prefs::initPrefs` against `$data_dir/navMate.prefs` with `$DEPTH_DISPLAY_FEET` as the default. Callers `use nmPrefs` and get the complete `Pub::Prefs` API; no caller needs `use Pub::Prefs` directly. Nothing in this layer carries any wx dependency; it is exercisable from a console-only process.
 
 ## Data transport — nmKML, nmUpload, nmOneTimeImport, nmOldE80
 
