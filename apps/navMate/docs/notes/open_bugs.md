@@ -6,6 +6,24 @@ context — entries here provide the additional detail that doesn't belong there
 
 ---
 
+### [Cut path leaves item visible on Leaflet map]
+
+**Symptom:** Cutting a waypoint (or other item) via the context menu removes
+it from the navMate DB but leaves the rendered feature visible on the Leaflet
+map until the next full reload.
+
+**What is known:**
+- Delete paths were fixed (2026-05-06) by routing through
+  `_refreshDatabaseWithDelete` which calls `onObjectsDeleted` →
+  `removeRenderFeatures`. Cut paths were intentionally left out of that fix.
+- Same root cause as the delete bug: cut calls `_refreshDatabase()` which
+  reloads the tree but does nothing to Leaflet or `%rendered_uuids`.
+- Fix is straightforward: cut paths need to collect UUIDs and call
+  `_refreshDatabaseWithDelete` the same way delete paths now do.
+- Affected: `_cutDatabaseWaypoint` and any other cut paths in nmOpsDB.pm.
+
+---
+
 ### [wx thread freeze]
 
 **Symptom:** navMate wx UI becomes completely unresponsive — window cannot

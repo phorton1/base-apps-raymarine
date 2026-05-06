@@ -135,9 +135,10 @@ sub _deleteDatabaseWaypoints
 	return if !confirmDialog($tree, $msg, "Confirm Delete");
 	$dbh = connectDB();
 	return if !$dbh;
-	deleteWaypoint($dbh, $_->{data}{uuid}) for @$nodes;
+	my @uuids = map { $_->{data}{uuid} } @$nodes;
+	deleteWaypoint($dbh, $_) for @uuids;
 	disconnectDB($dbh);
-	_refreshDatabase();
+	_refreshDatabaseWithDelete(@uuids);
 }
 
 
@@ -190,9 +191,15 @@ sub _deleteDatabaseBranch
 		"Confirm Delete Branch");
 	$dbh = connectDB();
 	return if !$dbh;
+	my $wrgt  = getCollectionWRGTs($dbh, $uuid);
+	my @uuids = (
+		map { $_->{uuid} } @{$wrgt->{waypoints}},
+		map { $_->{uuid} } @{$wrgt->{routes}},
+		map { $_->{uuid} } @{$wrgt->{tracks}},
+	);
 	deleteBranch($dbh, $uuid);
 	disconnectDB($dbh);
-	_refreshDatabase();
+	_refreshDatabaseWithDelete(@uuids);
 }
 
 
@@ -283,14 +290,16 @@ sub _deleteDatabaseGroupsAndWPs
 	return if !confirmDialog($tree, $msg, "Delete Groups + Waypoints");
 	$dbh = connectDB();
 	return if !$dbh;
+	my @deleted_uuids;
 	for my $node (@$nodes)
 	{
 		my $uuid = $node->{data}{uuid};
+		push @deleted_uuids, $_->{uuid} for @{$group_wps{$uuid}};
 		deleteWaypoint($dbh, $_->{uuid}) for @{$group_wps{$uuid}};
 		deleteCollection($dbh, $uuid);
 	}
 	disconnectDB($dbh);
-	_refreshDatabase();
+	_refreshDatabaseWithDelete(@deleted_uuids);
 }
 
 
@@ -333,9 +342,10 @@ sub _deleteDatabaseRoutes
 	return if !confirmDialog($tree, $msg, "Delete Route");
 	my $dbh = connectDB();
 	return if !$dbh;
-	deleteRoute($dbh, $_->{data}{uuid}) for @$nodes;
+	my @uuids = map { $_->{data}{uuid} } @$nodes;
+	deleteRoute($dbh, $_) for @uuids;
 	disconnectDB($dbh);
-	_refreshDatabase();
+	_refreshDatabaseWithDelete(@uuids);
 }
 
 
@@ -349,9 +359,10 @@ sub _deleteDatabaseTracks
 	return if !confirmDialog($tree, $msg, "Confirm Delete");
 	my $dbh = connectDB();
 	return if !$dbh;
-	deleteTrack($dbh, $_->{data}{uuid}) for @$nodes;
+	my @uuids = map { $_->{data}{uuid} } @$nodes;
+	deleteTrack($dbh, $_) for @uuids;
 	disconnectDB($dbh);
-	_refreshDatabase();
+	_refreshDatabaseWithDelete(@uuids);
 }
 
 

@@ -26,6 +26,59 @@ If routes become expandable tree nodes, drag-to-reorder and per-waypoint
 operations (delete, copy, edit) all become naturally available.
 
 
+### [winE80 / Leaflet integration cluster]
+
+A cluster of related future work around displaying E80-native items in the
+Leaflet map with matching editor and visibility UI. These items are
+interdependent — treat as one design session, not five separate tasks:
+
+1. **Separate Leaflet layer for E80 items** — a Leaflet mode or layer set
+   that shows the winE80 database (E80-native items) distinctly from
+   navMate DB items.
+
+2. **Non-persistent visibility checkboxes on E80 items** — similar to the
+   winDatabase visibility UI, but for E80 items; session-only, not stored
+   to the navMate DB.
+
+3. **Editors for E80 items** — similar to the editors in winDatabase,
+   applied to the E80 item set.
+
+4. **Versioning / color synchronization** — keeping navMate DB versions
+   and E80 versions in sync, including the color model, across both views.
+
+5. **nmOps / context_menu entanglement** — all of the above is entangled
+   with the nmOps/context_menu scheme. Must be resolved as part of the
+   cluster, not independently.
+
+All items deferred. When ready, treat as one design session.
+
+
+### [winDatabase multi-editor]
+
+Batch-edit capability for the winDatabase editor when multiple items are
+selected. No code yet — design only. Entangled with [Rework operations
+system]; hold for that design session. The context-menu shortcut approach
+("Set Color...", "Set Comment..." actions) remains the lower-complexity
+alternative worth considering first.
+
+**Use cases:** change color, comment, or wp_type across a multi-selection.
+Name and lat/lon deliberately excluded — no useful batch semantic.
+
+**Key design decisions from inventory multi-editor (reference impl):**
+- Mixed-value state: placeholder text "(Multiple Values)" in text fields —
+  not a color discriminator. Blank/gray is insufficient.
+- Changed indicator: field background color shows which fields have been
+  touched and will be written on save.
+- Only touched fields are written — the core contract. Requires per-field
+  dirty tracking separate from the global editor dirty flag.
+- `Pub::Database::update_record` accepts sparse input hashes, so the DB
+  layer will not stomp untouched fields.
+
+**Open question — color swatch:** "(Multiple Values)" placeholder text
+doesn't translate to a color swatch. Hatched/striped swatch? Disabled
+swatch + adjacent text label? "Pick..." button still active? No decision yet.
+
+
 ### [context menu simplification]
 
 The context menu implementation spans nmOps.pm, nmOpsDB.pm, nmOpsE80.pm,

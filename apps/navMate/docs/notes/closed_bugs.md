@@ -5,6 +5,57 @@ tracing what changed, when, and why.
 
 ---
 
+### [Editor Save did not re-render visible items on Leaflet map]
+
+**Was:** Saving changes in the winDatabase editor (color, name, lat/lon, etc.)
+did not update the Leaflet map — the stale rendered feature remained.
+
+**Fix (2026-05-06):** Four lines added to `_onSave` in winDatabase.pm before
+`disconnectDB` and `$this->refresh()`: if the saved item is an 'object' type
+and is currently in `%rendered_uuids`, pull the stale feature from Leaflet
+(`_pullFromLeaflet`) then push a fresh one from DB (`_pushObjToLeaflet`).
+Items not currently rendered are unaffected.
+
+---
+
+### [Tree expand button broken by visibility checkbox image list]
+
+**Was:** wxTreeCtrl expand buttons (+/-) were unreliable after adding
+visibility checkbox images. Some folders would not expand on click, with
+zero visual feedback — inconsistent across items at the same level.
+
+**Root cause:** Using `SetImageList` on a Windows native TreeCtrl activates
+a different Win32 TreeView rendering mode (hot-tracking enabled, item layout
+shifted), making the expand button hit area unreliable. This is a native
+Win32 behavior, not a wxWidgets bug.
+
+**Fix (2026-05-06):** Switched to `SetStateImageList` + `SetItemState` /
+`GetItemState` / `wxTREE_HITTEST_ONITEMSTATEICON` throughout winDatabase.pm.
+State images occupy a dedicated slot between the expand button and the normal
+icon with their own hit-test zone — the correct wxWidgets mechanism for
+per-item checkboxes. Expand buttons solid; no hot-tracking side effects.
+
+---
+
+### [Show/Hide on Map disconnected from visibility scheme]
+
+**Was:** `_onShowMap` and `_onHideMap` in winDatabase.pm were standalone
+implementations disconnected from the persistent visibility checkbox scheme.
+They did not write to the DB or sync checkbox states.
+
+**Fix (2026-05-06):** Replaced with `_onShowHideMap($this, 1/0)` wrappers.
+New `_onShowHideMap` does a batch visibility set: writes `visible` to DB,
+updates tree checkbox states, pushes/pulls Leaflet, syncs editor checkbox.
+New `_analyzeShowHideSelection` classifies the tree selection into Case 1
+collections (no selected descendants — treat as deliberate target, apply
+`setCollectionVisibleRecursive`), Case 2 collections (at least one selected
+descendant — skip the branch, recompute checkbox state as derived), and leaf
+nodes. New `_hasSelectedDescendant` walks the tree widget recursively for
+the classifier. Dead code `_renderCollection` and `_renderObject` (prior
+toggle-render path) removed.
+
+---
+
 ### [Route MOD_ITEM race]
 
 **Was:** When a user changed a route's color on the E80 UI, navMate

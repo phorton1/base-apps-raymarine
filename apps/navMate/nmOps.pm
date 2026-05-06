@@ -57,6 +57,18 @@ sub _refreshDatabase
 	$pane->refresh() if $pane;
 }
 
+sub _refreshDatabaseWithDelete
+{
+	my (@uuids) = @_;
+	my $frame = getAppFrame();
+	my $pane  = $frame ? $frame->findPane($WIN_DATABASE) : undef;
+	if ($pane)
+	{
+		$pane->onObjectsDeleted(@uuids) if @uuids;
+		$pane->refresh();
+	}
+}
+
 sub _newNavUUID
 {
 	my $dbh = connectDB();

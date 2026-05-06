@@ -8,6 +8,18 @@ own context here.
 
 ## Next
 
+### [winDatabase reordering UX]
+Add reorder capability to winDatabase for items in the navMate database.
+Scope is narrow: navMate DB reordering only — no E80 sync or visibility
+tie-in. Schema 9.0 has no explicit sort-order column on collections,
+waypoints, routes, or tracks. Design session needed before coding.
+See `[item ordering UI]` in design_vision.md for design context.
+
+### [Rework operations system]
+The nmOps / nmOpsDB / nmOpsE80 / nmClipboard module cluster is to be
+significantly simplified — a conceptual rework of the entire scheme, not
+merely a rename. Details to be determined in a dedicated design session.
+
 ### [Update /api/nmdb response]
 Update nmServer.pm queries behind /api/nmdb to return `visible` and versioning
 columns (`db_version`, `e80_version`, `kml_version`) for waypoints, routes, and
@@ -85,6 +97,13 @@ the E80 panel so it is dormant, but real.
 ---
 
 ## Ongoing
+
+### [Doc hierarchy pruning]
+After the nmOps scheme redesign is complete, a severe pruning pass is
+needed: context_menu.md, context_menu_testplan.md, last_testrun.md,
+and large portions of the runbook, implementation.md, and architecture.md
+will need to be rewritten or retired. Primary Claude must explicitly
+authorize this pass — do not begin until instructed.
 
 ### [oldE80 archaeology]
 Patrick-managed. Full checklist in `docs/notes/oldE80-Fixup.md`.

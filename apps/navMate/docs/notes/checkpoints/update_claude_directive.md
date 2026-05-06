@@ -58,6 +58,18 @@ validating and rewriting specific doc sections.
 
 ---
 
+## Checkpoint File Retention — NEVER DELETE
+
+Checkpoint files are an immutable archaeological record. Their cumulative git
+history documents the full evolution of understanding across every session —
+including things that turned out to be wrong, design directions that were
+abandoned, and the sequence of how knowledge developed. This is irreproducible.
+
+**Never delete, rename, move, or modify any checkpoint file.** Read them.
+Propagate them. Leave them exactly where they are. Retention is permanent.
+
+---
+
 ## Step 0 — Identify New Checkpoints
 
 Read `session_state.md`. The trigger timestamp is `memory_updated`: when the

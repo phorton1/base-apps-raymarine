@@ -878,6 +878,20 @@ sub _pullCollectionFromLeaflet
 # browser connect / clear map
 #---------------------------------
 
+sub onObjectsDeleted
+{
+	my ($this, @uuids) = @_;
+	my @remove;
+	for my $uuid (@uuids)
+	{
+		next if !$rendered_uuids{$uuid};
+		push @remove, $uuid;
+		delete $rendered_uuids{$uuid};
+	}
+	removeRenderFeatures(\@remove) if @remove;
+}
+
+
 sub onBrowserConnect
 {
 	my ($this) = @_;
@@ -1318,232 +1332,16 @@ sub _onSave
 			[$this->{ed_name}->GetValue(), $this->{_edit_color}, $uuid]);
 	}
 
+	if ($type eq 'object' && $rendered_uuids{$uuid})
+	{
+		_pullFromLeaflet($this, $uuid);
+		_pushObjToLeaflet($dbh, $this, { uuid => $uuid, obj_type => $obj_type });
+	}
+
 	disconnectDB($dbh);
 	$this->refresh();
 }
 
-
-sub _renderCollection
-{
-	my ($dbh, $this, $uuid, $accumulator) = @_;
-
-	my $cv = getClearVersion();
-	if ($cv != $last_clear_version)
-	{
-		%rendered_uuids    = ();
-		$last_clear_version = $cv;
-	}
-
-	if ($rendered_uuids{$uuid})
-	{
-		my @children = ref($rendered_uuids{$uuid}) eq 'ARRAY' ? @{$rendered_uuids{$uuid}} : ();
-		my @remove = ($uuid, @children);
-		delete $rendered_uuids{$_} for @remove;
-		removeRenderFeatures(\@remove);
-		return;
-	}
-
-	my $wrgt = getCollectionWRGTs($dbh, $uuid);
-	my @features;
-	my @rendered_objects;
-
-	for my $wp (@{$wrgt->{waypoints}})
-	{
-		next if $rendered_uuids{$wp->{uuid}};
-		$rendered_uuids{$wp->{uuid}} = 1;
-		push @rendered_objects, $wp->{uuid};
-		push @features, {
-			type       => 'Feature',
-			properties => {
-				uuid            => $wp->{uuid},
-				name            => $wp->{name} // '',
-				obj_type        => 'waypoint',
-				wp_type         => $wp->{wp_type} // 'nav',
-				color           => $wp->{color},
-				depth_cm        => ($wp->{depth_cm}   // 0) + 0,
-				lat             => ($wp->{lat}         // 0) + 0,
-				lon             => ($wp->{lon}         // 0) + 0,
-				comment         => $wp->{comment}      // '',
-				created_ts      => ($wp->{created_ts}  // 0) + 0,
-				ts_source       => $wp->{ts_source}    // '',
-				source          => $wp->{source}       // '',
-				collection_uuid => $wp->{collection_uuid} // '',
-			},
-			geometry => {
-				type        => 'Point',
-				coordinates => [$wp->{lon} + 0, $wp->{lat} + 0],
-			},
-		};
-	}
-
-	for my $t (@{$wrgt->{tracks}})
-	{
-		next if $rendered_uuids{$t->{uuid}};
-		my $pts = getTrackPoints($dbh, $t->{uuid});
-		next if !@$pts;
-		$rendered_uuids{$t->{uuid}} = 1;
-		push @rendered_objects, $t->{uuid};
-		my @coords = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
-		push @features, {
-			type       => 'Feature',
-			properties => {
-				uuid            => $t->{uuid},
-				name            => $t->{name} // '',
-				obj_type        => 'track',
-				color           => $t->{color},
-				point_count     => ($t->{point_count} // 0) + 0,
-				ts_start        => ($t->{ts_start}    // 0) + 0,
-				ts_end          => ($t->{ts_end}      // 0) + 0,
-				ts_source       => $t->{ts_source}    // '',
-				collection_uuid => $t->{collection_uuid} // '',
-			},
-			geometry => {
-				type        => 'LineString',
-				coordinates => \@coords,
-			},
-		};
-	}
-
-	for my $r (@{$wrgt->{routes}})
-	{
-		next if $rendered_uuids{$r->{uuid}};
-		my $pts = getRouteWaypoints($dbh, $r->{uuid});
-		next if !@$pts;
-		$rendered_uuids{$r->{uuid}} = 1;
-		push @rendered_objects, $r->{uuid};
-		my @coords   = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
-		my @rp_names = map { $_->{name} // '' } @$pts;
-		push @features, {
-			type       => 'Feature',
-			properties => {
-				uuid            => $r->{uuid},
-				name            => $r->{name} // '',
-				obj_type        => 'route',
-				color           => $r->{color},
-				wp_count        => scalar(@$pts) + 0,
-				rp_names        => \@rp_names,
-				comment         => $r->{comment} // '',
-				collection_uuid => $r->{collection_uuid} // '',
-			},
-			geometry => {
-				type        => 'LineString',
-				coordinates => \@coords,
-			},
-		};
-	}
-
-	$rendered_uuids{$uuid} = \@rendered_objects;
-	if ($accumulator) { push @$accumulator, @features } else { addRenderFeatures(\@features) if @features }
-}
-
-
-sub _renderObject
-{
-	my ($dbh, $this, $obj, $accumulator) = @_;
-
-	my $cv = getClearVersion();
-	if ($cv != $last_clear_version)
-	{
-		%rendered_uuids    = ();
-		$last_clear_version = $cv;
-	}
-
-	if ($rendered_uuids{$obj->{uuid}})
-	{
-		delete $rendered_uuids{$obj->{uuid}};
-		removeRenderFeatures([$obj->{uuid}]);
-		return;
-	}
-
-	my @features;
-
-	if ($obj->{obj_type} eq 'waypoint')
-	{
-		my $w = getWaypoint($dbh, $obj->{uuid});
-		return if !$w;
-		$rendered_uuids{$w->{uuid}} = 1;
-		push @features, {
-			type       => 'Feature',
-			properties => {
-				uuid            => $w->{uuid},
-				name            => $w->{name} // '',
-				obj_type        => 'waypoint',
-				wp_type         => $w->{wp_type}  // 'nav',
-				color           => $w->{color},
-				depth_cm        => ($w->{depth_cm}   // 0) + 0,
-				lat             => ($w->{lat}         // 0) + 0,
-				lon             => ($w->{lon}         // 0) + 0,
-				comment         => $w->{comment}      // '',
-				created_ts      => ($w->{created_ts}  // 0) + 0,
-				ts_source       => $w->{ts_source}    // '',
-				source          => $w->{source}       // '',
-				collection_uuid => $w->{collection_uuid} // '',
-			},
-			geometry => {
-				type        => 'Point',
-				coordinates => [$w->{lon} + 0, $w->{lat} + 0],
-			},
-		};
-	}
-	elsif ($obj->{obj_type} eq 'track')
-	{
-		my $t   = getTrack($dbh, $obj->{uuid});
-		my $pts = getTrackPoints($dbh, $obj->{uuid});
-		if ($t && @$pts)
-		{
-			$rendered_uuids{$t->{uuid}} = 1;
-			my @coords = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
-			push @features, {
-				type       => 'Feature',
-				properties => {
-					uuid            => $t->{uuid},
-					name            => $t->{name} // '',
-					obj_type        => 'track',
-					color           => $t->{color},
-					point_count     => ($t->{point_count} // 0) + 0,
-					ts_start        => ($t->{ts_start}    // 0) + 0,
-					ts_end          => ($t->{ts_end}      // 0) + 0,
-					ts_source       => $t->{ts_source}    // '',
-						collection_uuid => $t->{collection_uuid} // '',
-				},
-				geometry => {
-					type        => 'LineString',
-					coordinates => \@coords,
-				},
-			};
-		}
-	}
-	elsif ($obj->{obj_type} eq 'route')
-	{
-		my $r   = getRoute($dbh, $obj->{uuid});
-		my $pts = getRouteWaypoints($dbh, $obj->{uuid});
-		if ($r && @$pts)
-		{
-			$rendered_uuids{$r->{uuid}} = 1;
-			my @coords   = map { [$_->{lon} + 0, $_->{lat} + 0] } @$pts;
-			my @rp_names = map { $_->{name} // '' } @$pts;
-			push @features, {
-				type       => 'Feature',
-				properties => {
-					uuid            => $r->{uuid},
-					name            => $r->{name} // '',
-					obj_type        => 'route',
-					color           => $r->{color},
-					wp_count        => scalar(@$pts) + 0,
-					rp_names        => \@rp_names,
-					comment         => $r->{comment} // '',
-					collection_uuid => $r->{collection_uuid} // '',
-				},
-				geometry => {
-					type        => 'LineString',
-					coordinates => \@coords,
-				},
-			};
-		}
-	}
-
-	if ($accumulator) { push @$accumulator, @features } else { addRenderFeatures(\@features) if @features }
-}
 
 
 #---------------------------------
@@ -1664,67 +1462,161 @@ sub _onContextMenuCommand
 sub _onShowMap
 {
 	my ($this, $event) = @_;
-	my @nodes = @{$this->{_context_nodes} // []};
-	return if !@nodes;
-	my $dbh = connectDB();
-	my @accumulator;
-	for my $node (@nodes)
-	{
-		if ($node->{type} eq 'collection')
-		{
-			my $uuid = $node->{data}{uuid};
-			next if $rendered_uuids{$uuid};
-			_renderCollection($dbh, $this, $uuid, \@accumulator);
-		}
-		elsif ($node->{type} eq 'object')
-		{
-			next if $rendered_uuids{$node->{data}{uuid}};
-			_renderObject($dbh, $this, $node->{data}, \@accumulator);
-		}
-		elsif ($node->{type} eq 'route_point')
-		{
-			next if $rendered_uuids{$node->{uuid}};
-			_renderObject($dbh, $this, { obj_type => 'waypoint', uuid => $node->{uuid} }, \@accumulator);
-		}
-	}
-	addRenderFeatures(\@accumulator) if @accumulator;
-	disconnectDB($dbh);
-	openMapBrowser() if !isBrowserConnected();
+	_onShowHideMap($this, 1);
 }
 
 
 sub _onHideMap
 {
 	my ($this, $event) = @_;
-	my @nodes = @{$this->{_context_nodes} // []};
-	return if !@nodes;
-	my @remove;
-	for my $node (@nodes)
+	_onShowHideMap($this, 0);
+}
+
+
+sub _onShowHideMap
+{
+	my ($this, $new_visible) = @_;
+	my ($case1_colls, $case2_colls, $leaf_nodes) = _analyzeShowHideSelection($this);
+	return if !@$case1_colls && !@$case2_colls && !@$leaf_nodes;
+
+	my $dbh = connectDB();
+	return if !$dbh;
+
+	for my $entry (@$case1_colls)
 	{
-		if ($node->{type} eq 'collection')
+		my $uuid = $entry->{node}{data}{uuid};
+		my $item = $entry->{item};
+		setCollectionVisibleRecursive($dbh, $uuid, $new_visible);
+		$this->{tree}->SetItemState($item, $new_visible ? 1 : 0);
+		_refreshLoadedSubtree($this, $item, $new_visible);
+		if ($new_visible) { _pushCollectionToLeaflet($dbh, $this, $uuid) }
+		else              { _pullCollectionFromLeaflet($dbh, $this, $uuid) }
+	}
+
+	for my $entry (@$leaf_nodes)
+	{
+		my $node     = $entry->{node};
+		my $item     = $entry->{item};
+		my $uuid     = $node->{type} eq 'route_point' ? $node->{uuid}           : $node->{data}{uuid};
+		my $obj_type = $node->{type} eq 'route_point' ? 'waypoint'              : $node->{data}{obj_type};
+		setTerminalVisible($dbh, $uuid, $obj_type, $new_visible);
+		$this->{tree}->SetItemState($item, $new_visible ? 1 : 0);
+		$node->{data}{visible} = $new_visible if $node->{type} eq 'object';
+		if ($new_visible) { _pushObjToLeaflet($dbh, $this, { uuid => $uuid, obj_type => $obj_type }) }
+		else              { _pullFromLeaflet($this, $uuid) }
+	}
+
+	for my $entry (@$case2_colls)
+	{
+		my $vs = getCollectionVisibleState($dbh, $entry->{node}{data}{uuid});
+		$this->{tree}->SetItemState($entry->{item}, $vs);
+	}
+
+	_refreshAncestorStates($dbh, $this, $_->{item})
+		for (@$case1_colls, @$case2_colls, @$leaf_nodes);
+
+	my $edit_uuid = $this->{_edit_uuid} // '';
+	if ($edit_uuid)
+	{
+		for my $entry (@$case1_colls, @$leaf_nodes)
 		{
-			my $uuid = $node->{data}{uuid};
-			next if !$rendered_uuids{$uuid};
-			my @children = ref($rendered_uuids{$uuid}) eq 'ARRAY' ? @{$rendered_uuids{$uuid}} : ();
-			push @remove, $uuid, @children;
-			delete $rendered_uuids{$_} for ($uuid, @children);
-		}
-		elsif ($node->{type} eq 'object')
-		{
-			my $uuid = $node->{data}{uuid};
-			next if !$rendered_uuids{$uuid};
-			push @remove, $uuid;
-			delete $rendered_uuids{$uuid};
-		}
-		elsif ($node->{type} eq 'route_point')
-		{
-			my $uuid = $node->{uuid};
-			next if !$rendered_uuids{$uuid};
-			push @remove, $uuid;
-			delete $rendered_uuids{$uuid};
+			my $node = $entry->{node};
+			my $uuid = $node->{type} eq 'route_point'
+				? ($node->{uuid} // '')
+				: (($node->{data} // {})->{uuid} // '');
+			next if $uuid ne $edit_uuid;
+			if (($this->{_edit_type} // '') eq 'collection')
+			{
+				my $vs = getCollectionVisibleState($dbh, $edit_uuid);
+				$this->{ed_visible}->Set3StateValue(
+					$vs == 1 ? wxCHK_CHECKED :
+					$vs == 2 ? wxCHK_UNDETERMINED :
+					           wxCHK_UNCHECKED);
+			}
+			else
+			{
+				$this->{ed_visible}->Set3StateValue(
+					$new_visible ? wxCHK_CHECKED : wxCHK_UNCHECKED);
+			}
+			last;
 		}
 	}
-	removeRenderFeatures(\@remove) if @remove;
+
+	disconnectDB($dbh);
+	openMapBrowser() if $new_visible && !isBrowserConnected();
+}
+
+
+sub _analyzeShowHideSelection
+{
+	my ($this) = @_;
+	my $tree = $this->{tree};
+
+	my %sel_uuids;
+	my @all_entries;
+	for my $item ($tree->GetSelections())
+	{
+		my $d = $tree->GetItemData($item);
+		next if !$d;
+		my $node = $d->GetData();
+		next if ref $node ne 'HASH';
+		my $type = $node->{type} // '';
+		next if $type eq 'root';
+		my $uuid = $type eq 'route_point'
+			? ($node->{uuid} // '')
+			: (($node->{data} // {})->{uuid} // '');
+		next if !$uuid;
+		$sel_uuids{$uuid} = 1;
+		push @all_entries, { node => $node, item => $item, uuid => $uuid };
+	}
+
+	my (@case1_colls, @case2_colls, @leaf_nodes);
+	for my $entry (@all_entries)
+	{
+		if (($entry->{node}{type} // '') eq 'collection')
+		{
+			if (_hasSelectedDescendant($tree, $entry->{item}, \%sel_uuids))
+			{
+				push @case2_colls, $entry;
+			}
+			else
+			{
+				push @case1_colls, $entry;
+			}
+		}
+		else
+		{
+			push @leaf_nodes, $entry;
+		}
+	}
+
+	return (\@case1_colls, \@case2_colls, \@leaf_nodes);
+}
+
+
+sub _hasSelectedDescendant
+{
+	my ($tree, $item, $sel_uuids) = @_;
+	my ($child, $cookie) = $tree->GetFirstChild($item);
+	while ($child && $child->IsOk())
+	{
+		my $d = $tree->GetItemData($child);
+		if ($d)
+		{
+			my $node = $d->GetData();
+			if (ref $node eq 'HASH')
+			{
+				my $type = $node->{type} // '';
+				my $uuid = $type eq 'route_point'
+					? ($node->{uuid} // '')
+					: (($node->{data} // {})->{uuid} // '');
+				return 1 if $uuid && $sel_uuids->{$uuid};
+				return 1 if _hasSelectedDescendant($tree, $child, $sel_uuids);
+			}
+		}
+		($child, $cookie) = $tree->GetNextChild($item, $cookie);
+	}
+	return 0;
 }
 
 
