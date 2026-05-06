@@ -32,8 +32,6 @@ use Pub::Utils qw(display warning error);
 use Pub::WX::Window;
 use apps::raymarine::NET::b_records qw(wpmgrRecordToText);
 use apps::raymarine::NET::c_RAYDP;
-use nmClipboard;
-use nmOps;
 use w_resources;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
@@ -61,9 +59,7 @@ sub new
 
 	EVT_TREE_SEL_CHANGED($this,      $this->{tree}, \&onTreeSelect);
 	EVT_TREE_ITEM_RIGHT_CLICK($this, $this->{tree}, \&onTreeRightClick);
-	EVT_MENU($this, $_, \&_onContextMenuCommand)
-		for (allCopyCmds(), allCutCmds(), $CTX_CMD_PASTE, $CTX_CMD_PASTE_NEW, allDeleteCmds(), allNewCmds());
-	EVT_MENU($this, $COMMAND_REFRESH_E80, sub { doRefresh($_[0]) });
+	EVT_MENU($this, $COMMAND_REFRESH_E80, sub { refresh($_[0]) });
 
 	$this->{_expanded_keys} = {
 		'header:groups' => 1,
@@ -353,57 +349,9 @@ sub onTreeRightClick
 sub _buildContextMenu
 {
 	my ($this, $right_click_node) = @_;
-	my $tree = $this->{tree};
-
-	my @nodes;
-	for my $item ($tree->GetSelections())
-	{
-		my $d = $tree->GetItemData($item);
-		next if !$d;
-		my $n = $d->GetData();
-		push @nodes, $n if ref $n eq 'HASH';
-	}
-
-	$this->{_context_nodes} = \@nodes;
-
 	my $menu = Wx::Menu->new();
-
-	my @copy_items = getCopyMenuItems('e80', @nodes);
-	$menu->Append($_->{id}, $_->{label}) for @copy_items;
-	$menu->AppendSeparator()             if @copy_items;
-
-	$menu->Append($CTX_CMD_PASTE, 'Paste');
-	$menu->Enable($CTX_CMD_PASTE, canPaste($right_click_node, 'e80') ? 1 : 0);
-	$menu->Append($CTX_CMD_PASTE_NEW, 'Paste New');
-	$menu->Enable($CTX_CMD_PASTE_NEW, canPasteNew($right_click_node, 'e80') ? 1 : 0);
-
-	my @delete_items = getDeleteMenuItems('e80', $right_click_node, @nodes);
-	if (@delete_items)
-	{
-		$menu->AppendSeparator();
-		$menu->Append($_->{id}, $_->{label}) for @delete_items;
-	}
-
-	my @new_items = getNewMenuItems('e80', $right_click_node);
-	if (@new_items)
-	{
-		$menu->AppendSeparator();
-		$menu->Append($_->{id}, $_->{label}) for @new_items;
-	}
-
-	$menu->AppendSeparator();
 	$menu->Append($COMMAND_REFRESH_E80, 'Refresh E80');
-
 	return $menu;
-}
-
-
-sub _onContextMenuCommand
-{
-	my ($this, $event) = @_;
-	onContextMenuCommand(
-		$event->GetId(), 'e80', $this->{_right_click_node}, $this->{tree},
-		@{$this->{_context_nodes} // []});
 }
 
 

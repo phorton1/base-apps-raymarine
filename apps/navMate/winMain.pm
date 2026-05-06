@@ -21,9 +21,6 @@ use Pub::WX::Dialogs;
 use apps::raymarine::NET::c_RAYDP;
 use w_resources;
 use nmServer;
-use nmOps;
-use nmOldE80;
-use nmTest;
 use winDatabase;
 use winE80;
 use winMonitor;
@@ -274,7 +271,7 @@ sub onCommand
 	}
 	elsif ($id == $COMMAND_REFRESH_E80_DATA)
 	{
-		doRefresh($this);
+		_doRefreshE80Data($this);
 	}
 	elsif ($id == $COMMAND_REFRESH_DB)
 	{
@@ -283,9 +280,7 @@ sub onCommand
 	}
 	elsif ($id == $COMMAND_IMPORT_OLDE80)
 	{
-		doImportOldE80Residue();
-		my $database = $this->findPane($WIN_DATABASE);
-		$database->refresh() if $database;
+		warning(0, 0, "Import oldE80 Residue: no longer available");
 	}
 	elsif ($id == $COMMAND_EXPORT_DB_TEXT)
 	{
@@ -439,6 +434,34 @@ sub _doImportKML
 	$database->refresh() if $database;
 	display(0,0,"winMain: ImportKML done");
 }
+
+
+sub _doRefreshE80Data
+{
+	my ($parent) = @_;
+	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
+	my $track = $raydp ? $raydp->findImplementedService('TRACK') : undef;
+	if (!($wpmgr && $track))
+	{
+		okDialog($parent, "E80 not connected — cannot refresh.", "Refresh E80");
+		return;
+	}
+	if ($apps::raymarine::NET::d_WPMGR::query_in_progress ||
+	    $apps::raymarine::NET::d_TRACK::query_in_progress)
+	{
+		okDialog($parent, "A query is already in progress — please wait.", "Refresh E80");
+		return;
+	}
+	my $progress = Pub::WX::ProgressDialog::newProgressData(4, 2);
+	$progress->{active} = 1;
+	my $dlg = Pub::WX::ProgressDialog->new($parent, 'Refreshing E80...', 1, $progress);
+	return if !$dlg;
+	$wpmgr->queueRefresh($progress);
+	$track->queueRefresh($progress);
+}
+
+
+sub dispatchTestCommand { }
 
 
 1;

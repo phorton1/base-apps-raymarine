@@ -40,16 +40,16 @@ use a_defs;
 use a_utils;
 use nmPrefs;
 use nmServer;
-use nmUpload;
-use nmClipboard;
-use nmOps;
 use w_resources;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
 my $DUMMY = '__dummy__';
 
-my $CTX_CMD_SHOW_MAP = 10560;
-my $CTX_CMD_HIDE_MAP = 10561;
+my $CTX_CMD_SHOW_MAP   = 10560;
+my $CTX_CMD_HIDE_MAP   = 10561;
+my $CTX_CMD_DELETE     = 10562;
+my $CTX_CMD_NEW_BRANCH = 10563;
+my $CTX_CMD_NEW_GROUP  = 10564;
 
 my %rendered_uuids;
 my $last_clear_version = 0;
@@ -213,11 +213,11 @@ sub new
 	EVT_TREE_ITEM_RIGHT_CLICK($this,   $this->{tree}, \&onTreeRightClick);
 	EVT_RIGHT_DOWN($this->{tree},      sub { _onTreeRightDown($this, @_) });
 
-	EVT_MENU($this, $COMMAND_UPLOAD_E80, \&_onUploadE80);   # vestigial
-	EVT_MENU($this, $_, \&_onContextMenuCommand)
-		for (allCopyCmds(), allCutCmds(), $CTX_CMD_PASTE, $CTX_CMD_PASTE_NEW, allDeleteCmds(), allNewCmds());
-	EVT_MENU($this, $CTX_CMD_SHOW_MAP, \&_onShowMap);
-	EVT_MENU($this, $CTX_CMD_HIDE_MAP, \&_onHideMap);
+	EVT_MENU($this, $CTX_CMD_DELETE,     \&_onDelete);
+	EVT_MENU($this, $CTX_CMD_NEW_BRANCH, \&_onNewBranch);
+	EVT_MENU($this, $CTX_CMD_NEW_GROUP,  \&_onNewGroup);
+	EVT_MENU($this, $CTX_CMD_SHOW_MAP,   \&_onShowMap);
+	EVT_MENU($this, $CTX_CMD_HIDE_MAP,   \&_onHideMap);
 	EVT_TEXT($this,   $this->{ed_name},    \&_onFieldChanged);
 	EVT_TEXT($this,   $this->{ed_comment}, \&_onFieldChanged);
 	EVT_TEXT($this,   $this->{ed_lat},     \&_onLatEdit);
@@ -1401,47 +1401,28 @@ sub _buildContextMenu
 		my $n = $d->GetData();
 		push @nodes, $n if ref $n eq 'HASH';
 	}
-
 	$this->{_context_nodes} = \@nodes;
 
-	my $menu = Wx::Menu->new();
-
-	my @copy_items = getCopyMenuItems('database', @nodes);
-	my @cut_items  = getCutMenuItems('database', @nodes);
-	$menu->Append($_->{id}, $_->{label}) for @copy_items;
-	$menu->Append($_->{id}, $_->{label}) for @cut_items;
-	$menu->AppendSeparator() if @copy_items || @cut_items;
-
-	$menu->Append($CTX_CMD_PASTE, 'Paste');
-	$menu->Enable($CTX_CMD_PASTE, canPaste($right_click_node, 'database') ? 1 : 0);
-	$menu->Append($CTX_CMD_PASTE_NEW, 'Paste New');
-	$menu->Enable($CTX_CMD_PASTE_NEW, canPasteNew($right_click_node, 'database') ? 1 : 0);
-
-	my @delete_items = getDeleteMenuItems('database', $right_click_node, @nodes);
-	if (@delete_items)
-	{
-		$menu->AppendSeparator();
-		$menu->Append($_->{id}, $_->{label}) for @delete_items;
-	}
-
-	my @new_items = getNewMenuItems('database', $right_click_node);
-	if (@new_items)
-	{
-		$menu->AppendSeparator();
-		$menu->Append($_->{id}, $_->{label}) for @new_items;
-	}
-
+	my $menu     = Wx::Menu->new();
 	my $node_type = $right_click_node->{type} // '';
-	if ($node_type eq 'collection')
+
+	my $has_deletable = grep { my $t = $_->{type} // ''; $t eq 'object' || $t eq 'collection' } @nodes;
+	if ($has_deletable && $node_type ne 'root')
 	{
-		$this->{_upload_target} = { kind => 'collection', data => $right_click_node->{data} };
+		$menu->Append($CTX_CMD_DELETE, 'Delete');
 		$menu->AppendSeparator();
-		$menu->Append($COMMAND_UPLOAD_E80, 'Upload to E80');
+	}
+
+	if ($node_type eq 'collection' || $node_type eq 'root')
+	{
+		my $node_subtype = ($right_click_node->{data} // {})->{node_type} // '';
+		$menu->Append($CTX_CMD_NEW_BRANCH, 'New Branch');
+		$menu->Append($CTX_CMD_NEW_GROUP, 'New Group') if $node_subtype ne $NODE_TYPE_GROUP;
+		$menu->AppendSeparator();
 	}
 
 	if ($node_type ne 'root')
 	{
-		$menu->AppendSeparator();
 		$menu->Append($CTX_CMD_SHOW_MAP, 'Show on Map');
 		$menu->Append($CTX_CMD_HIDE_MAP, 'Hide on Map');
 	}
@@ -1450,12 +1431,88 @@ sub _buildContextMenu
 }
 
 
-sub _onContextMenuCommand
+sub _onDelete
 {
 	my ($this, $event) = @_;
-	onContextMenuCommand(
-		$event->GetId(), 'database', $this->{_right_click_node}, $this->{tree},
-		@{$this->{_context_nodes} // []});
+	my @nodes     = @{$this->{_context_nodes} // []};
+	my @deletable = grep { my $t = $_->{type} // ''; $t eq 'object' || $t eq 'collection' } @nodes;
+	return if !@deletable;
+
+	my $n   = scalar @deletable;
+	my $msg = $n == 1
+		? "Delete '$deletable[0]{data}{name}'?"
+		: "Delete $n items?";
+	return if !confirmDialog($this->{tree}, $msg, 'Confirm Delete');
+
+	my $dbh = connectDB();
+	return if !$dbh;
+
+	my @obj_uuids;
+	for my $node (@deletable)
+	{
+		my $uuid     = $node->{data}{uuid};
+		my $type     = $node->{type};
+		my $obj_type = $node->{data}{obj_type} // '';
+		if ($type eq 'collection')
+		{
+			if (!isBranchDeleteSafe($dbh, $uuid))
+			{
+				warning(0, 0, "Cannot delete '$node->{data}{name}': waypoints are referenced by external routes");
+				next;
+			}
+			my $wrgt = getCollectionWRGTs($dbh, $uuid);
+			push @obj_uuids, map { $_->{uuid} }
+				@{$wrgt->{waypoints}}, @{$wrgt->{routes}}, @{$wrgt->{tracks}};
+			deleteBranch($dbh, $uuid);
+		}
+		elsif ($obj_type eq 'waypoint') { push @obj_uuids, $uuid; deleteWaypoint($dbh, $uuid) }
+		elsif ($obj_type eq 'route')    { push @obj_uuids, $uuid; deleteRoute($dbh, $uuid)    }
+		elsif ($obj_type eq 'track')    { push @obj_uuids, $uuid; deleteTrack($dbh, $uuid)    }
+	}
+
+	disconnectDB($dbh);
+	$this->onObjectsDeleted(@obj_uuids) if @obj_uuids;
+	$this->refresh();
+}
+
+
+sub _onNewBranch
+{
+	my ($this, $event) = @_;
+	my $parent_uuid = ($this->{_right_click_node}{data} // {})->{uuid};
+	my $dlg = Wx::TextEntryDialog->new($this, 'Branch name:', 'New Branch', '');
+	if ($dlg->ShowModal() == wxID_OK)
+	{
+		my $name = $dlg->GetValue() // '';
+		if ($name ne '')
+		{
+			my $dbh = connectDB();
+			insertCollection($dbh, $name, $parent_uuid, $NODE_TYPE_BRANCH);
+			disconnectDB($dbh);
+			$this->refresh();
+		}
+	}
+	$dlg->Destroy();
+}
+
+
+sub _onNewGroup
+{
+	my ($this, $event) = @_;
+	my $parent_uuid = ($this->{_right_click_node}{data} // {})->{uuid};
+	my $dlg = Wx::TextEntryDialog->new($this, 'Group name:', 'New Group', '');
+	if ($dlg->ShowModal() == wxID_OK)
+	{
+		my $name = $dlg->GetValue() // '';
+		if ($name ne '')
+		{
+			my $dbh = connectDB();
+			insertCollection($dbh, $name, $parent_uuid, $NODE_TYPE_GROUP);
+			disconnectDB($dbh);
+			$this->refresh();
+		}
+	}
+	$dlg->Destroy();
 }
 
 
@@ -1619,45 +1676,6 @@ sub _hasSelectedDescendant
 	return 0;
 }
 
-
-sub _onUploadE80
-{
-	my ($this) = @_;
-	my $progress = $this->{_progress_data};
-	return if $progress && $progress->{active};
-
-	my $target = $this->{_upload_target};
-	return if !$target;
-	my $kind = $target->{kind};
-	my $data = $target->{data};
-
-	my $progress_data = Pub::WX::ProgressDialog::newProgressData(0);
-
-	my $total = 0;
-	if ($kind eq 'collection')
-	{
-		$total = uploadCollectionToE80($data->{uuid}, $data->{name}, $progress_data);
-	}
-	elsif ($kind eq 'route')
-	{
-		$total = uploadRouteToE80($data->{uuid}, $data->{name}, $data->{color}, $progress_data);
-	}
-	elsif ($kind eq 'waypoint')
-	{
-		$total = uploadWaypointToE80($data, $progress_data);
-	}
-
-	if ($total > 0)
-	{
-		$this->{_progress_data} = $progress_data;
-		Pub::WX::ProgressDialog->new(
-			$this->{frame},
-			'Upload to E80',
-			1,
-			$progress_data,
-			'Uploading...');
-	}
-}
 
 
 #---------------------------------
