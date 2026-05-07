@@ -93,7 +93,7 @@ sub new
 		$grid->Add($st, 0, $CV);
 	}
 
-	# WPMGR header row — active only
+	# WPMGR header row - active only
 	my $wlbl = Wx::StaticText->new($this, -1, 'WPMGR');
 	$wlbl->SetMinSize([85,-1]);
 	$this->{wpmgr_active} = Wx::CheckBox->new($this, -1, '');
@@ -109,7 +109,7 @@ sub new
 	# blank spacer before Track
 	$grid->Add(Wx::StaticText->new($this, -1, ''), 0, 0) for 1..6;
 
-	# Track — has its own active
+	# Track - has its own active
 	_addMonRow($this, $grid, 'Track', 'track', 1);
 
 	$outer->Add($grid, 0, wxLEFT|wxBOTTOM, 10);
@@ -196,7 +196,7 @@ sub _bindPair
 
 
 #-------------------------------------------------
-# idle — detect external monitor bit changes
+# idle - detect external monitor bit changes
 #-------------------------------------------------
 
 sub onIdle
@@ -413,3 +413,4 @@ sub getDataForIniFile
 
 
 1;
+

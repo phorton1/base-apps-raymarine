@@ -96,6 +96,7 @@ my $db_def = {
 		"node_type   TEXT NOT NULL DEFAULT 'branch'",
 		"comment     TEXT DEFAULT ''",
 		"visible     INTEGER NOT NULL DEFAULT 0",
+		"position    REAL    NOT NULL DEFAULT 0",
 	],
 
 	waypoints => [
@@ -115,6 +116,7 @@ my $db_def = {
 		"db_version      INTEGER NOT NULL DEFAULT 1",
 		"e80_version     INTEGER",
 		"kml_version     INTEGER",
+		"position        REAL    NOT NULL DEFAULT 0",
 	],
 
 	routes => [
@@ -127,6 +129,7 @@ my $db_def = {
 		"db_version      INTEGER NOT NULL DEFAULT 1",
 		"e80_version     INTEGER",
 		"kml_version     INTEGER",
+		"position        REAL    NOT NULL DEFAULT 0",
 	],
 
 	route_waypoints => [
@@ -149,6 +152,7 @@ my $db_def = {
 		"db_version      INTEGER NOT NULL DEFAULT 1",
 		"e80_version     INTEGER",
 		"kml_version     INTEGER",
+		"position        REAL    NOT NULL DEFAULT 0",
 	],
 
 	track_points => [
@@ -230,12 +234,45 @@ sub openDB
 		display(0,0,"c_db::openDB migration to 9.0 complete");
 	}
 
+	if ($stored eq '9.0')
+	{
+		display(0,0,"c_db::openDB migrating schema 9.0 -> 10.0");
+		for my $table (qw(collections waypoints routes tracks))
+		{
+			$dbh->do("ALTER TABLE $table ADD COLUMN position REAL NOT NULL DEFAULT 0", []);
+		}
+		$dbh->do("UPDATE collections SET position = (
+			SELECT COUNT(*) FROM collections c2
+			WHERE (c2.parent_uuid = collections.parent_uuid
+				OR (c2.parent_uuid IS NULL AND collections.parent_uuid IS NULL))
+			AND c2.rowid <= collections.rowid
+		)", []);
+		$dbh->do("UPDATE waypoints SET position = (
+			SELECT COUNT(*) FROM waypoints w2
+			WHERE w2.collection_uuid = waypoints.collection_uuid
+			AND w2.rowid <= waypoints.rowid
+		)", []);
+		$dbh->do("UPDATE routes SET position = (
+			SELECT COUNT(*) FROM routes r2
+			WHERE r2.collection_uuid = routes.collection_uuid
+			AND r2.rowid <= routes.rowid
+		)", []);
+		$dbh->do("UPDATE tracks SET position = (
+			SELECT COUNT(*) FROM tracks t2
+			WHERE t2.collection_uuid = tracks.collection_uuid
+			AND t2.rowid <= tracks.rowid
+		)", []);
+		$dbh->do("UPDATE key_values SET value='10.0' WHERE key='schema_version'", []);
+		$stored = '10.0';
+		display(0,0,"c_db::openDB migration to 10.0 complete");
+	}
+
 	my ($stored_major)   = split(/\./, $stored);
 	my ($expected_major) = split(/\./, $SCHEMA_VERSION);
 
 	if ($stored_major != $expected_major)
 	{
-		warning(0,0,"schema_version mismatch: DB has $stored, code expects $SCHEMA_VERSION — reimport required");
+		warning(0,0,"schema_version mismatch: DB has $stored, code expects $SCHEMA_VERSION - reimport required");
 		$dbh->disconnect();
 		return -1;
 	}
@@ -649,11 +686,11 @@ sub getCollectionChildren
 	if (defined $parent_uuid)
 	{
 		return $dbh->get_records(
-			"SELECT uuid, name, node_type, comment FROM collections WHERE parent_uuid=? ORDER BY rowid",
+			"SELECT uuid, name, node_type, comment FROM collections WHERE parent_uuid=? ORDER BY position",
 			[$parent_uuid]);
 	}
 	return $dbh->get_records(
-		"SELECT uuid, name, node_type, comment FROM collections WHERE parent_uuid IS NULL ORDER BY rowid");
+		"SELECT uuid, name, node_type, comment FROM collections WHERE parent_uuid IS NULL ORDER BY position");
 }
 
 
@@ -664,12 +701,17 @@ sub getCollectionChildren
 sub getCollectionCounts
 {
 	my ($dbh, $coll_uuid) = @_;
-	my $r_c = $dbh->get_record("SELECT COUNT(*) AS n FROM collections WHERE parent_uuid=?",    [$coll_uuid]);
+	my $r_g = $dbh->get_record("SELECT COUNT(*) AS n FROM collections WHERE parent_uuid=? AND node_type='group'",  [$coll_uuid]);
+	my $r_b = $dbh->get_record("SELECT COUNT(*) AS n FROM collections WHERE parent_uuid=? AND node_type='branch'", [$coll_uuid]);
 	my $r_w = $dbh->get_record("SELECT COUNT(*) AS n FROM waypoints   WHERE collection_uuid=?", [$coll_uuid]);
 	my $r_r = $dbh->get_record("SELECT COUNT(*) AS n FROM routes      WHERE collection_uuid=?", [$coll_uuid]);
 	my $r_t = $dbh->get_record("SELECT COUNT(*) AS n FROM tracks      WHERE collection_uuid=?", [$coll_uuid]);
+	my $ng = ($r_g ? $r_g->{n} : 0) + 0;
+	my $nb = ($r_b ? $r_b->{n} : 0) + 0;
 	return {
-		collections => ($r_c ? $r_c->{n} : 0) + 0,
+		collections => $ng + $nb,
+		groups      => $ng,
+		branches    => $nb,
 		waypoints   => ($r_w ? $r_w->{n} : 0) + 0,
 		routes      => ($r_r ? $r_r->{n} : 0) + 0,
 		tracks      => ($r_t ? $r_t->{n} : 0) + 0,
@@ -688,17 +730,17 @@ sub getCollectionObjects
 	my @objects;
 	my $wps = $dbh->get_records(
 		"SELECT uuid, name, 'waypoint' AS obj_type, lat, lon, wp_type, color, visible
-		 FROM waypoints WHERE collection_uuid=? ORDER BY rowid",
+		 FROM waypoints WHERE collection_uuid=? ORDER BY position",
 		[$coll_uuid]);
 	push @objects, @$wps;
 	my $routes = $dbh->get_records(
 		"SELECT uuid, name, color, 'route' AS obj_type, visible
-		 FROM routes WHERE collection_uuid=? ORDER BY rowid",
+		 FROM routes WHERE collection_uuid=? ORDER BY position",
 		[$coll_uuid]);
 	push @objects, @$routes;
 	my $tracks = $dbh->get_records(
 		"SELECT uuid, name, color, 'track' AS obj_type, ts_start, ts_end, ts_source, point_count, visible
-		 FROM tracks WHERE collection_uuid=? ORDER BY rowid",
+		 FROM tracks WHERE collection_uuid=? ORDER BY position",
 		[$coll_uuid]);
 	push @objects, @$tracks;
 	return \@objects;
@@ -727,7 +769,7 @@ sub getCollection
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, parent_uuid, node_type, comment, visible FROM collections WHERE uuid=?",
+		"SELECT uuid, name, parent_uuid, node_type, comment, visible, position FROM collections WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -740,7 +782,7 @@ sub getTrack
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, collection_uuid, visible FROM tracks WHERE uuid=?",
+		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, collection_uuid, visible, position FROM tracks WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -753,7 +795,7 @@ sub getWaypoint
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm, created_ts, ts_source, source, collection_uuid, visible FROM waypoints WHERE uuid=?",
+		"SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm, created_ts, ts_source, source, collection_uuid, visible, position FROM waypoints WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -766,7 +808,7 @@ sub getRoute
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, comment, color, collection_uuid, visible FROM routes WHERE uuid=?",
+		"SELECT uuid, name, comment, color, collection_uuid, visible, position FROM routes WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -980,7 +1022,7 @@ sub getCollectionGroups
 		FROM tree t
 		JOIN collections col ON col.uuid=t.uuid AND col.node_type='group'
 		JOIN waypoints w ON w.collection_uuid=col.uuid
-		ORDER BY col.name, w.rowid
+		ORDER BY col.name, w.position
 	}, [$coll_uuid]);
 
 	my @groups;
@@ -1073,7 +1115,7 @@ sub clearRouteWaypoints
 
 
 #---------------------------------
-# move* — re-home an object to a different collection/parent
+# move* - re-home an object to a different collection/parent
 #---------------------------------
 
 sub moveWaypoint
@@ -1133,7 +1175,7 @@ sub deleteCollection
 # isBranchDeleteSafe
 #---------------------------------
 # Returns 1 if deleting the branch at $uuid (recursively) would not orphan
-# any route_waypoints rows — i.e. every route that references a WP in the
+# any route_waypoints rows - i.e. every route that references a WP in the
 # subtree is itself inside the same subtree. Returns 0 if any WP is referenced
 # by a route that lives outside the branch.
 
@@ -1289,7 +1331,7 @@ sub getGroupWaypoints
 {
 	my ($dbh, $collection_uuid) = @_;
 	return $dbh->get_records(
-		"SELECT uuid, name FROM waypoints WHERE collection_uuid=? ORDER BY rowid",
+		"SELECT uuid, name FROM waypoints WHERE collection_uuid=? ORDER BY position",
 		[$collection_uuid]);
 }
 
@@ -1396,7 +1438,7 @@ sub isDBReady { return $db_ready }
 #---------------------------------
 # rawQuery
 #---------------------------------
-# Debug endpoint — SELECT only.
+# Debug endpoint - SELECT only.
 
 sub rawQuery
 {
@@ -1408,3 +1450,4 @@ sub rawQuery
 
 
 1;
+

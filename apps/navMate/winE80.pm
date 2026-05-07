@@ -371,7 +371,7 @@ sub getDataForIniFile
 
 
 #---------------------------------
-# tree state — expand / select
+# tree state - expand / select
 #---------------------------------
 
 sub _nodeKey
@@ -494,3 +494,4 @@ sub _walkRestoreSelected
 
 
 1;
+

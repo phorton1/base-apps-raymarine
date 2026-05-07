@@ -232,15 +232,15 @@ sub handle_request
 		my $dbh = c_db::connectDB();
 		return json_response($request,{ error => 'db connect failed' }) if !$dbh;
 		my ($colls,  $e1) = c_db::rawQuery($dbh,
-			"SELECT uuid, name, parent_uuid, node_type FROM collections ORDER BY name");
+			"SELECT uuid, name, parent_uuid, node_type, visible, position FROM collections ORDER BY name");
 		my ($wps,    $e2) = c_db::rawQuery($dbh,
-			"SELECT uuid, name, collection_uuid, wp_type, color FROM waypoints ORDER BY name");
+			"SELECT uuid, name, collection_uuid, wp_type, color, visible, db_version, e80_version, kml_version, position FROM waypoints ORDER BY name");
 		my ($routes, $e3) = c_db::rawQuery($dbh,
-			"SELECT uuid, name, collection_uuid, color FROM routes ORDER BY name");
+			"SELECT uuid, name, collection_uuid, color, visible, db_version, e80_version, kml_version, position FROM routes ORDER BY name");
 		my ($rtwps,  $e4) = c_db::rawQuery($dbh,
 			"SELECT route_uuid, wp_uuid, position FROM route_waypoints ORDER BY route_uuid, position");
 		my ($tracks, $e5) = c_db::rawQuery($dbh,
-			"SELECT uuid, name, collection_uuid, ts_start, color FROM tracks ORDER BY name");
+			"SELECT uuid, name, collection_uuid, ts_start, color, visible, db_version, e80_version, kml_version, position FROM tracks ORDER BY name");
 		c_db::disconnectDB($dbh);
 		my $err = $e1 || $e2 || $e3 || $e4 || $e5;
 		return json_response($request,{ error => $err }) if $err;

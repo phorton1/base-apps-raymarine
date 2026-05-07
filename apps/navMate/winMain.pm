@@ -426,7 +426,7 @@ sub _doImportKML
 	my $rc = c_db::resetDB();
 	if ($rc <= 0)
 	{
-		warning(0,0,"winMain: ImportKML aborted — resetDB returned $rc");
+		warning(0,0,"winMain: ImportKML aborted - resetDB returned $rc");
 		return;
 	}
 	nmOneTimeImport::run();
@@ -443,13 +443,13 @@ sub _doRefreshE80Data
 	my $track = $raydp ? $raydp->findImplementedService('TRACK') : undef;
 	if (!($wpmgr && $track))
 	{
-		okDialog($parent, "E80 not connected — cannot refresh.", "Refresh E80");
+		okDialog($parent, "E80 not connected - cannot refresh.", "Refresh E80");
 		return;
 	}
 	if ($apps::raymarine::NET::d_WPMGR::query_in_progress ||
 	    $apps::raymarine::NET::d_TRACK::query_in_progress)
 	{
-		okDialog($parent, "A query is already in progress — please wait.", "Refresh E80");
+		okDialog($parent, "A query is already in progress - please wait.", "Refresh E80");
 		return;
 	}
 	my $progress = Pub::WX::ProgressDialog::newProgressData(4, 2);
@@ -465,3 +465,4 @@ sub dispatchTestCommand { }
 
 
 1;
+

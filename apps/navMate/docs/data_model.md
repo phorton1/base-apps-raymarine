@@ -6,7 +6,7 @@
 **Data Model** --
 **[UI Model](ui_model.md)** --
 **[Implementation](implementation.md)** --
-**[Context Menu](context_menu.md)** --
+**[nmOperations](nmOperations.md)** --
 **[KML Specification](kml_specification.md)** --
 **[GE Notes](ge_notes.md)**
 
@@ -70,7 +70,8 @@ collections (
   parent_uuid   TEXT REFERENCES collections(uuid),  -- NULL = root-level node
   node_type     TEXT NOT NULL DEFAULT 'branch',     -- 'branch' or 'group'
   comment       TEXT DEFAULT '',
-  visible       INTEGER NOT NULL DEFAULT 0
+  visible       INTEGER NOT NULL DEFAULT 0,
+  position      REAL    NOT NULL DEFAULT 0          -- display order within parent (schema 10.0)
 )
 ```
 
@@ -108,7 +109,8 @@ waypoints (
   visible           INTEGER NOT NULL DEFAULT 0,
   db_version        INTEGER NOT NULL DEFAULT 1,
   e80_version       INTEGER,             -- NULL = never synced to E80
-  kml_version       INTEGER              -- NULL = never exported via versioned KML
+  kml_version       INTEGER,             -- NULL = never exported via versioned KML
+  position          REAL    NOT NULL DEFAULT 0  -- display order within collection (schema 10.0)
 )
 ```
 
@@ -146,7 +148,8 @@ routes (
   visible           INTEGER NOT NULL DEFAULT 0,
   db_version        INTEGER NOT NULL DEFAULT 1,
   e80_version       INTEGER,             -- NULL = never synced to E80
-  kml_version       INTEGER              -- NULL = never exported via versioned KML
+  kml_version       INTEGER,             -- NULL = never exported via versioned KML
+  position          REAL    NOT NULL DEFAULT 0  -- display order within collection (schema 10.0)
 )
 
 route_waypoints (
@@ -177,7 +180,8 @@ tracks (
   visible           INTEGER NOT NULL DEFAULT 0,
   db_version        INTEGER NOT NULL DEFAULT 1,
   e80_version       INTEGER,             -- NULL = never synced to E80
-  kml_version       INTEGER              -- NULL = never exported via versioned KML
+  kml_version       INTEGER,             -- NULL = never exported via versioned KML
+  position          REAL    NOT NULL DEFAULT 0  -- display order within collection (schema 10.0)
 )
 
 track_points (
@@ -247,7 +251,7 @@ Initial entries:
 
 | key | Purpose |
 |-----|---------|
-| `schema_version` | Current value `'9.0'`; `openDB` in `c_db.pm` migrates known prior versions in place |
+| `schema_version` | Current value `'10.0'`; `openDB` in `c_db.pm` migrates known prior versions in place |
 | `uuid_counter` | Integer; persistent counter for navMate UUID generation (bytes 4–5 of the UUID) |
 
 The `uuid_counter` entry is incremented atomically within the same transaction as
@@ -285,6 +289,14 @@ not inlined as route geometry. The same waypoint can appear in multiple routes.
 one collection. `collection_uuid` is `NOT NULL` on all three WRT tables. Collections
 are typed via `node_type`: `'branch'` for general organizer folders, `'group'` for
 waypoint-only leaf collections that map to E80 WPMGR groups.
+
+**`position` is a REAL (float) ordering key, not an integer sequence.** `collections`,
+`waypoints`, `routes`, and `tracks` each carry a `position REAL NOT NULL DEFAULT 0`
+column (schema 10.0). Using REAL allows new items to be inserted between any two existing
+neighbors by taking the midpoint value — no surrounding rows need to be renumbered. The
+migration initialized all values from rowid order within parent, giving integer starting
+positions; subsequent insertions use bisection. `route_waypoints.position` and
+`track_points.position` are separate INTEGER primary-key components and were not changed.
 
 **`visible` is a display preference, not a sync field.** Every WRT object and
 collection carries a `visible` column (default 0). Toggling visibility updates the

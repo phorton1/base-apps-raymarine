@@ -8,45 +8,65 @@ own context here.
 
 ## Next
 
-### [winDatabase reordering UX]
-Add reorder capability to winDatabase for items in the navMate database.
-Scope is narrow: navMate DB reordering only — no E80 sync or visibility
-tie-in. Schema 9.0 has no explicit sort-order column on collections,
-waypoints, routes, or tracks. Design session needed before coding.
-See `[item ordering UI]` in design_vision.md for design context.
 
 ### [Rework operations system]
-The nmOps / nmOpsDB / nmOpsE80 / nmClipboard module cluster is to be
-significantly simplified — a conceptual rework of the entire scheme, not
-merely a rename. Details to be determined in a dedicated design session.
+The design phase is in progress — `nmOperations.md` to document the new scheme in
+full.  Patrick doing manual edit. 
 
-### [Update /api/nmdb response]
-Update nmServer.pm queries behind /api/nmdb to return `visible` and versioning
-columns (`db_version`, `e80_version`, `kml_version`) for waypoints, routes, and
-tracks; return `visible` for collections. Update the test runbook column reference
-table to match.
+1. **Decide module structure** —  nmClipboard.pm fields and
+   query interface; which ops inline vs. dispatch; nmOps.pm, nmOpsDB.m
+   and nmOpsE80 pm implementing machinery. E80 always protected by progress
+   dialogs.
+2. Feature Implementation
+3. **Write nmOps_testplan.md** — fresh test plan replacing
+   context_menu_testplan.md. Pre-flight failure paths are first-class test
+   cases; Paste Before/After tests added; `[concept notion]` identifiers as
+   shorthand; versioning test section is placeholder only.
+4. **Finish nmOperations api for automatic testing** -  Things like
+   extend nmDialogs.pm `$suppress_confirm`** to cover error/warning dialogs
+   (not just confirm dialogs), so pre-flight failure paths are fully testable.
+   Any other claude http apis needed for for feature testing.
+5. **write new runbook** - write the runbook for claude to test, similar
+   to previous runbook, including handling or $progress dialogs, completely
+   informed api usage, no flailing, which runs last_testrun.md
+6. **iterate through testplan** - alpha run(0) ... stop on each issue and
+   resolve inline - no last_test run developed.  beta runs(n) - iterate
+   on full-cycle basis, resolving issues.  digression_teet(0) - run completly
+   with all passes, no issues, no code gaps.
 
-### [em dash encoding]
-Systemic replace of UTF-8 em-dash encoding (`â€"`) with ASCII double-hyphen (`--`)
-throughout all `.pm` files.
 
----
+
+
 
 ## Soon
 
-### [Delete E88 Tracks]
-There is no Delete Tracks command on the Tracks folder on the E80 but there is a Delete Track
-command on the individual tracks.  There should be a Delete Tracks command in the context menu.
+
+
+### [db_version increment wiring]
+See design_vision: [E80 sync / versioning system].
+
+### [synchronization color scheme]
+Between winDatabase and winE80 highlight common "same" items in bold blue,
+"older items" in bold magenta, and newer items in "bold green" via inter-window
+analaysis. See design_vision: [E80 sync / versioning system].
+
+### [synchronization operations]
+Implement "sync->E80" and "sync<-DB" menu commands to synchronize
+out of date items in one-step directional manner.
+See design_vision: [E80 sync / versioning system].
+
+
+### [winDatabase reordering UX]
+Add reorder capability to winDatabase for items in the navMate database.
+Scope is narrow: navMate DB reordering only — no E80 sync or visibility
+tie-in. Schema 10.0 added `position REAL` to collections, waypoints, routes,
+and tracks; the storage foundation is in place. UI implementation needed.
+See `[item ordering UI]` in design_vision.md for design context.
 
 ### [WPMGR post-delete GET_ITEM error fix]
 Known fix — see open_bugs.md. One-liner in the GET_ITEM/waitReply failure
 path for 'mod_item' commands.
 
-### [db_version increment wiring]
-Wire `db_version = db_version + 1` in `updateWaypoint`, `updateRoute`, track
-UPDATE, `clearRouteWaypoints`, and `move*` functions. Columns exist in schema 9.0
-with `DEFAULT 1`; increment logic not yet written. Part of the sync feature --
-dedicate a full session to this when ready.
 
 ---
 
@@ -66,33 +86,6 @@ Options:
   responsibility to not abandon a cut clipboard.
 
 Affects: nmOpsDB.pm (`_cutDatabaseWaypoint`), nmOps.pm (doCut).
-
-### [Color Test D full]
-Default track color (index 5 = BLACK = ff000000) verified Cycle 6.
-Full verification requires Patrick to assign non-default colors to tracks
-via the E80 UI before copy-to-DB, then verify aabbggrr round-trip.
-Track palette: 0=RED ff0000ff, 1=CYAN ff00ffff, 2=GREEN ff00ff00,
-3=BLUE ffff0000, 4=MAGENTA ffff00ff, 5=BLACK ff000000.
-
-### [smart update path]
-Replace skip-if-exists logic with UUID-diff MOD_ITEM: when a UUID exists
-on both sides, send a full record re-send. Policy: push = navMate wins,
-pull = E80 wins. Step E remaining piece. Not yet implemented.
-
-### [E80 name collision auto-rename]
-E80 enforces name uniqueness at hardware level. NEW_ITEM returns success=0
-(not FIN) when a WP with the same name already exists under any UUID.
-Fix: in the E80 Paste New helpers (_pasteNewWaypointToE80, _pasteNewGroupToE80,
-_pasteNewRouteToE80) and _pasteOneWaypointToE80, add a name-collision pre-check
-before createWaypoint: scan $wpmgr->{waypoints} for any existing WP with the
-same name; if found, append " (2)", " (3)" etc. until unique among existing WPs
-and names queued in this pass. Log the rename at display level 0.
-
-Affects: apps/navMate/nmOpsE80.pm
-
-### [_copyAll E80 normalization]
-Latent crash — see open_bugs.md. No current test exercises COPY-ALL from
-the E80 panel so it is dormant, but real.
 
 ---
 

@@ -103,7 +103,7 @@ sub new
 
 
 #-----------------------------------------
-# handle_request — shark-specific routes
+# handle_request - shark-specific routes
 #-----------------------------------------
 
 sub handle_request
@@ -121,7 +121,7 @@ sub handle_request
 
 
 #-----------------------------------------
-# handleCommand — shark-specific commands
+# handleCommand - shark-specific commands
 #-----------------------------------------
 
 sub handleCommand
@@ -321,7 +321,7 @@ sub handleCommand
 
 
 #==================================================================================
-# commandHelp — shark-specific [sig, desc] pairs (prepended to inherited list)
+# commandHelp - shark-specific [sig, desc] pairs (prepended to inherited list)
 #==================================================================================
 
 sub commandHelp
@@ -400,3 +400,4 @@ sub api_colormap
 
 
 1;
+

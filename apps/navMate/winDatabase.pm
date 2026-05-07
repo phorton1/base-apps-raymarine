@@ -236,7 +236,7 @@ sub new
 
 
 #---------------------------------
-# initial load — top-level only
+# initial load - top-level only
 #---------------------------------
 
 sub _loadTopLevel
@@ -291,11 +291,12 @@ sub _collectionLabel
 {
 	my ($coll, $counts) = @_;
 	my $name = $coll->{name};
-	my ($nc, $nw, $nr, $nt) = @{$counts}{qw(collections waypoints routes tracks)};
-	my $total = $nc + $nw + $nr + $nt;
+	my ($ng, $nb, $nw, $nr, $nt) = @{$counts}{qw(groups branches waypoints routes tracks)};
+	my $total = $ng + $nb + $nw + $nr + $nt;
 	return "$name (empty)" if !$total;
 	my @parts;
-	push @parts, "$nc " . ($nc==1 ? 'folder'   : 'folders')   if $nc;
+	push @parts, "$ng " . ($ng==1 ? 'group'  : 'groups')  if $ng;
+	push @parts, "$nb " . ($nb==1 ? 'folder' : 'folders') if $nb;
 	push @parts, "$nw " . ($nw==1 ? 'waypoint' : 'waypoints') if $nw;
 	push @parts, "$nr " . ($nr==1 ? 'route'    : 'routes')    if $nr;
 	push @parts, "$nt " . ($nt==1 ? 'track'    : 'tracks')    if $nt;
@@ -482,6 +483,7 @@ sub _showCollection
 	$text .= _fmt('node_type',   $coll->{node_type});
 	$text .= _fmt('parent_uuid', $coll->{parent_uuid});
 	$text .= _fmt('comment',     $coll->{comment});
+	$text .= _fmt('position',    $coll->{position});
 	$text .= "\n";
 	$text .= _fmt('collections', $counts->{collections});
 	$text .= _fmt('waypoints',   $counts->{waypoints});
@@ -513,6 +515,7 @@ sub _showObject
 		$text .= _fmt('ts_source',       $t->{ts_source});
 		$text .= _fmt('point_count',     $t->{point_count});
 		$text .= _fmt('collection_uuid', $t->{collection_uuid});
+		$text .= _fmt('position',        $t->{position});
 	}
 	elsif ($obj_stub->{obj_type} eq 'waypoint')
 	{
@@ -532,6 +535,7 @@ sub _showObject
 		$text .= _fmt('ts_source',       $w->{ts_source});
 		$text .= _fmt('source',          $w->{source});
 		$text .= _fmt('collection_uuid', $w->{collection_uuid});
+		$text .= _fmt('position',        $w->{position});
 	}
 	elsif ($obj_stub->{obj_type} eq 'route')
 	{
@@ -542,6 +546,7 @@ sub _showObject
 		$text .= _fmt('comment',         $r->{comment});
 		$text .= _fmt('color',           $r->{color});
 		$text .= _fmt('collection_uuid', $r->{collection_uuid});
+		$text .= _fmt('position',        $r->{position});
 		$text .= "\n";
 		for my $i (0 .. $#$wps)
 		{
@@ -1094,7 +1099,7 @@ sub _loadEditor
 	$this->{_editor_dirty}  = 0;
 
 	my $title = $type eq 'collection'
-		? ($data->{node_type} // '' eq $NODE_TYPE_GROUP ? 'Group' : 'Branch')
+		? (($data->{node_type} // '') eq $NODE_TYPE_GROUP ? 'Group' : 'Branch')
 		: ucfirst($obj_type);
 	$this->{ed_title}->SetLabel($title);
 
@@ -1294,7 +1299,7 @@ sub _onSave
 		if (!defined $lat || !defined $lon)
 		{
 			disconnectDB($dbh);
-			warning(0, 0, "invalid lat/lon — save aborted");
+			warning(0, 0, "invalid lat/lon - save aborted");
 			return;
 		}
 		my @types   = ($WP_TYPE_NAV, $WP_TYPE_LABEL, $WP_TYPE_SOUNDING);
@@ -1694,7 +1699,7 @@ sub getDataForIniFile
 
 
 #---------------------------------
-# tree state — expand / select
+# tree state - expand / select
 #---------------------------------
 
 sub _nodeKey
@@ -1813,3 +1818,4 @@ sub _restoreSelected
 
 
 1;
+

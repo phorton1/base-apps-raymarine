@@ -59,7 +59,7 @@ my $serial = apps::raymarine::NET::s_serial->new(\&_handleSerialCommand);
 my $db_rc = c_db::openDB();
 if ($db_rc == -1)
 {
-	display(0,0,"navMate: schema mismatch — use File->Import KML to rebuild database");
+	display(0,0,"navMate: schema mismatch - use File->Import KML to rebuild database");
 }
 nmServer::startNavMateServer();
 
@@ -92,3 +92,4 @@ Pub::WX::Main::run($app);
 display(0,0,"ending $appName.pm frame=$frame");
 $frame->DESTROY() if $frame;
 $frame = undef;
+

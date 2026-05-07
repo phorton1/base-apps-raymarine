@@ -4,23 +4,6 @@ Active bugs with context, symptoms, and observations.
 Where a bug appears in the test plan, last_testrun.md holds the reproduction
 context — entries here provide the additional detail that doesn't belong there.
 
----
-
-### [Cut path leaves item visible on Leaflet map]
-
-**Symptom:** Cutting a waypoint (or other item) via the context menu removes
-it from the navMate DB but leaves the rendered feature visible on the Leaflet
-map until the next full reload.
-
-**What is known:**
-- Delete paths were fixed (2026-05-06) by routing through
-  `_refreshDatabaseWithDelete` which calls `onObjectsDeleted` →
-  `removeRenderFeatures`. Cut paths were intentionally left out of that fix.
-- Same root cause as the delete bug: cut calls `_refreshDatabase()` which
-  reloads the tree but does nothing to Leaflet or `%rendered_uuids`.
-- Fix is straightforward: cut paths need to collect UUIDs and call
-  `_refreshDatabaseWithDelete` the same way delete paths now do.
-- Affected: `_cutDatabaseWaypoint` and any other cut paths in nmOpsDB.pm.
 
 ---
 
@@ -104,23 +87,3 @@ Simple (non-group) waypoint deletes are clean — no bug there.
   triggering command was 'mod_item' and E80 returns "not found", log WARNING
   instead of ERROR. This keeps the create path intact.
 
----
-
-### [_copyAll E80 normalization]
-
-**Symptom:** Latent crash — not yet triggered. No current test exercises
-COPY-ALL from the E80 panel.
-
-**What is known:**
-- `_copyAll` in nmOps.pm pushes raw `$wps->{$uuid}` data for group members,
-  route members, and ungrouped WPs without calling `_e80WpClipData()`.
-- E80 in-memory waypoints store lat/lon as 1e7 scaled integers.
-  `_e80WpClipData()` converts these to decimal degrees. Without that call,
-  the clipboard contains raw 1e7 integers.
-- Any subsequent paste calls `latLonToNorthEast()` expecting decimal degrees
-  → `log()` of a negative number → crash.
-- `_copyWaypoint`, `_copyGroup`, and `_copyRoute` were all fixed to use
-  `_e80WpClipData()`. `_copyAll` was missed.
-- Fix: wrap all three `$wps->{$uuid}` data references in `_e80WpClipData(...)`
-  at the three call sites in `_copyAll` (group members line ~878, route
-  members line ~890, ungrouped line ~899).

@@ -123,7 +123,7 @@ sub api_json_response
 
 
 sub api_db
-	# GET /api/db — WPMGR + TRACK in-memory state as JSON.
+	# GET /api/db - WPMGR + TRACK in-memory state as JSON.
 {
 	my ($this, $request) = @_;
 	my $wp_mgr    = $raydp->findImplementedService('WPMGR',1);
@@ -141,8 +141,8 @@ sub api_db
 
 
 sub api_log
-	# GET /api/log?tail=N    — last N ring-buffer entries (default 200)
-	# GET /api/log?since=seq — entries with seq > seq
+	# GET /api/log?tail=N    - last N ring-buffer entries (default 200)
+	# GET /api/log?since=seq - entries with seq > seq
 {
 	my ($this, $request) = @_;
 	my $params = $request->{params} || {};
@@ -188,10 +188,10 @@ sub api_item
 	# POST /api/item  Content-Type: application/json
 	# Atomic WPMGR item create/delete, bypassing the text command chain.
 	# Body fields: op, uuid, name, and op-specific extras:
-	#   new_wp    — lat, lon, sym(opt), depth(opt), comment(opt)
-	#   new_route — waypoints (arrayref of wp UUIDs), color(opt), comment(opt)
-	#   new_group — members (arrayref of wp UUIDs), comment(opt)
-	#   del_wp | del_route | del_group — uuid only
+	#   new_wp    - lat, lon, sym(opt), depth(opt), comment(opt)
+	#   new_route - waypoints (arrayref of wp UUIDs), color(opt), comment(opt)
+	#   new_group - members (arrayref of wp UUIDs), comment(opt)
+	#   del_wp | del_route | del_group - uuid only
 {
 	my ($this, $request) = @_;
 	my $h = $request->getPostJSON();
@@ -272,7 +272,7 @@ sub api_item
 
 
 #==================================================================================
-# handleCommand — NET-layer command dispatch (virtual; subclasses extend)
+# handleCommand - NET-layer command dispatch (virtual; subclasses extend)
 #==================================================================================
 
 sub handleCommand
@@ -483,7 +483,7 @@ sub handleCommand
 		}
 	}
 
-	# Mark — snapshot current ring-buffer seq for ?since=mark queries
+	# Mark - snapshot current ring-buffer seq for ?since=mark queries
 
 	elsif ($lpart eq 'mark')
 	{
@@ -533,7 +533,7 @@ sub handleCommand
 
 
 #==================================================================================
-# commandHelp — [signature, description] pairs for ?/help command
+# commandHelp - [signature, description] pairs for ?/help command
 #==================================================================================
 
 sub commandHelp
@@ -939,3 +939,4 @@ sub kml_RAYSYS
 
 
 1;
+

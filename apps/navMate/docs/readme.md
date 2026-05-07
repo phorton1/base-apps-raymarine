@@ -6,7 +6,7 @@
 **[Data Model](data_model.md)** --
 **[UI Model](ui_model.md)** --
 **[Implementation](implementation.md)** --
-**[Context Menu](context_menu.md)** --
+**[nmOperations](nmOperations.md)** --
 **[KML Specification](kml_specification.md)** --
 **[GE Notes](ge_notes.md)**
 
@@ -45,10 +45,10 @@ base, data model, and UI are the product. Everything else is a boundary adapter.
   Module inventory by layer: foundation, data transport, context operations,
   HTTP server, and wx UI.
 
-- **[Context Menu](context_menu.md)** —
-  Full specification of every context menu configuration across both panels,
-  clipboard state vocabulary, paste compatibility matrix, operation semantics,
-  and HTTP test machinery.
+- **[nmOperations](nmOperations.md)** —
+  Copy / Cut / Paste operations across both panels: selection rules, clipboard
+  vocabulary, pre-flight validation, paste compatibility matrix, operation
+  semantics, and HTTP test machinery.
 
 - **[KML Specification](kml_specification.md)** —
   KML file structure, style naming and templates, ExtendedData tags, object-to-KML

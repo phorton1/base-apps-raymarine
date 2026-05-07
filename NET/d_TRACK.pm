@@ -344,7 +344,7 @@ our %TRACK_REQUEST_NAME = (
 
 our %TRACK_PARSE_RULES = (
 
-	# Replies — simple single-reply commands are terminal=1; multi-message headers are terminal=0
+	# Replies - simple single-reply commands are terminal=1; multi-message headers are terminal=0
 
 	$DIRECTION_RECV | $TRACK_REPLY_CONTEXT  => { pieces => ['seq','success','is_point'], terminal => 0 },  # header: INFO_BUFFER follows
 	$DIRECTION_RECV | $TRACK_REPLY_BUFFER   => { pieces => ['seq','success'],            terminal => 0 },  # header: GET_CUR MTA; INFO_BUFFER follows
@@ -358,19 +358,19 @@ our %TRACK_PARSE_RULES = (
 	$DIRECTION_RECV | $TRACK_REPLY_NAMED    => { pieces => ['seq','success'],            terminal => 1 },  # SET_NAME reply
 	$DIRECTION_RECV | $TRACK_REPLY_RENAMED  => { pieces => ['seq','success'],            terminal => 1 },  # RENAME reply
 
-	# Events — unsolicited, no seq_num
+	# Events - unsolicited, no seq_num
 
 	$DIRECTION_RECV | $TRACK_REPLY_CHANGED  => { pieces => ['uuid','byte'],              terminal => 1, is_event => 1 },
 	$DIRECTION_RECV | $TRACK_REPLY_EVENT    => { pieces => ['byte'],                     terminal => 1, is_event => 1 },
 
-	# INFO messages — terminal handled dynamically via buffer_complete flag in parsePiece
+	# INFO messages - terminal handled dynamically via buffer_complete flag in parsePiece
 
 	$DIRECTION_INFO | $TRACK_REPLY_CONTEXT  => { pieces => ['seq','uuid','context_bits'], terminal => 0 },
 	$DIRECTION_INFO | $TRACK_REPLY_BUFFER   => { pieces => ['seq','buffer'],              terminal => 0 },  # buffer_complete set by parsePiece
 	$DIRECTION_INFO | $TRACK_REPLY_END      => { pieces => ['seq','track_uuid'],          terminal => 0 },  # buffer_complete set by parsePiece for dict
 	$DIRECTION_INFO | $TRACK_REPLY_RENAMED  => { pieces => ['seq','success'],             terminal => 0 },
 
-	# Requests — terminal=0 (monitored by dispatchTCPSendMsg, never returned as reply)
+	# Requests - terminal=0 (monitored by dispatchTCPSendMsg, never returned as reply)
 
 	$DIRECTION_SEND | $TRACK_CMD_GET_NTH    => { pieces => ['seq','point_number'], terminal => 0 },
 	$DIRECTION_SEND | $TRACK_CMD_SET_NAME   => { pieces => ['seq','name16'],       terminal => 0 },

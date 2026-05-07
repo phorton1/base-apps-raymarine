@@ -76,7 +76,7 @@ sub parseLatLon
 	}
 	$str =~ s/^\s+//;
 
-	# Optional trailing NSEW — overrides leading minus
+	# Optional trailing NSEW - overrides leading minus
 	if ($str =~ s/\s*([NSEWnsew])$//)
 	{
 		my $dir = uc($1);
@@ -125,3 +125,4 @@ sub formatLatLon
 
 
 1;
+

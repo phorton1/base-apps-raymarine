@@ -370,7 +370,7 @@ sub _importFolder
 	{
 		if ($seen->{$nm_uuid})
 		{
-			warning(0,0,"nmKML: duplicate nm_uuid '$nm_uuid' collection '$name' — skipped");
+			warning(0,0,"nmKML: duplicate nm_uuid '$nm_uuid' collection '$name' - skipped");
 			return;
 		}
 		$seen->{$nm_uuid} = 1;
@@ -437,7 +437,7 @@ sub _importWaypoint
 	{
 		if ($seen->{$nm_uuid})
 		{
-			warning(0,0,"nmKML: duplicate nm_uuid '$nm_uuid' waypoint '$name' — skipped");
+			warning(0,0,"nmKML: duplicate nm_uuid '$nm_uuid' waypoint '$name' - skipped");
 			return;
 		}
 		$seen->{$nm_uuid} = 1;
@@ -501,7 +501,7 @@ sub _importTrack
 	{
 		if ($seen->{$nm_uuid})
 		{
-			warning(0,0,"nmKML: duplicate nm_uuid '$nm_uuid' track '$name' — skipped");
+			warning(0,0,"nmKML: duplicate nm_uuid '$nm_uuid' track '$name' - skipped");
 			return;
 		}
 		$seen->{$nm_uuid} = 1;
@@ -556,7 +556,7 @@ sub _importRouteFolder
 	{
 		if ($seen->{$nm_uuid})
 		{
-			warning(0,0,"nmKML: duplicate nm_uuid '$nm_uuid' route '$name' — skipped");
+			warning(0,0,"nmKML: duplicate nm_uuid '$nm_uuid' route '$name' - skipped");
 			return;
 		}
 		$seen->{$nm_uuid} = 1;
@@ -591,7 +591,7 @@ sub _appendRefWaypoints
 		my $wp_uuid = _parseExt($pm)->{nm_uuid} // next;
 		if (!getWaypoint($dbh, $wp_uuid))
 		{
-			warning(0,0,"nmKML: route '$route_name' ref to unknown waypoint '$wp_uuid' — skipped");
+			warning(0,0,"nmKML: route '$route_name' ref to unknown waypoint '$wp_uuid' - skipped");
 			next;
 		}
 		appendRouteWaypoint($dbh, $route_uuid, $wp_uuid, $pos++);
@@ -624,3 +624,4 @@ sub _parseCoords
 
 
 1;
+

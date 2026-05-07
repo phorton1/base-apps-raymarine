@@ -11,19 +11,8 @@ to worked-out design, and can be promoted to todo.md when the time is right.
 
 ### [item ordering UI]
 
-UIs for reordering items in winDatabase — primarily route waypoints (where
-order is navigationally meaningful) and branch contents (purely organizational).
-
-For route waypoints: the detail pane already shows the ordered list. Up/Down
-buttons there are the minimal implementation and don't require making routes
-expandable in the tree. Drag-and-drop in the tree is the better long-term
-model but requires routes to become expandable nodes first.
-
-For branch ordering: E80 has no concept of ordered folders, so this is
-navMate-only. Lower priority than route ordering.
-
-If routes become expandable tree nodes, drag-to-reorder and per-waypoint
-operations (delete, copy, edit) all become naturally available.
+Drag/Drop UI for reordering items in winDatabase based on implmented
+nmOperations operators.
 
 
 ### [winE80 / Leaflet integration cluster]
@@ -43,14 +32,6 @@ interdependent — treat as one design session, not five separate tasks:
 3. **Editors for E80 items** — similar to the editors in winDatabase,
    applied to the E80 item set.
 
-4. **Versioning / color synchronization** — keeping navMate DB versions
-   and E80 versions in sync, including the color model, across both views.
-
-5. **nmOps / context_menu entanglement** — all of the above is entangled
-   with the nmOps/context_menu scheme. Must be resolved as part of the
-   cluster, not independently.
-
-All items deferred. When ready, treat as one design session.
 
 
 ### [winDatabase multi-editor]
@@ -79,22 +60,6 @@ doesn't translate to a color swatch. Hatched/striped swatch? Disabled
 swatch + adjacent text label? "Pick..." button still active? No decision yet.
 
 
-### [context menu simplification]
-
-The context menu implementation spans nmOps.pm, nmOpsDB.pm, nmOpsE80.pm,
-and nmClipboard.pm. Two areas that add significant test surface without
-proportional practical value in current use:
-
-- **Paste-New**: creates fresh UUIDs at destination. Useful but less
-  frequently needed than UUID-preserving Paste. Could be deferred or
-  hidden behind an advanced option without impacting daily workflows.
-- **D-ALL variants** (D-CP-ALL, D-CT-ALL): copy/cut entire branch contents.
-  Rarely triggered in practice. The canPaste/canPasteNew logic for these
-  paths is intricate and has produced subtle bugs across multiple cycles.
-
-Not proposing to remove — they are implemented and tested. But any further
-complexity additions to the context menu should be weighed against the
-existing surface area and test burden.
 
 
 ## Leaflet / Map
@@ -116,21 +81,6 @@ that approximates the same result without that complexity.
 
 
 
-### [Leaflet working set]
-
-A distinct visual overlay layer on the Leaflet map for a "current working
-set" — items gathered for a specific operation such as a trip push to E80.
-Separate from the active visibility layer driven by tree checkboxes.
-
-Workflow: check tree to populate active layer → draw selection (click,
-rectangle, lasso) → add to working set → inspect working set layer →
-push to E80.
-
-Requires a gather-by-type mode that selects across hierarchy levels, unlike
-the current same-level multi-select. Uses the same UUID machinery as
-copy/paste but driven by spatial selection rather than tree selection.
-
-Not yet started.
 
 
 ## Architecture

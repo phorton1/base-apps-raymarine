@@ -126,7 +126,7 @@ my $BUF_DATABASE = $WHAT_DATABASE | $CMD_BUFFER ;
 
 our %WPMGR_PARSE_RULES = (
 
-	# SEND (request) messages — terminal=0 (client sends; dispatchTCPSendMsg monitors only)
+	# SEND (request) messages - terminal=0 (client sends; dispatchTCPSendMsg monitors only)
 
 	$DIRECTION_SEND | $CMD_COUNT    => { pieces => ['seq'],              terminal => 0 },
 	$DIRECTION_SEND | $CMD_EVERB    => { pieces => ['seq'],              terminal => 0 },
@@ -154,12 +154,12 @@ our %WPMGR_PARSE_RULES = (
 	$DIRECTION_RECV | $CMD_EXIST    => { pieces => ['seq','success'],    terminal => 1 },  # delete_item
 	$DIRECTION_RECV | $CMD_UUID     => { pieces => ['seq','success','uuid'], terminal => 1 },  # FIND
 
-	# EVENT messages — unsolicited, no seq_num
+	# EVENT messages - unsolicited, no seq_num
 
 	$DIRECTION_RECV | $CMD_EVENT    => { pieces => ['evt_flag'],         terminal => 1, is_event => 1 },
 	$DIRECTION_RECV | $CMD_MODIFY   => { pieces => ['uuid','mod_bits'],  terminal => 1, is_event => 1 },
 
-	# INFO messages — client sends and E80 sends; INFO_LIST is terminal for several operations
+	# INFO messages - client sends and E80 sends; INFO_LIST is terminal for several operations
 
 	$DIRECTION_INFO | $CMD_LIST     => { pieces => ['seq','uuid'],       terminal => 1 },  # do_query, get_item(found), modify_item EXIST
 	$DIRECTION_INFO | $CMD_CONTEXT  => { pieces => ['seq','uuid','context_bits'], terminal => 0 },
@@ -171,3 +171,4 @@ our %WPMGR_PARSE_RULES = (
 
 
 1;
+
