@@ -103,7 +103,6 @@ waypoints (
   depth_cm          INTEGER DEFAULT 0,   -- non-zero only for sounding waypoints
   created_ts        INTEGER NOT NULL,    -- Unix epoch seconds; never NULL
   ts_source         TEXT NOT NULL,       -- see Timestamp Sources
-  source_file       TEXT,                -- originating KML path when sourced from KML
   source            TEXT,                -- 'kml', 'e80', 'user'
   collection_uuid   TEXT NOT NULL REFERENCES collections(uuid),
   visible           INTEGER NOT NULL DEFAULT 0,

@@ -105,7 +105,7 @@ my $db_def = {
 		"comment         TEXT DEFAULT ''",
 		"lat             REAL NOT NULL",
 		"lon             REAL NOT NULL",
-		"wp_type         TEXT NOT NULL DEFAULT 'label'",
+		"wp_type         TEXT NOT NULL DEFAULT 'nav'",
 		"color           TEXT",
 		"depth_cm        INTEGER DEFAULT 0",
 		"created_ts      INTEGER NOT NULL",

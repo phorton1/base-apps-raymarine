@@ -13,7 +13,6 @@ use Wx::Event qw(
 	EVT_IDLE
 	EVT_MENU);
 use Time::HiRes qw(time sleep);
-use lib 'migrate';
 use Pub::Utils qw(display warning error _def);
 use Pub::WX::AppConfig;
 use Pub::WX::Frame;
@@ -21,12 +20,13 @@ use Pub::WX::Dialogs;
 use apps::raymarine::NET::c_RAYDP;
 use w_resources;
 use nmServer;
+use nmTest;
 use winDatabase;
 use winE80;
 use winMonitor;
 use nmOneTimeImport;
 use nmKML;
-use base qw(Pub::WX::Frame);
+use base qw(w_frame);
 
 
 sub new
@@ -461,7 +461,7 @@ sub _doRefreshE80Data
 }
 
 
-sub dispatchTestCommand { }
+sub dispatchTestCommand { nmTest::dispatchTestCommand(@_) }
 
 
 1;

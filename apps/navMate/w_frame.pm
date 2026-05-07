@@ -16,6 +16,7 @@ use Time::HiRes qw(time sleep);
 use Pub::Utils;
 use Pub::WX::Frame;
 use w_resources;
+use nmDialogs;
 use base qw(Pub::WX::Frame);
 
 
@@ -38,6 +39,14 @@ sub new
 sub onIdle
 {
 	my ($this,$event) = @_;
+}
+
+
+sub showError
+{
+	my ($this, $msg) = @_;
+	return if $nmDialogs::suppress_error_dialog;
+	$this->SUPER::showError($msg);
 }
 
 

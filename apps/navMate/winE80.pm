@@ -27,11 +27,13 @@ use Wx qw(:everything);
 use Wx::Event qw(
 	EVT_TREE_SEL_CHANGED
 	EVT_TREE_ITEM_RIGHT_CLICK
-	EVT_MENU);
+	EVT_MENU
+	EVT_MENU_RANGE);
 use Pub::Utils qw(display warning error);
 use Pub::WX::Window;
 use apps::raymarine::NET::b_records qw(wpmgrRecordToText);
 use apps::raymarine::NET::c_RAYDP;
+use nmOps qw(buildContextMenu onContextMenuCommand);
 use w_resources;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
@@ -60,6 +62,7 @@ sub new
 	EVT_TREE_SEL_CHANGED($this,      $this->{tree}, \&onTreeSelect);
 	EVT_TREE_ITEM_RIGHT_CLICK($this, $this->{tree}, \&onTreeRightClick);
 	EVT_MENU($this, $COMMAND_REFRESH_E80, sub { refresh($_[0]) });
+	EVT_MENU_RANGE($this, 10010, 10559, \&_onNmOpsCmd);
 
 	$this->{_expanded_keys} = {
 		'header:groups' => 1,
@@ -340,6 +343,12 @@ sub onTreeRightClick
 	my $node = $item_data->GetData();
 	return if ref $node ne 'HASH';
 
+	if (!$this->{tree}->IsSelected($item))
+	{
+		$this->{tree}->UnselectAll();
+		$this->{tree}->SelectItem($item, 1);
+	}
+
 	$this->{_right_click_node} = $node;
 	my $menu = _buildContextMenu($this, $node);
 	$this->PopupMenu($menu, [-1,-1]);
@@ -349,9 +358,34 @@ sub onTreeRightClick
 sub _buildContextMenu
 {
 	my ($this, $right_click_node) = @_;
-	my $menu = Wx::Menu->new();
+	my $tree = $this->{tree};
+
+	my @nodes;
+	for my $item ($tree->GetSelections())
+	{
+		my $d = $tree->GetItemData($item);
+		next if !$d;
+		my $n = $d->GetData();
+		push @nodes, $n if ref $n eq 'HASH';
+	}
+	$this->{_context_nodes} = \@nodes;
+
+	my $menu = buildContextMenu('e80', $right_click_node, @nodes);
+
+	$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
 	$menu->Append($COMMAND_REFRESH_E80, 'Refresh E80');
+
 	return $menu;
+}
+
+
+sub _onNmOpsCmd
+{
+	my ($this, $event) = @_;
+	my $cmd_id      = $event->GetId();
+	my $right_click = $this->{_right_click_node} // {};
+	my @nodes       = @{$this->{_context_nodes} // []};
+	onContextMenuCommand($cmd_id, 'e80', $right_click, $this->{tree}, @nodes);
 }
 
 

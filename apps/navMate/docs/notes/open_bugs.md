@@ -69,6 +69,51 @@ as test cycle failures.
 
 ---
 
+### [E80 groups header: Delete menu offered with no real groups]
+
+**Symptom:** After all explicit groups are deleted, right-clicking the Groups
+folder still shows "Delete Groups" and "Delete Groups + Waypoints" in the
+context menu even though only the My Waypoints pseudo-group remains. There
+is no meaningful action these items can perform at that point.
+
+**Root cause:** `getDeleteMenuItems` in nmClipboard.pm (line 239-245) returns
+both items unconditionally for any `header:groups` node. It has no access to
+WPMGR state and cannot know whether real groups exist.
+
+**Fix:** Pass the real-group count into `getDeleteMenuItems` (new optional
+parameter, or via the `$right_click_node` data hash) and suppress both items
+when the count is zero. Alternatively, suppress them in the `buildContextMenu`
+call site in winE80.pm after querying `scalar(keys %{$wpmgr->{groups}})`.
+
+---
+
+### [E80 groups header: "Delete 0 Groups" dialog]
+
+**Symptom:** When right-clicking the Groups folder with only My Waypoints
+present and choosing "Delete Groups + Waypoints", a dialog reads
+"Delete 0 Groups from E80? Cannot be undone." — confusing and incorrect.
+
+**Root cause:** `_deleteE80GroupsAndWPs` in nmOpsE80.pm expands the groups
+header by iterating `keys %{$wpmgr->{groups}}`. If no real groups exist the
+expansion produces an empty list. The code then splits into `@mw` (my_waypoints)
+and `@grps` (named groups). Both are empty, so neither the my_waypoints path
+nor the named-groups path has an early-exit guard — the named-groups path falls
+through and builds the "Delete 0 Groups from E80?" message.
+
+**Fix:** Add a guard immediately after the `@mw`/`@grps` split (around line 273):
+
+    if (!@mw && !@grps)
+    {
+        okDialog($tree, "No groups to delete.", "Delete Groups + Waypoints");
+        return;
+    }
+
+This is independent of the menu-suppression fix above and should be applied
+regardless — it prevents the confusing dialog even if the menu item is somehow
+reached.
+
+---
+
 ### [WPMGR post-delete GET_ITEM error]
 
 **Symptom:** Spurious ERROR logged after group-related deletes.

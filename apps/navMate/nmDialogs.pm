@@ -19,6 +19,8 @@ BEGIN
 	use Exporter qw(import);
 	our @EXPORT = qw(
 		$suppress_confirm
+		$suppress_outcome
+		$suppress_error_dialog
 		confirmDialog
 		showNewBranch
 		showNewGroup
@@ -28,13 +30,18 @@ BEGIN
 }
 
 
-our $suppress_confirm :shared = 0;
+our $suppress_confirm      :shared = 0;
+our $suppress_outcome      :shared = 'accept';
+our $suppress_error_dialog :shared = 0;
 
 
 sub confirmDialog
 {
 	my ($win, $msg, $title) = @_;
-	return 1 if $suppress_confirm;
+	if ($suppress_confirm)
+	{
+		return ($suppress_outcome eq 'reject') ? 0 : 1;
+	}
 	$win = getAppFrame() if !$win;
 	my $dlg = Wx::MessageDialog->new($win, $msg, $title, wxYES | wxNO | wxCENTRE);
 	my $rslt = $dlg->ShowModal();

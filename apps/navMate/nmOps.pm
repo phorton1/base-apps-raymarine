@@ -1,0 +1,793 @@
+#!/usr/bin/perl
+#---------------------------------------------
+# nmOps.pm
+#---------------------------------------------
+# Context-menu operation orchestrator for navMate.
+# nmOpsDB.pm (DB operations) and nmOpsE80.pm (E80 operations)
+# are in package nmOps and are loaded at the bottom of this file.
+
+package nmOps;
+use strict;
+use warnings;
+use threads;
+use threads::shared;
+use Scalar::Util qw(looks_like_number);
+use Wx qw(:everything);
+use Pub::Utils qw(display warning error getAppFrame $UTILS_COLOR_LIGHT_MAGENTA);
+use Pub::WX::Dialogs;
+use apps::raymarine::NET::a_defs qw($SCALE_LATLON);
+use apps::raymarine::NET::c_RAYDP;
+use c_db;
+use a_defs;
+use w_resources;
+use nmClipboard;
+use nmDialogs;
+
+require nmOpsDB;
+require nmOpsE80;
+
+
+BEGIN
+{
+	use Exporter qw( import );
+	our @EXPORT = qw(
+		buildContextMenu
+		onContextMenuCommand
+	);
+}
+
+
+our $dbg_ops     = 0;
+our $dbg_e80_ops = 0;
+
+
+#----------------------------------------------------
+# Private service helpers
+#----------------------------------------------------
+
+sub _wpmgr
+{
+	return $raydp ? $raydp->findImplementedService('WPMGR') : undef;
+}
+
+sub _track
+{
+	return $raydp ? $raydp->findImplementedService('TRACK') : undef;
+}
+
+sub _e80WpClipData
+{
+	# E80 wpmgr records carry lat/lon as 1e7 scaled ints; convert to decimal degrees.
+	my ($data) = @_;
+	my $d = { %$data };
+	$d->{lat} = ($d->{lat} // 0) / $SCALE_LATLON;
+	$d->{lon} = ($d->{lon} // 0) / $SCALE_LATLON;
+	return $d;
+}
+
+sub _refreshDatabase
+{
+	my $frame = getAppFrame();
+	my $pane  = $frame ? $frame->findPane($WIN_DATABASE) : undef;
+	$pane->refresh() if $pane;
+}
+
+
+#----------------------------------------------------
+# buildContextMenu
+#----------------------------------------------------
+
+sub buildContextMenu
+{
+	my ($panel, $right_click_node, @nodes) = @_;
+	my $menu = Wx::Menu->new();
+
+	my @del   = getDeleteMenuItems($panel, $right_click_node, @nodes);
+	my @new   = getNewMenuItems($panel, $right_click_node);
+	my @copy  = getCopyMenuItems($panel, @nodes);
+	my @cut   = getCutMenuItems($panel, @nodes);
+	my @paste = getPasteMenuItems($panel, $right_click_node);
+
+	for my $item (@del)
+	{
+		$menu->Append($item->{id}, $item->{label});
+	}
+	$menu->AppendSeparator() if @del && (@new || @copy || @cut || @paste);
+
+	for my $item (@new)
+	{
+		$menu->Append($item->{id}, $item->{label});
+	}
+	$menu->AppendSeparator() if @new && (@copy || @cut || @paste);
+
+	for my $item (@copy, @cut)
+	{
+		$menu->Append($item->{id}, $item->{label});
+	}
+	$menu->AppendSeparator() if (@copy || @cut) && @paste;
+
+	for my $item (@paste)
+	{
+		$menu->Append($item->{id}, $item->{label});
+	}
+
+	return $menu;
+}
+
+
+#----------------------------------------------------
+# onContextMenuCommand — main dispatch
+#----------------------------------------------------
+
+sub onContextMenuCommand
+{
+	my ($cmd_id, $panel, $right_click_node, $tree, @nodes) = @_;
+	my $label = _cmdLabel($cmd_id);
+	display(-1, 0, "===== $label ($panel) STARTED =====", 0, $UTILS_COLOR_LIGHT_MAGENTA);
+
+	if ($cmd_id == $CTX_CMD_COPY)
+	{
+		_doCopy($panel, $right_click_node, $tree, @nodes);
+	}
+	elsif ($cmd_id == $CTX_CMD_CUT)
+	{
+		_doCut($panel, $right_click_node, $tree, @nodes);
+	}
+	elsif ($cmd_id >= 10300 && $cmd_id <= 10305)
+	{
+		_doPaste($cmd_id, $panel, $right_click_node, $tree, @nodes);
+	}
+	elsif ($cmd_id >= 10410 && $cmd_id <= 10450)
+	{
+		_doDelete($cmd_id, $panel, $right_click_node, $tree, @nodes);
+	}
+	elsif ($cmd_id >= 10510 && $cmd_id <= 10550)
+	{
+		_doNew($cmd_id, $panel, $right_click_node, $tree);
+	}
+	else
+	{
+		warning(0, 0, "nmOps: unknown cmd_id=$cmd_id");
+	}
+
+	display(-1, 0, "===== $label ($panel) FINISHED =====", 0, $UTILS_COLOR_LIGHT_MAGENTA);
+}
+
+
+#----------------------------------------------------
+# _doCopy
+#----------------------------------------------------
+
+sub _doCopy
+{
+	my ($panel, $right_click_node, $tree, @nodes) = @_;
+
+	if (!@nodes)
+	{
+		warning(0, 0, "_doCopy: empty selection");
+		return;
+	}
+
+	my @items = _snapshotNodes($panel, @nodes);
+	if (!@items)
+	{
+		warning(0, 0, "_doCopy: no items snapshotted");
+		return;
+	}
+
+	setCopy($panel, \@items);
+	display($dbg_ops, 0, "_doCopy: $panel " . scalar(@items) . " item(s)");
+}
+
+
+#----------------------------------------------------
+# _doCut
+#----------------------------------------------------
+
+sub _doCut
+{
+	my ($panel, $right_click_node, $tree, @nodes) = @_;
+
+	if (!@nodes)
+	{
+		warning(0, 0, "_doCut: empty selection");
+		return;
+	}
+
+	my @items = _snapshotNodes($panel, @nodes);
+	if (!@items)
+	{
+		warning(0, 0, "_doCut: no items snapshotted");
+		return;
+	}
+
+	setCut($panel, \@items);
+	display($dbg_ops, 0, "_doCut: $panel " . scalar(@items) . " item(s)");
+}
+
+
+#----------------------------------------------------
+# _snapshotNodes / _snapshotDBNode / _snapshotE80Node
+#----------------------------------------------------
+
+sub _snapshotNodes
+{
+	my ($panel, @nodes) = @_;
+	my @items;
+
+	if ($panel eq 'e80')
+	{
+		my $wpmgr = _wpmgr();
+		if (!$wpmgr)
+		{
+			error("_snapshotNodes: WPMGR not connected");
+			return ();
+		}
+		for my $node (@nodes)
+		{
+			my $item = _snapshotE80Node($wpmgr, $node);
+			push @items, $item if $item;
+		}
+	}
+	else
+	{
+		my $dbh = connectDB();
+		return () if !$dbh;
+		for my $node (@nodes)
+		{
+			my $item = _snapshotDBNode($dbh, $node);
+			push @items, $item if $item;
+		}
+		disconnectDB($dbh);
+	}
+
+	return @items;
+}
+
+
+sub _snapshotDBNode
+{
+	my ($dbh, $node) = @_;
+	my $t    = $node->{type} // '';
+	my $d    = $node->{data} // {};
+	my $uuid = $d->{uuid} // $node->{uuid};
+
+	if ($t eq 'route_point')
+	{
+		return {
+			type       => 'route_point',
+			uuid       => $node->{uuid},
+			route_uuid => $node->{route_uuid},
+			position   => $node->{position},
+			data       => $d,
+		};
+	}
+
+	if ($t eq 'object')
+	{
+		my $ot = $d->{obj_type} // '';
+		if ($ot eq 'waypoint')
+		{
+			my $wp = getWaypoint($dbh, $uuid);
+			return undef if !$wp;
+			return { type => 'waypoint', uuid => $uuid, data => $wp };
+		}
+		if ($ot eq 'route')
+		{
+			my $r   = getRoute($dbh, $uuid);
+			return undef if !$r;
+			my $wps = getRouteWaypoints($dbh, $uuid) // [];
+			my @rps = map {
+				{
+					type       => 'route_point',
+					uuid       => $_->{uuid},
+					route_uuid => $uuid,
+					position   => $_->{position},
+					data       => $_,
+				}
+			} @$wps;
+			return { type => 'route', uuid => $uuid, data => $r, route_points => \@rps };
+		}
+		if ($ot eq 'track')
+		{
+			my $tr  = getTrack($dbh, $uuid);
+			return undef if !$tr;
+			my $pts = getTrackPoints($dbh, $uuid) // [];
+			$tr->{points} = $pts;
+			return { type => 'track', uuid => $uuid, data => $tr };
+		}
+		warning(0, 0, "_snapshotDBNode: unknown obj_type=$ot");
+		return undef;
+	}
+
+	if ($t eq 'collection')
+	{
+		my $nt   = $d->{node_type} // '';
+		my $coll = getCollection($dbh, $uuid);
+		return undef if !$coll;
+		if ($nt eq $NODE_TYPE_GROUP)
+		{
+			my $stubs   = getGroupWaypoints($dbh, $uuid) // [];
+			my @members;
+			for my $stub (@$stubs)
+			{
+				my $wp = getWaypoint($dbh, $stub->{uuid});
+				push @members, { type => 'waypoint', uuid => $stub->{uuid}, data => $wp } if $wp;
+			}
+			return { type => 'group', uuid => $uuid, data => $coll, members => \@members };
+		}
+		else  # branch
+		{
+			my @members = _snapshotBranchContents($dbh, $uuid);
+			return { type => 'branch', uuid => $uuid, data => $coll, members => \@members };
+		}
+	}
+
+	warning(0, 0, "_snapshotDBNode: unhandled node type=$t");
+	return undef;
+}
+
+
+sub _snapshotBranchContents
+{
+	my ($dbh, $branch_uuid) = @_;
+	my @members;
+
+	my $children = getCollectionChildren($dbh, $branch_uuid) // [];
+	for my $child (@$children)
+	{
+		my $item = _snapshotDBNode($dbh, { type => 'collection', data => $child });
+		push @members, $item if $item;
+	}
+
+	my $objects = getCollectionObjects($dbh, $branch_uuid) // [];
+	for my $obj (@$objects)
+	{
+		my $item = _snapshotDBNode($dbh, { type => 'object', data => $obj });
+		push @members, $item if $item;
+	}
+
+	return @members;
+}
+
+
+sub _snapshotE80Node
+{
+	my ($wpmgr, $node) = @_;
+	my $t      = $node->{type} // '';
+	my $uuid   = $node->{uuid};
+	my $d      = $node->{data} // {};
+	my $wps    = $wpmgr->{waypoints} // {};
+	my $groups = $wpmgr->{groups}    // {};
+
+	if ($t eq 'route_point')
+	{
+		return {
+			type       => 'route_point',
+			uuid       => $uuid,
+			route_uuid => $node->{route_uuid},
+			data       => _e80WpClipData($d),
+		};
+	}
+
+	if ($t eq 'waypoint')
+	{
+		return { type => 'waypoint', uuid => $uuid, data => _e80WpClipData($d) };
+	}
+
+	if ($t eq 'group')
+	{
+		my @members;
+		for my $wp_uuid (@{$d->{uuids} // []})
+		{
+			my $wp = $wps->{$wp_uuid};
+			push @members, { type => 'waypoint', uuid => $wp_uuid, data => _e80WpClipData($wp) } if $wp;
+		}
+		return { type => 'group', uuid => $uuid, data => $d, members => \@members };
+	}
+
+	if ($t eq 'my_waypoints')
+	{
+		my %grouped;
+		$grouped{$_} = 1 for map { @{$_->{uuids} // []} } values %$groups;
+		my @members;
+		for my $wp_uuid (grep { !$grouped{$_} } keys %$wps)
+		{
+			my $wp = $wps->{$wp_uuid};
+			push @members, { type => 'waypoint', uuid => $wp_uuid, data => _e80WpClipData($wp) } if $wp;
+		}
+		return {
+			type    => 'group',
+			uuid    => undef,
+			data    => { name => 'My Waypoints' },
+			members => \@members,
+		};
+	}
+
+	if ($t eq 'route')
+	{
+		my $routes = $wpmgr->{routes} // {};
+		my $r = $routes->{$uuid} // $d;
+		my @rps;
+		my $pos = 0;
+		for my $wp_uuid (@{$r->{uuids} // []})
+		{
+			my $wp = $wps->{$wp_uuid};
+			push @rps, {
+				type       => 'route_point',
+				uuid       => $wp_uuid,
+				route_uuid => $uuid,
+				position   => $pos++,
+				data       => ($wp ? _e80WpClipData($wp) : {}),
+			};
+		}
+		return { type => 'route', uuid => $uuid, data => $r, route_points => \@rps };
+	}
+
+	if ($t eq 'track')
+	{
+		return { type => 'track', uuid => $uuid, data => $d };
+	}
+
+	warning(0, 0, "_snapshotE80Node: unhandled node type=$t");
+	return undef;
+}
+
+
+#----------------------------------------------------
+# _doDelete
+#----------------------------------------------------
+
+sub _doDelete
+{
+	my ($cmd_id, $panel, $right_click_node, $tree, @nodes) = @_;
+	@nodes = ($right_click_node) if !@nodes;
+
+	# Pre-flight SS8: branch-safety check
+	if ($panel eq 'database' && $cmd_id == $CTX_CMD_DELETE_BRANCH)
+	{
+		my $uuid = ($right_click_node->{data} // {})->{uuid};
+		my $name = ($right_click_node->{data} // {})->{name} // '?';
+		my $dbh  = connectDB();
+		return if !$dbh;
+		my $safe = isBranchDeleteSafe($dbh, $uuid);
+		disconnectDB($dbh);
+		if (!$safe)
+		{
+			error("Cannot delete '$name': waypoints are referenced by external routes");
+			return;
+		}
+	}
+
+	if ($panel eq 'e80')
+	{
+		nmOps::_deleteE80($cmd_id, $right_click_node, $tree, @nodes);
+	}
+	else
+	{
+		nmOps::_deleteDB($cmd_id, $right_click_node, $tree, @nodes);
+	}
+}
+
+
+#----------------------------------------------------
+# _doPaste — full pre-flight (SS6, SS10) then dispatch
+#----------------------------------------------------
+
+sub _doPaste
+{
+	my ($cmd_id, $panel, $right_click_node, $tree, @nodes) = @_;
+
+	my $cb = $clipboard;
+	if (!$cb || !@{$cb->{items} // []})
+	{
+		warning(0, 0, "_doPaste: clipboard is empty");
+		return;
+	}
+
+	my $source = $cb->{source} // '';
+
+	# D-CT-DB => E80 is always rejected
+	if ($panel eq 'e80' && $cb->{cut_flag} && $source eq 'database')
+	{
+		error("Cannot paste a database Cut to E80");
+		return;
+	}
+
+	# Step 1: Ancestor-wins resolution (SS6.2)
+	my @orig_items = @{$cb->{items}};
+	my @resolved   = _resolveAncestorWins(\@orig_items);
+	if (scalar(@resolved) != scalar(@orig_items))
+	{
+		my $absorbed = scalar(@orig_items) - scalar(@resolved);
+		my $msg = "$absorbed item(s) were absorbed by an ancestor also in the clipboard.\n"
+		        . "Proceeding with " . scalar(@resolved) . " item(s).";
+		my $proceed = $nmDialogs::suppress_confirm
+			? ($nmDialogs::suppress_outcome eq 'reject' ? 0 : 1)
+			: confirmDialog($tree, $msg, 'Clipboard Resolution');
+		return if !$proceed;
+	}
+
+	# Step 2: Empty guard
+	if (!@resolved)
+	{
+		error("No items to paste after clipboard resolution");
+		return;
+	}
+
+	# Step 3: Recursive paste check (SS1.5)
+	my $dest_uuid = $right_click_node ? ($right_click_node->{uuid} // '') : '';
+	if ($dest_uuid)
+	{
+		for my $item (@resolved)
+		{
+			if (($item->{uuid} // '') eq $dest_uuid)
+			{
+				error("Cannot paste: destination is contained in the clipboard selection");
+				return;
+			}
+		}
+	}
+
+	if ($panel eq 'e80')
+	{
+		# Step 4: Branch dissolution (SS6.3)
+		my @effective;
+		for my $item (@resolved)
+		{
+			if (($item->{type} // '') eq 'branch')
+			{
+				push @effective, @{$item->{members} // []};
+			}
+			else
+			{
+				push @effective, $item;
+			}
+		}
+
+		# Step 5: Homogeneity check
+		my %types = map { ($_->{type} // '') => 1 } @effective;
+		my @type_list = keys %types;
+		if (@type_list > 1)
+		{
+			my $mixed_wp_group = (scalar(@type_list) == 2 && $types{waypoint} && $types{group});
+			if (!$mixed_wp_group)
+			{
+				error("E80 paste requires homogeneous content (cannot mix routes, tracks, and waypoints)");
+				return;
+			}
+		}
+
+		# Step 6: Intra-clipboard name collision
+		my %seen;
+		for my $item (@effective)
+		{
+			my $t    = $item->{type} // '';
+			my $name = ($item->{data} // {})->{name} // '';
+			my $key  = "$t:$name";
+			if ($seen{$key})
+			{
+				error("Clipboard contains duplicate $t name '$name' -- aborting");
+				return;
+			}
+			$seen{$key} = 1;
+		}
+
+		# Step 7: E80-wide name collision
+		my $wpmgr = _wpmgr();
+		if ($wpmgr)
+		{
+			my $e80_wps    = $wpmgr->{waypoints} // {};
+			my $e80_groups = $wpmgr->{groups}    // {};
+			my $e80_routes = $wpmgr->{routes}    // {};
+			for my $item (@effective)
+			{
+				my $t    = $item->{type} // '';
+				my $name = ($item->{data} // {})->{name} // '';
+				next if !$name;
+				if ($t eq 'waypoint' && grep { ($_->{name} // '') eq $name } values %$e80_wps)
+				{
+					error("E80 already has a waypoint named '$name' -- aborting");
+					return;
+				}
+				if ($t eq 'group' && grep { ($_->{name} // '') eq $name } values %$e80_groups)
+				{
+					error("E80 already has a group named '$name' -- aborting");
+					return;
+				}
+				if ($t eq 'route' && grep { ($_->{name} // '') eq $name } values %$e80_routes)
+				{
+					error("E80 already has a route named '$name' -- aborting");
+					return;
+				}
+			}
+		}
+
+		nmOps::_pasteE80($cmd_id, $right_click_node, $tree, \@effective, $cb);
+	}
+	else
+	{
+		nmOps::_pasteDB($cmd_id, $right_click_node, $tree, \@resolved, $cb);
+	}
+}
+
+
+sub _resolveAncestorWins
+{
+	my ($items) = @_;
+	my @result;
+	for my $item (@$items)
+	{
+		my $uuid     = $item->{uuid} // '';
+		my $absorbed = 0;
+		if ($uuid)
+		{
+			for my $other (@$items)
+			{
+				next if ($other->{uuid} // '') eq $uuid;
+				my @sub = (@{$other->{members} // []}, @{$other->{route_points} // []});
+				if (grep { ($_->{uuid} // '') eq $uuid } @sub)
+				{
+					$absorbed = 1;
+					last;
+				}
+			}
+		}
+		push @result, $item unless $absorbed;
+	}
+	return @result;
+}
+
+
+#----------------------------------------------------
+# _doNew
+#----------------------------------------------------
+
+sub _doNew
+{
+	my ($cmd_id, $panel, $right_click_node, $tree) = @_;
+	my $parent_uuid = ($right_click_node->{data} // {})->{uuid};
+
+	if ($cmd_id == $CTX_CMD_NEW_BRANCH)
+	{
+		# Branch only valid in database panel
+		my $dlg = Wx::TextEntryDialog->new($tree // getAppFrame(), 'Branch name:', 'New Branch', '');
+		if ($dlg->ShowModal() == wxID_OK)
+		{
+			my $name = $dlg->GetValue() // '';
+			if ($name ne '')
+			{
+				my $dbh = connectDB();
+				if ($dbh)
+				{
+					insertCollection($dbh, $name, $parent_uuid, $NODE_TYPE_BRANCH);
+					disconnectDB($dbh);
+					_refreshDatabase();
+				}
+			}
+		}
+		$dlg->Destroy();
+	}
+	elsif ($cmd_id == $CTX_CMD_NEW_GROUP)
+	{
+		if ($panel eq 'database')
+		{
+			my $dlg = Wx::TextEntryDialog->new($tree // getAppFrame(), 'Group name:', 'New Group', '');
+			if ($dlg->ShowModal() == wxID_OK)
+			{
+				my $name = $dlg->GetValue() // '';
+				if ($name ne '')
+				{
+					my $dbh = connectDB();
+					if ($dbh)
+					{
+						insertCollection($dbh, $name, $parent_uuid, $NODE_TYPE_GROUP);
+						disconnectDB($dbh);
+						_refreshDatabase();
+					}
+				}
+			}
+			$dlg->Destroy();
+		}
+		else
+		{
+			nmOps::_newE80Group($right_click_node, $tree);
+		}
+	}
+	elsif ($cmd_id == $CTX_CMD_NEW_ROUTE)
+	{
+		if ($panel eq 'database')
+		{
+			nmOps::_newDatabaseRoute($right_click_node, $tree);
+		}
+		else
+		{
+			nmOps::_newE80Route($right_click_node, $tree);
+		}
+	}
+	elsif ($cmd_id == $CTX_CMD_NEW_WAYPOINT)
+	{
+		if ($panel eq 'database')
+		{
+			nmOps::_newDatabaseWaypoint($right_click_node, $tree);
+		}
+		else
+		{
+			nmOps::_newE80Waypoint($right_click_node, $tree);
+		}
+	}
+	else
+	{
+		warning(0, 0, "_doNew: unhandled cmd_id=$cmd_id");
+	}
+}
+
+
+#----------------------------------------------------
+# Color conversion helpers
+#----------------------------------------------------
+
+sub abgrToE80Index
+{
+	my ($abgr) = @_;
+	return 0 if !($abgr && length($abgr) >= 8);
+	my $rr = hex(substr($abgr, 6, 2));
+	my $gg = hex(substr($abgr, 4, 2));
+	my $bb = hex(substr($abgr, 2, 2));
+	my @targets = (
+		[255,   0,   0],   # 0 RED
+		[255, 255,   0],   # 1 YELLOW
+		[  0, 255,   0],   # 2 GREEN
+		[  0,   0, 255],   # 3 BLUE
+		[255,   0, 255],   # 4 PURPLE
+		[255, 255, 255],   # 5 WHITE
+	);
+	my ($best_idx, $best_dist) = (0, 9e99);
+	for my $i (0 .. $#targets)
+	{
+		my $d = ($rr - $targets[$i][0])**2
+		      + ($gg - $targets[$i][1])**2
+		      + ($bb - $targets[$i][2])**2;
+		$best_idx = $i if $d < $best_dist and do { $best_dist = $d; 1 };
+	}
+	return $best_idx;
+}
+
+my @E80_ROUTE_INDEX_TO_ABGR = qw(ff0000ff ff00ffff ff00ff00 ffff0000 ffff00ff ffffffff);
+my @E80_TRACK_INDEX_TO_ABGR = qw(ff0000ff ff00ffff ff00ff00 ffff0000 ffff00ff ff000000);
+
+sub e80RouteIndexToAbgr { $E80_ROUTE_INDEX_TO_ABGR[$_[0] // 0] // $E80_ROUTE_INDEX_TO_ABGR[0] }
+sub e80TrackIndexToAbgr { $E80_TRACK_INDEX_TO_ABGR[$_[0] // 0] // $E80_TRACK_INDEX_TO_ABGR[0] }
+
+
+#----------------------------------------------------
+# _cmdLabel
+#----------------------------------------------------
+
+sub _cmdLabel
+{
+	my ($cmd_id) = @_;
+	return 'COPY'              if $cmd_id == $CTX_CMD_COPY;
+	return 'CUT'               if $cmd_id == $CTX_CMD_CUT;
+	return 'PASTE'             if $cmd_id == $CTX_CMD_PASTE;
+	return 'PASTE NEW'         if $cmd_id == $CTX_CMD_PASTE_NEW;
+	return 'PASTE BEFORE'      if $cmd_id == $CTX_CMD_PASTE_BEFORE;
+	return 'PASTE AFTER'       if $cmd_id == $CTX_CMD_PASTE_AFTER;
+	return 'PASTE NEW BEFORE'  if $cmd_id == $CTX_CMD_PASTE_NEW_BEFORE;
+	return 'PASTE NEW AFTER'   if $cmd_id == $CTX_CMD_PASTE_NEW_AFTER;
+	return 'DELETE WAYPOINT'   if $cmd_id == $CTX_CMD_DELETE_WAYPOINT;
+	return 'DELETE GROUP'      if $cmd_id == $CTX_CMD_DELETE_GROUP;
+	return 'DELETE GROUP+WPS'  if $cmd_id == $CTX_CMD_DELETE_GROUP_WPS;
+	return 'DELETE ROUTE'      if $cmd_id == $CTX_CMD_DELETE_ROUTE;
+	return 'REMOVE ROUTEPOINT' if $cmd_id == $CTX_CMD_REMOVE_ROUTEPOINT;
+	return 'DELETE TRACK'      if $cmd_id == $CTX_CMD_DELETE_TRACK;
+	return 'DELETE BRANCH'     if $cmd_id == $CTX_CMD_DELETE_BRANCH;
+	return 'NEW WAYPOINT'      if $cmd_id == $CTX_CMD_NEW_WAYPOINT;
+	return 'NEW GROUP'         if $cmd_id == $CTX_CMD_NEW_GROUP;
+	return 'NEW ROUTE'         if $cmd_id == $CTX_CMD_NEW_ROUTE;
+	return 'NEW BRANCH'        if $cmd_id == $CTX_CMD_NEW_BRANCH;
+	return "CMD_$cmd_id";
+}
+
+
+1;

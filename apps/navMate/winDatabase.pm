@@ -24,6 +24,7 @@ use Wx::Event qw(
 	EVT_TREE_ITEM_RIGHT_CLICK
 	EVT_RIGHT_DOWN
 	EVT_MENU
+	EVT_MENU_RANGE
 	EVT_TEXT
 	EVT_BUTTON
 	EVT_CHOICE
@@ -40,6 +41,7 @@ use a_defs;
 use a_utils;
 use nmPrefs;
 use nmServer;
+use nmOps qw(buildContextMenu onContextMenuCommand);
 use w_resources;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
@@ -218,6 +220,7 @@ sub new
 	EVT_MENU($this, $CTX_CMD_NEW_GROUP,  \&_onNewGroup);
 	EVT_MENU($this, $CTX_CMD_SHOW_MAP,   \&_onShowMap);
 	EVT_MENU($this, $CTX_CMD_HIDE_MAP,   \&_onHideMap);
+	EVT_MENU_RANGE($this, 10010, 10559,  \&_onNmOpsCmd);
 	EVT_TEXT($this,   $this->{ed_name},    \&_onFieldChanged);
 	EVT_TEXT($this,   $this->{ed_comment}, \&_onFieldChanged);
 	EVT_TEXT($this,   $this->{ed_lat},     \&_onLatEdit);
@@ -485,7 +488,8 @@ sub _showCollection
 	$text .= _fmt('comment',     $coll->{comment});
 	$text .= _fmt('position',    $coll->{position});
 	$text .= "\n";
-	$text .= _fmt('collections', $counts->{collections});
+	$text .= _fmt('branches',    $counts->{branches});
+	$text .= _fmt('groups',      $counts->{groups});
 	$text .= _fmt('waypoints',   $counts->{waypoints});
 	$text .= _fmt('routes',      $counts->{routes});
 	$text .= _fmt('tracks',      $counts->{tracks});
@@ -1365,8 +1369,7 @@ sub _onTreeRightDown
 	my $root_node = { type => 'root', data => { uuid => undef, name => 'Database' } };
 	$this->{_right_click_node} = $root_node;
 	$this->{_context_nodes}    = [];
-	my $menu = Wx::Menu->new();
-	$menu->Append($CTX_CMD_NEW_BRANCH, 'New Branch');
+	my $menu = _buildContextMenu($this, $root_node);
 	$this->PopupMenu($menu, [-1, -1]);
 }
 
@@ -1408,31 +1411,27 @@ sub _buildContextMenu
 	}
 	$this->{_context_nodes} = \@nodes;
 
-	my $menu     = Wx::Menu->new();
+	my $menu      = buildContextMenu('database', $right_click_node, @nodes);
 	my $node_type = $right_click_node->{type} // '';
-
-	my $has_deletable = grep { my $t = $_->{type} // ''; $t eq 'object' || $t eq 'collection' } @nodes;
-	if ($has_deletable && $node_type ne 'root')
-	{
-		$menu->Append($CTX_CMD_DELETE, 'Delete');
-		$menu->AppendSeparator();
-	}
-
-	if ($node_type eq 'collection' || $node_type eq 'root')
-	{
-		my $node_subtype = ($right_click_node->{data} // {})->{node_type} // '';
-		$menu->Append($CTX_CMD_NEW_BRANCH, 'New Branch');
-		$menu->Append($CTX_CMD_NEW_GROUP, 'New Group') if $node_subtype ne $NODE_TYPE_GROUP;
-		$menu->AppendSeparator();
-	}
 
 	if ($node_type ne 'root')
 	{
+		$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
 		$menu->Append($CTX_CMD_SHOW_MAP, 'Show on Map');
 		$menu->Append($CTX_CMD_HIDE_MAP, 'Hide on Map');
 	}
 
 	return $menu;
+}
+
+
+sub _onNmOpsCmd
+{
+	my ($this, $event) = @_;
+	my $cmd_id      = $event->GetId();
+	my $right_click = $this->{_right_click_node} // {};
+	my @nodes       = @{$this->{_context_nodes} // []};
+	onContextMenuCommand($cmd_id, 'database', $right_click, $this->{tree}, @nodes);
 }
 
 
