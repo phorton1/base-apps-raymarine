@@ -4,10 +4,14 @@ Future directions, deferred feature concepts, and architectural thinking.
 Items here are not necessarily scheduled. They range from passing thought
 to worked-out design, and can be promoted to todo.md when the time is right.
 
----
 
-## UI / winDatabase / winE80
+### [waypoint carrying route pasting]
 
+The design currrently disallows pasting a route in which the referenced
+waypoints do not exist.  It is an interesting idea to populate the destination
+with any waypoints that are missing by uuid, but also complicated with regards
+to determine where to place the waypoints within either heiarchy.  Additionally
+on the E80 it is a distinctly two step process.
 
 ### [item ordering UI]
 
@@ -60,10 +64,6 @@ doesn't translate to a color swatch. Hatched/striped swatch? Disabled
 swatch + adjacent text label? "Pick..." button still active? No decision yet.
 
 
-
-
-## Leaflet / Map
-
 ### [Leaflet zoom declutter]
 
 Wire `map.on('zoomend', rerender)` and add per-type zoom minimums inside
@@ -81,38 +81,4 @@ that approximates the same result without that complexity.
 
 
 
-
-
-## Architecture
-
-### [E80 sync / versioning system]
-
-`db_version`, `e80_version`, and `kml_version` columns are in schema 9.0 on
-`waypoints`, `routes`, and `tracks` (not on `collections` or `route_waypoints`).
-Columns carry correct defaults; increment logic is not yet wired.
-
-**db_version** — bumped on every navMate edit (UPDATE of any non-`visible` field).
-Starts at 1 on INSERT.
-
-**e80_version** — NULL = never synced. Set to `db_version` at time of a successful
-upload or download. Version numbers are not stored on the E80 hardware. At connect
-time, `e80_version` is initialized from a token encoded in the E80 `comment` field
-(encoding TBD — pending E80 character-set and comment-length-limit verification).
-A waypoint arriving from the E80 with no token has `e80_version = 0`. When
-`e80_version < db_version` the object has been locally edited since last sync;
-when `e80_version > db_version` the E80 has a newer version — detectable via
-MODIFY events live, or via comment-token mismatch at startup (magenta display state).
-
-**kml_version** — NULL = never exported via versioned KML. Set to `db_version`
-at time of export.
-
-**Transport columns in core tables** — a deliberate choice. The alternative
-junction table `sync_state(object_uuid, transport, db_version_at_sync)` was
-rejected in favor of simplicity given the small, slow-moving transport list.
-
-**Visibility** — the `visible` column is NOT a versioned field. Toggling
-visibility does not bump `db_version`.
-
-**Wiring deferred** — all increment logic belongs in a dedicated session when
-the sync feature is ready to implement. See `[db_version increment wiring]` in todo.md.
 

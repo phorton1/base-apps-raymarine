@@ -144,17 +144,27 @@ than official docs and are the primary destination for new operational knowledge
 values: PASS / FAIL / PARTIAL / ATTENTION / NOT RUN. No "New Knowledge" or
 "Open Items" sections.
 
-**Bug lifecycle:**
-- Checkpoint records a fixed bug → move from `open_bugs.md` to `closed_bugs.md`
-  with root cause, fix detail, and confirmation.
-- Checkpoint records a new bug → add to `open_bugs.md` with symptoms and
-  what is known.
-- Checkpoint records a completed todo → remove from `todo.md`.
-- Checkpoint records a new todo → add to `todo.md`.
-- Checkpoint records a design thought → add to `design_vision.md`.
+**Hard constraints — what update Claude must NOT do:**
+- **Never add new entries to `design_vision.md`.** Patrick owns the vision;
+  its structure and ordering reflect his personal priority/desirability ranking,
+  not any architectural taxonomy. Never add items, never reorder sections, never
+  rename headers, never split or reorganize entries.
+- **Never add new entries to `todo.md`.** New tasks belong to Patrick and primary
+  Claude, not to the update mechanism. Never append items under any section.
+- **Never add new section headers** to any working doc. Section structure in all
+  working docs is Patrick's call, not yours.
 
-**todo.md structure:** Do not add new section headers to todo.md. Add items
-into the existing sections. Section structure is Patrick's call, not yours.
+**Bug lifecycle — what update Claude IS allowed to do:**
+- Checkpoint confirms a bug is fixed → move from `open_bugs.md` to `closed_bugs.md`
+  with root cause, fix detail, and confirmation.
+- Checkpoint reveals a newly characterized bug → add to `open_bugs.md` with
+  symptoms and known detail. (Bugs are concrete and characterizable — this is
+  different from todo items or vision items which require Patrick's prioritization.)
+- Checkpoint records a completed todo → remove from `todo.md`.
+- Checkpoint reveals a design_vision.md entry was fully implemented → remove it.
+  If partially implemented, revise it to reflect what remains.
+
+**todo.md structure:** Section structure is Patrick's call. Never add new sections.
 
 **todo.md vs design_vision.md:** Concrete deferred tasks (things that will
 eventually be done, with a clear action) → `todo.md`. Architectural concerns,
@@ -280,6 +290,15 @@ memory_updated:          YYYY-MM-DDTHHMM   ← write after Step 3
 
 Format: `YYYY-MM-DDTHHMM` using the current time.
 Do NOT modify `primary_session_started` — that belongs to the primary Claude.
+
+**Checkpoint entries** appear below the status block, one per checkpoint,
+in chronological order. Each is two lines:
+```
+checkpoint: YYYY-MM-DDTHHMM
+    brief description of what happened in that checkpoint
+```
+You read these to understand history. You do not write them — the primary
+Claude writes checkpoint entries when it writes checkpoint files.
 
 ---
 

@@ -1,15 +1,16 @@
 # navMate -- nmOps Test Plan
 
 Test cases for the nmOperations feature. For the design specification and pre-flight rules
-see nmOperations.md (SS1-SS13). For the concrete UUID table and exact curl commands see
-the companion nmOps_runbook.md (Claude-facing; written separately).
+see nmOperations.md (SS1-SS13). For the companion execution script with UUID table and curl
+commands see nmOps_testplan_runbook.md (Claude-facing, in the memory folder).
 
-This plan uses [Name] notation throughout. All [Name] references are resolved in the
-runbook UUID table. CTX_CMD constants are listed in §Infrastructure below.
+This plan describes WHAT to test and WHAT to expect -- in terms of user operations and
+system behavior. It reads as a spec a human tester could follow manually without knowing
+the implementation. All node-level identifiers, data shapes, and curl commands live in
+the runbook.
 
-**NEW_* commands are excluded from automation.** NEW_WAYPOINT (10510), NEW_GROUP (10520),
-NEW_ROUTE (10530), and NEW_BRANCH (10550) open name-input dialogs that block the test
-machinery.
+**NEW_* commands are excluded from automation.** NEW_WAYPOINT, NEW_GROUP, NEW_ROUTE, and
+NEW_BRANCH open name-input dialogs that block the test machinery.
 
 
 ## Database Shape Requirements
@@ -25,19 +26,21 @@ any route. For clean copy/paste/delete without pre-flight side effects.
 DEL_WAYPOINT blocked path (SS8.1) and route dependency pre-flight (SS10.10).
 
 **Group with no route refs** -- a group whose member WPs are not referenced by any route.
-For DELETE_GROUP_WPS success path (§2.5).
+For DELETE_GROUP and DELETE_GROUP_WPS success paths (§2.4, §2.5). Two such groups are
+required -- §2.4 and §2.5 each consume their target group and cannot share one.
 
 **Group whose members ARE in a route** -- for DELETE_GROUP_WPS blocked path (§2.6) and
 E80 route dependency tests.
 
 **Route with at least 3 ordered route_waypoints** -- for PASTE_BEFORE/AFTER route sequence
-tests (§2.14, §3.16). The runbook derives [RP1], [RP2], [RP3] from /api/nmdb at reset time.
+tests (§2.14, §3.19). The runbook pre-resolves the first three points as RP1, RP2, RP3.
 
 **Branch safe for recursive delete** -- no member WP referenced by a route outside the
 branch subtree. For DELETE_BRANCH (§2.7).
 
-**Branch containing groups whose WPs are also route members** -- for the all-paste E80
-ordering dependency test (§3.11). Groups upload first; routes then find WPs already present.
+**Collection nodes for positional anchor tests** -- a group node and a branch node are
+required as PASTE_BEFORE/AFTER anchor targets (§2.16, §2.17). Any group and any branch in
+the DB qualify; the runbook selects specific nodes.
 
 **Nested branch** -- a branch with at least one child branch. For the recursive paste
 guard test (§5.9).
@@ -50,40 +53,13 @@ Collision tests in §5.10 and §5.11 use dynamic setup; see those sections.
 
 ## Infrastructure
 
-### HTTP endpoints (port 9883)
+### Command constants
 
-| Endpoint | Key params | Returns |
-|----------|-----------|---------|
-| GET /api/log?since=SEQ | since= seq | {lines:[{seq,text},...], last_seq:N} |
-| GET /api/command?cmd=mark | -- | marks log; response includes {seq:N} |
-| GET /api/command?cmd=dialog_state | -- | logs "dialog_state: active" or "idle" |
-| GET /api/command?cmd=close_dialog | -- | force-closes any hung ProgressDialog |
-| GET /api/test?op=suppress&val=1 | val=0 to disable | auto-suppress all dialogs |
-| GET /api/test?op=suppress&val=1&outcome=reject | -- | suppress with reject outcome (see below) |
-| GET /api/test?op=refresh | -- | reloads navMate.db from disk |
-| GET /api/test?panel=P&select=K&cmd=N | right_click=K optional | fires context-menu command |
-| GET /api/nmdb | -- | navMate DB -- arrays: waypoints, collections, routes, route_waypoints, tracks |
-| GET /api/db | -- | E80 live state -- hashes keyed by UUID: waypoints, groups, routes, tracks |
-
-Base URL: http://localhost:9883 (port 9882 not accessible from Claude).
-
-### Node key format
-
-| Node type | Key |
-|-----------|-----|
-| Waypoint, route, track, group, branch | UUID string |
-| Route point | rp:ROUTE_UUID:WP_UUID |
-| E80 header nodes | header:groups, header:routes, header:tracks |
-| E80 My Waypoints | my_waypoints (no header: prefix) |
-| DB or E80 root | root |
-
-DB tree uses lazy loading. A node inside a collapsed branch cannot be selected
-programmatically until expanded in the UI.
-
-### CTX_CMD constants
+These are the context-menu command names used throughout this plan.
 
 ```
-COPY = 10010    CUT = 10110
+COPY  = 10010
+CUT   = 10110
 
 PASTE             = 10300
 PASTE_NEW         = 10301
@@ -100,112 +76,66 @@ REMOVE_ROUTEPOINT = 10431
 DELETE_TRACK      = 10440
 DELETE_BRANCH     = 10450
 
-NEW_WAYPOINT = 10510   NEW_GROUP  = 10520
-NEW_ROUTE    = 10530   NEW_BRANCH = 10550
+NEW_WAYPOINT = 10510
+NEW_GROUP    = 10520
+NEW_ROUTE    = 10530
+NEW_BRANCH   = 10550
 ```
 
-COPY (10010) and CUT (10110) are unified commands. The selection set determines clipboard
-contents; pre-flight at paste time classifies the items. The old per-type constants from
-context_menu.md (COPY_WAYPOINT=10010, COPY_WAYPOINTS=10011, COPY_GROUP=10020, etc.) no
-longer exist. PASTE_BEFORE/AFTER (10302-10305) are new constants with no predecessor.
+COPY and CUT are unified commands. The selection set determines clipboard contents;
+pre-flight at paste time classifies the items. PASTE_BEFORE/AFTER variants are new and
+have no prior equivalent.
 
 ### Suppress mechanism
 
-`nmDialogs.pm` exports `$suppress_confirm`. When set to 1, all modal dialogs
-(confirmation, warning, error, ancestor-wins, conflict resolution) auto-accept their
-default response without blocking.
-
-```
-# Enable:
-curl -s "http://localhost:9883/api/test?op=suppress&val=1"
-
-# Disable:
-curl -s "http://localhost:9883/api/test?op=suppress&val=0"
-```
+All modal dialogs (confirmation, warning, ancestor-wins, conflict resolution) can be
+auto-accepted via the suppress mechanism. Enable it via the test API before any operation
+that would otherwise block on user input.
 
 **Outcome control (two-outcome dialogs).** Some pre-flight paths produce dialogs with two
 meaningful outcomes -- ancestor-wins (proceed vs. abort), UUID conflict (skip+continue vs.
 abort), E80 DEL-WP with route-ref warning (proceed vs. abort). Testing the non-default
-path requires `outcome=reject` support. See [nmOps testability prerequisites] in todo.md.
+path requires outcome=reject support. See [nmOps testability prerequisites] in todo.md.
 Tests in §5 that require outcome=reject are flagged PREREQUISITE in their headers.
 
 For all other tests in this plan, suppress=1 with default accept behavior is assumed.
 
-### Progress dialog pattern
+### Progress dialog
 
-Any Paste-to-E80 or Delete-from-E80 operation opens a ProgressDialog asynchronously.
-The onIdle dispatch guard prevents the next /api/test command from firing while the
-dialog is active. Always wait for idle before dispatching the next step.
+Any Paste-to-E80 or Delete-from-E80 operation opens a ProgressDialog asynchronously. The
+onIdle dispatch guard prevents the next test command from firing while the dialog is active.
+Always wait for ProgressDialog FINISHED before proceeding.
 
-```powershell
-for ($i = 1; $i -le 20; $i++) {
-    $result = curl -s "http://localhost:9883/api/command?cmd=dialog_state"
-    $log    = curl -s "http://localhost:9883/api/log?since=$mark"
-    if ($log -match "dialog_state: idle") { break }
-    Start-Sleep 1
-}
-if ($i -gt 20) {
-    [console]::beep(800, 200)
-    # Inspect screen; if stuck: curl -s "http://localhost:9883/api/command?cmd=close_dialog"
-}
-```
+A STARTED without a matching FINISHED is at minimum a PARTIAL failure. A hung dialog that
+cannot be closed is catastrophic.
 
-Every E80 step must confirm `ProgressDialog '...' FINISHED` in the log before proceeding.
-A STARTED without a FINISHED is at minimum a PARTIAL failure; a hung dialog that cannot
-be closed is catastrophic.
+### Log verification
 
-### Log reading
-
-```
-curl -s "http://localhost:9883/api/log?since=SEQ" | perl -e "use JSON; my $d=decode_json(do{local$/;<STDIN>}); print $_->{seq},'  ',$_->{text},qq(\n) for @{$d->{lines}}"
-```
-
-Scan every log read for: ERROR, WARNING, IMPLEMENTATION ERROR.
+After every command, scan the log since the preceding mark for: ERROR, WARNING,
+IMPLEMENTATION ERROR. Do not proceed to the next step until the log is clean (or the
+expected warning has been confirmed for guard tests).
 
 
 ## §1 Reset to Known State
 
 Run all steps before any test. Record wall-clock start time (needed for last_testrun.md).
 
-```
-# Wall-clock start time
-perl -e "use POSIX qw(strftime); print strftime('%Y-%m-%d %H:%M', localtime), qq(\n)"
+1. Record wall-clock start time.
+2. Revert navMate.db to the git baseline in C:/dat/Rhapsody.
+3. Reload the database in navMate.
+4. Enable suppress **before** any E80 operation -- suppress must be set before dialogs
+   can be triggered; any E80 operation without suppress will block.
+5. Clear the E80: delete all routes first (wait for ProgressDialog FINISHED), then all
+   groups and their WPs (wait for ProgressDialog FINISHED), then any remaining ungrouped
+   WPs (wait for ProgressDialog FINISHED).
+6. Mark the log and record the sequence number.
 
-# 1. Revert navMate.db to git baseline
-git -C C:/dat/Rhapsody checkout -- navMate.db
+After reset: verify navMate.db is clean in git. Verify the E80 state is empty --
+no waypoints, groups, routes, or tracks.
 
-# 2. Reload the database in navMate
-curl -s "http://localhost:9883/api/test?op=refresh"
-
-# 3. Enable suppress BEFORE any E80 operation (dialogs block if suppress is not set first)
-curl -s "http://localhost:9883/api/test?op=suppress&val=1"
-
-# 4. Clear E80:
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10430"
-# wait for ProgressDialog FINISHED, then:
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10421"
-# wait for ProgressDialog FINISHED; if ungrouped WPs remain:
-curl -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10421"
-# NOTE: key is 'my_waypoints' -- 'header:my_waypoints' fails (selects 0 nodes)
-
-# 5. Mark log
-curl -s "http://localhost:9883/api/command?cmd=mark"
-```
-
-After reset: verify git shows navMate.db clean; /api/db returns empty E80.
-
-**Derive route point keys.** Get route_waypoints for [TestRoute] (a route with 3+ points),
-sort by position, note the first three WP UUIDs as [RP1], [RP2], [RP3]:
-
-```
-curl -s "http://localhost:9883/api/nmdb" | perl -e "
-  use JSON;
-  my $d = decode_json(do{local$/;<STDIN>});
-  my @rw = grep { $_->{route_uuid} eq 'ROUTE_UUID_HERE' } @{$d->{route_waypoints}};
-  print $_->{position}, '  ', $_->{wp_uuid}, qq(\n)
-    for sort { $a->{position} <=> $b->{position} } @rw;
-"
-```
+Route point derivation: the runbook has pre-resolved static UUIDs for the first three
+route_waypoints of the test route (sorted by position). Re-derive only if the baseline
+DB changes.
 
 
 ## §2 Database Tests (no E80 required)
@@ -216,525 +146,494 @@ E80 need not be connected for this section.
 
 ### §2.1 Copy WP -> Paste New (duplicate with fresh UUID)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10301"
-```
+Select a single waypoint that is not in any group and not referenced in any route. COPY it.
+Right-click a destination branch and PASTE_NEW.
 
-Expected: new WP with fresh navMate UUID appears in [DST]; [IsolatedWP1] unchanged.
+Expected: a new waypoint with the same name and attributes appears in the destination with
+a fresh UUID different from the source. The source waypoint is unchanged in its original
+location.
 Log: COPY STARTED/FINISHED, PASTE_NEW STARTED/FINISHED, no errors.
-Verify /api/nmdb: new waypoint row, collection_uuid=[DST], uuid != [IsolatedWP1].
 
 ---
 
 ### §2.2 Cut WP -> Paste (move)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP2]&cmd=10110"
-curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10300"
-```
+Select a different isolated waypoint (not the one used in §2.1). CUT it. Right-click the
+destination branch and PASTE.
 
-Expected: [IsolatedWP2] UUID unchanged; collection_uuid now = [DST].
+Expected: the waypoint moves to the destination with its UUID unchanged. It is absent from
+its original location.
 Log: CUT STARTED/FINISHED, PASTE STARTED/FINISHED, no errors.
 
 ---
 
 ### §2.3 Delete WP (success)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP3]&right_click=[IsolatedWP3]&cmd=10410"
-```
+Select a third isolated waypoint (not used in §2.1 or §2.2). Right-click and DELETE_WAYPOINT.
 
-Expected: waypoint row deleted. Log: DELETE_WAYPOINT STARTED/FINISHED.
-Verify /api/nmdb: [IsolatedWP3] UUID absent from waypoints array.
+Expected: the waypoint is deleted. It no longer appears anywhere in the database.
+Log: DELETE_WAYPOINT STARTED/FINISHED, no errors.
 
 ---
 
 ### §2.4 Delete Group -- dissolve (members reparented to parent collection)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[GroupNoRoute]&right_click=[GroupNoRoute]&cmd=10420"
-```
+Select a group whose member WPs are not referenced in any route. This must be a **different
+group from the one used in §2.5** -- both steps require a group with no route refs, and each
+consumes its target group. Right-click and DELETE_GROUP.
 
-Expected: group shell deleted; all member WPs reparented -- collection_uuid updated to the
-group's former parent branch. Route references to member WPs unaffected (UUIDs unchanged).
+Expected: the group shell is deleted. All member WPs are reparented to the group's former
+parent branch with their UUIDs unchanged. Any route references to those WPs remain unaffected.
 Log: DELETE_GROUP STARTED/FINISHED, no warnings.
-Verify /api/nmdb: [GroupNoRoute] absent from collections; former member WP rows present
-with updated collection_uuid.
 
 ---
 
 ### §2.5 Delete Group+WPS -- success (members not in route)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[GroupNoRoute]&right_click=[GroupNoRoute]&cmd=10421"
-```
+Select a second group (intact after §2.4) whose member WPs are not referenced in any route.
+Right-click and DELETE_GROUP_WPS.
 
-If §2.4 already ran, use a second group with no route refs, or reorder §2.4/§2.5 to run
-§2.5 first on the same group.
-
-Expected: group shell and all member WPs deleted.
-Verify /api/nmdb: group UUID absent; all member WP UUIDs absent.
+Expected: the group shell and all member WPs are deleted. Neither the group nor any of its
+former members appear in the database.
 
 ---
 
 ### §2.6 Delete Group+WPS -- blocked (members in route) -- pre-flight failure
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[GroupInRoute]&right_click=[GroupInRoute]&cmd=10421"
-```
+Select a group whose member WPs ARE referenced in a route. Right-click and DELETE_GROUP_WPS.
 
-Use a group whose members ARE referenced in a route.
-Expected: pre-flight blocks -- WARNING in log; group and members unchanged.
-Note: nmTest bypasses the menu guard and hits the handler-level sentinel directly; the
-IMPLEMENTATION ERROR sentinel in the log is expected behavior for this path.
+Expected: the operation is blocked by the pre-flight check. WARNING in the log. The group
+and all its member WPs are unchanged.
+Note: the test API bypasses the menu guard and hits the handler-level sentinel directly;
+the IMPLEMENTATION ERROR sentinel in the log is expected behavior for this path.
 
 ---
 
 ### §2.7 Delete Branch (recursive, safe)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[SafeBranch]&right_click=[SafeBranch]&cmd=10450"
-```
+Select a branch whose entire descendant tree contains no WP referenced by a route outside
+the branch subtree (isBranchDeleteSafe=1). Right-click and DELETE_BRANCH.
 
-Expected: branch and all descendants deleted (sub-collections, WPs, routes, route_waypoints,
-tracks, track_points). Log: DELETE_BRANCH STARTED/FINISHED, no errors.
-Verify /api/nmdb: branch UUID absent; all child UUIDs absent.
+Expected: the branch and all descendants are deleted -- sub-collections, member WPs, routes,
+route_waypoints, tracks, track_points. Nothing from the branch subtree remains.
+Log: DELETE_BRANCH STARTED/FINISHED, no errors.
 
 ---
 
 ### §2.8 Copy Branch -> Paste New (duplicate branch contents, fresh UUIDs)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[RouteBranch]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10301"
-```
+Select a branch that contains groups and routes. COPY it. Right-click the destination branch
+and PASTE_NEW.
 
-Expected: all groups, routes, and WPs from [RouteBranch] duplicated into [DST] with fresh
-navMate UUIDs. Tracks silently skipped (PASTE_NEW not supported for tracks per SS10.3).
-Source [RouteBranch] unchanged.
+Expected: all groups, routes, and WPs from the source branch are duplicated in the
+destination with fresh navMate UUIDs. Tracks in the source are silently skipped (PASTE_NEW
+is not supported for tracks). The source branch is unchanged.
 Log: COPY STARTED/FINISHED, PASTE_NEW STARTED/FINISHED, no errors.
 
 ---
 
 ### §2.9 Cut Branch -> Paste (move branch contents)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[SomeBranch]&cmd=10110"
-curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10300"
-```
+Select a branch that has groups and tracks (with WPs not in routes). CUT it. Right-click
+the destination branch and PASTE.
 
-Expected: all branch contents (groups, routes, tracks, WPs) re-homed to [DST]; UUIDs
-preserved. Source branch becomes empty shell.
-Verify /api/nmdb: all former children have collection_uuid or parent_uuid = [DST].
+Expected: all contents of the source branch (groups, tracks, WPs) move to the destination
+with UUIDs preserved. The source branch shell becomes empty.
 
 ---
 
-### §2.10 Copy Route -> Paste New (fresh UUIDs, all members duplicated)
+### §2.10 Copy Route -> Paste New (fresh route UUID, WP refs preserved)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10301"
-```
+Select a route. COPY it. Right-click the destination branch and PASTE_NEW.
 
-Expected: new route with fresh UUID in [DST]; each member WP also receives a fresh UUID.
-Original [TestRoute] unchanged.
+Expected: a new route record appears in the destination with a fresh UUID (byte 1 = 0x82).
+The route_waypoints sequence is rebuilt referencing the same WP UUIDs as the source -- no new
+waypoint records are created (SS1.6, SS12.3). Pre-flight Step 4 confirms all referenced WP
+UUIDs exist in the DB. The original route and its member WPs are unchanged.
 
 ---
 
 ### §2.11 Cut Route -> Paste (move route record)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&cmd=10110"
-curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10300"
-```
+Select the test route. CUT it. Right-click the destination branch and PASTE.
 
-Expected: route record collection_uuid updated to [DST]; UUID unchanged;
-route_waypoints sequence unchanged.
+Expected: the route record moves to the destination with its UUID unchanged. The
+route_waypoints sequence is unchanged. The route is absent from its original location.
+(After this step, the test route UUID is still valid and used in §2.14, §2.15, §2.18, and §3.x.)
 
 ---
 
 ### §2.12 Cut Track -> Paste (move track record)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[TestTrack]&cmd=10110"
-curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10300"
-```
+Select a track. CUT it. Right-click the destination branch and PASTE.
 
-Expected: track collection_uuid updated to [DST]; UUID unchanged; track_points unchanged.
+Expected: the track moves to the destination with its UUID unchanged. Track points are
+unchanged. The track is absent from its original location.
+(After this step, the track UUID is still valid and used in §4.3 and §5.5.)
 
 ---
 
 ### §2.13 Paste New Before/After -- collection member (positional insertion)
 
-Copy [IsolatedWP1], paste new before [IsolatedWP2] in the same collection:
+Copy a waypoint. Right-click a sibling waypoint in the same collection and PASTE_NEW_BEFORE.
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP2]&right_click=[IsolatedWP2]&cmd=10304"
-```
+Expected: a fresh-UUID copy of the source appears at a position between the sibling's
+predecessor and the sibling. Position is a float-valued ordering field; confirm the new
+position value falls between the predecessor and sibling values.
 
-(10304 = PASTE_NEW_BEFORE; copy operation uses PASTE_NEW variant)
+Copy the same source again. Right-click the same sibling and PASTE_NEW_AFTER.
 
-Expected: fresh-UUID copy of [IsolatedWP1] appears with position FLOAT value less than
-[IsolatedWP2]'s position and greater than [IsolatedWP2]'s predecessor's position.
-Verify /api/nmdb: new waypoint row, position between expected bounds.
-
-Then paste new after [IsolatedWP2]:
-
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP2]&right_click=[IsolatedWP2]&cmd=10305"
-```
-
-Expected: another fresh-UUID copy after [IsolatedWP2] in position order.
+Expected: another fresh-UUID copy appears at a position after the sibling.
 
 ---
 
 ### §2.14 Paste Before/After -- route point (route sequence reordering)
 
-Uses [TestRoute] with [RP1], [RP2], [RP3] derived at §1 reset.
-Route point keys: rp:[TestRoute UUID]:[RP_UUID].
+Uses the test route (now in the destination branch after §2.11 -- UUID still valid) with
+its first three route points RP1, RP2, RP3 in position order.
 
 **Copy-splice (PASTE_NEW_BEFORE): insert duplicate reference**
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=rp:[TestRoute]:[RP1]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=database&select=rp:[TestRoute]:[RP3]&right_click=rp:[TestRoute]:[RP3]&cmd=10304"
-```
+Copy route point RP1. Right-click route point RP3 and PASTE_NEW_BEFORE (insert before RP3,
+between RP2 and RP3).
 
-Expected: [RP1]'s WP UUID appears again in route_waypoints at a position between [RP2]
-and [RP3]. Underlying waypoint record unchanged. Total route_waypoints count increased by 1.
+Expected: RP1's WP UUID appears again in the route at a position between RP2 and RP3. The
+underlying waypoint record is unchanged. Total route point count increases by 1.
 
 **Cut-splice (PASTE_BEFORE): reorder without duplicating**
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=rp:[TestRoute]:[RP3]&cmd=10110"
-curl -s "http://localhost:9883/api/test?panel=database&select=rp:[TestRoute]:[RP2]&right_click=rp:[TestRoute]:[RP2]&cmd=10302"
-```
+Cut route point RP3. Right-click route point RP2 and PASTE_BEFORE.
 
-Expected: [RP3]'s reference now appears before [RP2] in sequence. Total count unchanged
-(move, not copy). Verify /api/nmdb: route_waypoints for [TestRoute] show updated ordering.
+Expected: RP3's reference now appears before RP2 in the route sequence. Total count is
+unchanged (move, not copy).
+
+---
+
+### §2.15 Paste Before/After -- route object as anchor
+
+The anchor is a route node (object node, obj_type=route). This exercises the cross-table
+neighbor query when the anchor is a route object rather than a waypoint.
+
+COPY an isolated waypoint. Right-click the test route ([TestRoute], now in [DST] after
+§2.11) as the anchor and PASTE_NEW_BEFORE.
+
+Expected: a fresh-UUID copy of the waypoint appears at a collection position immediately
+before [TestRoute] within [DST]'s ordering. The position value falls between the route's
+predecessor and the route's own position. [TestRoute] and its route_waypoints are unchanged.
+
+COPY the same waypoint again. Right-click [TestRoute] and PASTE_NEW_AFTER.
+
+Expected: another fresh-UUID copy appears at a position immediately after [TestRoute] in
+[DST]'s ordering.
+
+---
+
+### §2.16 Paste Before/After -- group node as anchor
+
+The anchor is a group node (collection node, node_type=group). This exercises the neighbor
+query across the group boundary.
+
+COPY an isolated waypoint. Right-click a group node as anchor and PASTE_NEW_BEFORE.
+
+Expected: a fresh-UUID copy of the waypoint appears at a position immediately before the
+group in the group's parent collection ordering. The group's membership is unchanged; the
+new WP is a sibling of the group in the parent collection, not a member.
+
+---
+
+### §2.17 Paste Before/After -- branch node as anchor
+
+The anchor is a branch node (collection node, node_type=branch). This exercises the neighbor
+query at a branch boundary.
+
+COPY an isolated waypoint. Right-click a branch node as anchor and PASTE_NEW_BEFORE.
+
+Expected: a fresh-UUID copy of the waypoint appears at a position immediately before the
+branch in the branch's parent collection ordering. The branch's contents are unchanged.
+
+---
+
+### §2.18 Paste Before/After -- non-waypoint item in clipboard
+
+Tests PASTE_BEFORE/AFTER where the clipboard contains a route or group object rather than
+a plain waypoint.
+
+**Route clipboard:** COPY [TestRoute] (still in [DST] after §2.11). Right-click a sibling
+waypoint anchor in [DST] and PASTE_NEW_BEFORE.
+
+Expected: a fresh-UUID copy of the route appears at a position before the anchor in [DST]'s
+ordering. The new route record has a fresh UUID; its route_waypoints reference the same WP
+UUIDs as the source (SS1.6). No new waypoint records are created.
+
+**Group clipboard:** COPY a group (one with no route refs so pre-flight Step 4 passes
+trivially). Right-click the same or a different waypoint anchor in [DST] and PASTE_NEW_BEFORE.
+
+Expected: a fresh-UUID copy of the group (with fresh UUIDs for the group shell and all member
+WPs) appears before the anchor. The source group and its members are unchanged.
 
 
 ## §3 E80 Tests (upload/download)
 
 E80 must be connected and empty after §1 reset.
 
----
+**State note entering §3:** the test route (UUID unchanged from §2.11) is in the destination
+branch. The group containing the test route's member WPs is intact (§2.6 was blocked).
 
-### §3.0 Populate E80 with test data
-
-Upload a WP, a group, and a route. Run all three before any §3 test.
-
-**WP to E80 (ungrouped -- use header:groups, not my_waypoints):**
-
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10300"
-```
-
-Wait for ProgressDialog FINISHED.
-
-**Group to E80:**
-
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[GroupWithRouteMembers]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10300"
-```
-
-Wait for ProgressDialog FINISHED.
-
-**Route to E80** (pre-flight SS10.10 requires member WPs to exist on E80 first; the group
-upload above puts them there if [GroupWithRouteMembers] contains the route's member WPs):
-
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10300"
-```
-
-Wait for ProgressDialog FINISHED.
-
-Verify via /api/db: WP, group, and route all appear. Note E80-assigned UUIDs as [E80_WP],
-[E80_GR], [E80_RT].
+**§3.1-§3.3 dual role:** §3.1, §3.2, and §3.3 each populate the E80 with data that later
+steps in §3 depend on, but they are also actual tests in their own right -- each exercises
+a distinct UUID-preserving DB-to-E80 paste path (single WP, group, route). All three must
+pass before proceeding; a failure in any one affects the validity of later steps.
 
 ---
 
-### §3.1 Copy E80 WP -> Paste to DB (UUID-preserving download)
+### §3.1 Paste WP to E80 (UUID-preserving upload)
 
-```
-curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_WP]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10300"
-```
+COPY an isolated waypoint from the DB. In the E80 panel, right-click the Groups header and
+PASTE. Wait for ProgressDialog FINISHED. Note the E80 UUID (should equal the DB UUID).
 
-Expected: WP inserted/updated in DB with E80's UUID. Log: COPY STARTED/FINISHED,
-PASTE STARTED/FINISHED, no errors.
-Verify /api/nmdb: waypoint row with uuid=[E80_WP], collection_uuid=[DST].
+Expected: waypoint appears on E80 as an ungrouped WP with the same UUID as in the DB.
 
 ---
 
-### §3.2 Copy E80 WP -> Paste New to DB (fresh UUID)
+### §3.2 Paste Group to E80 (UUID-preserving upload)
 
-```
-curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_WP]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10301"
-```
+COPY a group whose member WPs are also members of the test route. In the E80 panel,
+right-click the Groups header and PASTE. Wait for ProgressDialog FINISHED. Note the E80
+group UUID.
 
-Expected: new WP in DB with fresh navMate UUID (byte 1 = 0x82) != [E80_WP]; name preserved.
-
----
-
-### §3.3 Delete E80 WP
-
-```
-curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_WP]&right_click=[E80_WP]&cmd=10410"
-```
-
-Wait for ProgressDialog FINISHED.
-Expected: [E80_WP] absent from /api/db waypoints.
+Expected: group appears on E80 with the same UUID as in the DB; all member WPs appear as
+members of that group, each with their DB UUIDs preserved.
 
 ---
 
-### §3.4 Delete E80 Group + members (DEL_GROUP_WPS)
+### §3.3 Paste Route to E80 (UUID-preserving upload)
 
-```
-curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_GR]&right_click=[E80_GR]&cmd=10421"
-```
+COPY the test route. In the E80 panel, right-click the Routes header and PASTE. The route's
+member WPs must already be on the E80 (§3.2 put them there; SS10.10 pre-flight verifies
+this). Wait for ProgressDialog FINISHED. Note the E80 route UUID.
 
-Wait for ProgressDialog FINISHED.
-Expected: [E80_GR] and all member WPs absent from /api/db.
-
----
-
-### §3.5 Delete via E80 Groups header (all groups) -- SS8.2 header-node delete
-
-```
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10421"
-```
-
-Wait for ProgressDialog FINISHED.
-Expected: E80 groups empty; all member WPs absent. This exercises the SS8.2 header-node
-Delete path -- right-clicking the Groups header operates on all groups in the folder.
+Expected: route appears on E80 with the same UUID as in the DB; its route_waypoints sequence
+matches the DB ordering (same WP UUIDs, same positional order).
 
 ---
 
-### §3.6 Delete via E80 Routes header (all routes) -- SS8.2 header-node delete
+### §3.4 Copy E80 WP -> Paste to DB (UUID-preserving download)
 
-```
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10430"
-```
+In the E80 panel, COPY the uploaded waypoint. Right-click the destination branch in the DB
+panel and PASTE.
 
-Wait for ProgressDialog FINISHED.
-Expected: E80 routes empty; member WPs preserved.
-
----
-
-### §3.7 Delete via E80 My Waypoints (all ungrouped WPs) -- SS8.2
-
-Requires ungrouped WPs present. If [E80_WP] was deleted in §3.3, re-upload one first.
-
-```
-curl -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10421"
-```
-
-Wait for ProgressDialog FINISHED.
-Expected: all ungrouped WPs deleted; named groups unaffected.
+Expected: the waypoint appears in the DB with the E80's UUID (byte 1 = 0xB2) preserved.
+Log: COPY STARTED/FINISHED, PASTE STARTED/FINISHED, no errors.
 
 ---
 
-### §3.8 Delete via E80 Tracks header -- SS8.2
+### §3.5 Copy E80 WP -> Paste New to DB (fresh UUID)
+
+COPY the same E80 waypoint. Right-click the destination branch and PASTE_NEW.
+
+Expected: a new waypoint appears in the DB with a fresh navMate UUID (byte 1 = 0x82)
+different from the E80's UUID. The name is preserved.
+
+---
+
+### §3.6 Delete E80 WP
+
+In the E80 panel, right-click the uploaded waypoint and DELETE_WAYPOINT. Wait for
+ProgressDialog FINISHED.
+
+Expected: the waypoint is absent from the E80.
+
+---
+
+### §3.7 Delete E80 Group + members (DEL_GROUP_WPS)
+
+In the E80 panel, right-click the uploaded group and DELETE_GROUP_WPS. Wait for
+ProgressDialog FINISHED.
+
+Expected: the group and all its member WPs are absent from the E80.
+
+---
+
+### §3.8 Delete via E80 Groups header (all groups) -- SS8.2 header-node delete
+
+In the E80 panel, right-click the Groups header and DELETE_GROUP_WPS. Wait for
+ProgressDialog FINISHED.
+
+Expected: all E80 groups and their member WPs are deleted. This exercises the SS8.2
+header-node delete path -- right-clicking the Groups header operates on all groups at once.
+
+---
+
+### §3.9 Delete via E80 Routes header (all routes) -- SS8.2
+
+In the E80 panel, right-click the Routes header and DELETE_ROUTE. Wait for ProgressDialog
+FINISHED.
+
+Expected: all E80 routes are deleted. Member WPs are preserved.
+
+---
+
+### §3.10 Delete via E80 My Waypoints (all ungrouped WPs) -- SS8.2
+
+Requires ungrouped WPs present. If the waypoint was deleted in §3.6, re-upload one.
+Right-click the My Waypoints node and DELETE_GROUP_WPS. Wait for ProgressDialog FINISHED.
+
+Expected: all ungrouped WPs are deleted. Named groups are unaffected.
+
+---
+
+### §3.11 Delete via E80 Tracks header -- SS8.2
 
 Requires tracks on E80. If teensyBoat is not available, defer to §4 or mark NOT_RUN.
+Right-click the Tracks header and DELETE_TRACK. Wait for ProgressDialog FINISHED.
 
-```
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_click=header%3Atracks&cmd=10440"
-```
-
-Wait for ProgressDialog FINISHED.
-Expected: all E80 tracks erased. This exercises SS8.2's fourth header-node Delete rule.
+Expected: all E80 tracks are erased. This exercises the fourth SS8.2 header-node delete rule.
 
 ---
 
-### §3.9 Copy E80 Group -> Paste to DB (group download)
+### §3.12 Copy E80 Group -> Paste to DB (group download)
 
-If §3.4 deleted [E80_GR], re-upload [GroupWithRouteMembers] first.
+If §3.7 deleted the group, re-upload the group first. COPY the E80 group. Right-click the
+destination branch in the DB panel and PASTE.
 
-```
-curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_GR]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10300"
-```
-
-Expected: group collection and member WPs merged into DB under [DST].
+Expected: the group and its member WPs are merged into the DB under the destination branch.
 
 ---
 
-### §3.10 Copy E80 Route -> Paste to DB (route download)
+### §3.13 Copy E80 Route -> Paste to DB (route download)
 
-```
-curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_RT]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10300"
-```
+Re-upload [TestRoute] to the E80 if absent (deleted by §3.9). COPY the E80 route.
+Right-click the destination branch and PASTE.
 
-Expected: route record and member WPs inserted/updated in DB.
-
----
-
-### §3.11 DB->E80 all-paste -- ordering dependency test
-
-[RouteBranch] contains groups whose WPs are also route members. Exercises _pasteAllToE80
-ordering: groups and their WPs upload first; when routes are processed, member WPs are
-already present on E80 (no_change idempotency). If [GroupWithRouteMembers] WPs are already
-on E80 from §3.0, those produce no_change entries in the log.
-
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[RouteBranch]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=root&right_click=root&cmd=10300"
-```
-
-Wait for ProgressDialog FINISHED (may take several seconds for large groups).
-
-Expected log: COPY STARTED/FINISHED; PASTE STARTED/FINISHED; no_change entries for any
-WPs already on E80; no ERROR or WARNING.
-Verify /api/db: all groups and routes from [RouteBranch] present on E80; no duplicate
-WP UUIDs.
+Expected: the route record is inserted or updated in the DB. Member WP UUIDs are
+preserved. No new WP records are created (WPs already exist in DB from prior steps).
 
 ---
 
-### §3.12 Paste New WP to E80 (fresh UUID)
+### §3.14 Copy E80 Group+Route -> Paste to DB (E80-source heterogeneous paste, ordering enforced)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP2]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10301"
-```
+E80 must have both the Popa group (with its 11 member WPs) and the Popa route simultaneously.
+After §3.12 and §3.13, both are present. Select both the E80 group and the E80 route in the
+E80 panel simultaneously. COPY the multi-item selection. Right-click [DST] in the DB panel
+and PASTE.
 
-Wait for ProgressDialog FINISHED.
-Expected: new WP on E80 with fresh navMate UUID != [IsolatedWP2]; name preserved.
-Verify /api/db: waypoint count increased by 1; no entry with uuid=[IsolatedWP2].
-
----
-
-### §3.13 Paste New Group to E80 (all-fresh UUIDs)
-
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[GroupNoRoute]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10301"
-```
-
-Wait for ProgressDialog FINISHED.
-Expected: new group on E80 with fresh UUID; each member WP has a fresh UUID.
-If the original group UUID was already on E80, that copy is unchanged.
-E80 now has two copies of the group with distinct UUIDs and distinct member WP UUIDs.
+Expected: the paste succeeds. navMate processes non-route items (the group and its member
+WPs) first, then processes the route (SS12.1 ordering, I1 fix). The route's route_waypoints
+reference WP UUIDs that now exist in the DB (inserted from the group paste or already present
+from earlier DB state). Route and group appear in [DST] with UUIDs preserved. No ERROR or
+WARNING in the log.
 
 ---
 
-### §3.14 Paste New Route to E80 (all-fresh UUIDs)
+### §3.15 Paste New WP to E80 (fresh UUID)
 
-PASTE_NEW for a route creates a fresh route UUID and fresh member WP UUIDs. The new WPs
-are created on E80 as fresh items -- they do not reuse any existing E80 WP UUIDs.
+COPY an isolated waypoint from the DB. In the E80 panel, right-click the Groups header and
+PASTE_NEW. Wait for ProgressDialog FINISHED.
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10301"
-```
-
-Wait for ProgressDialog FINISHED.
-Expected: new route on E80 with fresh UUID; all member WPs created with fresh UUIDs
-independent of any same-route WPs already on E80 from prior steps. Original [TestRoute]
-on E80 unchanged.
+Expected: a new WP appears on the E80 with a fresh navMate UUID (byte 1 = 0x82) different
+from the source WP's UUID. The name is preserved. No conflict-resolution dialog fires (this
+is the clean create path; §5.12 verifies this by checking the §3.15 log).
 
 ---
 
-### §3.15 Multi-select WPs -> Paste to E80 (homogeneous flat set)
+### §3.16 Paste New Group to E80 (all-fresh UUIDs)
 
-Two WPs selected; single COPY command; pre-flight sees homogeneous flat set of waypoints.
+COPY a group that has no route refs and whose name does not conflict with any group already
+on the E80 at this point in the cycle. In the E80 panel, right-click the Groups header and
+PASTE_NEW. Wait for ProgressDialog FINISHED.
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1],[IsolatedWP2]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10300"
-```
-
-Wait for ProgressDialog FINISHED.
-Expected: both WP UUIDs appear in E80 waypoints. Log: COPY with items=2; PASTE with items=2.
+Expected: a new group appears on the E80 with a fresh UUID. Each member WP has a fresh UUID.
+Note: this group remains on E80; §5.6 clears all E80 content before its route-dependency test.
 
 ---
 
-### §3.16 Route point Paste Before/After on E80 (route sequence insertion)
+### §3.17 Paste New Route to E80 (fresh route UUID, WP refs preserved)
 
-Requires a route already on E80 with at least 3 route_waypoints. Use [E80_RT] from §3.0
-or §3.11. Get the E80 route_waypoints for [E80_RT] from /api/db; note three consecutive
-points as [E80_RP1], [E80_RP2], [E80_RP3].
+If a same-named route already exists on the E80, delete all E80 routes first (wait for
+ProgressDialog FINISHED) to avoid the Step 7 name-collision abort.
 
-Copy [E80_RP1]:
-```
-curl -s "http://localhost:9883/api/test?panel=e80&select=rp:[E80_RT]:[E80_RP1]&cmd=10010"
-```
+COPY the test route from the DB. In the E80 panel, right-click the Routes header and
+PASTE_NEW. Wait for ProgressDialog FINISHED.
 
-Paste Before [E80_RP3] (insert duplicate reference between [E80_RP2] and [E80_RP3]):
-```
-curl -s "http://localhost:9883/api/test?panel=e80&select=rp:[E80_RT]:[E80_RP3]&right_click=rp:[E80_RT]:[E80_RP3]&cmd=10302"
-```
+Expected: a new route appears on the E80 with a fresh navMate UUID (byte 1 = 0x82) different
+from the source UUID. The route's member WPs must already exist on the E80 (SS10.10; confirmed
+by §3.12). The route_waypoints sequence references those existing WP UUIDs -- no new WP records
+are created on the E80 (SS1.6, C3 fix). The route name is preserved.
 
-Wait for ProgressDialog FINISHED.
-Expected: [E80_RP1]'s WP UUID now appears at a position between [E80_RP2] and [E80_RP3]
-in [E80_RT]'s route_waypoints sequence. Total count increased by 1.
-This exercises SS10.9: E80 Paste Before/After is valid only at route point destinations.
+---
+
+### §3.18 Multi-select WPs -> Paste to E80 (homogeneous flat set)
+
+Select two isolated waypoints simultaneously in the DB panel. COPY the selection. In the
+E80 panel, right-click the Groups header and PASTE. Wait for ProgressDialog FINISHED.
+
+Expected: both WPs appear on the E80. Log: COPY with items=2; PASTE with items=2.
+
+---
+
+### §3.19 Route point Paste Before/After on E80 (route sequence insertion)
+
+A route must be on the E80 with at least 3 route_waypoints. After §3.17, the fresh-UUID
+route from PASTE_NEW serves as the source. Note three consecutive points as E80_RP1,
+E80_RP2, E80_RP3.
+
+COPY E80_RP1. Right-click E80_RP3 and PASTE_BEFORE (insert between RP2 and RP3). Wait for
+ProgressDialog FINISHED.
+
+Expected: RP1's WP UUID now appears at a position between RP2 and RP3 in the route's
+waypoint sequence. Total count increases by 1. This exercises SS10.9: E80 PASTE_BEFORE/AFTER
+is valid only at route point destinations.
 
 
 ## §4 Track Tests (requires teensyBoat session)
 
-Section §4 requires live track recording via teensyBoat (port 9881). Load boat_driving_guide.md
-before starting. Skip entirely if teensyBoat is not available; mark all §4 steps NOT_RUN.
+Section §4 requires live track recording via teensyBoat (port 9881). Load
+boat_driving_guide.md before starting. Skip entirely if teensyBoat is not available;
+mark all §4 steps NOT_RUN.
 
 ---
 
 ### §4.0 Prerequisite -- create test tracks on E80
 
-Drive to create at least two short test tracks. Verify tracks appear in winE80 Tracks
-section. Note E80-assigned UUIDs from /api/db as [E80_TK1], [E80_TK2].
+Drive to create at least two short test tracks. Verify tracks appear in the E80 Tracks
+section. Record the E80-assigned UUIDs.
 
 Track creation pattern: AP=0 -> H=NNN -> S=50 -> start track -> drive -> stop track ->
-name -> save. Expected non-fatal events: GET_CUR2 ERROR after each EVENT(0), "TRACK OUT
+name -> save. Expected non-fatal events: GET_CUR2 ERROR after each EVENT(0); "TRACK OUT
 OF BAND" after save. Verify save: "got track(uuid) = 'name'" in log.
 
 **UUID behavior (confirmed):** E80->DB paste for tracks does NOT preserve the E80 UUID.
-navMate assigns a fresh UUID. Search by name in /api/nmdb, not by UUID. Color is
-converted correctly: E80 index -> aabbggrr (0=ff0000ff, 1=ff00ffff, 2=ff00ff00,
-3=ffff0000, 4=ffff00ff, 5=ff000000).
+navMate assigns a fresh UUID. Identify downloaded tracks by name in the DB, not by UUID.
+Color conversion: E80 color index maps to aabbggrr -- 0=ff0000ff, 1=ff00ffff, 2=ff00ff00,
+3=ffff0000, 4=ffff00ff, 5=ff000000.
 
 ---
 
 ### §4.1 Copy E80 Track -> Paste to DB (download, track still on E80)
 
-```
-curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_TK1]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10300"
-```
-
+COPY the first E80 track. Right-click the destination branch in the DB panel and PASTE.
 Wait for ProgressDialog FINISHED.
-Expected: track record and track_points in DB under [DST]; fresh UUID. Track still on E80.
-Verify /api/nmdb: track found by name; point count matches E80 report.
+
+Expected: the track appears in the DB with a fresh UUID; track points present. The track
+remains on the E80 (COPY, not CUT). Find the downloaded track by name.
 
 ---
 
 ### §4.2 Cut E80 Track -> Paste to DB (download + E80 erase)
 
-```
-curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_TK2]&cmd=10110"
-curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10300"
-```
+CUT the second E80 track. Right-click the destination branch and PASTE. Wait for
+ProgressDialog FINISHED.
 
-Wait for ProgressDialog FINISHED.
-Expected: track in DB with fresh UUID; TRACK_CMD_ERASE sent to E80; track absent from
-/api/db after erase. This is the end-to-end verification of the track erase path.
+Expected: the track appears in the DB with a fresh UUID. TRACK_CMD_ERASE is sent to the
+E80; the track is absent from the E80 after erase. This is the end-to-end verification of
+the track erase path.
 
 ---
 
 ### §4.3 Guard -- Paste Track to E80 blocked (tracks read-only)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[TestTrack]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_click=header%3Atracks&cmd=10300"
-```
+COPY the test track from the DB (the one moved in §2.12). In the E80 panel, right-click
+the Tracks header and PASTE.
 
 Expected: paste rejected per SS10.8 (E80 tracks destination accepts no paste). E80 unchanged.
 
@@ -742,18 +641,14 @@ Expected: paste rejected per SS10.8 (E80 tracks destination accepts no paste). E
 
 ### §4.4 Guard -- Paste New blocked for track clipboard
 
-```
-curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_TK1]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10301"
-```
+COPY an E80 track. Right-click the destination branch in the DB panel and PASTE_NEW.
 
-Expected: PASTE_NEW rejected for track clipboard per SS10.3 ("PASTE_NEW not available
-for tracks"). DB unchanged.
+Expected: PASTE_NEW rejected for a track clipboard per SS10.3. DB unchanged.
 
 
 ## §5 Pre-flight and Guard Tests
 
-These verify that blocked operations fail cleanly. The /api/test endpoint fires cmd
+These verify that blocked operations fail cleanly. The test API fires commands
 unconditionally, bypassing menu-level guards -- verify results by reading the log, not by
 absence of menu items. All blocked operations should produce WARNING or IMPLEMENTATION
 ERROR in the log with no data change.
@@ -766,45 +661,35 @@ prerequisite is implemented; mark the reject-path variant NOT_RUN.
 
 ### §5.1 DEL_WAYPOINT blocked -- WP referenced in route (DB panel)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[WPinRoute]&right_click=[WPinRoute]&cmd=10410"
-```
+Select a waypoint that IS referenced in a route. Right-click and DELETE_WAYPOINT.
 
-Expected: WARNING in log (waypoint referenced in route); [WPinRoute] still in /api/nmdb.
+Expected: WARNING in the log (waypoint referenced in route). The waypoint and its route
+references are unchanged.
 
 ---
 
 ### §5.2 DEL_BRANCH blocked -- member WP in external route (isBranchDeleteSafe=0)
 
-Requires a branch whose WPs are referenced by routes OUTSIDE the branch subtree. If the
-baseline DB does not have this configuration, mark NOT_RUN.
+Select a branch whose descendant WPs are referenced by routes OUTSIDE the branch subtree
+(isBranchDeleteSafe=0). Right-click and DELETE_BRANCH.
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[UnsafeBranch]&right_click=[UnsafeBranch]&cmd=10450"
-```
-
-Expected: WARNING in log (isBranchDeleteSafe=0); branch unchanged.
+Expected: WARNING in the log; branch unchanged.
 
 ---
 
 ### §5.3 Paste blocked -- DB cut -> E80 destination (SS9, SS10.5)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10110"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10300"
-```
+CUT an isolated waypoint from the DB panel. In the E80 panel, right-click the Groups
+header and PASTE.
 
-Expected: paste rejected; WARNING in log; E80 unchanged; [IsolatedWP1] still in DB
-(cut not consumed). DB is the authoritative repository -- uploads to E80 are copies only.
+Expected: paste rejected. WARNING in the log. E80 unchanged. The cut waypoint remains in
+the DB (cut not consumed). DB is the authoritative repository -- uploads to E80 are copies only.
 
 ---
 
 ### §5.4 Paste blocked -- any clipboard -> E80 tracks header (SS10.8)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_click=header%3Atracks&cmd=10300"
-```
+COPY a waypoint from the DB. In the E80 panel, right-click the Tracks header and PASTE.
 
 Expected: rejected (E80 tracks destination accepts no paste). E80 unchanged.
 
@@ -812,164 +697,151 @@ Expected: rejected (E80 tracks destination accepts no paste). E80 unchanged.
 
 ### §5.5 Paste blocked -- DB copy track -> DB paste (no UUID-preserving copy path)
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[TestTrack]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10300"
-```
+COPY a track from the DB. Right-click the destination branch and PASTE.
 
-Expected: PASTE rejected per SS10.3 (homogeneous tracks, DB source, cut_flag=0: no PASTE
-path). WARNING or IMPLEMENTATION ERROR in log; DB unchanged.
+Expected: PASTE rejected per SS10.3 (homogeneous track clipboard, DB source, not a cut:
+no PASTE path exists). WARNING or IMPLEMENTATION ERROR in the log. DB unchanged.
 
 ---
 
 ### §5.6 Route dependency check -- route paste before member WPs exist on E80 (SS10.10)
 
-Ensure E80 has no WPs that match [TestRoute]'s member WP UUIDs. If needed, clear the E80
-of all WPs first. Then:
+Clear the E80: delete all routes (wait for ProgressDialog FINISHED), then all groups+WPs
+(wait for ProgressDialog FINISHED), then any remaining ungrouped WPs (wait for
+ProgressDialog FINISHED). Verify the E80 is empty.
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10300"
-```
+COPY the test route (whose member WPs are absent from the E80 after the clear). In the E80
+panel, right-click the Routes header and PASTE.
 
-Expected: pre-flight SS10.10 route dependency check aborts -- WARNING in log listing the
-missing WP UUIDs; E80 routes unchanged.
+Expected: pre-flight SS10.10 route dependency check aborts. WARNING in the log listing the
+missing WP UUIDs. E80 routes unchanged.
+Note: E80 is empty after this step; §5.7 pastes the test group fresh from this clean state.
 
 ---
 
 ### §5.7 Ancestor-wins -- accept path (SS6.2)
 
-Select both [GroupNoRoute] (intact compound) and one of its member WPs simultaneously.
-With suppress=1 (accept default), ancestor-wins absorbs the member WP and proceeds with
-the group only.
+Select a group AND one of its member WPs simultaneously. With suppress=1 (accept default),
+ancestor-wins absorbs the member WP into the group upload.
+Prerequisite: E80 is empty after §5.6 clear.
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[GroupNoRoute],[MemberWP_ofGroupNoRoute]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10301"
-```
+COPY the group+member selection. In the E80 panel, right-click the Groups header and
+PASTE_NEW. Wait for ProgressDialog FINISHED.
 
-Wait for ProgressDialog FINISHED.
-Expected: group uploaded as an intact compound object. [MemberWP_ofGroupNoRoute] does NOT
-appear as a separate ungrouped WP on E80; it arrived inside the group. Log: ancestor-wins
-resolution noted; confirmation dialog auto-accepted.
+Expected: the group is uploaded as an intact compound object. The selected member WP does
+NOT appear as a separate ungrouped WP on the E80; it arrived inside the group. Log:
+ancestor-wins resolution noted; confirmation dialog auto-accepted.
 
 ---
 
 ### §5.8 Ancestor-wins -- abort path (SS6.2) -- PREREQUISITE: outcome=reject
 
-```
-curl -s "http://localhost:9883/api/test?op=suppress&val=1&outcome=reject"
-curl -s "http://localhost:9883/api/test?panel=database&select=[GroupNoRoute],[MemberWP_ofGroupNoRoute]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10301"
-curl -s "http://localhost:9883/api/test?op=suppress&val=1&outcome=accept"
-```
+Set outcome=reject. Select a group and one of its member WPs. COPY. PASTE_NEW to the E80
+Groups header. Reset outcome to accept after the step.
 
-Expected: ancestor-wins dialog fires; suppressed with reject outcome; paste does not
+Expected: the ancestor-wins dialog fires; suppressed with reject outcome; paste does not
 proceed; E80 unchanged.
 
 ---
 
 ### §5.9 Recursive paste guard -- paste Branch into its own descendant (SS1.5, SS10.1 Step 3)
 
-Copy [NestedBranch], then paste into [ChildBranch] (a branch that is a descendant of
-[NestedBranch]):
+COPY a branch that has at least one child branch. Right-click that child branch and PASTE_NEW.
 
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[NestedBranch]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=database&select=[ChildBranch]&right_click=[ChildBranch]&cmd=10301"
-```
-
-Expected: pre-flight SS10.1 Step 3 (recursive paste check) rejects -- WARNING in log
-"recursive paste" or similar; DB unchanged.
+Expected: the pre-flight SS10.1 Step 3 recursive paste check rejects. WARNING in the log.
+DB unchanged.
 
 ---
 
 ### §5.10 Pre-flight: intra-clipboard name collision (SS10.2 Step 6)
 
-Requires two items of the same type in the clipboard with the same name but different UUIDs.
-The E80 enforces unique names; the DB allows duplicates.
+Requires two waypoints with the same name but different UUIDs both in the clipboard.
 
-**Setup option A** -- check /api/nmdb for any two WPs with the same name; use them.
-**Setup option B** -- rename two WPs to the same name via UI before this step; undo after.
-**Setup option C** -- mark REQUIRES_SETUP and flag for baseline DB augmentation.
+Setup: check the DB for any two WPs with the same name. If none exist, rename two WPs to
+the same name via the UI before this step. Select both and COPY. In the E80 panel,
+right-click the Groups header and PASTE_NEW.
 
-If same-named [WP_A] and [WP_B] are available:
-
-```
-curl -s "http://localhost:9883/api/test?panel=database&select=[WP_A],[WP_B]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10301"
-```
-
-Expected: pre-flight SS10.2 Step 6 hard-aborts -- WARNING in log identifying the
-colliding name; E80 unchanged.
+Expected: pre-flight SS10.2 Step 6 hard-aborts. WARNING in the log identifying the
+colliding name. E80 unchanged.
 
 ---
 
 ### §5.11 Pre-flight: E80-wide name collision (SS10.2 Step 7)
 
-Upload [IsolatedWP1] to E80. Then attempt to paste another DB WP with the same name.
+Upload a waypoint to the E80. Then attempt to paste a different DB waypoint with the same
+name.
 
-If no second same-named WP exists in DB, create one via UI (NEW_WAYPOINT, same name as
-[IsolatedWP1], manual). Use [SameNameWP] as its [Name] in the runbook.
+If no second same-named waypoint exists in the DB, create one via the UI (NEW_WAYPOINT,
+same name). COPY the second waypoint. Right-click the E80 Groups header and PASTE.
 
-```
-# Upload IsolatedWP1 to E80 (if not already present)
-curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10300"
-# Wait for ProgressDialog FINISHED
-
-# Attempt to paste a different WP with the same name
-curl -s "http://localhost:9883/api/test?panel=database&select=[SameNameWP]&cmd=10010"
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10300"
-```
-
-Expected: pre-flight SS10.2 Step 7 hard-aborts -- WARNING in log identifying the
-conflicting name and type; E80 unchanged (second WP not created).
+Expected: pre-flight SS10.2 Step 7 hard-aborts. WARNING in the log identifying the
+conflicting name and type. E80 unchanged (second WP not created).
 
 ---
 
 ### §5.12 Pre-flight: UUID conflict -- clean create path (SS10.10)
 
-Paste a DB WP to E80 whose UUID does not exist on E80. This is the normal upload path
-(verifying that the clean create branch runs without false conflict detection).
-Covered by §3.12 -- no separate curl command needed. Verify §3.12 log shows no
-conflict-resolution dialog.
+Paste a DB WP to the E80 whose UUID does not exist there. This is the normal upload path,
+verifying that the clean create branch runs without false conflict detection. Covered by
+§3.15 -- no separate operation needed. Verify the §3.15 log shows no conflict-resolution
+dialog.
 
 ---
 
 ### §5.13 Pre-flight: UUID conflict -- conflict dialog path (SS10.10) -- PREREQUISITE: outcome=reject
 
-Upload a WP to E80 (UUID now exists there). Modify the WP in DB so db_version > e80_version.
-Attempt to paste again. Pre-flight should detect the UUID conflict and present the conflict
-resolution dialog. With outcome=reject, abort path is taken.
+Upload a WP to the E80. Modify it in the DB so db_version exceeds the E80 version. Paste
+again. Pre-flight should detect the UUID conflict and present the conflict resolution dialog.
+With outcome=reject, the abort path is taken.
 
-Full setup for this test is deferred pending version increment wiring (see [db_version
-increment wiring] in todo.md). Mark NOT_RUN until versioning is wired.
+Full setup deferred pending version increment wiring (see [db_version increment wiring] in
+todo.md). Mark NOT_RUN until versioning is wired.
+
+---
+
+### §5.14 Menu shape -- DB object node: PASTE and PASTE_NEW absent
+
+With a clipboard loaded, fire PASTE at a DB object node (a waypoint UUID as the right-click
+target, not a collection). Fire PASTE_NEW at the same object node.
+
+Expected: both operations produce IMPLEMENTATION ERROR in the log. DB object nodes are not
+valid paste-destination containers; only PASTE_BEFORE/AFTER variants are valid at object
+nodes. DB unchanged.
+
+Also fire PASTE at a DB route node and at a DB track node with the same loaded clipboard.
+Expected: IMPLEMENTATION ERROR in both cases.
+
+---
+
+### §5.15 Menu shape -- E80 WP node: all paste items absent
+
+With a clipboard loaded from the DB, fire PASTE at an individual E80 waypoint node (not a
+header node, not a route_point). Fire PASTE_NEW at the same node.
+
+Expected: IMPLEMENTATION ERROR for both. Individual E80 WP nodes are not valid paste
+destinations in the E80 panel; paste is only accepted at header nodes (Groups, Routes),
+the root node, or route_point nodes. E80 unchanged.
+
+---
+
+### §5.16 Menu shape -- route_point with mixed clipboard: PASTE_BEFORE/AFTER absent
+
+Load a mixed clipboard: select both a route_point and a waypoint (or any other
+non-route_point item). Fire PASTE_BEFORE at a route_point anchor.
+
+Expected: IMPLEMENTATION ERROR -- PASTE_BEFORE/AFTER at a route_point requires a pure
+route_point clipboard (every item must be obj_type=route_point). The mixed clipboard is
+rejected for positional route-sequence operations.
+
+Fire PASTE_NEW_BEFORE at the same route_point anchor with the same mixed clipboard.
+
+Expected: succeeds -- a new route_waypoints entry is inserted before the anchor,
+referencing the route_point item's WP UUID. The non-route_point item in the clipboard is
+silently filtered (only route_point items are eligible for route-sequence positional paste).
 
 
 ## Recording Results
 
-Each test cycle produces `apps/navMate/docs/notes/last_testrun.md`. Format:
-
-**Header** -- cycle number, date, wall-clock start and end times.
-
-**Summary** -- one line per §section with overall result.
-
-**Results table** -- every test step listed with Status:
-- PASS -- completed as expected
-- FAIL -- blocked, data corrupted, or catastrophic
-- PARTIAL -- some sub-steps passed, others did not
-- PASSED_BUT -- passed with notable caveats (unexpected warning, workaround required)
-- NOT_RUN -- skipped (teensyBoat unavailable, prerequisite not met, etc.)
-
-**Issues section** -- always present; "none" on a clean cycle. One prose subsection per
-FAIL, PARTIAL, or PASSED_BUT entry. For each:
-- Test step (§X.Y and name)
-- Nodes involved by [Name]
-- Expected vs. actual
-- Data state left behind -- what is corrupted, missing, or unexpectedly changed
-- Known bug (name the open_bugs.md entry) or new
-- Catastrophic (prevents subsequent steps) or not
-
-The Issues section is a triage guide for the next session -- write it so someone reading
-cold knows exactly what went wrong and where things stand.
+Each test cycle produces `apps/navMate/docs/notes/last_testrun.md`. See the runbook for
+the exact format: header, summary, results table (PASS/FAIL/PARTIAL/PASSED_BUT/NOT_RUN),
+and issues section.

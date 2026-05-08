@@ -72,6 +72,15 @@ sub _refreshDatabase
 	$pane->refresh() if $pane;
 }
 
+sub _newNavUUID
+{
+	my $dbh = connectDB();
+	return undef if !$dbh;
+	my $uuid = newUUID($dbh);
+	disconnectDB($dbh);
+	return $uuid;
+}
+
 
 #----------------------------------------------------
 # buildContextMenu
@@ -87,6 +96,32 @@ sub buildContextMenu
 	my @copy  = getCopyMenuItems($panel, @nodes);
 	my @cut   = getCutMenuItems($panel, @nodes);
 	my @paste = getPasteMenuItems($panel, $right_click_node);
+
+	# SS10.10: suppress PASTE and PASTE_NEW when any route in clipboard has member WPs
+	# absent from E80 -- user must paste the WPs first, then retry the route paste.
+	if ($panel eq 'e80' && (grep { $_->{id} == $CTX_CMD_PASTE     } @paste
+	                     ||  grep { $_->{id} == $CTX_CMD_PASTE_NEW } @paste))
+	{
+		my $wpmgr = _wpmgr();
+		if ($wpmgr && $clipboard)
+		{
+			my $missing = 0;
+			ROUTE_CHECK: for my $cb_item (@{$clipboard->{items} // []})
+			{
+				next if ($cb_item->{type} // '') ne 'route';
+				for my $rp (@{$cb_item->{route_points} // []})
+				{
+					unless ($wpmgr->{waypoints}{$rp->{uuid}})
+					{
+						$missing = 1;
+						last ROUTE_CHECK;
+					}
+				}
+			}
+			@paste = grep { $_->{id} != $CTX_CMD_PASTE && $_->{id} != $CTX_CMD_PASTE_NEW } @paste
+				if $missing;
+		}
+	}
 
 	for my $item (@del)
 	{
@@ -529,9 +564,75 @@ sub _doPaste
 		}
 	}
 
+	# Step 4: Route dependency check (SS10.1 Step 4)
+	my @routes_in_clip = grep { ($_->{type} // '') eq 'route' } @resolved;
+	if (@routes_in_clip)
+	{
+		my %clip_wp_uuids;
+		for my $ci (@resolved)
+		{
+			my $ct = $ci->{type} // '';
+			if ($ct eq 'waypoint')
+			{
+				$clip_wp_uuids{$ci->{uuid}} = 1 if $ci->{uuid};
+			}
+			elsif ($ct eq 'group')
+			{
+				$clip_wp_uuids{$_->{uuid}} = 1 for grep { $_->{uuid} } @{$ci->{members} // []};
+			}
+		}
+		if ($panel eq 'e80')
+		{
+			my $wpmgr_dep = _wpmgr();
+			for my $route (@routes_in_clip)
+			{
+				my @missing;
+				for my $rp (@{$route->{route_points} // []})
+				{
+					my $u = $rp->{uuid} // '';
+					push @missing, $u unless $clip_wp_uuids{$u} || ($wpmgr_dep && $wpmgr_dep->{waypoints}{$u});
+				}
+				if (@missing)
+				{
+					my $rname = ($route->{data} // {})->{name} // $route->{uuid};
+					error("Route '$rname': member waypoint(s) not on E80 and not in clipboard: "
+					    . join(', ', @missing));
+					return;
+				}
+			}
+		}
+		else
+		{
+			my $dep_dbh = connectDB();
+			return if !$dep_dbh;
+			for my $route (@routes_in_clip)
+			{
+				my @missing;
+				for my $rp (@{$route->{route_points} // []})
+				{
+					my $u = $rp->{uuid} // '';
+					unless ($clip_wp_uuids{$u})
+					{
+						my $wp = getWaypoint($dep_dbh, $u);
+						push @missing, $u unless $wp;
+					}
+				}
+				if (@missing)
+				{
+					disconnectDB($dep_dbh);
+					my $rname = ($route->{data} // {})->{name} // $route->{uuid};
+					error("Route '$rname': member waypoint(s) not in database and not in clipboard: "
+					    . join(', ', @missing));
+					return;
+				}
+			}
+			disconnectDB($dep_dbh);
+		}
+	}
+
 	if ($panel eq 'e80')
 	{
-		# Step 4: Branch dissolution (SS6.3)
+		# Step 5: Branch dissolution (SS6.3)
 		my @effective;
 		for my $item (@resolved)
 		{
@@ -545,7 +646,7 @@ sub _doPaste
 			}
 		}
 
-		# Step 5: Homogeneity check
+		# Step 6: Homogeneity check
 		my %types = map { ($_->{type} // '') => 1 } @effective;
 		my @type_list = keys %types;
 		if (@type_list > 1)
@@ -558,7 +659,7 @@ sub _doPaste
 			}
 		}
 
-		# Step 6: Intra-clipboard name collision
+		# Step 7: Intra-clipboard name collision
 		my %seen;
 		for my $item (@effective)
 		{
@@ -573,7 +674,7 @@ sub _doPaste
 			$seen{$key} = 1;
 		}
 
-		# Step 7: E80-wide name collision
+		# Step 8: E80-wide name collision
 		my $wpmgr = _wpmgr();
 		if ($wpmgr)
 		{

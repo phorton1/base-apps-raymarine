@@ -9,59 +9,32 @@ own context here.
 ## Next
 
 
-### [Rework operations system]
+### [Extend testplan and runbook for general PASTE_BEFORE/AFTER]
 
-`nmOperations.md` to document the new scheme in full has been written.
-**Write nmOps_testplan.md** -- DONE. Written to docs/notes/nmOps_testplan.md.
-The implementation phase is in progress —
+During alpha testing, PASTE_BEFORE/AFTER was generalized to support any anchor
+node type (waypoint, route, track, group, branch) and any clipboard item type,
+with a cross-table position neighbor query. The testplan and runbook currently
+only exercise PASTE_BEFORE/AFTER with a plain-waypoint anchor and waypoint
+clipboard content (§2.13-§2.14). Add a small set of tests covering:
 
+- Paste before/after a **route** anchor (object node, obj_type=route)
+- Paste before/after a **group** anchor (collection node, node_type=group)
+- Paste before/after a **branch** anchor (collection node, node_type=branch)
+- Paste a **route** or **group** from clipboard using PASTE_BEFORE/AFTER
 
-1. Feature Implementation in progress
- **Finish nmOperations HTTP api for automated testing** -- concrete changes
-   required before nmOps_testplan.md can be fully executed. See also nmOps_testplan.md
-   §Infrastructure (suppress mechanism) and §5 (PREREQUISITE markers).
-   - **$suppress_outcome control** -- extend `/api/test?op=suppress` with an
-     `outcome=accept|reject` parameter. When `outcome=reject`, suppressed two-outcome
-     dialogs take the reject/abort path instead of the default accept/proceed. Required
-     by testplan §5.8 (ancestor-wins abort), §5.13 (UUID conflict abort). Without this,
-     those tests hang waiting for user input. Affects: nmDialogs.pm ($suppress_outcome
-     shared var), nmTest.pm HTTP handler, and each two-outcome dialog call site:
-       - Ancestor-wins confirmation (SS6.2): accept=proceed, reject=abort paste
-       - UUID conflict choice (SS10.10): accept=skip+continue, reject=abort all
-       - E80 DEL-WP route-ref warning (SS8.2): accept=proceed+remove refs, reject=abort
-   - **Route point key in nmTest.pm tree walker** -- confirm `rp:ROUTE_UUID:WP_UUID`
-     resolves correctly in the programmatic tree walker. Required by §2.14 and §3.16.
-   - **PASTE_BEFORE/AFTER dispatch** -- confirm CTX_CMD 10302-10305 are handled by
-     nmTest.pm dispatch and routed to nmOps.pm. These constants have no predecessor in
-     the old context_menu system and may not yet be wired in nmTest.pm.
-   - **Ancestor-wins dialog through suppress** -- the new SS6.2 confirmation dialog must
-     route through $suppress_confirm so that suppress=1 auto-accepts without blocking.
-     Without this, any paste with ancestor-wins resolution hangs (testplan §5.7).
-   - **UUID conflict dialog through suppress** -- SS10.10 conflict choice dialog must
-     route through $suppress_confirm. Without this, E80 paste conflict paths hang.
-   - **E80 Tracks header Delete** -- verify SS8.2 right-click header:tracks Delete is
-     implemented (new capability; not in old context_menu design). Required by §3.8.
-   - **showError modal suppress** -- `Pub::Utils::error()` calls
-     `$app_frame->showError($use_frame, "Error: ".$msg)` which produces a blocking
-     modal wx dialog. This dialog is NOT in the current $suppress_confirm chain. Any
-     error() call from NET protocol handlers, c_db.pm, or any other module during a
-     test step will halt the test run with an undismissable modal -- even if the error
-     is non-catastrophic and the ring buffer already shows the message. Fix: add a
-     shared variable (e.g. $suppress_error_dialog in nmDialogs.pm, alongside
-     $suppress_confirm) and check it in the navMate app frame's showError override.
-     When suppressed, skip the modal but keep the ring buffer log entry so Claude can
-     still see the error. Wire to the existing suppress HTTP endpoint: op=suppress&val=1
-     sets both $suppress_confirm and $suppress_error_dialog together (they should always
-     travel as a pair during automated testing). The distinction from $suppress_confirm:
-     this covers the Pub::WX::Frame error path; $suppress_confirm covers navMate-level
-     dialogs.
-2. **write new runbook** - write the runbook for claude to test, similar
-   to previous runbook, including handling or $progress dialogs, completely
-   informed api usage, no flailing, which writes last_testrun.md at a cycle completion.
-3. **iterate through testplan** - alpha run(0) ... stop on each issue and
-   resolve inline - no last_test run developed.  beta runs(n) - iterate
-   on full-cycle basis, resolving issues.  digression_teet(0) - run completly
-   with all passes, no issues, no code gaps.
+Place these in a new §2.x block after the existing §2.13-§2.14 tests.
+Update the runbook with corresponding curl commands and UUID references.
+
+Also add a small set of negative (menu-shape) tests verifying that paste items
+are correctly *absent* in boundary cases:
+
+- Right-click a DB object node (waypoint, route, or track) with clipboard loaded —
+  verify PASTE and PASTE_NEW do not appear (only PASTE_BEFORE/AFTER should)
+- Right-click an E80 waypoint with clipboard loaded —
+  verify no paste items appear at all
+- Right-click a route_point with a mixed clipboard (clipboard contains at least one
+  non-route_point item) — verify PASTE_BEFORE/AFTER (non-NEW) are absent, but
+  PASTE_NEW_BEFORE/AFTER remain
 
 
 
@@ -69,10 +42,56 @@ The implementation phase is in progress —
 
 ## Soon
 
+### [sort database collecton context menu command]
+I would like the ability to sort the immediate children of at least a single selected
+collection (branch or group). The simplest visision is a collection of terminal "objects"
+that would be sorted by their name.  The sort is essentially lexical but for two objects
+that have the same prefix but only end in digits different, the digits would be sub-sorted
+numerically. My vision is not so clear when the children of the colllection also includes
+other collections.  On the one hand, the same sort criteria could be used and so collections
+would normally end up inter-mixed with terminal objects in the resultant ordering. On
+the other hand, it might be nice to have something like the way windows explorer puts
+collections at the top, and then terminal objects after them.   Possibly if, upon executing
+the sort command, the system detected a collection in the children, it could then provide
+a UI to allow the user to specify the sort criteria in that one case.
+
+The other insteresting idea is to allow sorting of an explicit non-sparse range selection
+of items within a single parent ... sorting them in place as a group.  I could see that
+being handy, though the ui for the collection first would hardly seem to make sense in
+that case.
 
 
 ### [db_version increment wiring]
-See design_vision: [E80 sync / versioning system].
+
+`db_version`, `e80_version`, and `kml_version` columns are in schema 9.0 on
+`waypoints`, `routes`, and `tracks` (not on `collections` or `route_waypoints`).
+Columns carry correct defaults; increment logic is not yet wired.
+
+**db_version** — bumped on every navMate edit (UPDATE of any non-`visible` field).
+Starts at 1 on INSERT.
+
+**e80_version** — NULL = never synced. Set to `db_version` at time of a successful
+upload or download. Version numbers are not stored on the E80 hardware. At connect
+time, `e80_version` is initialized from a token encoded in the E80 `comment` field
+(encoding TBD — pending E80 character-set and comment-length-limit verification).
+A waypoint arriving from the E80 with no token has `e80_version = 0`. When
+`e80_version < db_version` the object has been locally edited since last sync;
+when `e80_version > db_version` the E80 has a newer version — detectable via
+MODIFY events live, or via comment-token mismatch at startup (magenta display state).
+
+**kml_version** — NULL = never exported via versioned KML. Set to `db_version`
+at time of export.
+
+**Transport columns in core tables** — a deliberate choice. The alternative
+junction table `sync_state(object_uuid, transport, db_version_at_sync)` was
+rejected in favor of simplicity given the small, slow-moving transport list.
+
+**Visibility** — the `visible` column is NOT a versioned field. Toggling
+visibility does not bump `db_version`.
+
+**Wiring deferred** — all increment logic belongs in a dedicated session when
+the sync feature is ready to implement. See `[db_version increment wiring]` in todo.md.
+
 
 ### [synchronization color scheme]
 Between winDatabase and winE80 highlight common "same" items in bold blue,
@@ -91,10 +110,6 @@ and sort to the top. Functions to update: `insertCollection`,
 `insertCollectionUUID`, `insertWaypoint`, `insertRoute`, `insertTrack`.
 Pattern: `SELECT COALESCE(MAX(position), 0) + 1 FROM <table> WHERE <scope>=?`
 
-### [Second $db_def default discrepancy]
-A second field default in c_db.pm `$db_def` differs from what the database
-actually holds. Not yet identified. Resolve in favor of the database (same
-as the wp_type fix).
 
 ### [winDatabase reordering UX]
 Add reorder capability to winDatabase for items in the navMate database.
@@ -122,7 +137,7 @@ suffix, not lexically (e.g. "WP2" < "WP10" < "WP20").
 
 ---
 
-## Then
+## Later
 
 ### [Item 11 cut timing]
 Design decision: currently a DB waypoint is deleted at cut time, not deferred
@@ -138,6 +153,21 @@ Options:
   responsibility to not abandon a cut clipboard.
 
 Affects: nmOpsDB.pm (`_cutDatabaseWaypoint`), nmOps.pm (doCut).
+
+### [wp_type semantics after operations]
+The `wp_type` field (sounding / label / nav) was assigned by the original
+oneTimeImport and reflects the source character of each waypoint. Open design
+question: does wp_type stay stable across operations, or should it shift?
+
+Specific concern: if a waypoint is used as a route point it is hard to imagine
+a sounding or label playing that role — nav seems like the only sensible
+route-point type. But it is unclear whether wp_type should be coerced on paste
+into a route, or left alone and treated as display metadata only.
+
+A second angle: wp_type may interact with the nmOperations scheme in ways not
+yet designed — e.g. filtering what can be pasted where, or affecting how items
+are rendered in the tree. No decision yet; capture here before the question
+gets lost. Resolve before any work that touches wp_type assignment at paste time.
 
 ---
 

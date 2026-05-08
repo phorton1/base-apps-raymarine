@@ -50,9 +50,16 @@ to create a situation that violates it.
 ### 1.2 A Route is an Ordered List of Waypoint References
 
 The system must never allow a route to contain a reference to a waypoint that does not exist
-in that side's database representation. This is particularly critical for cross-panel
-operations: pre-flight must guarantee that no Route can be created on the E80 before its
-waypoints exist in the WPMGR.
+in that side's database representation. Every route paste operation -- PASTE or PASTE_NEW,
+to any destination -- must verify before execution begins that all referenced waypoint UUIDs
+either already exist at the destination or are present in the current operation and will be
+processed first. If any are missing and not covered by the operation, pre-flight rejects.
+This check applies universally: E80-destination and DB-destination alike (SS10.1 Step 4).
+
+On the E80 side this check is non-trivial: the WPMGR must already contain the waypoints
+before the route is created. On the DB side this check is satisfied trivially for
+DB-sourced route pastes (the referenced waypoints already exist in the DB), and explicitly
+for E80-sourced route pastes where the referenced waypoints may or may not be in the DB.
 
 ### 1.3 The E80 Enforces Unique Names and UUIDs
 
@@ -71,6 +78,24 @@ the 32-bit boundary (not the 51-bit limit).
 
 Re-parenting an item to one of its own children is illogical and must be prevented in
 pre-flight.
+
+### 1.6 Route Paste Always Preserves Waypoint UUID References
+
+There is no paste operation for routes that creates new waypoint records as a side effect.
+PASTE and PASTE_NEW for a route both produce route records whose route_waypoints references
+point to the same underlying waypoint UUIDs as the source. The distinction between PASTE
+and PASTE_NEW is whether the route record itself receives a fresh UUID (PASTE_NEW) or
+preserves its source UUID (PASTE). The waypoint UUIDs the route references are always
+preserved exactly. No new waypoint records are ever created as part of any route paste.
+
+### 1.7 E80 Paste Operations Must Be Type-Homogeneous
+
+Each paste to the E80 must contain items of a single user-level type: waypoints, groups,
+routes, or tracks. Mixed-type pastes to the E80 are not permitted. This is a deliberate
+design choice to enable clean pre-flight validation and unambiguous execution semantics.
+The one exception is the mixed waypoints-and-route-points clipboard, which is accepted at
+E80 route point destinations only (SS10.9). DB-destination pastes are unaffected -- the
+DB accepts heterogeneous pastes.
 
 
 ## 2. Command Vocabulary
@@ -427,6 +452,24 @@ and E80 panels. The distinction between PASTE and PASTE_NEW collapses for route-
 clipboards: both operations insert references to the same waypoints, and the only
 meaningful difference is the position in the route where the references are inserted.
 
+### 7.4 Routes -- compound paste behavior
+
+A route clipboard item carries the route record and its ordered list of waypoint UUID
+references. When a route is pasted -- PASTE or PASTE_NEW, to any destination -- the
+referenced waypoint UUIDs are always preserved exactly (invariant SS1.6). No new waypoint
+records are created as part of a route paste. PASTE_NEW for a route means the route record
+receives a fresh UUID; the waypoint references it carries are unchanged.
+
+Pre-flight (SS10.1 Step 4) must confirm that all referenced waypoint UUIDs exist at the
+destination before execution begins. If any are missing and not present in the current
+operation, the paste is rejected.
+
+When a selection contains both a route and waypoints that are members of that route, those
+waypoints are not independently duplicated by the route paste. They are handled separately
+by whatever paste rule applies to waypoints in the selection. The route's own
+route_waypoints references always point to the original source UUIDs regardless of what
+else is in the selection.
+
 
 ## 8. Pre-flight Rules: Delete
 
@@ -594,17 +637,25 @@ an item into one of its own descendants. On the DB panel this primarily guards a
 pasting a Branch or Group into a descendant Branch or Group. On the E80 panel deep nesting
 is uncommon but the check runs regardless.
 
+**Step 4 -- Route dependency check (invariant SS1.2, route clipboards only).** If the
+resolved clipboard contains any route items, verify that every waypoint UUID referenced by
+those routes either already exists at the destination or is present in the current clipboard
+and will be processed before the route (waypoints and groups are always processed before
+routes -- SS12.1, SS12.5). If any referenced waypoint UUID is absent from both the
+destination and the clipboard, reject with a message identifying the affected routes and
+missing waypoints. This check applies to all destinations -- DB and E80 alike.
+
 ### 10.2 Additional resolution -- E80 destination only
 
-**Step 4 -- Branch dissolution.** Dissolve Branch items per SS6.3 to produce effective
+**Step 5 -- Branch dissolution.** Dissolve Branch items per SS6.3 to produce effective
 contents. If effective contents are empty, reject.
 
-**Step 5 -- Homogeneity check.** If effective contents are heterogeneous (not all the same
+**Step 6 -- Homogeneity check.** If effective contents are heterogeneous (not all the same
 user-level type) and are not a mixed waypoints-and-route-points clipboard, no paste command
 is offered at this E80 destination. Pre-flight does not abort -- it simply makes no paste
 commands available, leaving Copy, Cut, and Delete as the only menu options.
 
-**Step 6 -- Intra-clipboard name collision check.** Within the effective contents, check
+**Step 7 -- Intra-clipboard name collision check.** Within the effective contents, check
 for duplicate names among items of the same user-level type: waypoints against waypoints,
 routes against routes, groups against groups. If any two items in the effective contents
 share a name within their type, the paste is hard-aborted with a message identifying the
@@ -617,7 +668,7 @@ For group pastes: member waypoint names are checked across all groups in the eff
 contents. Two member waypoints in different groups that share a name constitute an
 intra-clipboard collision.
 
-**Step 7 -- E80-wide name collision check.** For each item in the effective contents whose
+**Step 8 -- E80-wide name collision check.** For each item in the effective contents whose
 UUID does not already exist on the E80, check its name against the complete E80 in-memory
 database for that type. This is a full breadth scan: waypoint names are checked against
 all E80 waypoints regardless of which group they belong to; route names against all E80
@@ -632,7 +683,7 @@ retrying.
 For group pastes: group shell names are checked first; a group-level name collision aborts
 before member waypoints are inspected.
 
-Items passing Steps 6 and 7 have confirmed name safety. UUID-based conflict resolution
+Items passing Steps 7 and 8 have confirmed name safety. UUID-based conflict resolution
 (where the clipboard item's UUID already exists on the E80) is deferred to SS10.10.
 
 ### 10.3 Paste to DB -- collection root or member node
@@ -649,8 +700,8 @@ types are rejected with an informational message.
 | Homogeneous waypoints                  | DB     | yes      | Y     | --        | Move -- re-home collection_uuid                     |
 | Intact-group clipboard                 | DB     | no       | --    | Y         | Duplicate group + members, fresh UUIDs              |
 | Intact-group clipboard                 | DB     | yes      | Y     | --        | Move group shell; members travel with it            |
-| Homogeneous routes                     | DB     | no       | --    | Y         | Duplicate route + fresh member WP UUIDs             |
-| Homogeneous routes                     | DB     | yes      | Y     | --        | Move route record                                   |
+| Homogeneous routes                     | DB     | no       | --    | Y         | Fresh route UUID; waypoint refs preserved (SS1.6)   |
+| Homogeneous routes                     | DB     | yes      | Y     | --        | Move route record; waypoint refs preserved          |
 | Homogeneous tracks                     | DB     | no       | --    | --        | DB track copy not supported                         |
 | Homogeneous tracks                     | DB     | yes      | Y     | --        | Move track                                          |
 | Branch clipboard                       | DB     | no       | --    | Y         | Duplicate all branch contents, fresh UUIDs          |
@@ -665,6 +716,8 @@ types are rejected with an informational message.
 | Homogeneous routes                     | E80    | yes      | Y     | --        | Download route + delete from E80                    |
 | Homogeneous tracks                     | E80    | no       | Y     | --        | Download; PASTE_NEW not available for tracks        |
 | Homogeneous tracks                     | E80    | yes      | Y     | --        | Download + E80 erase                                |
+| Heterogeneous flat set                 | E80    | no       | Y     | Y         | Download all; waypoints/groups before routes; existing UUIDs updated in-place (SS12.1) |
+| Heterogeneous flat set                 | E80    | yes      | Y     | --        | Download + E80 delete; same ordering                |
 
 My Waypoints download (source = E80 WP destination, My Waypoints node): contents arrive
 as individual ungrouped Waypoints in the target DB collection. No Group is created; the
@@ -741,15 +794,10 @@ Applies after SS10.2. DB-sourced cut is blocked. PASTE_NEW variants for copy onl
 ### 10.10 E80-specific checks (all E80 destinations, SS10.5-SS10.9)
 
 These checks run for all E80-destination paste operations after the structural pre-flight
-above passes. Name collision hard-aborts have already been handled by Steps 6 and 7 in
-SS10.2; the items reaching this point have confirmed name safety. This section handles
-route dependencies and UUID-based conflict resolution.
-
-**Route dependency check.** Before creating any route on E80, every member waypoint UUID
-must already exist in the WPMGR. If any UUID is missing, an error dialog lists the
-affected routes and the missing waypoints, then aborts. navMate does not silently paste
-missing waypoints as a side effect of a route paste. The user must paste the missing
-waypoints first, then retry the route paste.
+above passes. Name collision hard-aborts have already been handled by Steps 7 and 8 in
+SS10.2; the items reaching this point have confirmed name safety. The route dependency
+check (SS10.1 Step 4) has already confirmed all referenced waypoints exist on E80 or are
+in the current operation. This section handles UUID-based conflict resolution.
 
 **UUID conflict check.** For each item to be created on E80 (name safety already
 confirmed by Step 6):
@@ -816,12 +864,29 @@ UUID-preserving merge into the navMate DB. For each item in the clipboard:
 - UUID in DB, data identical -> no-op.
 - UUID in DB, data differs -> conflict dialog: Replace / Skip / Replace All / Skip All / Abort.
 
+**Replace means update in-place.** When a UUID already exists in the DB, Replace updates
+the record's data fields but does not change its collection_uuid. Existing items stay where
+they are in the DB hierarchy. Only items whose UUIDs do not exist anywhere in the DB are
+placed at the paste destination. The paste destination is the landing zone for new items
+only, not a re-homing target for existing ones.
+
+**Execution ordering (E80-source pastes only).** When the clipboard source is E80,
+waypoints and group members are always processed before routes, regardless of the order
+items appear in the clipboard. For DB-source pastes this ordering is not required -- the
+referenced waypoints already exist in the DB and the route paste simply references their
+existing UUIDs (SS1.6). The ordering guarantee for E80-source pastes ensures that any
+user-initiated Abort during the conflict dialog leaves the DB in a consistent state:
+orphaned waypoints may result from an Abort during the waypoint phase, but route records
+with broken waypoint references cannot result from an Abort during the route phase, because
+all waypoints will already have been processed.
+
 **Groups:** the group collection is created under the target if absent (merge semantics;
 existing members are preserved). Member waypoints are merged individually per the above.
 My Waypoints content arrives as ungrouped waypoints -- no group is created.
 
-**Routes:** member waypoints are merged into the target collection. The route record is
-inserted or updated. The route waypoint list is rebuilt from the clipboard.
+**Routes:** the route record is inserted (if UUID new to DB) or updated in-place (if UUID
+exists). The route_waypoints list is rebuilt from the clipboard. Waypoint UUID references
+are preserved exactly (SS1.6); no new waypoint records are created by the route paste.
 
 **Cut variant:** after each item is successfully pasted, the source item is deleted from
 E80 via WPMGR commands.
@@ -844,8 +909,9 @@ carries only the route record; member waypoints stay in their current collection
 Inserts with fresh navMate UUIDs regardless of source. No conflict check. Available for
 copy operations only.
 
-**Routes:** each member waypoint also receives a fresh UUID; the new route references the
-new waypoint UUIDs.
+**Routes:** the new route record receives a fresh UUID. The route_waypoints references
+preserve the source waypoint UUIDs exactly -- no new waypoint records are created (SS1.6).
+Pre-flight (SS10.1 Step 4) has already confirmed all referenced waypoints exist in the DB.
 
 **Tracks:** PASTE_NEW is not available for any track clipboard. Track duplication within
 the database requires Cut -> Paste (move).
@@ -904,13 +970,14 @@ Sends WPMGR NEW_ITEM commands in dependency order:
 - **Routes:** pre-flight has already verified all member waypoint UUIDs exist on E80.
   Create the route referencing those existing UUIDs. No waypoints are created as a
   side effect.
-- **Branch (dissolved):** groups and their waypoints first, then routes. Track items
-  are skipped silently.
+- **Branch (dissolved):** effective contents reaching execution are homogeneous -- the
+  homogeneity check (SS10.2 Step 6) has already rejected any mixed-type dissolution. The
+  upload proceeds per the rules for that single type above.
 
 The progress dialog protection pattern wraps all Paste-to-E80 operations, using the same
 pattern as `_doRefreshE80Data` in `winMain.pm`. Do not reinvent this pattern.
 
-### 12.5 Paste Before and After
+### 12.6 Paste Before and After
 
 **DB -- collection ordering:** inserts items at the specified position within the parent
 collection, adjacent to the right-clicked node. Position FLOAT values are assigned to
@@ -933,7 +1000,7 @@ Paste New Before/After at a route point destination: inserts new `route_waypoint
 references pointing to the same underlying waypoint UUIDs (copy semantics --
 no new waypoint records are created; see SS7.3).
 
-### 12.6 Delete -- Database
+### 12.7 Delete -- Database
 
 Execution follows the pre-flight determination from SS8.1.
 
@@ -948,7 +1015,7 @@ Execution follows the pre-flight determination from SS8.1.
   waypoints, routes, route_waypoints, tracks, and track_points.
 - **REMOVE_ROUTEPOINT:** removes the one `route_waypoints` row at the selected position.
 
-### 12.7 Delete -- E80
+### 12.8 Delete -- E80
 
 Execution follows pre-flight determination from SS8.2 in the enforced order:
 DELETE_ROUTE -> DELETE_GROUP / DELETE_GROUP_WPS -> DELETE_WAYPOINT -> DELETE_TRACK.

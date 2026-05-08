@@ -304,21 +304,48 @@ sub getPasteMenuItems
 		return () if $t eq 'header' && $kind eq 'tracks';
 	}
 
-	# Positional: destinations that support PASTE_BEFORE/AFTER.
-	# DB: object nodes, groups (member nodes per SS6.5), and route_points.
-	# E80: route_point only (SS10.9).
+	# PASTE/PASTE_NEW: destination must be a collection (receives items into itself).
+	# E80: header folders, my_waypoints, groups, and routes (route = ordered WP collection).
+	# DB:  root and collection nodes (branch/group) only. NOT object or route_point nodes.
+	my $is_collection;
+	if ($panel eq 'e80')
+	{
+		$is_collection = ($t eq 'header' && $kind ne 'tracks')
+		              || $t eq 'my_waypoints'
+		              || $t eq 'group'
+		              || $t eq 'route';
+	}
+	else
+	{
+		$is_collection = $t eq 'root' || $t eq 'collection';
+	}
+
+	# PASTE_BEFORE/AFTER: destination supports positional insertion (adjacent to, not into).
+	# E80: route_point only. DB: any item or collection node except root (root has no parent).
 	my $positional = ($panel eq 'e80')
 		? ($t eq 'route_point')
-		: ($t eq 'object' || $t eq 'route_point' || ($t eq 'collection' && $nt eq 'group'));
+		: ($t eq 'object' || $t eq 'route_point' || $t eq 'collection');
 
 	my @items;
-	push @items, { id => $CTX_CMD_PASTE,     label => 'Paste'     };
-	push @items, { id => $CTX_CMD_PASTE_NEW, label => 'Paste New' } if !$cut;
+	push @items, { id => $CTX_CMD_PASTE,     label => 'Paste'     } if $is_collection;
+	push @items, { id => $CTX_CMD_PASTE_NEW, label => 'Paste New' } if $is_collection && !$cut;
 
 	if ($positional)
 	{
-		push @items, { id => $CTX_CMD_PASTE_BEFORE, label => 'Paste Before' };
-		push @items, { id => $CTX_CMD_PASTE_AFTER,  label => 'Paste After'  };
+		# Non-NEW positional paste on a route_point anchor is only valid when the
+		# entire clipboard consists of route_points (a within-route reorder). Any
+		# non-route_point content must use PASTE_NEW to avoid collection/ownership confusion.
+		my $allow_non_new = 1;
+		if ($t eq 'route_point')
+		{
+			my @cb    = @{$clipboard->{items} // []};
+			$allow_non_new = !grep { ($_->{type} // '') ne 'route_point' } @cb;
+		}
+		if ($allow_non_new)
+		{
+			push @items, { id => $CTX_CMD_PASTE_BEFORE, label => 'Paste Before' };
+			push @items, { id => $CTX_CMD_PASTE_AFTER,  label => 'Paste After'  };
+		}
 		if (!$cut)
 		{
 			push @items, { id => $CTX_CMD_PASTE_NEW_BEFORE, label => 'Paste New Before' };

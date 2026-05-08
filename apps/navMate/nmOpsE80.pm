@@ -828,10 +828,23 @@ sub _pasteRouteToE80
         return;
     }
 
-    my $route_uuid = $item->{uuid};
-    my $route_data = $item->{data};
-    my $members    = $item->{members} // [];
-    display($dbg_e80_ops, 0, "_pasteRouteToE80: '${\($route_data->{name}//'')}' wps=" . scalar(@$members));
+    my $route_uuid   = $item->{uuid};
+    my $route_data   = $item->{data};
+    my $route_points = $item->{route_points} // [];
+    display($dbg_e80_ops, 0, "_pasteRouteToE80: '${\($route_data->{name}//'')}' rps=" . scalar(@$route_points));
+
+    # SS10.10: every member WP UUID must already exist on E80 -- we do not auto-create
+    my @wp_uuids;
+    for my $rp (@$route_points)
+    {
+        my $uuid = $rp->{uuid};
+        unless ($wpmgr->{waypoints}{$uuid})
+        {
+            error("_pasteRouteToE80: IMPLEMENTATION ERROR -- route member $uuid not on E80 (SS10.10)");
+            return;
+        }
+        push @wp_uuids, $uuid;
+    }
 
     my $progress;
     if ($shared_progress)
@@ -841,60 +854,38 @@ sub _pasteRouteToE80
     }
     else
     {
-        my $total = (2 * scalar(@$members)) + 1;
-        $progress = _openE80Progress("Paste Route", $total,
+        $progress = _openE80Progress("Paste Route", 1,
             {cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
         return if !$progress;
-        $progress->{_counting_get_items} = 1;
     }
 
-    my $policy = undef;
-    for my $member (@$members)
+    if ($wpmgr->{routes}{$route_uuid})
     {
-        last if $progress && $progress->{cancelled};
-        my $result = _pasteOneWaypointToE80($wpmgr, $tree, $member, \$policy,
-            'Paste Route', $progress, $pending_uuids, $pending_names);
-        last if $result eq 'aborted';
-        if ($cb->{cut_flag} && $result ne 'skipped' && $result ne 'aborted')
-        {
-            $cb->{source} eq 'database'
-                ? _cutDatabaseWaypoint($member->{uuid}, $tree)
-                : _cutE80Waypoint($member->{uuid}, $tree);
-        }
+        $wpmgr->modifyRoute({
+            uuid      => $route_uuid,
+            waypoints => \@wp_uuids,
+            progress  => $progress,
+        });
+    }
+    else
+    {
+        $wpmgr->createRoute({
+            name      => $route_data->{name}    // '',
+            uuid      => $route_uuid,
+            comment   => $route_data->{comment} // '',
+            color     => $cb->{source} eq 'database'
+                ? abgrToE80Index($route_data->{color})
+                : ($route_data->{color} // 0),
+            waypoints => \@wp_uuids,
+            progress  => $progress,
+        });
     }
 
-    my $aborted = ($policy && $policy eq 'abort') || ($progress && $progress->{cancelled});
-
-    unless ($aborted)
+    if ($cb->{cut_flag})
     {
-        my @wp_uuids = map { $_->{uuid} } @$members;
-        if ($wpmgr->{routes}{$route_uuid})
-        {
-            $wpmgr->modifyRoute({
-                uuid      => $route_uuid,
-                waypoints => \@wp_uuids,
-                progress  => $progress,
-            });
-        }
-        else
-        {
-            $wpmgr->createRoute({
-                name      => $route_data->{name}    // '',
-                uuid      => $route_uuid,
-                comment   => $route_data->{comment} // '',
-                color     => $cb->{source} eq 'database'
-                    ? abgrToE80Index($route_data->{color})
-                    : ($route_data->{color} // 0),
-                waypoints => \@wp_uuids,
-                progress  => $progress,
-            });
-        }
-        if ($cb->{cut_flag})
-        {
-            $cb->{source} eq 'database'
-                ? _cutDatabaseRoute($route_uuid, $tree)
-                : _cutE80Route($route_uuid, $tree);
-        }
+        $cb->{source} eq 'database'
+            ? _cutDatabaseRoute($route_uuid, $tree)
+            : _cutE80Route($route_uuid, $tree);
     }
 }
 
@@ -918,7 +909,7 @@ sub _pasteAllToE80
         my $members = $item->{members} // [];
         if    ($type eq 'waypoint') { $total += 1; }
         elsif ($type eq 'group')    { $total += scalar(@$members) + ($item->{uuid} ? 1 : 0); }
-        elsif ($type eq 'route')    { $total += scalar(@$members) + 1; }
+        elsif ($type eq 'route')    { $total += 1; }
     }
 
     my $progress = _openE80Progress("Paste", $total,
@@ -1120,7 +1111,7 @@ sub _pasteNewRouteToE80
     }
 
     my $route_data = $item->{data};
-    my $members    = $item->{members} // [];
+    my $members    = $item->{route_points} // [];
 
     my $progress;
     if ($shared_progress)
@@ -1130,64 +1121,35 @@ sub _pasteNewRouteToE80
     }
     else
     {
-        $progress = _openE80Progress("Paste New Route", scalar(@$members) + 1,
+        $progress = _openE80Progress("Paste New Route", 1,
             {cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
     }
     return if !$progress;
 
-    my %pending_names;
-    my @new_wp_uuids;
-    for my $member (@$members)
+    return if $progress->{cancelled};
+
+    my $new_route_uuid = _newNavUUID();
+    if (!$new_route_uuid)
     {
-        last if $progress && $progress->{cancelled};
-        my $wp       = $member->{data};
-        my $new_uuid = _newNavUUID();
-        if (!$new_uuid)
-        {
-            error("_pasteNewRouteToE80: UUID generation failed");
-            $progress->{error} = 'UUID generation failed' if $progress;
-            last;
-        }
-        my $wp_name = _deconflictE80Name($wpmgr, $wp->{name}, \%pending_names);
-        $wpmgr->createWaypoint({
-            name     => $wp_name,
-            uuid     => $new_uuid,
-            lat      => $wp->{lat},
-            lon      => $wp->{lon},
-            sym      => 0,
-            ts       => $wp->{created_ts} // $wp->{ts} // time(),
-            comment  => $wp->{comment} // '',
-            depth    => $wp->{depth_cm} // $wp->{depth} // 0,
-            progress => $progress,
-        });
-        push @new_wp_uuids, $new_uuid;
+        error("_pasteNewRouteToE80: UUID generation failed");
+        $progress->{error} = 'UUID generation failed' if $progress;
+        return;
     }
 
-    unless ($progress && ($progress->{cancelled} || $progress->{error}))
-    {
-        my $new_route_uuid = _newNavUUID();
-        if (!$new_route_uuid)
-        {
-            error("_pasteNewRouteToE80: UUID generation failed for route");
-            $progress->{error} = 'UUID generation failed' if $progress;
-        }
-        else
-        {
-            my %pending_route_names;
-            my $route_name = _deconflictE80Name($wpmgr, $route_data->{name} // '',
-                \%pending_route_names, 'routes');
-            $wpmgr->createRoute({
-                name      => $route_name,
-                uuid      => $new_route_uuid,
-                comment   => $route_data->{comment} // '',
-                color     => $cb->{source} eq 'database'
-                    ? abgrToE80Index($route_data->{color})
-                    : ($route_data->{color} // 0),
-                waypoints => \@new_wp_uuids,
-                progress  => $progress,
-            });
-        }
-    }
+    my %pending_route_names;
+    my $route_name = _deconflictE80Name($wpmgr, $route_data->{name} // '',
+        \%pending_route_names, 'routes');
+    my @wp_uuids = map { $_->{uuid} } @$members;
+    $wpmgr->createRoute({
+        name      => $route_name,
+        uuid      => $new_route_uuid,
+        comment   => $route_data->{comment} // '',
+        color     => $cb->{source} eq 'database'
+            ? abgrToE80Index($route_data->{color})
+            : ($route_data->{color} // 0),
+        waypoints => \@wp_uuids,
+        progress  => $progress,
+    });
 }
 
 
@@ -1210,7 +1172,7 @@ sub _pasteNewAllToE80
         my $members = $item->{members} // [];
         if    ($type eq 'waypoint') { $total += 1; }
         elsif ($type eq 'group')    { $total += scalar(@$members) + 1; }
-        elsif ($type eq 'route')    { $total += scalar(@$members) + 1; }
+        elsif ($type eq 'route')    { $total += 1; }
     }
 
     my $progress = _openE80Progress("Paste New", $total,

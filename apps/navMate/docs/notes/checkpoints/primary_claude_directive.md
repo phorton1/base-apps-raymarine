@@ -20,6 +20,9 @@ the primary claude"**.
 
 ## session_state.md Format
 
+The file has two parts separated by a blank line.
+
+**Status block** (top):
 ```
 primary_session_started: YYYY-MM-DDTHHMM
 official_docs_updated:   YYYY-MM-DDTHHMM
@@ -29,6 +32,18 @@ memory_updated:          YYYY-MM-DDTHHMM
 
 `primary_session_started` is yours to write. The other three belong to the
 update Claude.
+
+**Checkpoint entries** (below the blank line, one per checkpoint, sorted
+chronologically oldest to newest):
+```
+checkpoint: YYYY-MM-DDTHHMM
+    brief description; key decisions; what changed; what's next
+```
+
+Each entry is two lines: the timestamp line and an indented description line.
+A blank line separates each entry. Wrap description lines at ~80 characters
+when they are long. When you write a checkpoint file, append its entry to
+session_state.md in the correct chronological position.
 
 ---
 
