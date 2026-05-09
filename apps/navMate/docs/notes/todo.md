@@ -9,36 +9,6 @@ own context here.
 ## Next
 
 
-### [Extend testplan and runbook for general PASTE_BEFORE/AFTER]
-
-During alpha testing, PASTE_BEFORE/AFTER was generalized to support any anchor
-node type (waypoint, route, track, group, branch) and any clipboard item type,
-with a cross-table position neighbor query. The testplan and runbook currently
-only exercise PASTE_BEFORE/AFTER with a plain-waypoint anchor and waypoint
-clipboard content (§2.13-§2.14). Add a small set of tests covering:
-
-- Paste before/after a **route** anchor (object node, obj_type=route)
-- Paste before/after a **group** anchor (collection node, node_type=group)
-- Paste before/after a **branch** anchor (collection node, node_type=branch)
-- Paste a **route** or **group** from clipboard using PASTE_BEFORE/AFTER
-
-Place these in a new §2.x block after the existing §2.13-§2.14 tests.
-Update the runbook with corresponding curl commands and UUID references.
-
-Also add a small set of negative (menu-shape) tests verifying that paste items
-are correctly *absent* in boundary cases:
-
-- Right-click a DB object node (waypoint, route, or track) with clipboard loaded —
-  verify PASTE and PASTE_NEW do not appear (only PASTE_BEFORE/AFTER should)
-- Right-click an E80 waypoint with clipboard loaded —
-  verify no paste items appear at all
-- Right-click a route_point with a mixed clipboard (clipboard contains at least one
-  non-route_point item) — verify PASTE_BEFORE/AFTER (non-NEW) are absent, but
-  PASTE_NEW_BEFORE/AFTER remain
-
-
-
-
 
 ## Soon
 
@@ -122,22 +92,13 @@ See `[item ordering UI]` in design_vision.md for design context.
 Known fix — see open_bugs.md. One-liner in the GET_ITEM/waitReply failure
 path for 'mod_item' commands.
 
-### [E80 tree display sort order]
-Confirm and implement E80 tree display ordering in winE80 tree population.
-The E80 does not support persistent positional ordering for these collections;
-sort is display-layer only:
-- Groups folder children: by Group Name, with My Waypoints floated to top
-- Routes folder children: by Route Name
-- Tracks folder children: by Track Name
-- Waypoints within a Group: by Waypoint Name
-Sub-sort rule: names ending in a digit sequence sort numerically on the digit
-suffix, not lexically (e.g. "WP2" < "WP10" < "WP20").
 
 
 
 ---
 
 ## Later
+
 
 ### [Item 11 cut timing]
 Design decision: currently a DB waypoint is deleted at cut time, not deferred

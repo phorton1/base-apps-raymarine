@@ -215,7 +215,7 @@ sub openDB
 
 	if ($stored eq '7.0' || $stored eq '8.0')
 	{
-		display(0,0,"c_db::openDB migrating schema $stored → 9.0");
+		display(0,0,"c_db::openDB migrating schema $stored -> 9.0");
 		if ($stored eq '7.0')
 		{
 			for my $table (qw(collections waypoints routes tracks))

@@ -108,6 +108,14 @@ html, body { margin: 0; padding: 0; height: 100%; }
     pointer-events: none;
     line-height: 1.4;
 }
+.nm-info-source {
+    font-weight: bold;
+    text-transform: uppercase;
+    color: #adf;
+    font-size: 13px;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+}
 .nm-info-header { margin-bottom: 5px; }
 .nm-info-type {
     color: #bbb;

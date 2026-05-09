@@ -91,7 +91,7 @@ sub _treeChildNodes
 
 sub _deconflictE80Name
     # Returns a name that won't clash with existing E80 names or $pending_names.
-    # $hash_name: 'waypoints' (default), 'groups', or 'routes' — which WPMGR hash to check.
+    # $hash_name: 'waypoints' (default), 'groups', or 'routes' - which WPMGR hash to check.
     # Appends " (2)", " (3)", ... until the name is unique.
     # Always records the chosen name in $pending_names if provided.
 {
@@ -290,7 +290,9 @@ sub _deleteE80GroupsAndWPs
         }
         if (grep { _e80WPRoutes($wpmgr, $_) } @members)
         {
-            warning(0, 0, "IMPLEMENTATION ERROR: _deleteE80GroupsAndWPs: my_waypoints member in route reached handler");
+            my $err = "Cannot delete My Waypoints: one or more waypoints are used in a route. "
+                    . "Remove them from routes first.";
+            $nmDialogs::suppress_confirm ? error($err) : okDialog($tree, $err, "Delete Group + Waypoints");
             return;
         }
         my $n = scalar @members;
@@ -315,7 +317,10 @@ sub _deleteE80GroupsAndWPs
         {
             if (_e80WPRoutes($wpmgr, $wp_uuid))
             {
-                warning(0, 0, "IMPLEMENTATION ERROR: _deleteE80GroupsAndWPs: group '$node->{data}{name}' member in route reached handler");
+                my $err = "Cannot delete group '${\($node->{data}{name} // '?')}' and its waypoints: "
+                        . "one or more members are used in a route. "
+                        . "Remove them from routes first, or use Delete Group to dissolve the group without deleting its waypoints.";
+                $nmDialogs::suppress_confirm ? error($err) : okDialog($tree, $err, "Delete Group + Waypoints");
                 return;
             }
         }
@@ -352,7 +357,7 @@ sub _deleteE80GroupsAndWPs
 
 sub _removeE80RoutePoint
 {
-    my ($node, $tree) = @_;
+    my ($nodes, $right_click_node, $tree) = @_;
 
     my $wpmgr = _wpmgr();
     if (!$wpmgr)
@@ -361,15 +366,26 @@ sub _removeE80RoutePoint
         return;
     }
 
-    my $wp         = $node->{data};
-    my $name       = $wp ? ($wp->{name} // $node->{uuid}) : $node->{uuid};
-    my $route_uuid = $node->{route_uuid};
+    my $route_uuid = $right_click_node->{route_uuid};
     my $route      = $wpmgr->{routes}{$route_uuid};
     my $route_name = $route ? ($route->{name} // $route_uuid) : $route_uuid;
 
-    return if !confirmDialog($tree, "Remove '$name' from route '$route_name'?", "Remove RoutePoint");
+    my $n = scalar @$nodes;
+    my $msg;
+    if ($n == 1)
+    {
+        my $wp   = $nodes->[0]{data};
+        my $name = $wp ? ($wp->{name} // $nodes->[0]{uuid}) : $nodes->[0]{uuid};
+        $msg = "Remove '$name' from route '$route_name'?";
+    }
+    else
+    {
+        $msg = "Remove $n waypoints from route '$route_name'?";
+    }
+    return if !confirmDialog($tree, $msg, "Remove RoutePoint");
 
-    my @new_uuids = grep { $_ ne $node->{uuid} } @{$route->{uuids} // []};
+    my %to_remove = map { $_->{uuid} => 1 } @$nodes;
+    my @new_uuids = grep { !$to_remove{$_} } @{$route->{uuids} // []};
     $wpmgr->modifyRoute({uuid => $route_uuid, waypoints => \@new_uuids});
 }
 
@@ -431,7 +447,24 @@ sub _deleteE80Tracks
         error("_deleteE80Tracks: TRACK service not connected");
         return;
     }
-    my $n   = scalar @$nodes;
+
+    my @track_nodes;
+    for my $n (@$nodes)
+    {
+        if (($n->{type} // '') eq 'header')
+        {
+            push @track_nodes, map { { type => 'track', uuid => $_, data => $track->{tracks}{$_} } }
+                               sort keys %{$track->{tracks}};
+        }
+        else
+        {
+            push @track_nodes, $n;
+        }
+    }
+    $nodes = \@track_nodes;
+
+    my $n = scalar @$nodes;
+    return if !$n;
     my $msg = $n == 1
         ? "Delete track '$nodes->[0]{data}{name}' from E80?"
         : "Delete $n tracks from E80?";
@@ -452,7 +485,7 @@ sub _deleteE80
     elsif ($cmd_id == $CTX_CMD_DELETE_GROUP)      { _deleteE80Groups(\@nodes, $tree); }
     elsif ($cmd_id == $CTX_CMD_DELETE_GROUP_WPS)  { _deleteE80GroupsAndWPs(\@nodes, $tree); }
     elsif ($cmd_id == $CTX_CMD_DELETE_ROUTE)      { _deleteE80Routes(\@nodes, $tree); }
-    elsif ($cmd_id == $CTX_CMD_REMOVE_ROUTEPOINT) { _removeE80RoutePoint($right_click_node, $tree); }
+    elsif ($cmd_id == $CTX_CMD_REMOVE_ROUTEPOINT) { _removeE80RoutePoint(\@nodes, $right_click_node, $tree); }
     elsif ($cmd_id == $CTX_CMD_DELETE_TRACK)      { _deleteE80Tracks(\@nodes, $tree); }
     else  { warning(0, 0, "_deleteE80: unhandled cmd_id=$cmd_id"); }
 }
@@ -565,13 +598,13 @@ sub _newE80Route
 
 
 #----------------------------------------------------
-# Paste helpers — UUID-preserving (PASTE)
+# Paste helpers - UUID-preserving (PASTE)
 #----------------------------------------------------
 
 sub _pasteOneWaypointToE80
     # UUID-preserving inner helper. Returns: 'created'/'replaced'/'skipped'/'no_change'/'aborted'.
-    # $pending_uuids: hashref — UUIDs queued this pass; avoids double-create.
-    # $pending_names: hashref — lc(name)=>1 for names already used; avoids E80 dup-name reject.
+    # $pending_uuids: hashref - UUIDs queued this pass; avoids double-create.
+    # $pending_names: hashref - lc(name)=>1 for names already used; avoids E80 dup-name reject.
 {
     my ($wpmgr, $tree, $item, $policy_ref, $title, $progress, $pending_uuids, $pending_names) = @_;
     my $wp   = $item->{data};
@@ -902,6 +935,39 @@ sub _pasteAllToE80
         return;
     }
 
+    # Pasting waypoints into an existing E80 route: append by UUID reference, no WP creation.
+    if (($node->{type} // '') eq 'route')
+    {
+        my $route_uuid = $node->{uuid};
+        my $route      = $wpmgr->{routes}{$route_uuid};
+        unless ($route)
+        {
+            error("_pasteAllToE80: route $route_uuid not found on E80");
+            return;
+        }
+        my @add_uuids;
+        for my $item (@$items)
+        {
+            next unless ($item->{type} // '') eq 'waypoint';
+            my $uuid = $item->{uuid} // '';
+            push @add_uuids, $uuid if $uuid && $wpmgr->{waypoints}{$uuid};
+        }
+        if (!@add_uuids)
+        {
+            warning(0, 0, "_pasteAllToE80: no valid waypoint UUIDs to append to route");
+            return;
+        }
+        my $progress = _openE80Progress("Paste to Route", 1,
+            {cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
+        return if !$progress;
+        $wpmgr->modifyRoute({
+            uuid      => $route_uuid,
+            waypoints => [@{$route->{uuids} // []}, @add_uuids],
+            progress  => $progress,
+        });
+        return;
+    }
+
     my $total = 0;
     for my $item (@$items)
     {
@@ -948,7 +1014,7 @@ sub _pasteAllToE80
 
 
 #----------------------------------------------------
-# Paste helpers — fresh UUIDs (PASTE_NEW)
+# Paste helpers - fresh UUIDs (PASTE_NEW)
 #----------------------------------------------------
 
 sub _pasteNewWaypointToE80
@@ -1165,6 +1231,42 @@ sub _pasteNewAllToE80
         return;
     }
 
+    # Pasting into an existing E80 route: append existing WPs by UUID reference.
+    # WPs that already exist (duplicate route point case) bypass name-collision in
+    # the pre-flight, so they arrive here and must be appended, not re-created.
+    if (($node->{type} // '') eq 'route')
+    {
+        my $route_uuid = $node->{uuid};
+        my $route      = $wpmgr->{routes}{$route_uuid};
+        unless ($route)
+        {
+            error("_pasteNewAllToE80: route $route_uuid not found on E80");
+            return;
+        }
+        my @add_uuids;
+        for my $item (@$items)
+        {
+            my $t = $item->{type} // '';
+            next unless $t eq 'waypoint' || $t eq 'route_point';
+            my $uuid = $item->{uuid} // '';
+            push @add_uuids, $uuid if $uuid && $wpmgr->{waypoints}{$uuid};
+        }
+        if (!@add_uuids)
+        {
+            warning(0, 0, "_pasteNewAllToE80: no valid waypoint UUIDs to append to route");
+            return;
+        }
+        my $progress = _openE80Progress("Paste to Route", 1,
+            {cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
+        return if !$progress;
+        $wpmgr->modifyRoute({
+            uuid      => $route_uuid,
+            waypoints => [@{$route->{uuids} // []}, @add_uuids],
+            progress  => $progress,
+        });
+        return;
+    }
+
     my $total = 0;
     for my $item (@$items)
     {
@@ -1239,8 +1341,9 @@ sub _pasteBeforeAfterE80
     for my $item (@$items)
     {
         my $type = $item->{type} // '';
-        if    ($type eq 'waypoint') { push @flat_wps, $item; }
-        elsif ($type eq 'group')    { push @flat_wps, @{$item->{members} // []}; }
+        if    ($type eq 'waypoint')    { push @flat_wps, $item; }
+        elsif ($type eq 'route_point') { push @flat_wps, $item; }
+        elsif ($type eq 'group')       { push @flat_wps, @{$item->{members} // []}; }
     }
     return unless @flat_wps;
 
@@ -1326,6 +1429,21 @@ sub _pasteE80
 {
     my ($cmd_id, $right_click_node, $tree, $items, $cb) = @_;
 
+    my $rn_type = $right_click_node ? ($right_click_node->{type} // '') : '';
+    my $rn_kind = $right_click_node ? ($right_click_node->{kind} // '') : '';
+    if ($rn_type eq 'track'
+     || ($rn_type eq 'header' && $rn_kind eq 'tracks'))
+    {
+        warning(0, 0, "IMPLEMENTATION ERROR: _pasteE80: tracks destination reached paste handler (SS10.8)");
+        return;
+    }
+
+    if ($rn_type eq 'waypoint')
+    {
+        warning(0, 0, "IMPLEMENTATION ERROR: _pasteE80: individual waypoint node destination reached paste handler");
+        return;
+    }
+
     if ($cmd_id == $CTX_CMD_PASTE_BEFORE    || $cmd_id == $CTX_CMD_PASTE_AFTER
      || $cmd_id == $CTX_CMD_PASTE_NEW_BEFORE || $cmd_id == $CTX_CMD_PASTE_NEW_AFTER)
     {
@@ -1345,7 +1463,7 @@ sub _pasteE80
 
 
 #----------------------------------------------------
-# Cut — source deletion after successful paste
+# Cut - source deletion after successful paste
 #----------------------------------------------------
 
 sub _cutE80Waypoint
@@ -1384,6 +1502,17 @@ sub _cutE80Track
     $track->queueTRACKCommand(
         $apps::raymarine::NET::d_TRACK::API_GENERAL_CMD,
         $uuid, 'erase');
+}
+
+
+#----------------------------------------------------
+# _syncToE80 -- DB->E80 sync up (stub)
+#----------------------------------------------------
+
+sub _syncToE80
+{
+    my ($right_click_node, $tree, $items) = @_;
+    warning(0, 0, "_syncToE80: DB->E80 sync not yet implemented");
 }
 
 

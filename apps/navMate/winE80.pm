@@ -26,18 +26,43 @@ use threads::shared;
 use Wx qw(:everything);
 use Wx::Event qw(
 	EVT_TREE_SEL_CHANGED
+	EVT_TREE_ITEM_ACTIVATED
 	EVT_TREE_ITEM_RIGHT_CLICK
+	EVT_LEFT_DOWN
 	EVT_MENU
-	EVT_MENU_RANGE);
+	EVT_MENU_RANGE
+	EVT_TEXT
+	EVT_BUTTON
+	EVT_CHOICE
+	EVT_CHECKBOX
+	EVT_SIZE);
 use Pub::Utils qw(display warning error);
 use Pub::WX::Window;
 use apps::raymarine::NET::b_records qw(wpmgrRecordToText);
 use apps::raymarine::NET::c_RAYDP;
+use a_defs;
+use a_utils;
 use nmOps qw(buildContextMenu onContextMenuCommand);
+use nmServer qw(addRenderFeatures removeRenderFeatures openMapBrowser isBrowserConnected);
 use w_resources;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
 our $dbg_wine80 = 0;
+
+my %e80_visible :shared;
+
+# E80 route color index 0-5 to ABGR hex (FFBBGGRR, converted to #RRGGBB by abgrToCSS)
+my @E80_ROUTE_COLOR_ABGR = qw(
+	FF0000FF
+	FF00FFFF
+	FF00FF00
+	FFFF0000
+	FFFF00FF
+	FF000000
+);
+
+my $CTX_CMD_SHOW_MAP = 10560;
+my $CTX_CMD_HIDE_MAP = 10561;
 
 
 sub new
@@ -49,20 +74,136 @@ sub new
 	$this->{tree} = Wx::TreeCtrl->new($this, -1, wxDefaultPosition, wxDefaultSize,
 		wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxTR_MULTIPLE);
 
-	$this->{detail} = Wx::TextCtrl->new($this, -1, '', wxDefaultPosition, wxDefaultSize,
-		wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
+	# inner splitter: editor panel (top) + detail panel (bottom)
+	my $right_split = Wx::SplitterWindow->new($this, -1);
+	$this->{right_split} = $right_split;
 
+	# --- editor panel layout constants ---
+	my $ED_MARGIN        = 8;
+	my $ED_LABEL_W       = 60;
+	my $ED_COL_GAP       = 8;
+	my $ED_CTRL_X        = $ED_MARGIN + $ED_LABEL_W + $ED_COL_GAP;
+	my $ED_CTRL_H        = 23;
+	my $ED_ROW_GAP       = 2;
+	my $ED_ROW_H         = $ED_CTRL_H + $ED_ROW_GAP;
+	my $ED_HEADER_SIZE   = $ED_MARGIN + $ED_ROW_H;
+	my $ED_BOTTOM_MARGIN = 8;
+	my $ED_MAX_ROWS      = 5;
+	my $ED_TITLE_W       = 80;
+	my $ED_VIS_X         = $ED_CTRL_X + $ED_TITLE_W + 8;
+	$this->{_ed_ctrl_x}  = $ED_CTRL_X;
+	$this->{_ed_ctrl_h}  = $ED_CTRL_H;
+	$this->{_ed_margin}  = $ED_MARGIN;
+
+	my $ED_INITIAL_SASH  = $ED_HEADER_SIZE + $ED_MAX_ROWS * $ED_ROW_H + $ED_BOTTOM_MARGIN;
+
+	my $ey = sub { $ED_HEADER_SIZE + $_[0] * $ED_ROW_H };
+
+	# --- editor panel ---
+	my $editor_panel = Wx::Panel->new($right_split, -1);
+	$this->{editor_panel} = $editor_panel;
+
+	$this->{ed_save} = Wx::Button->new($editor_panel, -1, 'Save',
+		[$ED_MARGIN, $ED_MARGIN], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_save}->Enable(0);
+
+	$this->{ed_title} = Wx::StaticText->new($editor_panel, -1, '',
+		[$ED_CTRL_X, $ED_MARGIN], [$ED_TITLE_W, $ED_CTRL_H]);
+	$this->{ed_title}->SetFont(
+		Wx::Font->new(-1, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
+
+	$this->{ed_visible} = Wx::CheckBox->new($editor_panel, -1, 'Visible',
+		[$ED_VIS_X, $ED_MARGIN], [-1, $ED_CTRL_H], wxCHK_3STATE);
+	$this->{ed_visible}->Show(0);
+
+	# name row (row 0)
+	$this->{ed_lbl_name} = Wx::StaticText->new($editor_panel, -1, 'Name',
+		[$ED_MARGIN, $ey->(0)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_name} = Wx::TextCtrl->new($editor_panel, -1, '',
+		[$ED_CTRL_X, $ey->(0)], [200, $ED_CTRL_H]);
+
+	# lat row (row 1)
+	$this->{ed_lbl_lat} = Wx::StaticText->new($editor_panel, -1, 'Lat',
+		[$ED_MARGIN, $ey->(1)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_lat} = Wx::TextCtrl->new($editor_panel, -1, '',
+		[$ED_CTRL_X, $ey->(1)], [110, $ED_CTRL_H]);
+	$this->{ed_lat_ddm} = Wx::StaticText->new($editor_panel, -1, '',
+		[$ED_CTRL_X + 110 + 6, $ey->(1)], [-1, $ED_CTRL_H]);
+
+	# lon row (row 2)
+	$this->{ed_lbl_lon} = Wx::StaticText->new($editor_panel, -1, 'Lon',
+		[$ED_MARGIN, $ey->(2)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_lon} = Wx::TextCtrl->new($editor_panel, -1, '',
+		[$ED_CTRL_X, $ey->(2)], [110, $ED_CTRL_H]);
+	$this->{ed_lon_ddm} = Wx::StaticText->new($editor_panel, -1, '',
+		[$ED_CTRL_X + 110 + 6, $ey->(2)], [-1, $ED_CTRL_H]);
+
+	# sym row (row 3) - waypoint symbol index 0-39
+	$this->{ed_lbl_sym} = Wx::StaticText->new($editor_panel, -1, 'Sym',
+		[$ED_MARGIN, $ey->(3)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_sym} = Wx::Choice->new($editor_panel, -1,
+		[$ED_CTRL_X, $ey->(3)], [-1, $ED_CTRL_H],
+		[map { sprintf('%2d - %s', $_, $apps::raymarine::NET::a_utils::WPICON_TABLE[$_][0]) }
+		 0..$#apps::raymarine::NET::a_utils::WPICON_TABLE]);
+
+	# color row (row 4) - route color index 0-5
+	$this->{ed_lbl_color} = Wx::StaticText->new($editor_panel, -1, 'Color',
+		[$ED_MARGIN, $ey->(4)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_color_choice} = Wx::Choice->new($editor_panel, -1,
+		[$ED_CTRL_X, $ey->(4)], [-1, $ED_CTRL_H],
+		['Red', 'Yellow', 'Green', 'Blue', 'Purple', 'Black']);
+
+	EVT_SIZE($editor_panel, sub {
+		my ($panel, $event) = @_;
+		$event->Skip();
+		my $w = $panel->GetSize()->GetWidth();
+		my $ctrl_w = $w - $this->{_ed_ctrl_x} - $this->{_ed_margin};
+		$ctrl_w = 80 if $ctrl_w < 80;
+		$this->{ed_name}->SetSize($ctrl_w, $this->{_ed_ctrl_h});
+	});
+
+	_clearEditor($this);
+
+	# --- detail panel (read-only monospaced) ---
+	my $detail_panel = Wx::Panel->new($right_split, -1);
+	$this->{detail_panel} = $detail_panel;
+	$this->{detail} = Wx::TextCtrl->new($detail_panel, -1, '', wxDefaultPosition, wxDefaultSize,
+		wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
 	my $font = Wx::Font->new(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
 	$this->{detail}->SetFont($font);
+	my $detail_vsizer = Wx::BoxSizer->new(wxVERTICAL);
+	$detail_vsizer->Add($this->{detail}, 1, wxEXPAND);
+	$detail_panel->SetSizer($detail_vsizer);
+
+	$right_split->SplitHorizontally($editor_panel, $detail_panel, $ED_INITIAL_SASH);
+	$right_split->SetSashGravity(0);
 
 	my $sash = ($data && ref($data) eq 'HASH' && $data->{sash}) ? $data->{sash} : 250;
-	$this->SplitVertically($this->{tree}, $this->{detail}, $sash);
+	$this->SplitVertically($this->{tree}, $right_split, $sash);
 	$this->SetSashGravity(0);
 
+	my $state_imgs = Wx::ImageList->new(13, 13);
+	$state_imgs->Add(_makeCheckBitmap(0));
+	$state_imgs->Add(_makeCheckBitmap(1));
+	$state_imgs->Add(_makeCheckBitmap(2));
+	$this->{tree}->SetStateImageList($state_imgs);
+	$this->{_state_imgs} = $state_imgs;
+
 	EVT_TREE_SEL_CHANGED($this,      $this->{tree}, \&onTreeSelect);
+	EVT_TREE_ITEM_ACTIVATED($this,   $this->{tree}, \&_onTreeActivated);
 	EVT_TREE_ITEM_RIGHT_CLICK($this, $this->{tree}, \&onTreeRightClick);
+	EVT_LEFT_DOWN($this->{tree},     sub { _onTreeLeftDown($this, @_) });
 	EVT_MENU($this, $COMMAND_REFRESH_E80, sub { refresh($_[0]) });
+	EVT_MENU($this, $CTX_CMD_SHOW_MAP,   \&_onShowMap);
+	EVT_MENU($this, $CTX_CMD_HIDE_MAP,   \&_onHideMap);
 	EVT_MENU_RANGE($this, 10010, 10559, \&_onNmOpsCmd);
+	EVT_TEXT($this,   $this->{ed_name},    \&_onFieldChanged);
+	EVT_TEXT($this,   $this->{ed_lat},     \&_onLatEdit);
+	EVT_TEXT($this,   $this->{ed_lon},     \&_onLonEdit);
+	EVT_CHOICE($this, $this->{ed_sym},          \&_onFieldChanged);
+	EVT_CHOICE($this, $this->{ed_color_choice}, \&_onFieldChanged);
+	EVT_BUTTON($this,   $this->{ed_save},       \&_onSave);
+	EVT_CHECKBOX($this, $this->{ed_visible},    \&_onEdVisibleChanged);
 
 	$this->{_expanded_keys} = {
 		'header:groups' => 1,
@@ -83,6 +224,13 @@ sub new
 #---------------------------------
 # build / refresh tree
 #---------------------------------
+
+sub onActivate
+{
+	my ($this) = @_;
+	$this->onSessionStart() if !$this->{_e80_loaded};
+}
+
 
 sub onSessionStart
 {
@@ -151,6 +299,16 @@ sub _buildAndRestore
 	$tree->Expand($root);
 	_walkRestoreExpanded($tree, $root, $this->{_expanded_keys});
 	_walkRestoreSelected($tree, $root, $this->{_selected_keys});
+	_walkRestoreStateImages($tree, $root);
+	_syncLeafletAfterRebuild($wpmgr, $track_mgr);
+}
+
+
+sub _name_sort_key
+{
+	my ($name) = @_;
+	my $lc = lc($name // '');
+	return $lc =~ /^(.*?)(\d+)$/ ? $1 . sprintf('%020d', $2) : $lc;
 }
 
 
@@ -167,7 +325,7 @@ sub _buildGroups
 		$grouped{$_} = 1 for @{$groups->{$uuid}{uuids} // []};
 	}
 
-	my @ungrouped = sort { lc($wps->{$a}{name} // '') cmp lc($wps->{$b}{name} // '') }
+	my @ungrouped = sort { _name_sort_key($wps->{$a}{name}) cmp _name_sort_key($wps->{$b}{name}) }
 	                grep { !$grouped{$_} } keys %$wps;
 
 	my $hdr = $tree->AppendItem($root, 'Groups', -1, -1,
@@ -188,14 +346,14 @@ sub _buildGroups
 		}
 	}
 
-	# named groups, sorted by name case-insensitively
-	for my $uuid (sort { lc($groups->{$a}{name} // '') cmp lc($groups->{$b}{name} // '') }
+	# named groups, sorted by name
+	for my $uuid (sort { _name_sort_key($groups->{$a}{name}) cmp _name_sort_key($groups->{$b}{name}) }
 	              keys %$groups)
 	{
 		my $grp = $groups->{$uuid};
 		my @member_uuids = sort {
 			my $wa = $wps->{$a}; my $wb = $wps->{$b};
-			lc($wa ? ($wa->{name} // '') : '') cmp lc($wb ? ($wb->{name} // '') : '')
+			_name_sort_key($wa ? $wa->{name} : '') cmp _name_sort_key($wb ? $wb->{name} : '')
 		} @{$grp->{uuids} // []};
 		my $n = scalar @member_uuids;
 		my $grp_item = $tree->AppendItem($hdr, "$grp->{name} ($n wps)", -1, -1,
@@ -223,7 +381,7 @@ sub _buildRoutes
 	my $hdr = $tree->AppendItem($root, 'Routes', -1, -1,
 		Wx::TreeItemData->new({ type => 'header', kind => 'routes' }));
 
-	for my $uuid (sort { lc($routes->{$a}{name} // '') cmp lc($routes->{$b}{name} // '') }
+	for my $uuid (sort { _name_sort_key($routes->{$a}{name}) cmp _name_sort_key($routes->{$b}{name}) }
 	              keys %$routes)
 	{
 		my $r = $routes->{$uuid};
@@ -258,7 +416,7 @@ sub _buildTracks
 	my $hdr    = $tree->AppendItem($root, $label, -1, -1,
 		Wx::TreeItemData->new({ type => 'header', kind => 'tracks' }));
 
-	for my $uuid (sort { lc($tracks->{$a}{name} // '') cmp lc($tracks->{$b}{name} // '') }
+	for my $uuid (sort { _name_sort_key($tracks->{$a}{name}) cmp _name_sort_key($tracks->{$b}{name}) }
 	              keys %$tracks)
 	{
 		my $track = $tracks->{$uuid};
@@ -285,38 +443,59 @@ sub onTreeSelect
 	my $node = $item_data->GetData();
 	return if ref $node ne 'HASH';
 
-	if ($node->{type} eq 'root') { $this->{detail}->SetValue(''); return; }
+	my $type = $node->{type} // '';
+
+	if ($type eq 'root')
+	{
+		_clearEditor($this);
+		$this->{detail}->SetValue('');
+		return;
+	}
 
 	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
-
-	my $type = $node->{type};
-	my $text = '';
+	my $text  = '';
 
 	if ($type eq 'header')
 	{
+		_clearEditor($this);
 		$text = "($node->{kind})";
 	}
 	elsif ($type eq 'my_waypoints')
 	{
+		_clearEditor($this);
 		$text = "Synthesized node: waypoints not assigned to any named group.";
 	}
-	elsif (($type eq 'waypoint' || $type eq 'route_point') && $node->{data})
+	elsif ($type eq 'route_point' && $node->{data})
 	{
+		_clearEditor($this);
+		$text = wpmgrRecordToText($node->{data}, 'WAYPOINT', 2, 0, undef, $wpmgr);
+		$text = sprintf("  %-10s = %s\n", 'uuid', $node->{uuid}) . $text if $node->{uuid};
+	}
+	elsif ($type eq 'waypoint' && $node->{data})
+	{
+		$this->{_edit_item} = $item;
+		_loadEditor($this, $node);
 		$text = wpmgrRecordToText($node->{data}, 'WAYPOINT', 2, 0, undef, $wpmgr);
 		$text = sprintf("  %-10s = %s\n", 'uuid', $node->{uuid}) . $text if $node->{uuid};
 	}
 	elsif ($type eq 'group' && $node->{data})
 	{
+		$this->{_edit_item} = $item;
+		_loadEditor($this, $node);
 		$text = wpmgrRecordToText($node->{data}, 'GROUP', 2, 0, undef, $wpmgr);
 		$text = sprintf("  %-10s = %s\n", 'uuid', $node->{uuid}) . $text if $node->{uuid};
 	}
 	elsif ($type eq 'route' && $node->{data})
 	{
+		$this->{_edit_item} = $item;
+		_loadEditor($this, $node);
 		$text = wpmgrRecordToText($node->{data}, 'ROUTE', 2, 0, undef, $wpmgr);
 		$text = sprintf("  %-10s = %s\n", 'uuid', $node->{uuid}) . $text if $node->{uuid};
 	}
 	elsif ($type eq 'track' && $node->{data})
 	{
+		$this->{_edit_item} = $item;
+		_loadEditor($this, $node);
 		my $track = $node->{data};
 		my $pts   = $track->{cnt1} // (ref $track->{points} ? scalar @{$track->{points}} : 0);
 		$text  = "Track:  $track->{name}\n";
@@ -324,8 +503,264 @@ sub onTreeSelect
 		$text .= "Points: $pts\n";
 		$text .= "Color:  $track->{color}\n" if defined $track->{color};
 	}
+	else
+	{
+		_clearEditor($this);
+	}
 
 	$this->{detail}->SetValue($text);
+}
+
+
+#---------------------------------
+# editor panel
+#---------------------------------
+
+sub _ed_show_row
+{
+	my ($label, $ctrl, $show) = @_;
+	$label->Show($show ? 1 : 0);
+	$ctrl->Show($show ? 1 : 0);
+}
+
+
+sub _clearEditor
+{
+	my ($this) = @_;
+	$this->{_edit_uuid}    = undef;
+	$this->{_edit_type}    = undef;
+	$this->{_edit_item}    = undef;
+	$this->{_editor_dirty} = 0;
+	$this->{ed_title}->SetLabel('');
+	$this->{ed_visible}->Show(0);
+	_ed_show_row($this->{ed_lbl_name},  $this->{ed_name},         0);
+	_ed_show_row($this->{ed_lbl_lat},   $this->{ed_lat},          0);
+	$this->{ed_lat_ddm}->Show(0);
+	_ed_show_row($this->{ed_lbl_lon},   $this->{ed_lon},          0);
+	$this->{ed_lon_ddm}->Show(0);
+	_ed_show_row($this->{ed_lbl_sym},   $this->{ed_sym},          0);
+	_ed_show_row($this->{ed_lbl_color}, $this->{ed_color_choice}, 0);
+	$this->{ed_save}->Enable(0);
+}
+
+
+sub _loadEditor
+{
+	my ($this, $node) = @_;
+	my $type = $node->{type} // '';
+	my $uuid = $node->{uuid};
+	my $data = $node->{data} // {};
+
+	my $show_name   = ($type eq 'waypoint' || $type eq 'group'
+	               || $type eq 'route'    || $type eq 'track');
+	my $show_latlon = ($type eq 'waypoint');
+	my $show_sym    = ($type eq 'waypoint');
+	my $show_color  = ($type eq 'route');
+
+	$this->{_edit_uuid}    = $uuid;
+	$this->{_edit_type}    = $type;
+	$this->{_editor_dirty} = 0;
+
+	my $title = $type eq 'waypoint' ? 'Waypoint'
+	          : $type eq 'group'    ? 'Group'
+	          : $type eq 'route'    ? 'Route'
+	          : $type eq 'track'    ? 'Track'
+	          :                       '';
+	$this->{ed_title}->SetLabel($title);
+
+	_ed_show_row($this->{ed_lbl_name},    $this->{ed_name},         $show_name);
+	_ed_show_row($this->{ed_lbl_lat},     $this->{ed_lat},          $show_latlon);
+	$this->{ed_lat_ddm}->Show($show_latlon ? 1 : 0);
+	_ed_show_row($this->{ed_lbl_lon},     $this->{ed_lon},          $show_latlon);
+	$this->{ed_lon_ddm}->Show($show_latlon ? 1 : 0);
+	_ed_show_row($this->{ed_lbl_sym},   $this->{ed_sym},          $show_sym);
+	_ed_show_row($this->{ed_lbl_color}, $this->{ed_color_choice}, $show_color);
+
+	$this->{_loading_editor} = 1;
+
+	$this->{ed_name}->SetValue($data->{name} // '') if $show_name;
+
+	if ($show_latlon)
+	{
+		my $lat = (($data->{lat} // 0) + 0) / 1e7;
+		my $lon = (($data->{lon} // 0) + 0) / 1e7;
+		$this->{ed_lat}->SetValue(sprintf('%.6f', $lat));
+		$this->{ed_lon}->SetValue(sprintf('%.6f', $lon));
+		_updateLatDDM($this);
+		_updateLonDDM($this);
+	}
+
+	$this->{ed_sym}->SetSelection(($data->{sym} // 0) + 0)          if $show_sym;
+	$this->{ed_color_choice}->SetSelection(($data->{color} // 0) + 0) if $show_color;
+
+	$this->{ed_visible}->Show(1);
+	if ($type eq 'group')
+	{
+		my @member_uuids = @{$data->{uuids} // []};
+		my $total   = scalar @member_uuids;
+		my $visible = scalar grep { $e80_visible{$_} } @member_uuids;
+		my $vs = ($total && $visible == $total) ? 1 : ($visible > 0) ? 2 : 0;
+		$this->{ed_visible}->Set3StateValue(
+			$vs == 1 ? wxCHK_CHECKED :
+			$vs == 2 ? wxCHK_UNDETERMINED :
+			           wxCHK_UNCHECKED);
+	}
+	else
+	{
+		$this->{ed_visible}->Set3StateValue(
+			$e80_visible{$uuid // ''} ? wxCHK_CHECKED : wxCHK_UNCHECKED);
+	}
+
+	$this->{_loading_editor} = 0;
+	$this->{ed_save}->Enable(0);
+}
+
+
+sub _onFieldChanged
+{
+	my ($this, $event) = @_;
+	return if $this->{_loading_editor};
+	$this->{_editor_dirty} = 1;
+	$this->{ed_save}->Enable(1);
+}
+
+
+sub _onLatEdit
+{
+	my ($this, $event) = @_;
+	return if $this->{_loading_editor};
+	$this->{_editor_dirty} = 1;
+	$this->{ed_save}->Enable(1);
+	_updateLatDDM($this);
+}
+
+
+sub _onLonEdit
+{
+	my ($this, $event) = @_;
+	return if $this->{_loading_editor};
+	$this->{_editor_dirty} = 1;
+	$this->{ed_save}->Enable(1);
+	_updateLonDDM($this);
+}
+
+
+sub _updateLatDDM
+{
+	my ($this) = @_;
+	my $dd = parseLatLon($this->{ed_lat}->GetValue());
+	$this->{ed_lat_ddm}->SetLabel(defined $dd ? _ddm_label($dd, 1) : '');
+}
+
+
+sub _updateLonDDM
+{
+	my ($this) = @_;
+	my $dd = parseLatLon($this->{ed_lon}->GetValue());
+	$this->{ed_lon_ddm}->SetLabel(defined $dd ? _ddm_label($dd, 0) : '');
+}
+
+
+sub _ddm_label
+{
+	my ($dd, $is_lat) = @_;
+	my $abs = abs($dd);
+	my $dir = $is_lat ? ($dd >= 0 ? 'N' : 'S') : ($dd >= 0 ? 'E' : 'W');
+	my $deg = int($abs);
+	my $min = ($abs - $deg) * 60;
+	return sprintf("%d\x{00b0}%06.3f' %s", $deg, $min, $dir);
+}
+
+
+sub _onSave
+{
+	my ($this, $event) = @_;
+	my $uuid = $this->{_edit_uuid};
+	my $type = $this->{_edit_type} // '';
+	return if !$uuid;
+
+	my $wpmgr     = $raydp ? $raydp->findImplementedService('WPMGR', 1) : undef;
+	my $track_mgr = $raydp ? $raydp->findImplementedService('TRACK', 1) : undef;
+
+	if ($type eq 'waypoint' && $wpmgr)
+	{
+		my $lat = parseLatLon($this->{ed_lat}->GetValue());
+		my $lon = parseLatLon($this->{ed_lon}->GetValue());
+		if (!defined $lat || !defined $lon)
+		{
+			warning(0, 0, "invalid lat/lon - save aborted");
+			return;
+		}
+		$wpmgr->modifyWaypoint({
+			uuid => $uuid,
+			name => $this->{ed_name}->GetValue(),
+			lat  => $lat,
+			lon  => $lon,
+			sym  => $this->{ed_sym}->GetSelection(),
+		});
+	}
+	elsif ($type eq 'group' && $wpmgr)
+	{
+		$wpmgr->modifyGroup({
+			uuid => $uuid,
+			name => $this->{ed_name}->GetValue(),
+		});
+	}
+	elsif ($type eq 'route' && $wpmgr)
+	{
+		$wpmgr->modifyRoute({
+			uuid  => $uuid,
+			name  => $this->{ed_name}->GetValue(),
+			color => $this->{ed_color_choice}->GetSelection(),
+		});
+	}
+	elsif ($type eq 'track' && $track_mgr)
+	{
+		my $new_name = $this->{ed_name}->GetValue();
+		$track_mgr->queueTRACKCommand(
+			$apps::raymarine::NET::d_TRACK::API_GENERAL_CMD,
+			$uuid, "rename $new_name");
+	}
+	else
+	{
+		warning(0, 0, "E80 save: no service available for type($type)");
+		return;
+	}
+
+	$this->{ed_save}->Enable(0);
+	$this->{_editor_dirty} = 0;
+}
+
+
+sub _onEdVisibleChanged
+{
+	my ($this, $event) = @_;
+	return if $this->{_loading_editor};
+	my $uuid = $this->{_edit_uuid};
+	return if !$uuid;
+
+	my $cb = $this->{ed_visible}->Get3StateValue();
+	return if $cb == wxCHK_UNDETERMINED;
+	my $new_visible = ($cb == wxCHK_CHECKED) ? 1 : 0;
+
+	my $wpmgr     = $raydp ? $raydp->findImplementedService('WPMGR', 1)  : undef;
+	my $track_mgr = $raydp ? $raydp->findImplementedService('TRACK', 1)  : undef;
+
+	my $item = $this->{_edit_item};
+	if ($item && $item->IsOk())
+	{
+		my $d = $this->{tree}->GetItemData($item);
+		if ($d)
+		{
+			my $node = $d->GetData();
+			if (ref $node eq 'HASH')
+			{
+				_applyNodeVisibility($this, $item, $node, $new_visible, $wpmgr, $track_mgr);
+				_refreshAncestorStates($this, $item);
+			}
+		}
+	}
+	openMapBrowser() if $new_visible && !isBrowserConnected();
 }
 
 
@@ -371,6 +806,13 @@ sub _buildContextMenu
 	$this->{_context_nodes} = \@nodes;
 
 	my $menu = buildContextMenu('e80', $right_click_node, @nodes);
+
+	if (($right_click_node->{type} // '') ne 'root')
+	{
+		$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
+		$menu->Append($CTX_CMD_SHOW_MAP, 'Show on Map');
+		$menu->Append($CTX_CMD_HIDE_MAP, 'Hide on Map');
+	}
 
 	$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
 	$menu->Append($COMMAND_REFRESH_E80, 'Refresh E80');
@@ -524,6 +966,507 @@ sub _walkRestoreSelected
 		_walkRestoreSelected($tree, $child, $selected);
 		($child, $cookie) = $tree->GetNextChild($item, $cookie);
 	}
+}
+
+
+#---------------------------------
+# map show/hide event handlers
+#---------------------------------
+
+sub _onTreeActivated
+{
+	my ($this, $event) = @_;
+	_onShowHideE80Map($this, 1);
+}
+
+
+sub _onShowMap
+{
+	my ($this, $event) = @_;
+	_onShowHideE80Map($this, 1);
+}
+
+
+sub _onHideMap
+{
+	my ($this, $event) = @_;
+	_onShowHideE80Map($this, 0);
+}
+
+
+sub _onTreeLeftDown
+{
+	my ($this, $tree, $event) = @_;
+	my ($item, $flags) = $tree->HitTest($event->GetPosition());
+	if ($item && $item->IsOk() && ($flags & wxTREE_HITTEST_ONITEMSTATEICON))
+	{
+		_onCheckboxClick($this, $item);
+		return;
+	}
+	$event->Skip();
+}
+
+
+sub _onCheckboxClick
+{
+	my ($this, $item) = @_;
+	my $item_data = $this->{tree}->GetItemData($item);
+	return if !$item_data;
+	my $node = $item_data->GetData();
+	return if ref $node ne 'HASH';
+	my $type = $node->{type} // '';
+	return if $type eq 'root' || $type eq 'route_point';
+
+	my $cur_state   = $this->{tree}->GetItemState($item);
+	my $new_visible = ($cur_state == 1) ? 0 : 1;
+
+	my $wpmgr     = $raydp ? $raydp->findImplementedService('WPMGR', 1)  : undef;
+	my $track_mgr = $raydp ? $raydp->findImplementedService('TRACK', 1)  : undef;
+	_applyNodeVisibility($this, $item, $node, $new_visible, $wpmgr, $track_mgr);
+	_refreshAncestorStates($this, $item);
+	openMapBrowser() if $new_visible && !isBrowserConnected();
+}
+
+
+sub _onShowHideE80Map
+{
+	my ($this, $new_visible) = @_;
+	my $tree      = $this->{tree};
+	my $wpmgr     = $raydp ? $raydp->findImplementedService('WPMGR', 1)  : undef;
+	my $track_mgr = $raydp ? $raydp->findImplementedService('TRACK', 1)  : undef;
+
+	my @items = $tree->GetSelections();
+	return unless @items;
+
+	for my $item (@items)
+	{
+		my $d = $tree->GetItemData($item);
+		next unless $d;
+		my $node = $d->GetData();
+		next unless ref $node eq 'HASH';
+		_applyNodeVisibility($this, $item, $node, $new_visible, $wpmgr, $track_mgr);
+	}
+
+	_refreshAncestorStates($this, $_) for @items;
+	openMapBrowser() if $new_visible && !isBrowserConnected();
+}
+
+
+sub onClearMap
+{
+	my ($this) = @_;
+	%e80_visible = ();
+	my $tree = $this->{tree};
+	my $root = $tree->GetRootItem();
+	_walkSetSubtreeState($tree, $root, 0) if $root && $root->IsOk();
+	$this->{ed_visible}->Set3StateValue(wxCHK_UNCHECKED)
+		if $this->{ed_visible} && $this->{ed_visible}->IsShown();
+}
+
+
+#---------------------------------
+# visibility logic
+#---------------------------------
+
+sub _applyNodeVisibility
+{
+	my ($this, $item, $node, $new_visible, $wpmgr, $track_mgr) = @_;
+	my $type = $node->{type} // '';
+	my $tree = $this->{tree};
+
+	return if $type eq 'root' || $type eq 'route_point';
+
+	if ($type eq 'waypoint')
+	{
+		_applyWpVisibility($node->{uuid}, $node->{data}, $new_visible);
+		$tree->SetItemState($item, $new_visible ? 1 : 0);
+	}
+	elsif ($type eq 'route')
+	{
+		_applyRouteVisibility($node->{uuid}, $node->{data}, $wpmgr, $new_visible);
+		$tree->SetItemState($item, $new_visible ? 1 : 0);
+	}
+	elsif ($type eq 'track')
+	{
+		_applyTrackVisibility($node->{uuid}, $node->{data}, $new_visible);
+		$tree->SetItemState($item, $new_visible ? 1 : 0);
+	}
+	elsif ($type eq 'group')
+	{
+		my $wps = $wpmgr ? ($wpmgr->{waypoints} // {}) : {};
+		for my $wp_uuid (@{$node->{data}{uuids} // []})
+		{
+			_applyWpVisibility($wp_uuid, $wps->{$wp_uuid}, $new_visible);
+		}
+		$tree->SetItemState($item, $new_visible ? 1 : 0);
+		_walkSetSubtreeState($tree, $item, $new_visible);
+	}
+	elsif ($type eq 'my_waypoints')
+	{
+		my $wps    = $wpmgr ? ($wpmgr->{waypoints} // {}) : {};
+		my $groups = $wpmgr ? ($wpmgr->{groups}    // {}) : {};
+		my %grouped;
+		$grouped{$_} = 1 for map { @{$groups->{$_}{uuids} // []} } keys %$groups;
+		for my $wp_uuid (grep { !$grouped{$_} } keys %$wps)
+		{
+			_applyWpVisibility($wp_uuid, $wps->{$wp_uuid}, $new_visible);
+		}
+		$tree->SetItemState($item, $new_visible ? 1 : 0);
+		_walkSetSubtreeState($tree, $item, $new_visible);
+	}
+	elsif ($type eq 'header')
+	{
+		my $kind = $node->{kind} // '';
+		if ($kind eq 'groups')
+		{
+			my $wps = $wpmgr ? ($wpmgr->{waypoints} // {}) : {};
+			for my $uuid (keys %$wps)
+			{
+				_applyWpVisibility($uuid, $wps->{$uuid}, $new_visible);
+			}
+		}
+		elsif ($kind eq 'routes')
+		{
+			my $routes = $wpmgr ? ($wpmgr->{routes} // {}) : {};
+			for my $uuid (keys %$routes)
+			{
+				_applyRouteVisibility($uuid, $routes->{$uuid}, $wpmgr, $new_visible);
+			}
+		}
+		elsif ($kind eq 'tracks')
+		{
+			my $tracks = $track_mgr ? ($track_mgr->{tracks} // {}) : {};
+			for my $uuid (keys %$tracks)
+			{
+				_applyTrackVisibility($uuid, $tracks->{$uuid}, $new_visible);
+			}
+		}
+		$tree->SetItemState($item, $new_visible ? 1 : 0);
+		_walkSetSubtreeState($tree, $item, $new_visible);
+	}
+}
+
+
+sub _applyWpVisibility
+{
+	my ($uuid, $wp, $new_visible) = @_;
+	return unless $uuid;
+	if ($new_visible)
+	{
+		return unless $wp;
+		$e80_visible{$uuid} = 1;
+		addRenderFeatures([_buildWpFeature($uuid, $wp)]);
+	}
+	else
+	{
+		delete $e80_visible{$uuid};
+		removeRenderFeatures([$uuid]);
+	}
+}
+
+
+sub _applyRouteVisibility
+{
+	my ($uuid, $r, $wpmgr, $new_visible) = @_;
+	return unless $uuid;
+	if ($new_visible)
+	{
+		return unless $r;
+		my $feature = _buildRouteFeature($uuid, $r, $wpmgr);
+		return unless $feature;
+		$e80_visible{$uuid} = 1;
+		addRenderFeatures([$feature]);
+	}
+	else
+	{
+		delete $e80_visible{$uuid};
+		removeRenderFeatures([$uuid]);
+	}
+}
+
+
+sub _applyTrackVisibility
+{
+	my ($uuid, $track, $new_visible) = @_;
+	return unless $uuid;
+	if ($new_visible)
+	{
+		return unless $track;
+		my $feature = _buildTrackFeature($uuid, $track);
+		return unless $feature;
+		$e80_visible{$uuid} = 1;
+		addRenderFeatures([$feature]);
+	}
+	else
+	{
+		delete $e80_visible{$uuid};
+		removeRenderFeatures([$uuid]);
+	}
+}
+
+
+#---------------------------------
+# GeoJSON feature builders
+#---------------------------------
+
+sub _buildWpFeature
+{
+	my ($uuid, $wp) = @_;
+	my $lat = (($wp->{lat} // 0) + 0) / 1e7;
+	my $lon = (($wp->{lon} // 0) + 0) / 1e7;
+	return {
+		type       => 'Feature',
+		properties => {
+			uuid        => $uuid,
+			name        => $wp->{name}    // '',
+			obj_type    => 'waypoint',
+			data_source => 'e80',
+			wp_type     => $wp->{wp_type} // 'nav',
+			color       => $wp->{color}   // 'FF888888',
+			lat         => $lat,
+			lon         => $lon,
+		},
+		geometry   => { type => 'Point', coordinates => [$lon, $lat] },
+	};
+}
+
+
+sub _buildRouteFeature
+{
+	my ($uuid, $r, $wpmgr) = @_;
+	my $wps = $wpmgr ? ($wpmgr->{waypoints} // {}) : {};
+	my @pts;
+	for my $wp_uuid (@{$r->{uuids} // []})
+	{
+		my $wp = $wps->{$wp_uuid};
+		push @pts, $wp if $wp && defined $wp->{lat} && defined $wp->{lon};
+	}
+	return undef unless @pts;
+	my @rp_names = map { ($wps->{$_} ? ($wps->{$_}{name} // '') : '') } @{$r->{uuids} // []};
+	my $cidx  = defined($r->{color}) ? ($r->{color} + 0) : 0;
+	my $color = $E80_ROUTE_COLOR_ABGR[$cidx] // 'FF888888';
+	return {
+		type       => 'Feature',
+		properties => {
+			uuid        => $uuid,
+			name        => $r->{name}  // '',
+			obj_type    => 'route',
+			data_source => 'e80',
+			color       => $color,
+			wp_count    => scalar(@pts) + 0,
+			rp_names    => \@rp_names,
+		},
+		geometry   => { type => 'LineString',
+			coordinates => [map { [($_->{lon}//0)/1e7, ($_->{lat}//0)/1e7] } @pts] },
+	};
+}
+
+
+sub _buildTrackFeature
+{
+	my ($uuid, $track) = @_;
+	my $pts = ref $track->{points} eq 'ARRAY' ? $track->{points} : [];
+	return undef unless @$pts;
+	return {
+		type       => 'Feature',
+		properties => {
+			uuid        => $uuid,
+			name        => $track->{name}  // '',
+			obj_type    => 'track',
+			data_source => 'e80',
+			color       => $track->{color} // 'FF888888',
+			point_count => scalar(@$pts) + 0,
+		},
+		geometry   => { type => 'LineString',
+			coordinates => [map { [($_->{lon}//0)+0, ($_->{lat}//0)+0] } @$pts] },
+	};
+}
+
+
+#---------------------------------
+# tree state helpers
+#---------------------------------
+
+sub _walkRestoreStateImages
+{
+	my ($tree, $item) = @_;
+	return unless $item && $item->IsOk();
+	my $d = $tree->GetItemData($item);
+	if ($d)
+	{
+		my $node = $d->GetData();
+		if (ref $node eq 'HASH')
+		{
+			my $type = $node->{type} // '';
+			if ($type eq 'waypoint' || $type eq 'route' || $type eq 'track')
+			{
+				$tree->SetItemState($item, $e80_visible{$node->{uuid} // ''} ? 1 : 0);
+				if ($type eq 'route')
+				{
+					my ($child, $cookie) = $tree->GetFirstChild($item);
+					while ($child && $child->IsOk())
+					{
+						$tree->SetItemState($child, 0);
+						($child, $cookie) = $tree->GetNextChild($item, $cookie);
+					}
+				}
+				return;
+			}
+			elsif ($type eq 'route_point')
+			{
+				$tree->SetItemState($item, 0);
+				return;
+			}
+			elsif ($type eq 'header' || $type eq 'my_waypoints' || $type eq 'group')
+			{
+				my ($child, $cookie) = $tree->GetFirstChild($item);
+				while ($child && $child->IsOk())
+				{
+					_walkRestoreStateImages($tree, $child);
+					($child, $cookie) = $tree->GetNextChild($item, $cookie);
+				}
+				$tree->SetItemState($item, _computeContainerState($tree, $item));
+				return;
+			}
+		}
+	}
+	my ($child, $cookie) = $tree->GetFirstChild($item);
+	while ($child && $child->IsOk())
+	{
+		_walkRestoreStateImages($tree, $child);
+		($child, $cookie) = $tree->GetNextChild($item, $cookie);
+	}
+}
+
+
+sub _walkSetSubtreeState
+{
+	my ($tree, $item, $visible) = @_;
+	my ($child, $cookie) = $tree->GetFirstChild($item);
+	while ($child && $child->IsOk())
+	{
+		my $d = $tree->GetItemData($child);
+		my $type = '';
+		if ($d) { my $n = $d->GetData(); $type = (ref $n eq 'HASH') ? ($n->{type} // '') : ''; }
+		$tree->SetItemState($child, $visible ? 1 : 0) unless $type eq 'route_point';
+		_walkSetSubtreeState($tree, $child, $visible);
+		($child, $cookie) = $tree->GetNextChild($item, $cookie);
+	}
+}
+
+
+sub _computeContainerState
+{
+	my ($tree, $item) = @_;
+	my ($total, $visible) = (0, 0);
+	my ($child, $cookie) = $tree->GetFirstChild($item);
+	while ($child && $child->IsOk())
+	{
+		my $d = $tree->GetItemData($child);
+		if ($d)
+		{
+			my $node = $d->GetData();
+			if (ref $node eq 'HASH' && ($node->{type} // '') ne 'route_point')
+			{
+				$total++;
+				$visible++ if $tree->GetItemState($child) == 1;
+			}
+		}
+		($child, $cookie) = $tree->GetNextChild($item, $cookie);
+	}
+	return 0 unless $total;
+	return $visible == $total ? 1 : $visible == 0 ? 0 : 2;
+}
+
+
+sub _refreshAncestorStates
+{
+	my ($this, $item) = @_;
+	my $tree   = $this->{tree};
+	my $parent = $tree->GetItemParent($item);
+	while ($parent && $parent->IsOk())
+	{
+		my $d = $tree->GetItemData($parent);
+		last unless $d;
+		my $node = $d->GetData();
+		last unless ref $node eq 'HASH';
+		last if ($node->{type} // '') eq 'root';
+		$tree->SetItemState($parent, _computeContainerState($tree, $parent));
+		$parent = $tree->GetItemParent($parent);
+	}
+}
+
+
+#---------------------------------
+# leaflet sync after E80 rebuild
+#---------------------------------
+
+sub _syncLeafletAfterRebuild
+{
+	my ($wpmgr, $track_mgr) = @_;
+	return unless %e80_visible;
+
+	my $wps    = $wpmgr ? ($wpmgr->{waypoints} // {}) : {};
+	my $routes = $wpmgr ? ($wpmgr->{routes}    // {}) : {};
+	my $tracks = ($track_mgr && $track_mgr->{tracks}) ? $track_mgr->{tracks} : {};
+
+	my (@to_remove, @features);
+	for my $uuid (keys %e80_visible)
+	{
+		if (my $wp = $wps->{$uuid})
+		{
+			push @features, _buildWpFeature($uuid, $wp);
+		}
+		elsif (my $r = $routes->{$uuid})
+		{
+			my $f = _buildRouteFeature($uuid, $r, $wpmgr);
+			push @features, $f if $f;
+		}
+		elsif (my $t = $tracks->{$uuid})
+		{
+			my $f = _buildTrackFeature($uuid, $t);
+			push @features, $f if $f;
+		}
+		else
+		{
+			push @to_remove, $uuid;
+			delete $e80_visible{$uuid};
+		}
+	}
+	removeRenderFeatures(\@to_remove) if @to_remove;
+	addRenderFeatures(\@features)     if @features;
+}
+
+
+#---------------------------------
+# checkbox state bitmaps
+#---------------------------------
+
+sub _makeCheckBitmap
+{
+	my ($state) = @_;
+	my $bmp = Wx::Bitmap->new(13, 13);
+	my $dc  = Wx::MemoryDC->new();
+	$dc->SelectObject($bmp);
+	$dc->SetBackground(Wx::Brush->new(Wx::Colour->new(255,255,255), wxSOLID));
+	$dc->Clear();
+	$dc->SetPen(Wx::Pen->new(Wx::Colour->new(100,100,100), 1, wxSOLID));
+	$dc->SetBrush(Wx::Brush->new(Wx::Colour->new(255,255,255), wxSOLID));
+	$dc->DrawRectangle(1, 1, 11, 11);
+	if ($state == 1)
+	{
+		$dc->SetPen(Wx::Pen->new(Wx::Colour->new(0,0,180), 2, wxSOLID));
+		$dc->DrawLine(2, 6, 5, 10);
+		$dc->DrawLine(5, 10, 11, 2);
+	}
+	elsif ($state == 2)
+	{
+		$dc->SetPen(Wx::Pen->new(Wx::Colour->new(0,0,180), 1, wxSOLID));
+		$dc->SetBrush(Wx::Brush->new(Wx::Colour->new(0,0,180), wxSOLID));
+		$dc->DrawRectangle(3, 3, 7, 7);
+	}
+	$dc->SelectObject(wxNullBitmap);
+	return $bmp;
 }
 
 

@@ -42,7 +42,7 @@ sub _refreshDatabaseWithDelete
 
 
 #----------------------------------------------------
-# _resolveConflict — Replace/Skip/Abort dialog
+# _resolveConflict - Replace/Skip/Abort dialog
 #----------------------------------------------------
 
 sub _resolveConflict
@@ -141,7 +141,7 @@ sub _insertFreshWaypoint
 
 
 #----------------------------------------------------
-# _pasteOneWaypointToDB — UUID-preserving paste
+# _pasteOneWaypointToDB - UUID-preserving paste
 # Returns: 'created', 'replaced', 'skipped', 'no_change', 'aborted'
 #----------------------------------------------------
 
@@ -175,6 +175,23 @@ sub _pasteOneWaypointToDB
 			collection_uuid => $coll_uuid,
 		);
 		return 'created';
+	}
+
+	if ($source eq 'e80')
+	{
+		updateWaypoint($dbh, $uuid,
+			name       => $wp->{name}    // '',
+			comment    => $wp->{comment} // '',
+			lat        => $wp->{lat},
+			lon        => $wp->{lon},
+			wp_type    => $wp->{wp_type} // $WP_TYPE_NAV,
+			color      => $wp->{color},
+			depth_cm   => $wp->{depth_cm} // $wp->{depth} // 0,
+			created_ts => $ts,
+			ts_source  => $ts_src,
+			source     => $wp->{source},
+		);
+		return 'replaced';
 	}
 
 	return 'no_change' if !_wpFieldsDiffer($existing, $wp, $source);
@@ -219,7 +236,7 @@ sub _pasteOneWaypointToDB
 
 
 #----------------------------------------------------
-# Cut helpers — source deletion after successful paste
+# Cut helpers - source deletion after successful paste
 #----------------------------------------------------
 
 sub _cutDatabaseWaypoint
@@ -282,7 +299,7 @@ sub _cutDatabaseTrack
 
 
 #----------------------------------------------------
-# _deleteDB — main delete dispatch
+# _deleteDB - main delete dispatch
 #----------------------------------------------------
 
 sub _deleteDB
@@ -500,7 +517,7 @@ sub _deleteDB
 
 
 #----------------------------------------------------
-# _pasteItemsToCollection — recursive paste helper
+# _pasteItemsToCollection - recursive paste helper
 # Pastes items[] into target_uuid. Called by _pasteDB
 # and recursively for groups and branches.
 #----------------------------------------------------
@@ -744,7 +761,7 @@ sub _pasteItemsToCollection
 
 
 #----------------------------------------------------
-# _pasteDB — main paste dispatch
+# _pasteDB - main paste dispatch
 #----------------------------------------------------
 
 sub _pasteDB
@@ -1063,17 +1080,31 @@ sub _pasteDB
 			? $pos
 			: $pos + 1;
 
-		# Flatten items to waypoints/route_points
+		# Flatten items to route-sequence-eligible items (route_point and waypoint per SS6.4)
 		my @wp_items;
-		for my $item (@$items)
+		if (!$fresh)
 		{
-			my $t = $item->{type} // '';
-			if    ($t eq 'waypoint' || $t eq 'route_point') { push @wp_items, $item }
-			elsif ($t eq 'group')                           { push @wp_items, @{$item->{members} // []} }
+			# PASTE_BEFORE/AFTER: accept route_point and waypoint items only (SS6.4)
+			my @invalid = grep { my $t = $_->{type}//''; $t ne 'route_point' && $t ne 'waypoint' } @$items;
+			if (@invalid)
+			{
+				warning(0, 0, "IMPLEMENTATION ERROR: _pasteDB: PASTE_BEFORE/AFTER route_point: clipboard has non-route_point/waypoint items");
+				return;
+			}
+			@wp_items = @$items;
+		}
+		else
+		{
+			# PASTE_NEW_BEFORE/AFTER: route_point and waypoint items eligible; others filtered (SS6.4)
+			for my $item (@$items)
+			{
+				my $t = $item->{type} // '';
+				push @wp_items, $item if $t eq 'route_point' || $t eq 'waypoint';
+			}
 		}
 		if (!@wp_items)
 		{
-			warning(0, 0, "_pasteDB: PASTE_BEFORE/AFTER: no waypoints to insert as route points");
+			warning(0, 0, "_pasteDB: PASTE_BEFORE/AFTER route_point: no route_point items in clipboard");
 			return;
 		}
 
@@ -1111,10 +1142,10 @@ sub _pasteDB
 			if ($fresh)
 			{
 				my $itype = $item->{type} // '';
-				if ($itype eq 'route_point')
+				if ($itype eq 'route_point' || $itype eq 'waypoint')
 				{
-					# Duplicate reference: reuse same WP UUID at a new sequence position.
-					# "New" means a new route_waypoints row, not a new waypoint record.
+					# Insert as route_waypoints reference using existing WP UUID.
+					# "New" means a new sequence position, not a new waypoint record (SS6.4).
 					$wp_uuid = $item->{uuid};
 				}
 				else
@@ -1174,6 +1205,12 @@ sub _pasteDB
 	}
 
 	# Standard paste into a collection
+	my $rcn_type = $right_click_node ? ($right_click_node->{type} // '') : '';
+	unless ($rcn_type eq 'collection' || $rcn_type eq 'root')
+	{
+		warning(0, 0, "IMPLEMENTATION ERROR: _pasteDB: non-collection destination '$rcn_type' reached paste handler");
+		return;
+	}
 	my $target_uuid = ($right_click_node->{data} // {})->{uuid};
 	if (!$target_uuid)
 	{
@@ -1264,6 +1301,94 @@ sub _newDatabaseRoute
 		$color,
 		$data->{comment} // '',
 		$right_click_node->{data}{uuid});
+	disconnectDB($dbh);
+	_refreshDatabase();
+}
+
+
+#----------------------------------------------------
+# _syncFromE80 -- E80->DB sync down
+#----------------------------------------------------
+
+sub _syncFromE80
+{
+	my ($right_click_node, $tree, $items) = @_;
+
+	my $dbh = connectDB();
+	return unless $dbh;
+
+	for my $item (@$items)
+	{
+		my $t    = $item->{type} // '';
+		my $uuid = $item->{uuid} // '';
+		next unless $uuid;
+
+		if ($t eq 'waypoint')
+		{
+			my $wp  = $item->{data} // {};
+			my $rec = getWaypoint($dbh, $uuid);
+			next unless $rec;
+			updateWaypoint($dbh, $uuid,
+				name       => $wp->{name}    // '',
+				comment    => $wp->{comment} // '',
+				lat        => $wp->{lat},
+				lon        => $wp->{lon},
+				wp_type    => $rec->{wp_type}  // $WP_TYPE_NAV,
+				color      => $rec->{color},
+				depth_cm   => $wp->{depth_cm} // $wp->{depth} // 0,
+				created_ts => $wp->{created_ts} // $wp->{ts} // $rec->{created_ts},
+				ts_source  => $rec->{ts_source} // 'e80',
+				source     => $rec->{source},
+			);
+		}
+		elsif ($t eq 'route')
+		{
+			my $rd  = $item->{data} // {};
+			my $rps = $item->{route_points} // [];
+			my $rec = getRoute($dbh, $uuid);
+			next unless $rec;
+			updateRoute($dbh, $uuid,
+				$rd->{name}    // '',
+				e80RouteIndexToAbgr($rd->{color} // 0),
+				$rd->{comment} // '');
+			clearRouteWaypoints($dbh, $uuid);
+			my $pos = 0;
+			appendRouteWaypoint($dbh, $uuid, $_->{uuid}, $pos++) for @$rps;
+		}
+		elsif ($t eq 'group')
+		{
+			my $gd  = $item->{data} // {};
+			my $rec = getCollection($dbh, $uuid);
+			next unless $rec;
+			if (($rec->{name} // '') ne ($gd->{name} // ''))
+			{
+				$dbh->do("UPDATE collections SET name=? WHERE uuid=?",
+					[$gd->{name} // '', $uuid]);
+			}
+			for my $member (@{$item->{members} // []})
+			{
+				my $mu   = $member->{uuid} // '';
+				my $md   = $member->{data} // {};
+				next unless $mu;
+				my $mrec = getWaypoint($dbh, $mu);
+				next unless $mrec;
+				updateWaypoint($dbh, $mu,
+					name       => $md->{name}    // '',
+					comment    => $md->{comment} // '',
+					lat        => $md->{lat},
+					lon        => $md->{lon},
+					wp_type    => $mrec->{wp_type}  // $WP_TYPE_NAV,
+					color      => $mrec->{color},
+					depth_cm   => $md->{depth_cm} // $md->{depth} // 0,
+					created_ts => $md->{created_ts} // $md->{ts} // $mrec->{created_ts},
+					ts_source  => $mrec->{ts_source} // 'e80',
+					source     => $mrec->{source},
+				);
+			}
+		}
+		# tracks: read-only on E80; sync-down not applicable
+	}
+
 	disconnectDB($dbh);
 	_refreshDatabase();
 }

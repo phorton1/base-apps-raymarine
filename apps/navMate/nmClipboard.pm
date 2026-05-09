@@ -9,6 +9,7 @@ use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils qw(warning error getAppFrame);
+use c_db;
 use a_defs;
 
 
@@ -51,6 +52,7 @@ my @ALL_PASTE_CMDS = (
 	$CTX_CMD_PASTE_AFTER,
 	$CTX_CMD_PASTE_NEW_BEFORE,
 	$CTX_CMD_PASTE_NEW_AFTER,
+	$CTX_CMD_SYNC,
 );
 my @ALL_NEW_CMDS = (
 	$CTX_CMD_NEW_WAYPOINT, $CTX_CMD_NEW_GROUP, $CTX_CMD_NEW_ROUTE, $CTX_CMD_NEW_BRANCH,
@@ -77,10 +79,38 @@ sub allDeleteCmds { return @ALL_DELETE_CMDS }
 # clipboard state
 #----------------------------------------------------
 
+sub _classifyE80Items
+{
+	my ($items) = @_;
+	return undef unless $items && @$items;
+	my $dbh = connectDB();
+	return undef unless $dbh;
+	my ($n_present, $n_absent) = (0, 0);
+	for my $item (@$items)
+	{
+		my $uuid = $item->{uuid} // '';
+		next unless $uuid;
+		my $t = $item->{type} // '';
+		my $found;
+		if    ($t eq 'waypoint')    { $found = getWaypoint($dbh, $uuid);    }
+		elsif ($t eq 'group')       { $found = getCollection($dbh, $uuid);  }
+		elsif ($t eq 'route')       { $found = getRoute($dbh, $uuid);       }
+		elsif ($t eq 'track')       { $found = getTrack($dbh, $uuid);       }
+		elsif ($t eq 'route_point') { $found = getWaypoint($dbh, $uuid);    }
+		$found ? $n_present++ : $n_absent++;
+	}
+	disconnectDB($dbh);
+	return 'paste' if $n_present == 0;
+	return 'sync'  if $n_absent  == 0;
+	return 'mixed';
+}
+
 sub setCopy
 {
 	my ($source, $items) = @_;
-	$clipboard = { source => $source, cut_flag => 0, items => $items // [] };
+	my $class = ($source eq 'e80') ? (_classifyE80Items($items) // 'paste') : undef;
+	$clipboard = { source => $source, cut_flag => 0, items => $items // [],
+	               clipboard_class => $class };
 	_updateStatusBar();
 }
 
@@ -103,7 +133,12 @@ sub getClipboardText
 	my $n    = scalar @{$clipboard->{items}};
 	my $src  = $clipboard->{source};
 	my $verb = $clipboard->{cut_flag} ? 'cut' : 'copy';
-	return "[$src] $verb ($n)";
+	my $text = "[$src] $verb ($n)";
+	if (($clipboard->{clipboard_class} // '') eq 'mixed')
+	{
+		$text .= " -- Paste/Sync not available: clipboard contains both new and existing items -- use Paste New";
+	}
+	return $text;
 }
 
 sub _updateStatusBar
@@ -270,7 +305,7 @@ sub getCopyMenuItems
 {
 	my ($panel, @nodes) = @_;
 	return () if !@nodes;
-	return () if grep { ($_->{type}//'') eq 'header' || ($_->{type}//'') eq 'root' } @nodes;
+	return () if grep { ($_->{type}//'') eq 'root' } @nodes;
 	return ({ id => $CTX_CMD_COPY, label => 'Copy' });
 }
 
@@ -278,7 +313,7 @@ sub getCutMenuItems
 {
 	my ($panel, @nodes) = @_;
 	return () if !@nodes;
-	return () if grep { ($_->{type}//'') eq 'header' || ($_->{type}//'') eq 'root' } @nodes;
+	return () if grep { ($_->{type}//'') eq 'root' } @nodes;
 	return ({ id => $CTX_CMD_CUT, label => 'Cut' });
 }
 
@@ -300,7 +335,7 @@ sub getPasteMenuItems
 
 	if ($panel eq 'e80')
 	{
-		return () if $t eq 'track' || $t eq 'track_point';
+		return () if $t eq 'track';
 		return () if $t eq 'header' && $kind eq 'tracks';
 	}
 
@@ -327,8 +362,28 @@ sub getPasteMenuItems
 		: ($t eq 'object' || $t eq 'route_point' || $t eq 'collection');
 
 	my @items;
-	push @items, { id => $CTX_CMD_PASTE,     label => 'Paste'     } if $is_collection;
-	push @items, { id => $CTX_CMD_PASTE_NEW, label => 'Paste New' } if $is_collection && !$cut;
+	if ($is_collection)
+	{
+		my $source           = $clipboard->{source} // '';
+		my $class            = $clipboard->{clipboard_class} // '';
+		my $is_e80_copy_to_db = ($panel eq 'database' && $source eq 'e80' && !$cut);
+
+		if (!$is_e80_copy_to_db)
+		{
+			push @items, { id => $CTX_CMD_PASTE, label => 'Paste' };
+		}
+		elsif ($class eq 'paste')
+		{
+			push @items, { id => $CTX_CMD_PASTE, label => 'Paste' };
+		}
+		elsif ($class eq 'sync')
+		{
+			push @items, { id => $CTX_CMD_SYNC, label => 'Sync' };
+		}
+		# mixed: no PASTE, no SYNC offered
+
+		push @items, { id => $CTX_CMD_PASTE_NEW, label => 'Paste New' } if !$cut;
+	}
 
 	if ($positional)
 	{
@@ -339,14 +394,14 @@ sub getPasteMenuItems
 		if ($t eq 'route_point')
 		{
 			my @cb    = @{$clipboard->{items} // []};
-			$allow_non_new = !grep { ($_->{type} // '') ne 'route_point' } @cb;
+			$allow_non_new = !grep { my $ct = $_->{type}//''; $ct ne 'route_point' && $ct ne 'waypoint' } @cb;
 		}
 		if ($allow_non_new)
 		{
 			push @items, { id => $CTX_CMD_PASTE_BEFORE, label => 'Paste Before' };
 			push @items, { id => $CTX_CMD_PASTE_AFTER,  label => 'Paste After'  };
 		}
-		if (!$cut)
+		if (!$cut && $t ne 'route_point')
 		{
 			push @items, { id => $CTX_CMD_PASTE_NEW_BEFORE, label => 'Paste New Before' };
 			push @items, { id => $CTX_CMD_PASTE_NEW_AFTER,  label => 'Paste New After'  };

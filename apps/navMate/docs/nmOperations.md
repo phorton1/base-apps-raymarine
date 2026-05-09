@@ -116,7 +116,7 @@ paste.
 ### 2.2 Paste
 
 **PASTE** (10300) -- executes the clipboard into the destination, preserving source UUIDs.
-Available for cut operations and E80-source downloads.
+Available for cut operations and for paste-classified E80-source clipboards (see SS4 and SS9).
 
 **PASTE_NEW** (10301) -- executes the clipboard into the destination with fresh
 navMate-generated UUIDs. Available for copy operations only.
@@ -154,6 +154,21 @@ position; the underlying waypoint record is preserved. The menu label is "Delete
 **NEW_BRANCH** (10550) -- create a new item of the named type. All open a name-input
 dialog. Placement follows the New command rules in SS11. New commands are excluded from
 automated testing.
+
+### 2.6 Sync
+
+**SYNC** (10600) -- pushes one side's version of an item to the matching UUID on the other
+panel. SYNC is a direct in-place operation, like Delete -- it does not consume or produce
+clipboard state. It clears the clipboard unconditionally after execution.
+
+SYNC is available on both panels when the selected item(s) have UUID counterparts on the
+other panel. Multi-select is supported. Pre-flight presents a "newer-wins" confirmation if
+any target counterpart appears newer than the source.
+
+SYNC is also offered at DB paste destinations when an E80-source clipboard is
+sync-classified -- meaning all clipboard item UUIDs are already present in the navMate DB.
+In that case the clipboard items function as the effective selection for the sync-down
+operation.
 
 
 ## 3. The Selection Model
@@ -196,8 +211,23 @@ The clipboard does not carry a type label of its own. All classification of clip
 contents is performed by paste pre-flight (SS10) at the time a paste destination is
 evaluated.
 
+**E80-source clipboard classification.** When items are copied or cut from the E80 panel,
+an additional classification step runs immediately at copy/cut time. Each item UUID is
+checked against the navMate DB:
+
+- **paste-classified** -- all item UUIDs absent from the DB. PASTE and PASTE_NEW are
+  offered at DB destinations.
+- **sync-classified** -- all item UUIDs present in the DB. SYNC (SS2.6) is offered;
+  PASTE is disabled at DB destinations.
+- **mixed-classified** -- some UUIDs absent, some present. Both PASTE and SYNC are
+  disabled; PASTE_NEW remains available. The status bar shows: "Paste/Sync not available:
+  clipboard contains both new and existing items -- use Paste New."
+
+DB-sourced clipboards carry no classification; this step applies to E80-source only.
+
 The clipboard remains populated until replaced by a subsequent Copy or Cut. Paste does not
-clear the clipboard.
+clear the clipboard. DELETE and SYNC both clear the entire clipboard unconditionally; there
+is no partial clearing.
 
 
 ## 5. Pre-flight
@@ -389,7 +419,7 @@ homogeneous route points, and the mixed waypoints-and-route-points clipboard -- 
 as `route_waypoints` sequence references. This is the E80-side route reordering and
 insertion destination.
 
-**E80 Tracks header / track node / track point** -- no paste accepted; tracks are
+**E80 Tracks header / track node** -- no paste accepted; tracks are
 read-only on E80. E80 Tracks header is a valid Delete right-click target: Delete operates
 on all tracks in the folder (SS8.2).
 
@@ -566,9 +596,18 @@ not also in the selection. If so, the user is warned at confirm time and offered
 Abort, or Proceed (route references removed before the waypoint is deleted).
 
 **Groups:**
-DELETE_GROUP and DELETE_GROUP_WPS are both offered, with the same member-waypoint
-route-check as above. My Waypoints as a group node offers only DELETE_GROUP_WPS -- it
-cannot be dissolved.
+DELETE_GROUP and DELETE_GROUP_WPS are always offered for any named group. My Waypoints
+offers only DELETE_GROUP_WPS (it cannot be dissolved).
+
+DELETE_GROUP dissolves the group: member waypoints are re-parented to the group's parent
+collection. Route references are unaffected because the waypoints themselves are not
+deleted. No route-dependency check is needed.
+
+DELETE_GROUP_WPS deletes the group shell and all member waypoints. The handler checks
+whether any member waypoint is used in a route. If so, the operation is blocked: an error
+dialog informs the user that route references must be resolved first (or DELETE_GROUP used
+instead). No E80 state is changed. There is no "proceed anyway" option for this path --
+the user must remove the waypoints from all routes before DELETE_GROUP_WPS can succeed.
 
 **Routes:**
 DELETE_ROUTE. Member waypoints preserved on E80.
@@ -611,6 +650,11 @@ paste destination. This constraint is enforced in paste pre-flight, not at cut t
 
 **Recursive paste (invariant SS1.5) is not checked here.** The destination is unknown at
 copy/cut time. The check runs in SS10.1 Step 3 when the destination is known.
+
+**E80-source classification.** Immediately after snapshotting an E80-source selection,
+pre-flight checks each item UUID against the navMate DB and stores a clipboard_class
+(paste / sync / mixed) per SS4. This classification governs which paste commands are
+offered when the clipboard is pasted to a DB destination (SS10.3).
 
 
 ## 10. Pre-flight Rules: Paste
@@ -714,14 +758,26 @@ types are rejected with an informational message.
 | Intact-group clipboard                 | E80    | yes      | Y     | --        | Download group + members + delete from E80          |
 | Homogeneous routes                     | E80    | no       | Y     | Y         | Download route                                      |
 | Homogeneous routes                     | E80    | yes      | Y     | --        | Download route + delete from E80                    |
-| Homogeneous tracks                     | E80    | no       | Y     | --        | Download; PASTE_NEW not available for tracks        |
+| Homogeneous tracks                     | E80    | no       | Y     | Y         | Download / download with fresh-UUID track           |
 | Homogeneous tracks                     | E80    | yes      | Y     | --        | Download + E80 erase                                |
-| Heterogeneous flat set                 | E80    | no       | Y     | Y         | Download all; waypoints/groups before routes; existing UUIDs updated in-place (SS12.1) |
+| Heterogeneous flat set                 | E80    | no       | Y     | Y         | Download all; waypoints/groups before routes        |
 | Heterogeneous flat set                 | E80    | yes      | Y     | --        | Download + E80 delete; same ordering                |
 
 My Waypoints download (source = E80 WP destination, My Waypoints node): contents arrive
 as individual ungrouped Waypoints in the target DB collection. No Group is created; the
 name "My Waypoints" is not used.
+
+**E80-source copy classification and PASTE availability.** The E80-source copy rows above
+(cut_flag = no) assume a paste-classified clipboard (all item UUIDs absent from the DB).
+For other classifications:
+- **sync-classified** (all UUIDs present in DB): PASTE is not offered. SYNC (SS2.6) is
+  offered at the DB destination instead. PASTE_NEW remains available.
+- **mixed-classified** (some UUIDs absent, some present): both PASTE and SYNC are
+  disabled. PASTE_NEW remains available. The status bar displays: "Paste/Sync not
+  available: clipboard contains both new and existing items -- use Paste New."
+
+E80-source cut (cut_flag = yes) rows are unaffected by classification: CUT+PASTE is
+always a move, UUID-preserving regardless of DB state.
 
 ### 10.4 Paste Before and After -- DB panel
 
@@ -770,7 +826,7 @@ Applies after SS10.2. DB-sourced cut is never valid at any E80 destination.
 | Homogeneous routes             | E80    | no       | Y     | Y         | Re-upload / duplicate               |
 | Homogeneous routes             | E80    | yes      | Y     | --        | Re-home on E80 + delete source      |
 
-### 10.8 Paste to E80 -- Tracks header, track node, or track point
+### 10.8 Paste to E80 -- Tracks header or track node
 
 No paste of any kind is accepted. Tracks are read-only on the E80.
 
@@ -835,7 +891,7 @@ command on a terminal node places it immediately after the right-clicked node.
 | Waypoint            | New Waypoint (sibling, inserts after)                     |
 | Route               | New Route (sibling, inserts after)                        |
 | Route point         | -- *[needs validation]*                                   |
-| Track, track point  | --                                                        |
+| Track               | --                                                        |
 
 **E80 panel:**
 
@@ -858,38 +914,28 @@ re-check what pre-flight already confirmed.
 
 ### 12.1 Paste to Database from E80 -- download
 
-UUID-preserving merge into the navMate DB. For each item in the clipboard:
+PASTE is offered for E80-source clipboards only when the clipboard is paste-classified
+(SS4) -- all item UUIDs are absent from the DB. Each item is therefore a clean insert:
+new record placed at the paste destination. No conflict check and no conflict dialog.
 
-- UUID not in DB -> insert record in target collection.
-- UUID in DB, data identical -> no-op.
-- UUID in DB, data differs -> conflict dialog: Replace / Skip / Replace All / Skip All / Abort.
+**Execution ordering.** Waypoints and group members are always processed before routes,
+regardless of the order items appear in the clipboard. This ensures that any user abort
+(e.g., during a name-collision dialog) leaves the DB in a consistent state: waypoints
+already inserted may be orphaned, but routes cannot be created with broken waypoint
+references because waypoints are processed first.
 
-**Replace means update in-place.** When a UUID already exists in the DB, Replace updates
-the record's data fields but does not change its collection_uuid. Existing items stay where
-they are in the DB hierarchy. Only items whose UUIDs do not exist anywhere in the DB are
-placed at the paste destination. The paste destination is the landing zone for new items
-only, not a re-homing target for existing ones.
+**Groups:** the group shell and each member waypoint are inserted at the target. My
+Waypoints content arrives as ungrouped waypoints -- no group is created.
 
-**Execution ordering (E80-source pastes only).** When the clipboard source is E80,
-waypoints and group members are always processed before routes, regardless of the order
-items appear in the clipboard. For DB-source pastes this ordering is not required -- the
-referenced waypoints already exist in the DB and the route paste simply references their
-existing UUIDs (SS1.6). The ordering guarantee for E80-source pastes ensures that any
-user-initiated Abort during the conflict dialog leaves the DB in a consistent state:
-orphaned waypoints may result from an Abort during the waypoint phase, but route records
-with broken waypoint references cannot result from an Abort during the route phase, because
-all waypoints will already have been processed.
-
-**Groups:** the group collection is created under the target if absent (merge semantics;
-existing members are preserved). Member waypoints are merged individually per the above.
-My Waypoints content arrives as ungrouped waypoints -- no group is created.
-
-**Routes:** the route record is inserted (if UUID new to DB) or updated in-place (if UUID
-exists). The route_waypoints list is rebuilt from the clipboard. Waypoint UUID references
-are preserved exactly (SS1.6); no new waypoint records are created by the route paste.
+**Routes:** the route record is inserted. The route_waypoints list is rebuilt from the
+clipboard item. Waypoint UUID references are preserved exactly (SS1.6); no new waypoint
+records are created by the route paste.
 
 **Cut variant:** after each item is successfully pasted, the source item is deleted from
 E80 via WPMGR commands.
+
+For E80-source clipboards where some or all UUIDs are already in the DB, see SYNC (SS2.6)
+and SS12.9.
 
 ### 12.2 Paste to Database from Database -- Cut (move)
 
@@ -913,8 +959,9 @@ copy operations only.
 preserve the source waypoint UUIDs exactly -- no new waypoint records are created (SS1.6).
 Pre-flight (SS10.1 Step 4) has already confirmed all referenced waypoints exist in the DB.
 
-**Tracks:** PASTE_NEW is not available for any track clipboard. Track duplication within
-the database requires Cut -> Paste (move).
+**Tracks:** PASTE_NEW inserts a fresh-UUID track record at the paste destination with
+`db_version` = 1 and `e80_version` = NULL. Tracks can only be acquired from the E80;
+once in the DB they are ordinary records, and PASTE_NEW copies them like any other type.
 
 ### 12.4 Version field management
 
@@ -996,9 +1043,11 @@ groups or routes within the Routes folder; those are ordered by name. No WPMGR
 position-aware create is required -- the route_waypoints sequence is rebuilt in the
 correct order during upload.
 
-Paste New Before/After at a route point destination: inserts new `route_waypoints`
-references pointing to the same underlying waypoint UUIDs (copy semantics --
-no new waypoint records are created; see SS7.3).
+Only **PASTE_BEFORE** and **PASTE_AFTER** are offered when the destination is a
+`route_point`. PASTE_NEW_BEFORE/AFTER are suppressed because inserting at a route
+position is always a UUID-reference operation -- no new waypoint record is created
+regardless of clipboard source. (PASTE_NEW_BEFORE/AFTER remain available for
+DB-panel object and collection positional destinations.)
 
 ### 12.7 Delete -- Database
 
@@ -1015,6 +1064,9 @@ Execution follows the pre-flight determination from SS8.1.
   waypoints, routes, route_waypoints, tracks, and track_points.
 - **REMOVE_ROUTEPOINT:** removes the one `route_waypoints` row at the selected position.
 
+**Clipboard clearing.** After Delete execution, the clipboard is cleared unconditionally
+regardless of its source or contents. There is no partial clearing.
+
 ### 12.8 Delete -- E80
 
 Execution follows pre-flight determination from SS8.2 in the enforced order:
@@ -1028,6 +1080,36 @@ DELETE_ROUTE -> DELETE_GROUP / DELETE_GROUP_WPS -> DELETE_WAYPOINT -> DELETE_TRA
 - **DELETE_TRACK:** sends TRACK_CMD_ERASE.
 - **REMOVE_ROUTEPOINT:** removes the route_waypoints reference; the underlying waypoint is
   preserved.
+
+**Clipboard clearing.** After Delete execution, the clipboard is cleared unconditionally
+regardless of its source or contents. There is no partial clearing.
+
+
+### 12.9 Sync
+
+SYNC is a direct in-place update between DB and E80 counterparts sharing the same UUID.
+It does not consume or produce clipboard state. The clipboard is cleared unconditionally
+after SYNC execution.
+
+**Pre-flight.** SYNC is available when the selected items on one panel each have a UUID
+counterpart on the other panel. Multi-select is supported. If any target-panel counterpart
+appears newer than the source (based on `db_version` / `e80_version` comparison),
+pre-flight presents a "newer-wins" confirmation identifying those items. The user may
+proceed or abort.
+
+**Execution -- DB to E80 (sync up).** For each selected DB item whose UUID exists on E80,
+overwrite the E80 record with the current DB field values via WPMGR. After WPMGR confirms,
+set `e80_version = db_version` on the DB record.
+
+**Execution -- E80 to DB (sync down).** For each selected E80 item whose UUID exists in
+the DB, update the DB record's data fields with the E80 values. Increment `db_version`;
+set `e80_version = db_version` (synchronized).
+
+**Clipboard-triggered SYNC.** When an E80-source clipboard is sync-classified (SS4) and
+the user invokes SYNC at a DB destination, the clipboard items function as the effective
+selection. Execution proceeds as E80-to-DB sync down above.
+
+**Clipboard clearing.** SYNC clears the entire clipboard unconditionally after execution.
 
 
 ## 13. Testability
@@ -1109,6 +1191,8 @@ NEW_WAYPOINT = 10510
 NEW_GROUP    = 10520
 NEW_ROUTE    = 10530
 NEW_BRANCH   = 10550
+
+SYNC = 10600
 ```
 
 NEW_* commands open name-input dialogs and are excluded from automation.

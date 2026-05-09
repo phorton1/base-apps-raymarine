@@ -198,11 +198,11 @@ sub parsePiece
 		# determine terminal condition for this buffer
 		if ($this->{tx}{is_track})
 		{
-			$this->{buffer_complete} = 1;  # TRK buffer after INFO_END → terminal for GET_TRACK/GET_CUR2
+			$this->{buffer_complete} = 1;  # TRK buffer after INFO_END -> terminal for GET_TRACK/GET_CUR2
 		}
 		elsif (!$this->{tx}{expect_trk})
 		{
-			$this->{buffer_complete} = 1;  # single-buffer commands: MTA, point → terminal
+			$this->{buffer_complete} = 1;  # single-buffer commands: MTA, point -> terminal
 		}
 		# else: mta buffer in multi-buffer sequence (GET_TRACK/GET_CUR2); TRK buffer still coming
 	}

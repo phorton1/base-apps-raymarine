@@ -259,7 +259,7 @@ The clipboard status is reflected in the application status bar via
 
 The full context menu feature is implemented across both panels. For the complete
 specification of every operation, clipboard state, and paste compatibility matrix,
-see [Context Menu](context_menu.md).
+see [nmOperations](nmOperations.md).
 
 ### Cut Semantics
 

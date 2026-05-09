@@ -112,7 +112,7 @@ that decision goes into `design_vision.md`, not into any official doc.
 | `data_model.md` | Full SQLite schema (DDL), WRT tables, UUID strategy, timestamp sources, design decisions |
 | `ui_model.md` | winDatabase, winE80, Leaflet canvas (partial), clipboard/context layer, session state |
 | `implementation.md` | Module inventory by layer: foundation, data transport, context ops, HTTP server, wx layer |
-| `context_menu.md` | Full context menu spec: all operations, clipboard state vocabulary, paste compatibility matrix |
+| `nmOperations.md` | Full context menu spec: all operations, clipboard state vocabulary, paste compatibility matrix |
 | `kml_specification.md` | KML file structure, style naming, ExtendedData tags, WRT-to-KML mapping, re-import semantics |
 | `ge_notes.md` | GE round-trip workflow, safe/unsafe GE operations, additive-only re-import asymmetry |
 
@@ -138,7 +138,7 @@ than official docs and are the primary destination for new operational knowledge
 | `closed_bugs.md` | Archaeological record of fixed bugs (root cause, fix, confirmation) |
 | `design_vision.md` | Future directions, deferred features, unresolved design questions |
 | `last_testrun.md` | Most recent test cycle results |
-| `context_menu_testplan.md` | Static test plan for context menu test cycles (rarely changes) |
+| `nmOps_testplan.md` | Static test plan for nmOperations test cycles (rarely changes) |
 
 **last_testrun.md format:** summary block, then full results table. Status
 values: PASS / FAIL / PARTIAL / ATTENTION / NOT RUN. No "New Knowledge" or
@@ -220,7 +220,7 @@ If yes — evict. Memory holds only what **cannot** live in a technical document
 | UI model, clipboard layer | `ui_model.md` |
 | Architecture, code organization | `architecture.md` + `implementation.md` |
 | KML structure, GE workflow | `kml_specification.md` + `ge_notes.md` |
-| Context menu operations | `context_menu.md` |
+| Context menu operations | `nmOperations.md` |
 | Open bugs or todos | `open_bugs.md`, `todo.md` |
 | Closed bugs, completed work | `closed_bugs.md` |
 

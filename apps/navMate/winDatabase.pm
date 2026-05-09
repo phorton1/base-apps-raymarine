@@ -21,6 +21,7 @@ use Wx qw(:everything);
 use Wx::Event qw(
 	EVT_TREE_SEL_CHANGED
 	EVT_TREE_ITEM_EXPANDING
+	EVT_TREE_ITEM_ACTIVATED
 	EVT_TREE_ITEM_RIGHT_CLICK
 	EVT_RIGHT_DOWN
 	EVT_MENU
@@ -212,6 +213,7 @@ sub new
 	# fire EVT_TREE_ITEM_EXPANDING synchronously with the handler already active.
 	EVT_TREE_SEL_CHANGED($this,        $this->{tree}, \&onTreeSelect);
 	EVT_TREE_ITEM_EXPANDING($this,     $this->{tree}, \&onTreeExpanding);
+	EVT_TREE_ITEM_ACTIVATED($this,     $this->{tree}, \&_onTreeActivated);
 	EVT_TREE_ITEM_RIGHT_CLICK($this,   $this->{tree}, \&onTreeRightClick);
 	EVT_RIGHT_DOWN($this->{tree},      sub { _onTreeRightDown($this, @_) });
 
@@ -425,7 +427,7 @@ sub _populateNode
 
 
 #---------------------------------
-# selection → detail
+# selection -> detail
 #---------------------------------
 
 sub onTreeSelect
@@ -597,7 +599,7 @@ sub _ed_show_row
 # checkbox state bitmaps
 #---------------------------------
 # state: 0=unchecked, 1=checked, 2=indeterminate
-# ImageList index 0→tree state 1, 1→state 2, 2→state 3
+# ImageList index 0->tree state 1, 1->state 2, 2->state 3
 
 sub _makeCheckBitmap
 {
@@ -779,6 +781,7 @@ sub _pushObjToLeaflet
 				uuid            => $w->{uuid},
 				name            => $w->{name}      // '',
 				obj_type        => 'waypoint',
+				data_source     => 'db',
 				wp_type         => $w->{wp_type}   // 'nav',
 				color           => $w->{color},
 				depth_cm        => ($w->{depth_cm}  // 0) + 0,
@@ -805,6 +808,7 @@ sub _pushObjToLeaflet
 				uuid            => $t->{uuid},
 				name            => $t->{name}        // '',
 				obj_type        => 'track',
+				data_source     => 'db',
 				color           => $t->{color},
 				point_count     => ($t->{point_count} // 0) + 0,
 				ts_start        => ($t->{ts_start}    // 0) + 0,
@@ -829,6 +833,7 @@ sub _pushObjToLeaflet
 				uuid            => $r->{uuid},
 				name            => $r->{name}    // '',
 				obj_type        => 'route',
+				data_source     => 'db',
 				color           => $r->{color},
 				wp_count        => scalar(@$pts) + 0,
 				rp_names        => \@rp_names,
@@ -919,6 +924,7 @@ sub onBrowserConnect
 				uuid            => $w->{uuid},
 				name            => $w->{name}        // '',
 				obj_type        => 'waypoint',
+				data_source     => 'db',
 				wp_type         => $w->{wp_type}     // 'nav',
 				color           => $w->{color},
 				depth_cm        => ($w->{depth_cm}    // 0) + 0,
@@ -945,6 +951,7 @@ sub onBrowserConnect
 				uuid            => $r->{uuid},
 				name            => $r->{name}    // '',
 				obj_type        => 'route',
+				data_source     => 'db',
 				color           => $r->{color},
 				wp_count        => scalar(@$pts) + 0,
 				rp_names        => \@rp_names,
@@ -966,6 +973,7 @@ sub onBrowserConnect
 				uuid            => $t->{uuid},
 				name            => $t->{name}        // '',
 				obj_type        => 'track',
+				data_source     => 'db',
 				color           => $t->{color},
 				point_count     => ($t->{point_count} // 0) + 0,
 				ts_start        => ($t->{ts_start}    // 0) + 0,
@@ -1517,6 +1525,13 @@ sub _onNewGroup
 		}
 	}
 	$dlg->Destroy();
+}
+
+
+sub _onTreeActivated
+{
+	my ($this, $event) = @_;
+	_onShowHideMap($this, 1);
 }
 
 

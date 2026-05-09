@@ -33,6 +33,8 @@ BEGIN
 		$COMMAND_EXPORT_KML
 		$COMMAND_IMPORT_KML_NM
 		$COMMAND_CLEAR_MAP
+		$COMMAND_REVERT_DB
+		$COMMAND_COMMIT_DB
 	);
 }
 
@@ -54,6 +56,8 @@ our $COMMAND_IMPORT_DB_TEXT = 10026;
 our $COMMAND_EXPORT_KML     = 10028;
 our $COMMAND_IMPORT_KML_NM  = 10029;
 our $COMMAND_CLEAR_MAP      = 10030;
+our $COMMAND_REVERT_DB      = 10031;
+our $COMMAND_COMMIT_DB      = 10032;
 
 
 my $pane_data = {
@@ -79,6 +83,8 @@ my $command_data = {
 	$COMMAND_EXPORT_KML     => ['Export KML', 'Export navMate database to a KML file for Google Earth'],
 	$COMMAND_IMPORT_KML_NM  => ['Import KML', 'Additive re-import from a navMate KML file'],
 	$COMMAND_CLEAR_MAP      => ['Clear Map',  'Set all visible=0 and clear the Leaflet map'],
+	$COMMAND_REVERT_DB      => ['Revert DB',  'Revert navMate.db to last git-committed version'],
+	$COMMAND_COMMIT_DB      => ['Commit DB',  'Commit navMate.db to git with a message'],
 };
 
 my @collection_context_menu = (
@@ -121,6 +127,9 @@ my $e80_menu = [
 my $utils_menu = [
 	$COMMAND_IMPORT_KML,
 	$COMMAND_IMPORT_OLDE80,
+	$ID_SEPARATOR,
+	$COMMAND_REVERT_DB,
+	$COMMAND_COMMIT_DB,
 ];
 
 

@@ -1,7 +1,7 @@
 primary_session_started: 2026-05-08T1120
-official_docs_updated:   2026-05-08T0804
-working_docs_updated:    2026-05-08T0804
-memory_updated:          2026-05-08T0804
+official_docs_updated:   2026-05-08T1900
+working_docs_updated:    2026-05-08T1900
+memory_updated:          2026-05-08T1900
 
 checkpoint: 2026-05-07T1630
     nmOperations.md fully restructured (13 sections); pre-flight as central engine;
@@ -108,3 +108,46 @@ checkpoint: 2026-05-08T1730
     added to _doPaste; SS10.10 guard extended to PASTE_NEW; ordering sort added to
     _pasteItemsToCollection; route branches in DB+E80 no longer create WPs (SS1.6);
     step labels renumbered 5-8 in E80 block; navMate restart required; Cycle 8 next
+
+checkpoint: 2026-05-08T1900
+    Cycle 8 test run COMPLETE: §1+§2 ALL PASS (18 steps); §3 PARTIAL (same failures as
+    Cycle 7: §3.0c 0 route_waypoints, §3.11 homogeneity, §3.14 route name collision,
+    §3.15 BOCAS2 seq collision); §4 NOT_RUN (teensyBoat); §5 PARTIAL (7 PASS, 7 FAIL,
+    2 NOT_RUN); §3.4 E80-source paste bug fixed (always overwrites); 10 bugs in
+    last_testrun.md; new bugs: §5.14 no IMPL ERROR at DB object nodes, §5.15 no guard
+    at E80 WP nodes, §5.16 mixed-clipboard not rejected for PASTE_BEFORE;
+    see 2026-05-08T1900.md
+
+checkpoint: 2026-05-08T2000
+    last_testrun.md §3 numbers corrected to match runbook (§3.0a/b/c→§3.1/2/3,
+    §3.1-§3.16 renumbered, retired §3.11 dropped); runbook format rule added
+    (numbers must match runbook); §3.3 bug analysis in Issues found to be STALE --
+    code already has route_points fix; actual Cycle 8 §3.3 root cause unknown;
+    no code changes; §3.3 fix still pending
+
+checkpoint: 2026-05-08T2200
+    design discussion: SYNC as new CTX_CMD (immediate, non-clipboard, both panels,
+    multi-select, newer-wins preflight); PASTE_NEW for tracks now valid (prohibition
+    removed); E80->DB PASTE classified at copy time (all-new=PASTE, all-existing=SYNC,
+    mixed=both disabled+status bar); clearClipboard on DELETE+SYNC (unconditional);
+    DELETE not currently clearing clipboard is a latent bug; §4.4 reclassified PASS;
+    §3.4/3.12/3.13 need redesign; guard silent-rejection bugs still open;
+    see 2026-05-08T2200.md; nmOperations.md not yet updated; Cycle 10 needed
+
+checkpoint: 2026-05-08T2100
+    Cycle 9 test run COMPLETE (continued from prior context): §1+§2 ALL PASS (18 steps);
+    §3 PARTIAL (14 PASS, 3 PASSED_BUT known-bug §3.4/§3.12/§3.13, 1 NOT_RUN §3.11,
+    1 FAIL §3.19 E80 route-point PASTE_BEFORE silent no-op); §4 PARTIAL (3 PASS,
+    1 PASSED_BUT §4.3 silent rejection, 1 FAIL §4.4 SS10.3 not enforced for PASTE_NEW);
+    §5 PARTIAL (8 PASS, 3 PASSED_BUT §5.4/§5.14/§5.15 silent rejection, 2 FAIL
+    §5.9 recursive-guard bypass + §5.16 mixed-clipboard PASTE_BEFORE corruption,
+    3 NOT_RUN); false-beep bug fixed in runbook; §3.7/§3.8/§3.9 reordered;
+    last_testrun.md written; 4 open bugs: §3.19 stub, §4.4 SS10.3 bypass, §5.9 guard
+    bypass, §5.16 mixed-clip; [E80_TK1]=81b266af3f001ed7 [E80_TK2]=81b266af3f002dd7
+
+checkpoint: 2026-05-09T1100
+    nmOperations.md updated with T2200 design decisions (SYNC CTX_CMD, E80-source
+    clipboard classification, track PASTE_NEW enabled, clipboard clearing on DELETE+SYNC,
+    E80->DB PASTE simplified to paste-classified only, recursive paste guard spec,
+    SS12.9 SYNC semantics); implementation plan written and checkpointed; no code written;
+    see 2026-05-09T1100.md for full implementation plan with exact file/line locations

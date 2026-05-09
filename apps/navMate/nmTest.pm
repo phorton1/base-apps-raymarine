@@ -44,7 +44,7 @@ sub dispatchTestCommand
 	my $cmd = eval { decode_json($cmd_json) };
 	if ($@) { warning(0,0,"nmTest: bad JSON: $@"); return; }
 
-	# Pure ops — handle before panel resolution
+	# Pure ops - handle before panel resolution
 	my $op = $cmd->{op} // '';
 	if ($op eq 'suppress')
 	{
@@ -66,7 +66,7 @@ sub dispatchTestCommand
 		my $pname = $cmd->{panel} // 'database';
 		my $pid   = ($pname eq 'e80') ? $WIN_E80 : $WIN_DATABASE;
 		my $pane  = $main_win->findPane($pid);
-		if (!$pane) { warning(0,0,"nmTest: refresh — panel '$pname' not open"); return; }
+		if (!$pane) { warning(0,0,"nmTest: refresh - panel '$pname' not open"); return; }
 		$pane->refresh();
 		display(0,0,"nmTest: refresh done panel=$pname");
 		return;
@@ -110,7 +110,7 @@ sub dispatchTestCommand
 
 
 #---------------------------------------------
-# _getNodeKey — unified key for both tree types
+# _getNodeKey - unified key for both tree types
 #---------------------------------------------
 
 sub _getNodeKey
@@ -128,7 +128,7 @@ sub _getNodeKey
 
 
 #---------------------------------------------
-# _walkSelect — traverse tree, select matching nodes
+# _walkSelect - traverse tree, select matching nodes
 #---------------------------------------------
 # Auto-expands collapsed branches (DUMMY placeholder) on the way down.
 # Records the key of each branch it expands into $expanded_ref so _doFire
@@ -184,7 +184,7 @@ sub _walkSelect
 
 
 #---------------------------------------------
-# _doSelect — set panel selection state
+# _doSelect - set panel selection state
 #---------------------------------------------
 
 sub _doSelect
@@ -210,7 +210,7 @@ sub _doSelect
 
 
 #---------------------------------------------
-# _walkCollapse — collapse previously auto-expanded branches
+# _walkCollapse - collapse previously auto-expanded branches
 #---------------------------------------------
 
 sub _walkCollapse
@@ -246,7 +246,7 @@ sub _walkCollapse
 
 
 #---------------------------------------------
-# _doFire — call onContextMenuCommand, then restore expansion state
+# _doFire - call onContextMenuCommand, then restore expansion state
 #---------------------------------------------
 
 sub _doFire
@@ -257,7 +257,7 @@ sub _doFire
 
 	if (!$rc)
 	{
-		warning(0,0,"nmTest: fire cmd=$cmd_id — no right_click_node set");
+		warning(0,0,"nmTest: fire cmd=$cmd_id - no right_click_node set");
 		return;
 	}
 

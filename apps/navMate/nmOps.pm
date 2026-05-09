@@ -99,8 +99,8 @@ sub buildContextMenu
 
 	# SS10.10: suppress PASTE and PASTE_NEW when any route in clipboard has member WPs
 	# absent from E80 -- user must paste the WPs first, then retry the route paste.
-	if ($panel eq 'e80' && (grep { $_->{id} == $CTX_CMD_PASTE     } @paste
-	                     ||  grep { $_->{id} == $CTX_CMD_PASTE_NEW } @paste))
+	if ($panel eq 'e80' && ((grep { $_->{id} == $CTX_CMD_PASTE     } @paste)
+	                     ||  (grep { $_->{id} == $CTX_CMD_PASTE_NEW } @paste)))
 	{
 		my $wpmgr = _wpmgr();
 		if ($wpmgr && $clipboard)
@@ -151,7 +151,7 @@ sub buildContextMenu
 
 
 #----------------------------------------------------
-# onContextMenuCommand — main dispatch
+# onContextMenuCommand - main dispatch
 #----------------------------------------------------
 
 sub onContextMenuCommand
@@ -179,6 +179,10 @@ sub onContextMenuCommand
 	elsif ($cmd_id >= 10510 && $cmd_id <= 10550)
 	{
 		_doNew($cmd_id, $panel, $right_click_node, $tree);
+	}
+	elsif ($cmd_id == $CTX_CMD_SYNC)
+	{
+		_doSync($panel, $right_click_node, $tree, @nodes);
 	}
 	else
 	{
@@ -260,8 +264,43 @@ sub _snapshotNodes
 		}
 		for my $node (@nodes)
 		{
-			my $item = _snapshotE80Node($wpmgr, $node);
-			push @items, $item if $item;
+			my $t = $node->{type} // '';
+			if ($t eq 'header')
+			{
+				my $kind = $node->{kind} // '';
+				if ($kind eq 'groups')
+				{
+					my $groups = $wpmgr->{groups} // {};
+					for my $uuid (sort keys %$groups)
+					{
+						my $item = _snapshotE80Node($wpmgr, { type => 'group', uuid => $uuid, data => $groups->{$uuid} });
+						push @items, $item if $item;
+					}
+				}
+				elsif ($kind eq 'routes')
+				{
+					my $routes = $wpmgr->{routes} // {};
+					for my $uuid (sort keys %$routes)
+					{
+						my $item = _snapshotE80Node($wpmgr, { type => 'route', uuid => $uuid, data => $routes->{$uuid} });
+						push @items, $item if $item;
+					}
+				}
+				elsif ($kind eq 'tracks')
+				{
+					my $track_svc = _track();
+					my $tracks    = $track_svc ? ($track_svc->{tracks} // {}) : {};
+					for my $uuid (sort keys %$tracks)
+					{
+						push @items, { type => 'track', uuid => $uuid, data => $tracks->{$uuid} };
+					}
+				}
+			}
+			else
+			{
+				my $item = _snapshotE80Node($wpmgr, $node);
+				push @items, $item if $item;
+			}
 		}
 	}
 	else
@@ -502,11 +541,12 @@ sub _doDelete
 	{
 		nmOps::_deleteDB($cmd_id, $right_click_node, $tree, @nodes);
 	}
+	clearClipboard();
 }
 
 
 #----------------------------------------------------
-# _doPaste — full pre-flight (SS6, SS10) then dispatch
+# _doPaste - full pre-flight (SS6, SS10) then dispatch
 #----------------------------------------------------
 
 sub _doPaste
@@ -550,18 +590,15 @@ sub _doPaste
 		return;
 	}
 
-	# Step 3: Recursive paste check (SS1.5)
-	my $dest_uuid = $right_click_node ? ($right_click_node->{uuid} // '') : '';
-	if ($dest_uuid)
+	# Step 3: Recursive paste check (SS1.5) -- walk full ancestor chain.
+	# route_points are positional markers (uuid = wp uuid), not containers;
+	# skip the check so paste-before/after a pivot that shares a clipboard UUID is allowed.
+	my %clip_uuids = map { ($_->{uuid} // '') => 1 } grep { $_->{uuid} } @resolved;
+	if (($right_click_node->{type} // '') ne 'route_point'
+	 && _destIsDescendantOfClipboard($right_click_node, $panel, \%clip_uuids))
 	{
-		for my $item (@resolved)
-		{
-			if (($item->{uuid} // '') eq $dest_uuid)
-			{
-				error("Cannot paste: destination is contained in the clipboard selection");
-				return;
-			}
-		}
+		error("Cannot paste: destination is a descendant of an item in the clipboard");
+		return;
 	}
 
 	# Step 4: Route dependency check (SS10.1 Step 4)
@@ -688,6 +725,11 @@ sub _doPaste
 				next if !$name;
 				if ($t eq 'waypoint' && grep { ($_->{name} // '') eq $name } values %$e80_wps)
 				{
+					# Inserting into a route (or before/after a route_point) uses the existing
+					# WP UUID by reference -- no new WP is created, so the name check is moot.
+					my $dest_type = $right_click_node->{type} // '';
+					next if ($dest_type eq 'route' || $dest_type eq 'route_point')
+					     && $wpmgr->{waypoints}{$item->{uuid} // ''};
 					error("E80 already has a waypoint named '$name' -- aborting");
 					return;
 				}
@@ -737,6 +779,94 @@ sub _resolveAncestorWins
 		push @result, $item unless $absorbed;
 	}
 	return @result;
+}
+
+
+#----------------------------------------------------
+# _doSync
+#----------------------------------------------------
+
+sub _doSync
+{
+	my ($panel, $right_click_node, $tree, @nodes) = @_;
+
+	if ($panel eq 'e80')
+	{
+		nmOps::_syncToE80($right_click_node, $tree, \@nodes);
+		return;
+	}
+
+	# DB panel: clipboard-triggered sync down (E80->DB)
+	my $cb = $clipboard;
+	if (!$cb || ($cb->{clipboard_class} // '') ne 'sync')
+	{
+		warning(0, 0, "IMPLEMENTATION ERROR: _doSync called with non-sync-classified clipboard");
+		return;
+	}
+
+	my @items = @{$cb->{items} // []};
+	if (!@items)
+	{
+		warning(0, 0, "_doSync: empty clipboard");
+		return;
+	}
+
+	my $n       = scalar @items;
+	my $msg     = "Sync $n item(s) from E80 to database?";
+	my $proceed = $nmDialogs::suppress_confirm
+		? 1
+		: confirmDialog($tree, $msg, 'Sync');
+	return unless $proceed;
+
+	nmOps::_syncFromE80($right_click_node, $tree, \@items);
+	clearClipboard();
+}
+
+
+#----------------------------------------------------
+# _destIsDescendantOfClipboard
+#----------------------------------------------------
+
+sub _destIsDescendantOfClipboard
+{
+	my ($node, $panel, $clip_uuids) = @_;
+	return 0 unless $node;
+
+	# Collection tree nodes store uuid only in data->{uuid}, not at top level.
+	my $node_uuid = $node->{uuid} // ($node->{data} // {})->{uuid} // '';
+	return 1 if $clip_uuids->{$node_uuid};
+
+	if ($panel eq 'database')
+	{
+		return 0 unless $node_uuid;
+
+		my $dbh = connectDB();
+		return 0 unless $dbh;
+
+		# getCollectionChildren omits parent_uuid from its SELECT, so tree node data
+		# never carries parent_uuid.  Fetch the full record to start the ancestor walk.
+		my $coll        = getCollection($dbh, $node_uuid);
+		my $parent_uuid = $coll ? $coll->{parent_uuid} : undef;
+
+		while ($parent_uuid)
+		{
+			if ($clip_uuids->{$parent_uuid})
+			{
+				disconnectDB($dbh);
+				return 1;
+			}
+			$coll = getCollection($dbh, $parent_uuid);
+			last unless $coll;
+			$parent_uuid = $coll->{parent_uuid};
+		}
+		disconnectDB($dbh);
+	}
+	else  # e80 -- shallow hierarchy
+	{
+		my $group_uuid = $node->{group_uuid} // '';
+		return 1 if $group_uuid && $clip_uuids->{$group_uuid};
+	}
+	return 0;
 }
 
 
@@ -887,6 +1017,7 @@ sub _cmdLabel
 	return 'NEW GROUP'         if $cmd_id == $CTX_CMD_NEW_GROUP;
 	return 'NEW ROUTE'         if $cmd_id == $CTX_CMD_NEW_ROUTE;
 	return 'NEW BRANCH'        if $cmd_id == $CTX_CMD_NEW_BRANCH;
+	return 'SYNC'              if $cmd_id == $CTX_CMD_SYNC;
 	return "CMD_$cmd_id";
 }
 

@@ -93,7 +93,7 @@ const OverlayControl = L.Control.extend({
 new OverlayControl().addTo(map);
 
 const TS_FIELDS = new Set(['created_ts', 'ts_start', 'ts_end']);
-const SKIP_FIELDS = new Set(['obj_type', 'name', 'rp_names']);
+const SKIP_FIELDS = new Set(['obj_type', 'name', 'rp_names', 'data_source']);
 const TYPE_ABBREV = { waypoint: 'WP', route: 'Route', track: 'TRK' };
 
 function escHtml(s) {
@@ -109,8 +109,10 @@ function fmtVal(k, v) {
 function showInfo(props, context) {
     const div = document.getElementById('nm-info');
     if (!div) return;
+    const src = props.data_source === 'e80' ? '--- E80 ---' : '--- DATABASE ---';
     const abbrev = TYPE_ABBREV[props.obj_type] || props.obj_type || '';
-    let html = '<div class="nm-info-header">'
+    let html = '<div class="nm-info-source">' + src + '</div>'
+             + '<div class="nm-info-header">'
              + '<span class="nm-info-type">' + escHtml(abbrev) + ':</span> '
              + '<span class="nm-info-name">' + escHtml(props.name || '(unnamed)') + '</span>'
              + '</div>';

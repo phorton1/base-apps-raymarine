@@ -2,7 +2,7 @@
 
 Test cases for the nmOperations feature. For the design specification and pre-flight rules
 see nmOperations.md (SS1-SS13). For the companion execution script with UUID table and curl
-commands see nmOps_testplan_runbook.md (Claude-facing, in the memory folder).
+commands see nmOps_testplan_runbook.md (in docs/notes/).
 
 This plan describes WHAT to test and WHAT to expect -- in terms of user operations and
 system behavior. It reads as a spec a human tester could follow manually without knowing
@@ -80,6 +80,8 @@ NEW_WAYPOINT = 10510
 NEW_GROUP    = 10520
 NEW_ROUTE    = 10530
 NEW_BRANCH   = 10550
+
+SYNC = 10600
 ```
 
 COPY and CUT are unified commands. The selection set determines clipboard contents;
@@ -232,13 +234,15 @@ Log: COPY STARTED/FINISHED, PASTE_NEW STARTED/FINISHED, no errors.
 
 ---
 
-### §2.9 Cut Branch -> Paste (move branch contents)
+### §2.9 Cut Branch -> Paste (move branch as a unit)
 
 Select a branch that has groups and tracks (with WPs not in routes). CUT it. Right-click
 the destination branch and PASTE.
 
-Expected: all contents of the source branch (groups, tracks, WPs) move to the destination
-with UUIDs preserved. The source branch shell becomes empty.
+Expected: the branch node itself moves to the destination with its UUID and all contents
+(groups, tracks, WPs) intact inside it. The branch is reparented to the destination; it
+does not become empty. This is consistent with how CUT+PASTE works for all other node
+types (WPs, groups, routes) -- the node moves as a unit.
 
 ---
 
@@ -417,13 +421,20 @@ matches the DB ordering (same WP UUIDs, same positional order).
 
 ---
 
-### §3.4 Copy E80 WP -> Paste to DB (UUID-preserving download)
+### §3.4 Copy E80 WP -> Sync to DB (sync-classified: UUID present in DB)
 
-In the E80 panel, COPY the uploaded waypoint. Right-click the destination branch in the DB
-panel and PASTE.
+At COPY time from an E80 source, `_classifyE80Items` checks each item UUID against the
+navMate DB. After §3.1 uploads [IsolatedWP1] to E80, [E80_WP] UUID equals [IsolatedWP1]'s
+UUID -- which already exists in DB. This gives clipboard_class='sync'.
 
-Expected: the waypoint appears in the DB with the E80's UUID (byte 1 = 0xB2) preserved.
-Log: COPY STARTED/FINISHED, PASTE STARTED/FINISHED, no errors.
+In the E80 panel, COPY [E80_WP]. Right-click [DST] in the DB panel. The context menu shows
+SYNC (not PASTE) because the clipboard is sync-classified from an E80 source. Execute SYNC.
+
+Expected: `_syncFromE80` updates the [IsolatedWP1] DB record from E80 field values (name,
+lat, lon, comment, depth_cm). DB-managed fields (wp_type, color, source) are preserved from
+the existing record. The WP's collection_uuid (tree location) is unchanged. Clipboard is
+cleared after SYNC completes.
+Log: SYNC STARTED/FINISHED, no errors.
 
 ---
 
@@ -445,12 +456,29 @@ Expected: the waypoint is absent from the E80.
 
 ---
 
-### §3.7 Delete E80 Group + members (DEL_GROUP_WPS)
+### §3.6b Delete E80 Group+WPS -- blocked (member in route)
 
-In the E80 panel, right-click the uploaded group and DELETE_GROUP_WPS. Wait for
-ProgressDialog FINISHED.
+After §3.3, [E80_GR] (Popa group) has members that are also waypoints in [E80_RT] (Popa
+route). Right-click [E80_GR] and DELETE_GROUP_WPS.
 
-Expected: the group and all its member WPs are absent from the E80.
+Expected: the operation is blocked. With suppress on (test API): an ERROR appears in the
+log explaining that route references must be resolved first. With suppress off (UI): an
+error dialog appears with the same message. Either way, E80 state is unchanged -- [E80_GR]
+and all its member waypoints are still present, and [E80_RT] is unaffected.
+No IMPLEMENTATION ERROR in the log.
+Note: DELETE_GROUP_WPS is always offered in the menu regardless of route membership; the
+block is enforced at handler level (SS8.2).
+
+---
+
+### §3.7 Delete via E80 Routes header (all routes) -- SS8.2
+
+In the E80 panel, right-click the Routes header and DELETE_ROUTE. Wait for ProgressDialog
+FINISHED.
+
+Expected: all E80 routes are deleted. Member WPs are preserved.
+Note: routes must be deleted before any group delete -- the member-in-route guard blocks
+group deletes while route_waypoints reference group members.
 
 ---
 
@@ -464,12 +492,12 @@ header-node delete path -- right-clicking the Groups header operates on all grou
 
 ---
 
-### §3.9 Delete via E80 Routes header (all routes) -- SS8.2
+### §3.9 Delete E80 Group + members (DEL_GROUP_WPS)
 
-In the E80 panel, right-click the Routes header and DELETE_ROUTE. Wait for ProgressDialog
-FINISHED.
+Re-upload the Popa group first (§3.8 deleted all groups). In the E80 panel, right-click
+the uploaded group and DELETE_GROUP_WPS. Wait for ProgressDialog FINISHED.
 
-Expected: all E80 routes are deleted. Member WPs are preserved.
+Expected: the group and all its member WPs are absent from the E80.
 
 ---
 
@@ -491,37 +519,44 @@ Expected: all E80 tracks are erased. This exercises the fourth SS8.2 header-node
 
 ---
 
-### §3.12 Copy E80 Group -> Paste to DB (group download)
+### §3.12 Copy E80 Group -> Sync to DB (group sync-classified)
 
-If §3.7 deleted the group, re-upload the group first. COPY the E80 group. Right-click the
-destination branch in the DB panel and PASTE.
+If §3.9 deleted [E80_GR], re-upload Popa group (244e8e100800400a) first. COPY [E80_GR].
+The Popa group UUID exists in DB → clipboard_class='sync'. Right-click [DST] in the DB
+panel: SYNC is offered (not PASTE). Execute SYNC.
 
-Expected: the group and its member WPs are merged into the DB under the destination branch.
-
----
-
-### §3.13 Copy E80 Route -> Paste to DB (route download)
-
-Re-upload [TestRoute] to the E80 if absent (deleted by §3.9). COPY the E80 route.
-Right-click the destination branch and PASTE.
-
-Expected: the route record is inserted or updated in the DB. Member WP UUIDs are
-preserved. No new WP records are created (WPs already exist in DB from prior steps).
+Expected: `_syncFromE80` updates the Popa group record (name) and all 11 member WPs
+(name, lat, lon, comment, depth_cm) from E80 field values. DB-managed fields (wp_type,
+color, source) for each WP are preserved. Collection memberships are unchanged.
+Log: SYNC STARTED/FINISHED, no errors. Clipboard cleared.
 
 ---
 
-### §3.14 Copy E80 Group+Route -> Paste to DB (E80-source heterogeneous paste, ordering enforced)
+### §3.13 Copy E80 Route -> Sync to DB (route sync-classified)
 
-E80 must have both the Popa group (with its 11 member WPs) and the Popa route simultaneously.
-After §3.12 and §3.13, both are present. Select both the E80 group and the E80 route in the
-E80 panel simultaneously. COPY the multi-item selection. Right-click [DST] in the DB panel
-and PASTE.
+Re-upload [TestRoute] to E80 if absent (deleted by §3.7). COPY [E80_RT]. The Popa route
+UUID (f34efdd6070022e8) exists in DB → clipboard_class='sync'. Right-click [DST] in the
+DB panel: SYNC is offered (not PASTE). Execute SYNC.
 
-Expected: the paste succeeds. navMate processes non-route items (the group and its member
-WPs) first, then processes the route (SS12.1 ordering, I1 fix). The route's route_waypoints
-reference WP UUIDs that now exist in the DB (inserted from the group paste or already present
-from earlier DB state). Route and group appear in [DST] with UUIDs preserved. No ERROR or
-WARNING in the log.
+Expected: `_syncFromE80` updates the route name/color/comment from E80 and rebuilds
+route_waypoints to match the E80 sequence. Member WP UUIDs are preserved; no new WP records
+created. Route's collection_uuid (tree location) unchanged.
+Log: SYNC STARTED/FINISHED, no errors. Clipboard cleared.
+
+---
+
+### §3.14 Copy E80 Group+Route -> Sync to DB (multi-item sync)
+
+After §3.12 and §3.13, E80 has both [E80_GR] (Popa group + 11 WPs) and [E80_RT] (Popa route).
+Both UUIDs exist in DB → clipboard_class='sync' for the multi-item selection. Select both
+simultaneously. COPY. Right-click [DST]: SYNC is offered. Execute SYNC.
+
+Expected: `_syncFromE80` processes both items -- group (name + member WP fields) and route
+(name/color/comment + route_waypoints sequence). All WP UUIDs remain unchanged in DB. No new
+records created. Clipboard cleared.
+Log: SYNC STARTED/FINISHED, no errors.
+Note: SS12.1 item-ordering (groups before routes) is enforced in the paste path only. The sync
+path updates existing records and does not require ordered processing.
 
 ---
 
@@ -533,6 +568,38 @@ PASTE_NEW. Wait for ProgressDialog FINISHED.
 Expected: a new WP appears on the E80 with a fresh navMate UUID (byte 1 = 0x82) different
 from the source WP's UUID. The name is preserved. No conflict-resolution dialog fires (this
 is the clean create path; §5.12 verifies this by checking the §3.15 log).
+
+---
+
+### §3.15b Copy E80 fresh-UUID WP -> Paste to DB (paste-classified: UUID absent)
+
+After §3.15, the E80 has a WP with a fresh navMate UUID (byte 1 = 0x82) that is NOT in the
+navMate DB. COPY that WP. At copy time, clipboard_class='paste' (UUID absent from DB). Right-
+click [DST] in the DB panel: PASTE is offered (not SYNC, because the UUID is absent). Execute
+PASTE.
+
+Expected: a new WP record is inserted in [DST] with the E80's fresh UUID preserved (byte 1 =
+0x82). Name is preserved from E80. No existing DB record is affected.
+Log: COPY STARTED/FINISHED, PASTE STARTED/FINISHED, no errors.
+
+This exercises the paste-classified branch of E80->DB download (absent UUID -> insert). For the
+sync-classified branch (present UUID -> sync-down), see §3.4.
+
+---
+
+### §3.15c Mixed-classified E80 clipboard: status bar and PASTE_NEW
+
+After §3.15, the E80 has both [E80_WP] (UUID in DB) and the §3.15 fresh-UUID WP (UUID not in
+DB). Select both in the E80 panel. COPY. At copy time, clipboard_class='mixed' (some present,
+some absent). Verify the status bar shows:
+"[e80] copy (2) -- Paste/Sync not available: clipboard contains both new and existing items --
+use Paste New"
+
+Right-click [DST] in the DB panel: PASTE_NEW is offered; PASTE and SYNC are absent from the
+menu (verified visually -- test API bypasses menu). Execute PASTE_NEW.
+
+Expected: both WPs inserted in [DST] with fresh navMate UUIDs (PASTE_NEW always assigns fresh
+UUIDs regardless of classification). Two new WP records in [DST].
 
 ---
 
@@ -639,11 +706,16 @@ Expected: paste rejected per SS10.8 (E80 tracks destination accepts no paste). E
 
 ---
 
-### §4.4 Guard -- Paste New blocked for track clipboard
+### §4.4 Paste New E80 Track to DB (download, fresh UUID)
 
-COPY an E80 track. Right-click the destination branch in the DB panel and PASTE_NEW.
+COPY an E80 track (e.g., [E80_TK1]). Right-click the destination branch in the DB panel
+and PASTE_NEW.
 
-Expected: PASTE_NEW rejected for a track clipboard per SS10.3. DB unchanged.
+Expected: PASTE_NEW succeeds. The track appears in DB with a fresh navMate UUID; track points
+are present. The SS10.3 restriction (DB-to-DB track UUID-preserving copy) does not apply to
+E80-to-DB PASTE_NEW. Track remains on E80 (COPY, not CUT).
+Log: PASTE_NEW STARTED/FINISHED, no errors.
+Note: the SS10.3 guard (UUID-preserving DB-to-DB track copy blocked) is still tested in §5.5.
 
 
 ## §5 Pre-flight and Guard Tests
@@ -819,25 +891,29 @@ With a clipboard loaded from the DB, fire PASTE at an individual E80 waypoint no
 header node, not a route_point). Fire PASTE_NEW at the same node.
 
 Expected: IMPLEMENTATION ERROR for both. Individual E80 WP nodes are not valid paste
-destinations in the E80 panel; paste is only accepted at header nodes (Groups, Routes),
-the root node, or route_point nodes. E80 unchanged.
+destinations; paste is accepted only at header nodes (Groups, Routes), my_waypoints,
+group nodes, route nodes, and route_point nodes. Guard in `_pasteE80`. E80 unchanged.
 
 ---
 
-### §5.16 Menu shape -- route_point with mixed clipboard: PASTE_BEFORE/AFTER absent
+### §5.16 Mixed clipboard at route_point: PASTE_BEFORE and PASTE_NEW_BEFORE accepted (SS6.4)
 
-Load a mixed clipboard: select both a route_point and a waypoint (or any other
-non-route_point item). Fire PASTE_BEFORE at a route_point anchor.
+"Mixed" here means the clipboard contains both route_point AND waypoint items. Per SS6.4
+this is the one accepted heterogeneous case at a route_point destination: both item types
+contribute their WP UUID as a route_waypoints reference.
 
-Expected: IMPLEMENTATION ERROR -- PASTE_BEFORE/AFTER at a route_point requires a pure
-route_point clipboard (every item must be obj_type=route_point). The mixed clipboard is
-rejected for positional route-sequence operations.
+Load a mixed clipboard: select both a route_point and a waypoint. Fire PASTE_BEFORE at a
+route_point anchor.
 
-Fire PASTE_NEW_BEFORE at the same route_point anchor with the same mixed clipboard.
+Expected: succeeds. All clipboard items (both route_point and waypoint) are inserted as
+route_waypoints entries before the anchor using their WP UUIDs. Route count increases by
+clipboard item count. No IMPLEMENTATION ERROR in log.
 
-Expected: succeeds -- a new route_waypoints entry is inserted before the anchor,
-referencing the route_point item's WP UUID. The non-route_point item in the clipboard is
-silently filtered (only route_point items are eligible for route-sequence positional paste).
+Fire PASTE_NEW_BEFORE at the same route_point anchor with the same mixed clipboard:
+
+Expected: succeeds. All clipboard items (route_point and waypoint) are inserted as
+route_waypoints entries before the anchor using their existing WP UUIDs. No new waypoint
+records created. Route count increases by clipboard item count.
 
 
 ## Recording Results

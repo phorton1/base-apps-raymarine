@@ -52,6 +52,8 @@ sub new
 	EVT_MENU($this, $COMMAND_EXPORT_KML,       \&onCommand);
 	EVT_MENU($this, $COMMAND_IMPORT_KML_NM,    \&onCommand);
 	EVT_MENU($this, $COMMAND_CLEAR_MAP,        \&onCommand);
+	EVT_MENU($this, $COMMAND_REVERT_DB,        \&onCommand);
+	EVT_MENU($this, $COMMAND_COMMIT_DB,        \&onCommand);
 	EVT_IDLE($this, \&onIdle);
 
 	my $sb = Wx::StatusBar->new($this, -1);
@@ -110,6 +112,8 @@ sub onIdle
 	{
 		my $database = $this->findPane($WIN_DATABASE);
 		$database->onClearMap() if $database;
+		my $e80 = $this->findPane($WIN_E80);
+		$e80->onClearMap() if $e80;
 	}
 
 	my $wpmgr_on = ($raydp && $raydp->findImplementedService('WPMGR', 1)) ? 1 : 0;
@@ -141,7 +145,7 @@ sub onIdle
 	my $wpmgr_busy = $apps::raymarine::NET::d_WPMGR::query_in_progress // 0;
 	my $track_busy = $apps::raymarine::NET::d_TRACK::query_in_progress // 0;
 
-	# Detect query lifecycle: in-flight → completed
+	# Detect query lifecycle: in-flight -> completed
 	if ($wpmgr_on && $wpmgr_busy)
 	{
 		$this->{_wpmgr_in_query} = 1;
@@ -302,6 +306,16 @@ sub onCommand
 	{
 		my $database = $this->findPane($WIN_DATABASE);
 		$database->onClearMap() if $database;
+		my $e80 = $this->findPane($WIN_E80);
+		$e80->onClearMap() if $e80;
+	}
+	elsif ($id == $COMMAND_REVERT_DB)
+	{
+		_doRevertDB($this);
+	}
+	elsif ($id == $COMMAND_COMMIT_DB)
+	{
+		_doCommitDB($this);
 	}
 }
 
@@ -461,7 +475,60 @@ sub _doRefreshE80Data
 }
 
 
-sub dispatchTestCommand { nmTest::dispatchTestCommand(@_) }
+sub _doRevertDB
+{
+	my ($this) = @_;
+	return if !yesNoDialog($this,
+		"This will revert navMate.db to the last git-committed version.\n\nAre you sure?",
+		'Revert navMate.db');
+	my $out = qx(git -C "C:/dat/Rhapsody" restore navMate.db 2>&1);
+	if ($?)
+	{
+		error("Revert navMate.db failed: $out");
+		return;
+	}
+	display(0, 0, "winMain: navMate.db reverted to last committed version");
+	my $rc = c_db::openDB();
+	warning(0, 0, "winMain: openDB after revert returned $rc") if $rc <= 0;
+	my $database = $this->findPane($WIN_DATABASE);
+	$database->refresh() if $database;
+}
+
+
+sub _doCommitDB
+{
+	my ($this) = @_;
+	my $dialog = Wx::TextEntryDialog->new(
+		$this, 'Commit message:', 'Commit navMate.db', 'navMate.db update');
+	my $result = $dialog->ShowModal();
+	my $msg    = $dialog->GetValue();
+	$dialog->Destroy();
+	return if $result != wxID_OK || !$msg;
+
+	my $tmp = 'C:/base_data/temp/raymarine/_db_commit_msg.txt';
+	my $fh;
+	if (!open($fh, '>', $tmp))
+	{
+		error("Commit navMate.db: cannot write temp file $tmp");
+		return;
+	}
+	print $fh $msg;
+	close $fh;
+
+	my $out = qx(git -C "C:/dat/Rhapsody" add navMate.db 2>&1);
+	if ($?)
+	{
+		error("Commit navMate.db git add failed: $out");
+		return;
+	}
+	$out = qx(git -C "C:/dat/Rhapsody" commit -F "$tmp" 2>&1);
+	if ($?)
+	{
+		error("Commit navMate.db git commit failed: $out");
+		return;
+	}
+	display(0, 0, "winMain: navMate.db committed: $msg");
+}
 
 
 1;

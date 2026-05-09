@@ -148,7 +148,7 @@ sub _walkFolder
 	elsif ($name =~ /^RonAzul$/i) { _importRonAzul($folder, $ctx); return; }
 	elsif ($name =~ /^tracks?$/i) { $node_type = 'tracks' }
 
-	# Named sub-folder inside a routes context with no explicit type → one route
+	# Named sub-folder inside a routes context with no explicit type - one route
 	if ($ctx->{node_type} eq 'routes' && $node_type eq $NODE_TYPE_BRANCH)
 	{
 		_importRouteFolder($folder, $ctx);
@@ -465,7 +465,7 @@ sub _importRonAzul
 #---------------------------------
 # Collects <Style id="..."><LineStyle><color> entries from the Document,
 # then resolves <StyleMap> "normal" pairs so both #style_id and
-# #stylemap_id keys are available.  Returns hashref of url→abgr_string.
+# #stylemap_id keys are available.  Returns hashref of url->abgr_string.
 # Falls back to GE paddle/pushpin icon URL color name when no <color>
 # element is present.
 

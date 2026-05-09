@@ -106,9 +106,9 @@ sub parseLatLon
 # formatLatLon
 #---------------------------------
 # Formats a decimal-degree value as "DD (DDM)" for display.
-# $is_lat true → N/S compass; false → E/W.
-# Example: formatLatLon(9.3617, 1)  → "9.361700 N  (9°21.702' N)"
-#          formatLatLon(-82.2451, 0) → "82.245100 W  (82°14.706' W)"
+# $is_lat true -> N/S compass; false -> E/W.
+# Example: formatLatLon(9.3617, 1)  -> "9.361700 N  (9deg21.702' N)"
+#          formatLatLon(-82.2451, 0) -> "82.245100 W  (82deg14.706' W)"
 
 sub formatLatLon
 {
