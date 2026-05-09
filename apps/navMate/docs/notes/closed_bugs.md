@@ -1,6 +1,6 @@
-# navMate — Closed Bugs
+# navMate - Closed Bugs
 
-Archaeological record. Entries here are for historical reference —
+Archaeological record. Entries here are for historical reference -
 tracing what changed, when, and why.
 
 ---
@@ -8,7 +8,7 @@ tracing what changed, when, and why.
 ### [Editor Save did not re-render visible items on Leaflet map]
 
 **Was:** Saving changes in the winDatabase editor (color, name, lat/lon, etc.)
-did not update the Leaflet map — the stale rendered feature remained.
+did not update the Leaflet map - the stale rendered feature remained.
 
 **Fix (2026-05-06):** Four lines added to `_onSave` in winDatabase.pm before
 `disconnectDB` and `$this->refresh()`: if the saved item is an 'object' type
@@ -22,7 +22,7 @@ Items not currently rendered are unaffected.
 
 **Was:** wxTreeCtrl expand buttons (+/-) were unreliable after adding
 visibility checkbox images. Some folders would not expand on click, with
-zero visual feedback — inconsistent across items at the same level.
+zero visual feedback - inconsistent across items at the same level.
 
 **Root cause:** Using `SetImageList` on a Windows native TreeCtrl activates
 a different Win32 TreeView rendering mode (hot-tracking enabled, item layout
@@ -32,7 +32,7 @@ Win32 behavior, not a wxWidgets bug.
 **Fix (2026-05-06):** Switched to `SetStateImageList` + `SetItemState` /
 `GetItemState` / `wxTREE_HITTEST_ONITEMSTATEICON` throughout winDatabase.pm.
 State images occupy a dedicated slot between the expand button and the normal
-icon with their own hit-test zone — the correct wxWidgets mechanism for
+icon with their own hit-test zone - the correct wxWidgets mechanism for
 per-item checkboxes. Expand buttons solid; no hot-tracking side effects.
 
 ---
@@ -47,9 +47,9 @@ They did not write to the DB or sync checkbox states.
 New `_onShowHideMap` does a batch visibility set: writes `visible` to DB,
 updates tree checkbox states, pushes/pulls Leaflet, syncs editor checkbox.
 New `_analyzeShowHideSelection` classifies the tree selection into Case 1
-collections (no selected descendants — treat as deliberate target, apply
+collections (no selected descendants - treat as deliberate target, apply
 `setCollectionVisibleRecursive`), Case 2 collections (at least one selected
-descendant — skip the branch, recompute checkbox state as derived), and leaf
+descendant - skip the branch, recompute checkbox state as derived), and leaf
 nodes. New `_hasSelectedDescendant` walks the tree widget recursively for
 the classifier. Dead code `_renderCollection` and `_renderObject` (prior
 toggle-render path) removed.
@@ -61,7 +61,7 @@ toggle-render path) removed.
 **Was:** When a user changed a route's color on the E80 UI, navMate
 intermittently failed to update winE80. The MODIFY ROUTE packet arrived
 via b_sock but handleEvent was not reliably called. Adding any stdout-locking
-debug output (warning() or display()) would suppress the race — classic
+debug output (warning() or display()) would suppress the race - classic
 Heisenbug. The fault was upstream of handleEvent in the sockThread receive
 and dispatch path.
 
@@ -88,7 +88,7 @@ E80 UI; `enquing mod(...)` appeared in log; E80 DB color index = 3
 another for routes in rapid succession. `ProgressDialog::new()` overwrote
 `$_active` with the second dialog, orphaning the first. The orphaned dialog
 had no completion path and remained on screen indefinitely. E80 operations
-completed correctly — only the dialog was stuck.
+completed correctly - only the dialog was stuck.
 
 **Fix (2026-05-05):** `ProgressDialog::new()` now returns `undef` if
 `$_active` is already defined (singleton guard). `_openE80Progress` returns
@@ -106,8 +106,8 @@ cuts. The `canPaste` guard blocked it at the UI layer but `doPaste` had no
 handler-level sentinel to catch it if reached via nmTest.
 
 **Fix (2026-05-04):** Added explicit guard at the top of the E80 branch in
-`doPaste` (nmOps.pm) — fires IMPLEMENTATION ERROR warning and returns if
-`$cb->{cut} && source eq 'database'`. Confirmed §5.4 PASS Cycle 5.
+`doPaste` (nmOps.pm) - fires IMPLEMENTATION ERROR warning and returns if
+`$cb->{cut} && source eq 'database'`. Confirmed Section 5.4 PASS Cycle 5.
 
 ---
 
@@ -116,7 +116,7 @@ handler-level sentinel to catch it if reached via nmTest.
 **Was:** When pasting multiple items to E80 in one pass, items queued earlier
 in the pass were not yet in `$wpmgr->{waypoints}` when later items were
 processed (WPMGR thread had not consumed them yet). Route-phase processing
-re-queued the same WPs → E80 rejected on UUID collision.
+re-queued the same WPs -> E80 rejected on UUID collision.
 
 **Fix (2026-05-04):** Added shared `%pending_names` in nmOps.pm to track
 names queued during the current pass. Pre-check before queuing each item;

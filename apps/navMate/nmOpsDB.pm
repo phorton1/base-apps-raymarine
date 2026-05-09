@@ -693,6 +693,7 @@ sub _pasteItemsToCollection
 					? e80TrackIndexToAbgr($track->{color})
 					: $track->{color};
 				my $track_uuid = insertTrack($dbh,
+					($source eq 'e80' && !$fresh ? (uuid => $item->{uuid}) : ()),
 					name            => $track->{name} // '',
 					color           => $track_color,
 					ts_start        => $ts_start,

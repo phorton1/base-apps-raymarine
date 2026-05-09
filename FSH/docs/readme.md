@@ -1,4 +1,4 @@
-# FSH — Raymarine Binary Navigation File Format
+# FSH - Raymarine Binary Navigation File Format
 
 **[Home](../../docs/readme.md)** --
 **FSH Format**
@@ -19,7 +19,7 @@ difficult to obtain) expects to find and write `ARCHIVE.FSH` in `C:\Archive\`
 on the Windows machine where it runs. That is an RNS convention, not the CF card
 layout. RNS provides an additional workflow path: an `ARCHIVE.FSH` loaded into
 RNS can be synchronized to the E80 over RAYNET, covering Waypoints, Groups, and
-Routes. Tracks are a notable exception — FSH Tracks do not pass through RNS,
+Routes. Tracks are a notable exception - FSH Tracks do not pass through RNS,
 which has its own separate logging and track-generation concept.
 
 It is beyond the scope of this FSH documentation to describe RNS and its usage
@@ -54,10 +54,10 @@ Flob 1 ... Flob N
 Each **block** within a flob has a 14-byte block header followed by block data:
 
 ```
-block_type  (uint16)   — identifies the content type
-block_len   (uint16)   — length of block data
-active      (uint16)   — 0x4000 = active block; other values = deleted/superseded
-uuid        (8 bytes)  — unique identifier for this record
+block_type  (uint16)   - identifies the content type
+block_len   (uint16)   - length of block data
+active      (uint16)   - 0x4000 = active block; other values = deleted/superseded
+uuid        (8 bytes)  - unique identifier for this record
 block data  ...
 ```
 
@@ -75,14 +75,14 @@ block data  ...
 ## Archive Semantics
 
 ARCHIVE.FSH is a true archive: saving a Route, Waypoint, or Group that already
-exists does **not** overwrite its old block — it appends a new block and marks
-the old one as deleted (active ≠ 0x4000). The file grows over time.
+exists does **not** overwrite its old block - it appends a new block and marks
+the old one as deleted (active != 0x4000). The file grows over time.
 
 To reconstruct the current state of the navigation database, you must:
 
 1. Parse all blocks in order
 2. For each UUID, keep only the **last** occurrence
-3. Ignore blocks where `active ≠ 0x4000`
+3. Ignore blocks where `active != 0x4000`
 
 The E80 tracks which blocks are current internally. ARCHIVE means it really is
 an archive of all past states.
@@ -93,9 +93,9 @@ an archive of all past states.
 
 **Waypoints** store coordinates in two representations:
 
-- **1e7-scaled integers** — `lat_int` and `lon_int`, where the value is
-  `degrees × 1e7`. These are the accurate coordinates. *Use these.*
-- **Mercator northing/easting** — also stored, but slightly less accurate.
+- **1e7-scaled integers** - `lat_int` and `lon_int`, where the value is
+  `degrees x 1e7`. These are the accurate coordinates. *Use these.*
+- **Mercator northing/easting** - also stored, but slightly less accurate.
   The borrowed C code from parsefsh used these; the implementation here
   was corrected to prefer the 1e7 integers.
 
@@ -113,12 +113,12 @@ then the name string, then the comment string.
 Tracks are stored as a **BLK_TRK + BLK_MTA pair**. The MTA always follows its
 TRK in the file and references the TRK by UUID.
 
-**BLK_MTA fields** (58 bytes + guid_cnt × 8 bytes):
+**BLK_MTA fields** (58 bytes + guid_cnt x 8 bytes):
 `k1_1(1) cnt(2) _cnt(2) k2_0(2) length(4) north_start(4) east_start(4)
 temp_start(2) depth_start(4) north_end(4) east_end(4) temp_end(2)
 depth_end(4) color(1) name(16, not null-terminated)`
 
-In FSH files from the real E80, `u1` (byte 56) is always 204 — not zero as
+In FSH files from the real E80, `u1` (byte 56) is always 204 - not zero as
 the parsefsh documentation claims.
 
 **BLK_TRK** contains a header (8 bytes: `a(4) cnt(2) b(2)`) followed by
@@ -141,7 +141,7 @@ in FSH files. Known discrepancies (from `fshBlocks.pm`):
 
 ## Programs
 
-**`FSH/fshConvert.pm`** — reads an FSH file and converts it to KML or GPX.
+**`FSH/fshConvert.pm`** - reads an FSH file and converts it to KML or GPX.
 Takes up to two command-line arguments:
 
 ```
@@ -150,21 +150,21 @@ perl fshConvert.pm [input_file [output_file]]
 
 Default input: `/Archive/ARCHIVE.FSH`. Default output:
 `FSH/output/created_from_ARCHIVE_FSH.kml`. Output format is determined by
-the output file extension: `.kml` → KML, `.gpx` → GPX; any other extension
+the output file extension: `.kml` -> KML, `.gpx` -> GPX; any other extension
 parses the FSH but writes no output file. Depends on: `fshBlocks.pm`,
 `fshFile.pm`, `fshUtils.pm`, `genKML.pm`, `genGPX.pm`.
 
-**`FSH/kmlToFSH.pm`** — reads a KML file and writes an FSH file. Input and
-output paths are hardcoded in the script (`/junk/tracks.kml` →
+**`FSH/kmlToFSH.pm`** - reads a KML file and writes an FSH file. Input and
+output paths are hardcoded in the script (`/junk/tracks.kml` ->
 `/junk/tracks.fsh`); edit the script to change them. The KML must contain
 a `Tracks` folder with Placemarks using `<LineString><coordinates>` for track
 points and `<ExtendedData>` for MTA/TRK UUIDs and line color. This is
 believed to be the only working FSH writer in existence outside of Raymarine
 itself.
 
-**`NET/fshWriter.pm`** — not a standalone application. This is a module
+**`NET/fshWriter.pm`** - not a standalone application. This is a module
 within the `shark.pm` engineering tool (invoked via the `write` serial
-command) that queries live E80 data over RAYNET — using WPMGR and TRACK —
+command) that queries live E80 data over RAYNET - using WPMGR and TRACK -
 and assembles it into an FSH file, without requiring CF card access. It is
 currently a test implementation; its practical status and completeness
 should be verified against the current source.
@@ -175,7 +175,7 @@ The following differences from parsefsh's documented structures were identified 
 implementation against actual E80 `ARCHIVE.FSH` files. Each is either a structural
 correction, a newly discovered field, or a new capability.
 
-**Block header — `active` field** *(newly discovered)*
+**Block header - `active` field** *(newly discovered)*
 
 A 16-bit field at offset 12 in the 14-byte block header is not documented in parsefsh:
 `0x4000` = block is in use; `0x0000` = block is deleted. This field is fundamental to
@@ -186,7 +186,7 @@ A parser that does not filter on `active` will process deleted blocks as live da
 A writer must set `active = 0x4000` on every block it emits, or the E80 will treat
 those blocks as free space. More critically: a writer that does not understand both
 values of `active` cannot implement the true archive update model at all. Updating an
-existing record — the way the E80 itself does — means appending a new block with
+existing record - the way the E80 itself does - means appending a new block with
 `active = 0x4000` and writing `active = 0x0000` back into the superseded block's
 header. Without the ability to retire old blocks deliberately, a writer is limited to
 producing fresh files from scratch. It cannot extend a living archive, cannot round-trip
@@ -195,11 +195,11 @@ file the E80 continues to write.
 
 See [Archive Semantics](#archive-semantics).
 
-**Waypoint record — 8-byte lead-in with 1e7 coordinates** *(structural correction)*
+**Waypoint record - 8-byte lead-in with 1e7 coordinates** *(structural correction)*
 
 parsefsh's `fsh_wpt_data` struct begins at byte +8 within the actual on-disk waypoint
-record. The record opens with two `int32_t` fields — latitude and longitude as
-degrees × 10,000,000 — that parsefsh's struct omits entirely. These integer coordinates
+record. The record opens with two `int32_t` fields - latitude and longitude as
+degrees x 10,000,000 - that parsefsh's struct omits entirely. These integer coordinates
 are more accurate than the Mercator-derived lat/lon that parsefsh produces; the Mercator
 fields remain at the same relative offsets within the struct but are shifted +8 from
 their actual disk positions. See [Coordinate Systems](#coordinate-systems) and
@@ -211,20 +211,20 @@ parsefsh's route point layout was incorrect. The correct 10-byte `fsh_pt` struct
 
 | Offset | Size | Type       | Field        | Notes |
 | ------ | ---- | ---------- | ------------ | ----- |
-| 0      | 2    | `int16_t`  | `bearing`    | Bearing from previous waypoint, radians × 10,000. To degrees: `(bearing / 10000) × (180 / π)` |
+| 0      | 2    | `int16_t`  | `bearing`    | Bearing from previous waypoint, radians x 10,000. To degrees: `(bearing / 10000) x (180 / pi)` |
 | 2      | 4    | `uint32_t` | `leg_length` | Distance from previous waypoint, meters |
 | 6      | 4    | `uint32_t` | `tot_length` | Cumulative route distance, meters |
 
-**Route header — two newly discovered fields (BLK_RTE)**
+**Route header - two newly discovered fields (BLK_RTE)**
 
 Two fields absent from parsefsh:
 
-- **`color`** — byte 7 of the first route header (`fsh_route21_header`). Color index:
+- **`color`** - byte 7 of the first route header (`fsh_route21_header`). Color index:
   0 = red, 1 = yellow, 2 = green, 3 = blue, 4 = magenta, 5 = black.
-- **`distance`** — bytes 16–19 of the second route header (`fsh_hdr2`), type `uint32_t`.
+- **`distance`** - bytes 16-19 of the second route header (`fsh_hdr2`), type `uint32_t`.
   Total route distance in meters.
 
-**BLK_MTA — field `j` correction (byte 56)**
+**BLK_MTA - field `j` correction (byte 56)**
 
 parsefsh documents byte 56 of `fsh_track_meta` (field `j`) as "always 0". In actual
 E80 `ARCHIVE.FSH` files this byte is always **204** (0xCC). A writer that outputs 0
@@ -237,7 +237,7 @@ flob structure, pads to minimum file size (16 flobs / 1 MB), and uses BLK_ILL (`
 as a flob terminator. Written files contain only active blocks; there is no support for
 in-place update of an existing FSH file.
 
-*Known gap:* The inverse coordinate transform (lat/lon → Mercator northing/easting,
+*Known gap:* The inverse coordinate transform (lat/lon -> Mercator northing/easting,
 required for encoding track points) uses a linear approximation rather than the correct
 ellipsoidal inverse. Read-back coordinates will not round-trip exactly.
 

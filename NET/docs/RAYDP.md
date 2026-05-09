@@ -1,4 +1,4 @@
-# RAYDP — Service Discovery Protocol
+# RAYDP - Service Discovery Protocol
 
 **[Home](../../docs/readme.md)** --
 **[NET](readme.md)** --
@@ -13,7 +13,7 @@
 **[Cables](ethernet_cables.md)**
 
 **RAYDP** (Raymarine Discovery Protocol) is the SeatalkHS service discovery
-protocol — the entry point into [RAYNET](RAYNET.md). It operates as a multicast UDP broadcast
+protocol - the entry point into [RAYNET](RAYNET.md). It operates as a multicast UDP broadcast
 on **224.0.0.1:5800**. On the E80, this service is labeled "Sys" in the ethernet
 diagnostics Services dialog. The implementation class is `c_RAYDP.pm`.
 
@@ -31,12 +31,12 @@ to 224.0.0.1:5800. Each packet identifies a device and advertises one or more
 implementation). A client joins the multicast group, listens for these advertisements,
 and uses the ip:port information to connect to the services it wants.
 
-This is conceptually similar to SSDP — the device announces itself; the client
+This is conceptually similar to SSDP - the device announces itself; the client
 decides whether to connect.
 
 ## Device Identification
 
-Each advertisement carries a **device id** — a 4-byte value that uniquely identifies
+Each advertisement carries a **device id** - a 4-byte value that uniquely identifies
 the advertising device. Known device IDs:
 
 | Device ID  | Device                         |
@@ -53,8 +53,8 @@ following the header depends on packet length:
 
 | Length | Structure                                                              |
 | ------ | ---------------------------------------------------------------------- |
-| 28     | `ip(4) port(4)` — single port                                          |
-| 36     | `mcast_ip(4) mcast_port(4) tcp_ip(4) tcp_port(4)` — two ports         |
+| 28     | `ip(4) port(4)` - single port                                          |
+| 36     | `mcast_ip(4) mcast_port(4) tcp_ip(4) tcp_port(4)` - two ports         |
 | 37     | same as 36 plus a `flags(1)` byte                                      |
 | 40     | `tcp_ip(4) tcp_port1(4) tcp_port2(4) mcast_ip(4) mcast_port(4)`       |
 
@@ -87,7 +87,7 @@ Note that both the E80 and RNS advertise func(27)/Alarm on port 5802.
 
 In addition to service advertisements, devices send **IDENT** packets that identify
 the device type, name, software version, IP, and role (e.g. MASTER). These are larger
-packets (54–56 bytes) that do not follow the standard advertisement structure and are
+packets (54-56 bytes) that do not follow the standard advertisement structure and are
 displayed separately. The E80 typically advertises as role MASTER.
 
 ## Implementation Notes
@@ -102,7 +102,7 @@ automatically when their ports are discovered via RAYDP, if
 `EXIT_ON_CLOSE=0` and will attempt to reconnect if the E80 reboots.
 
 **Spawned services:** Ports that are recognized but not implemented use
-`EXIT_ON_CLOSE=1` — a TCP listener thread is spawned to observe traffic, but it
+`EXIT_ON_CLOSE=1` - a TCP listener thread is spawned to observe traffic, but it
 does not send any requests.
 
 **Thread safety:** The RAYDP `service_ports` hash is shared across threads. All

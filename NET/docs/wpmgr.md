@@ -1,4 +1,4 @@
-# WPMGR — Waypoint, Route, and Group Management
+# WPMGR - Waypoint, Route, and Group Management
 
 **[Home](../../docs/readme.md)** --
 **[NET](readme.md)** --
@@ -12,7 +12,7 @@
 **[navMate](../../apps/navMate/docs/readme.md)** --
 **[Cables](ethernet_cables.md)**
 
-**WPMGR** is the Waypoint Manager service — the protocol for reading and writing
+**WPMGR** is the Waypoint Manager service - the protocol for reading and writing
 Waypoints, Routes, and Groups on the E80. It is the most fully reverse-engineered
 and implemented service in this codebase.
 
@@ -50,8 +50,8 @@ Working with these hex digit streams requires facility with reading
 little endian numbers.
 
 This presentation tends to obfuscate the underlying structure:
-the most significant bytes — which carry the most significant
-information — appear at the end of each word or dword. This
+the most significant bytes - which carry the most significant
+information - appear at the end of each word or dword. This
 document does not present C struct equivalents; nonetheless,
 understanding this endian convention is important when reading
 the communication structures.
@@ -104,7 +104,7 @@ In this example
 WPMGR messages are framed as `<length><body>` pairs within a TCP stream,
 as described in [RAYNET](RAYNET.md). The E80 is typically observed to send
 the leading length word as the first TCP segment and subsequent messages
-in a second segment — but message extraction cannot rely on this; each
+in a second segment - but message extraction cannot rely on this; each
 length word determines where the next boundary lies within the accumulated
 stream buffer.
 
@@ -148,7 +148,7 @@ containing a length word and the second containing one or more messages.
 Within the parsing of a single *request*, the E80 builds up and maintains
 state as it parses messages before replying.
 
-The protocol also exhibits **modality** — a higher level of statefulness
+The protocol also exhibits **modality** - a higher level of statefulness
 in which the semantics of a request depend on what previous requests
 have been sent.
 
@@ -300,7 +300,7 @@ The formalized constants from `e_wp_defs.pm` express this as:
 		                EVENT=5, DATA=6, MODIFY=7, UUID=8, NUMBER=9,
 		                AVERB=a, BVERB=b, FIND=c, COUNT=d, EVERB=e, FVERB=f)
 
-Note that CMD_MODIFY (0x7) is used for both create and modify operations — the
+Note that CMD_MODIFY (0x7) is used for both create and modify operations - the
 distinction is in the sequence of messages that precede it, not in the command byte
 itself.
 
@@ -309,26 +309,26 @@ itself.
 
 The following operations are confirmed implemented in `d_WPMGR.pm` and `e_wp_api.pm`:
 
-**do_query** — retrieves all Waypoints, Routes, and Groups:
+**do_query** - retrieves all Waypoints, Routes, and Groups:
 calls query_one for each WHAT type in sequence.
 
-**get_item(uuid)** — retrieves a single item by UUID:
+**get_item(uuid)** - retrieves a single item by UUID:
 sends a single CMD_ITEM message and receives the item record.
 
-**create_item(type, data)** — creates a new item:
-1. CMD_FIND by name — confirms the name does not already exist
-2. CMD_ITEM by UUID — confirms the UUID does not already exist
+**create_item(type, data)** - creates a new item:
+1. CMD_FIND by name - confirms the name does not already exist
+2. CMD_ITEM by UUID - confirms the UUID does not already exist
 3. CMD_MODIFY + CMD_CONTEXT + CMD_BUFFER + CMD_LIST sequence
 
-**modify_item(uuid, data)** — modifies an existing item:
-1. CMD_EXIST by UUID — required first; fails if item does not exist
+**modify_item(uuid, data)** - modifies an existing item:
+1. CMD_EXIST by UUID - required first; fails if item does not exist
 2. CMD_DATA + CMD_CONTEXT + CMD_BUFFER + CMD_LIST sequence
 
-**delete_item(uuid)** — deletes an item:
+**delete_item(uuid)** - deletes an item:
 sends a single CMD_UUID message (despite the name, CMD_UUID means "delete").
 
-**Events (CMD_EVENT / CMD_MODIFY)** — unsolicited notifications from E80:
-- CMD_EVENT: `dword(evt_flag)` — 0 = start of event series, 1 = end
+**Events (CMD_EVENT / CMD_MODIFY)** - unsolicited notifications from E80:
+- CMD_EVENT: `dword(evt_flag)` - 0 = start of event series, 1 = end
 - CMD_MODIFY in event context: `uuid + mod_bits` (0=new, 1=deleted, 2=changed)
 
 ## dict_buffer Parameter
@@ -336,13 +336,13 @@ sends a single CMD_UUID message (despite the name, CMD_UUID means "delete").
 When setting up a query context (CMD_BUFFER), the leading word of the buffer
 specifies the maximum reply size. The current implementation uses `ffff0000...`
 (max 64K). RNS used smaller values (0x1027 for waypoints, 0x9600 for routes,
-0x6400 for groups) — these are just RNS's own optimization choices, not
+0x6400 for groups) - these are just RNS's own optimization choices, not
 protocol requirements.
 
 ## Group and Route Membership Operations
 
 Operations involving group membership and route waypoint assignment are partially
-implemented. See `d_WPMGR.pm` for current state — the header comments in that
+implemented. See `d_WPMGR.pm` for current state - the header comments in that
 file may not reflect the current implementation. This area is flagged for
 empirical validation with the live program.
 
@@ -362,7 +362,7 @@ persistent accumulator in `b_sock.pm`. Each complete message is dispatched to
 in `$this->{tx}` on the parser object and survives across multiple `recv()` calls.
 `resetTransaction()` clears this state at connection establishment and at the start
 of each new request (detected by `DIRECTION_SEND`). This design correctly handles
-large multi-message replies — such as deleting a route with many waypoints — where
+large multi-message replies - such as deleting a route with many waypoints - where
 the E80's reply spans multiple TCP segments.
 
 ## Early Discovery Notes

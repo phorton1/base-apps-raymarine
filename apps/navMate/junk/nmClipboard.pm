@@ -183,7 +183,7 @@ our $clipboard = undef;
 
 
 #----------------------------------------------------
-# allCopyCmds — for EVT_MENU binding loops
+# allCopyCmds - for EVT_MENU binding loops
 #----------------------------------------------------
 
 sub allCopyCmds   { return @ALL_COPY_CMDS   }
@@ -234,7 +234,7 @@ sub _updateStatusBar
 
 
 #----------------------------------------------------
-# _analyzeNodes — categorize a selection
+# _analyzeNodes - categorize a selection
 #----------------------------------------------------
 
 sub _analyzeNodes
@@ -289,7 +289,7 @@ sub _analyzeNodes
 #----------------------------------------------------
 # Returns list of { id, label } for New-object operations.
 # winDatabase always offers all four; winE80 is context-sensitive
-# (tracks header and track nodes offer nothing — TRACK API is read-only).
+# (tracks header and track nodes offer nothing - TRACK API is read-only).
 
 sub getNewMenuItems
 {
@@ -309,7 +309,7 @@ sub getNewMenuItems
 		);
 	}
 
-	# e80 — context-sensitive
+	# e80 - context-sensitive
 	my $t    = $right_click_node->{type} // '';
 	my $kind = $right_click_node->{kind} // '';
 
@@ -331,7 +331,7 @@ sub getNewMenuItems
 		{ id => $CTX_CMD_NEW_WAYPOINT, label => 'New Waypoint' },
 	) if $t eq 'route';
 
-	return ();  # tracks header, track nodes — read-only
+	return ();  # tracks header, track nodes - read-only
 }
 
 
@@ -340,7 +340,7 @@ sub getNewMenuItems
 #----------------------------------------------------
 # Returns list of { id, label } for Delete/Remove operations.
 # Context is determined by the right-click node type alone.
-# Tracks on E80 are read-only — no delete offered there.
+# Tracks on E80 are read-only - no delete offered there.
 
 sub getDeleteMenuItems
 {
@@ -734,7 +734,7 @@ sub canPaste
 	return 0 if !$clipboard;
 	return 0 if $clipboard->{cut} && $clipboard->{source} eq 'database' && $panel eq 'e80';
 	return 0 if $clipboard->{source} eq 'database' && $panel eq 'database' && !$clipboard->{cut};
-	# D-CT-ALL → DB: only allow for non-root collection targets (move branch contents)
+	# D-CT-ALL -> DB: only allow for non-root collection targets (move branch contents)
 	return 0 if $clipboard->{intent} eq 'all' && $clipboard->{source} eq 'database' && $panel eq 'database'
 		     && ($target_node->{type} // '') ne 'collection';
 	return _canPasteBase($target_node, $panel);
@@ -747,7 +747,7 @@ sub canPasteNew
 	return 0 if !$clipboard;
 	return 0 if $clipboard->{cut};
 	return 0 if $clipboard->{intent} =~ /^tracks?$/;
-	# D-CP-ALL → non-root DB collection: allow (duplicate branch contents with fresh UUIDs).
+	# D-CP-ALL -> non-root DB collection: allow (duplicate branch contents with fresh UUIDs).
 	# All other ALL intent combinations: block.
 	if ($clipboard->{intent} eq 'all')
 	{

@@ -1,4 +1,4 @@
-# TRACK — Track Management Protocol
+# TRACK - Track Management Protocol
 
 **[Home](../../docs/readme.md)** --
 **[NET](readme.md)** --
@@ -16,7 +16,7 @@
 over TCP on port **2053**, service_id **19** (0x13, shown as `1300` in hex streams).
 TRACK is fully implemented in `d_TRACK.pm`.
 
-Unlike WPMGR, tracks cannot be created programmatically — they can only be started
+Unlike WPMGR, tracks cannot be created programmatically - they can only be started
 and stopped on the E80 itself. The TRACK protocol provides control over the
 Current Track (start, stop, name, save, discard) and retrieval of saved tracks.
 
@@ -41,10 +41,10 @@ the E80 to close the TCP connection.
 | 0x0b | DISCARD       | (none)             | Delete unsaved stopped Current Track (no seq)  |
 | 0x0c | GET_DICT      | seq                | Get UUID index of all saved tracks             |
 | 0x0d | GET_STATE     | seq                | Returns whether the E80 is currently recording |
-| 0x0e | USELESS_E     | —                  | Returns EVENT byte=6; no practical use found   |
-| 0x0f | NOREPLY_F     | —                  | Never produced a reply                         |
+| 0x0e | USELESS_E     | -                  | Returns EVENT byte=6; no practical use found   |
+| 0x0f | NOREPLY_F     | -                  | Never produced a reply                         |
 | 0x10 | BUMP_NAME     | seq, name16        | Increments the default track name counter      |
-| 0x11 | NO_REPLY_11   | —                  | Never produced a reply                         |
+| 0x11 | NO_REPLY_11   | -                  | Never produced a reply                         |
 
 Commands 0x12 and higher cause the E80 to close the TCP connection (FIN).
 
@@ -74,10 +74,10 @@ The EVENT byte is a bitmask sent unsolicited when the Current Track changes:
 
 | Bit | Meaning                                              |
 | --- | ---------------------------------------------------- |
-| 0   | Point added to Current Track — re-fetch Current Track |
-| 1   | New Current Track UUID — remove old UUID from cache  |
-| 2   | Current Track changed — re-fetch Current Track       |
-| 4   | Current Track modified — re-fetch Current Track      |
+| 0   | Point added to Current Track - re-fetch Current Track |
+| 1   | New Current Track UUID - remove old UUID from cache  |
+| 2   | Current Track changed - re-fetch Current Track       |
+| 4   | Current Track modified - re-fetch Current Track      |
 
 START generates EVENT bits 1 and 3. STOP generates EVENT bits 0 and 2.
 
@@ -87,9 +87,9 @@ The CHANGED reply is sent unsolicited when a saved track is added, modified, or 
 
 | Value | Meaning                                         |
 | ----- | ----------------------------------------------- |
-| 0     | New track added — queue GET_TRACK for this UUID |
-| 1     | Track changed — queue GET_TRACK for this UUID   |
-| 2     | Track deleted — remove from local cache         |
+| 0     | New track added - queue GET_TRACK for this UUID |
+| 1     | Track changed - queue GET_TRACK for this UUID   |
+| 2     | Track deleted - remove from local cache         |
 
 ## GET_DICT Reply Sequence
 
@@ -117,7 +117,7 @@ info  CONTEXT  trk_uuid     context_bits=0x11
 info  BUFFER   <track points>
 ```
 
-The MTA (metadata) and track point structures are shared with the FSH file format —
+The MTA (metadata) and track point structures are shared with the FSH file format -
 see `FSH/docs/readme.md` and `FSH/fshBlocks.pm` for field definitions.
 
 ## Important: GET_STATE Before GET_CUR2
@@ -130,10 +130,10 @@ calling GET_CUR2 may not produce a meaningful result.
 
 These limitations are inherent to the TRACK protocol as observed:
 
-- Tracks cannot be created programmatically — only started and stopped on the E80
+- Tracks cannot be created programmatically - only started and stopped on the E80
 - Track color cannot be set via TRACK protocol (color is set at recording time by E80)
 - Track points cannot be modified
-- ERASE_TRACK and RENAME operate on saved tracks only — not the Current Track
+- ERASE_TRACK and RENAME operate on saved tracks only - not the Current Track
 
 ## Implementation Notes
 
@@ -147,7 +147,7 @@ when the `is_track` context is active, and checked in `parseMessage` after all
 pieces are parsed. The `expect_trk` flag distinguishes GET_TRACK (saved track,
 two-buffer MTA+TRK sequence) from GET_MTA (single-buffer response).
 
-**Known issue — GET_CUR2 returns 0 points:** When GET_CUR2 is triggered by a
+**Known issue - GET_CUR2 returns 0 points:** When GET_CUR2 is triggered by a
 STOP or TRACK_CHANGED event, the MTA reports the correct point count but the
 track point buffer comes back empty. The `buffer_complete` / `expect_trk` logic
 in `e_TRACK.pm` does not yet correctly handle the GET_CUR2 wire sequence. The

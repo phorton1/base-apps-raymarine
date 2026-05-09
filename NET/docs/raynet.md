@@ -1,4 +1,4 @@
-# RAYNET — Protocol Architecture
+# RAYNET - Protocol Architecture
 
 **[Home](../../docs/readme.md)** --
 **[NET](readme.md)** --
@@ -17,7 +17,7 @@ suite. Raymarine does not publish technical documentation for these protocols;
 all content here was derived from packet capture and probing.
 
 **[RAYDP](RAYDP.md)** (Raymarine Discovery Protocol) is the service discovery protocol
-within RAYNET — the multicast protocol at 224.0.0.1:5800 through which devices
+within RAYNET - the multicast protocol at 224.0.0.1:5800 through which devices
 advertise their services. It was called **RAYSYS** for a time in this codebase
 to match the Raymarine "Sys" label in the E80 diagnostics dialog, but has been
 renamed back to RAYDP. References to RAYSYS in older notes and probe files mean
@@ -103,7 +103,7 @@ yielding a concatenated stream of length-prefixed messages:
 
 TCP delivers this as a continuous **byte stream**, not as discrete packets.
 The E80 is typically observed to send the leading `<length>` word as the
-first TCP segment and the remaining messages in a second segment — but this
+first TCP segment and the remaining messages in a second segment - but this
 is an E80 behavioral pattern, not a TCP guarantee. Message boundaries do
 not correspond to `recv()` call boundaries.
 

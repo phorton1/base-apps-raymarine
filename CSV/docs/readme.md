@@ -1,4 +1,4 @@
-# CSV — Google Earth to Raymarine RNS Conversion
+# CSV - Google Earth to Raymarine RNS Conversion
 
 **[Home](../../docs/readme.md)** --
 **CSV Tool**
@@ -11,18 +11,18 @@ transferring it to the E80 via Raytech RNS.
 
 ```
 Google Earth
-    → export Navigation.kml
-        → kmlToCSV.pm
-            → output/Navigation.text   (import into Raytech RNS)
-            → output/ge_routes.h       (optional: Arduino teensyBoat NMEA0183 simulator)
-                → RNS saves as ARCHIVE.FSH
-                    → CF card → E80
+    -> export Navigation.kml
+        -> kmlToCSV.pm
+            -> output/Navigation.text   (import into Raytech RNS)
+            -> output/ge_routes.h       (optional: Arduino teensyBoat NMEA0183 simulator)
+                -> RNS saves as ARCHIVE.FSH
+                    -> CF card -> E80
 ```
 
 ## Google Earth Folder Structure
 
 The input file is `input/Navigation.kml`, exported from Google Earth. The KML
-structure must follow exact naming conventions — folders with unexpected names
+structure must follow exact naming conventions - folders with unexpected names
 produce only a warning and are otherwise silently ignored.
 
 The top-level KML Document must contain a folder named exactly **`Navigation`**.
@@ -30,13 +30,13 @@ Inside `Navigation`, two sub-folders are recognized:
 
 ```
 Navigation/
-    Waypoints/          ← E80 "My Waypoints" + named Groups
-        <Placemarks>    ← go into E80 "My Waypoints" group
-        GroupName/      ← sub-folders become named E80 Groups
+    Waypoints/          <- E80 "My Waypoints" + named Groups
+        <Placemarks>    <- go into E80 "My Waypoints" group
+        GroupName/      <- sub-folders become named E80 Groups
             <Placemarks>
-    Routes/             ← E80 Routes
-        RouteName/      ← each sub-folder is one Route
-            <Placemarks>    ← waypoints in order along the route
+    Routes/             <- E80 Routes
+        RouteName/      <- each sub-folder is one Route
+            <Placemarks>    <- waypoints in order along the route
 ```
 
 **Critical naming rules:**
@@ -44,13 +44,13 @@ Navigation/
 - The outer folder must be named `Navigation` (case-sensitive)
 - The waypoint sub-folder must be named `Waypoints`
 - The route sub-folder must be named `Routes`
-- Any Placemark named exactly `Route` is silently skipped — these are
+- Any Placemark named exactly `Route` is silently skipped - these are
   Google Earth line-string path overlays, not waypoints
 
 ## Symbol Assignment
 
 Waypoint symbols are assigned automatically based on context. There is no
-user control over symbol selection — the symbol number in the KML is ignored.
+user control over symbol selection - the symbol number in the KML is ignored.
 
 | Context                     | Symbol Name       | E80 Number |
 | --------------------------- | ----------------- | ---------- |
@@ -113,7 +113,7 @@ For RNS to accept CSV imports, all of the following must be in place on the
 Windows PC running Raytech:
 
 - `C:\Archive\` directory must exist
-- `C:\Archive\RTWptRte.TXT` must exist — RNS checks for this file to enable
+- `C:\Archive\RTWptRte.TXT` must exist - RNS checks for this file to enable
   the CSV import menu option; without it the import option is unavailable
 - An `ARCHIVE.FSH` should be present as RNS's working navigation database
 

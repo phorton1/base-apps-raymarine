@@ -36,7 +36,7 @@ function toDDM(dd, isLat) {
     const abs = Math.abs(dd);
     const deg = Math.floor(abs);
     const min = (abs - deg) * 60;
-    return deg + '°' + min.toFixed(3) + "' " + dir;
+    return deg + '\u00B0' + min.toFixed(3) + "' " + dir;
 }
 
 const coordsDiv = document.getElementById('nm-coords');
@@ -191,7 +191,7 @@ function renderAll(geojson) {
     lastGeojson = geojson;
     const features = geojson.features || [];
 
-    // Server cleared — reset our UUID tracking.
+    // Server cleared  -  reset our UUID tracking.
     if (features.length === 0) {
         prevRenderedUuids = new Set();
         return;

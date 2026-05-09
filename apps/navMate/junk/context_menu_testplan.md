@@ -1,7 +1,7 @@
-# navMate — Context Menu Test Plan
+# navMate - Context Menu Test Plan
 
 Test cases for the context menu feature. For the test machinery (endpoint, params,
-node key format, CTX_CMD constants) and the reset procedure, see context_menu.md §7.
+node key format, CTX_CMD constants) and the reset procedure, see context_menu.md Section 7.
 
 **NEW-* commands are excluded from automation.** NEW_WAYPOINT (10510), NEW_GROUP (10520),
 NEW_ROUTE (10530), and NEW_BRANCH (10550) all open name-input dialogs that block the
@@ -14,22 +14,22 @@ The test database must have a specific shape for the full test plan to exercise 
 code paths. The runbook holds the concrete named nodes chosen to satisfy this shape;
 this section describes what is required structurally:
 
-- **Isolated waypoints** — at least two waypoints that are not members of any group
+- **Isolated waypoints** - at least two waypoints that are not members of any group
   or referenced in any route (for clean copy/paste/delete without side effects)
-- **A group with no route references** — a group whose member WPs are not in any route
-  (for DEL-GR+WPS success path in §2.5)
-- **A group whose members ARE in a route** — for DEL-GR+WPS blocked path in §2.6
-- **A branch with WPs not referenced outside it** — for safe DEL-BR in §2.7
-- **A branch containing groups whose WPs are also referenced by routes** — for the
-  all-paste ordering dependency test in §3.7 (groups paste first; route paste finds
-  WPs already present → `no_change` idempotency)
-- **At least one route with a known member WP** — for DEL-WP blocked guard in §5.1
-- **At least one track** — for track cut/paste and guard tests
+- **A group with no route references** - a group whose member WPs are not in any route
+  (for DEL-GR+WPS success path in Section 2.5)
+- **A group whose members ARE in a route** - for DEL-GR+WPS blocked path in Section 2.6
+- **A branch with WPs not referenced outside it** - for safe DEL-BR in Section 2.7
+- **A branch containing groups whose WPs are also referenced by routes** - for the
+  all-paste ordering dependency test in Section 3.7 (groups paste first; route paste finds
+  WPs already present -> `no_change` idempotency)
+- **At least one route with a known member WP** - for DEL-WP blocked guard in Section 5.1
+- **At least one track** - for track cut/paste and guard tests
 
 
 ## 1. Initialize to known state
 
-Follow context_menu.md §7.2 in full before running any tests:
+Follow context_menu.md Section 7.2 in full before running any tests:
 1. Git-revert `C:/dat/Rhapsody/navMate.db` to the committed test baseline; reload DB.
 2. Clear the E80 (no waypoints, groups, routes, or tracks).
 3. Mark the log; set `suppress=1`.
@@ -49,7 +49,7 @@ from `/api/nmdb`. `DST_UUID` is the UUID of any collection node used as a paste 
 
 ---
 
-### 2.1 Copy WP → Paste New to collection (D-WP1 → D-CP-WP → Paste New)
+### 2.1 Copy WP -> Paste New to collection (D-WP1 -> D-CP-WP -> Paste New)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=WP_UUID&cmd=10010"
@@ -61,7 +61,7 @@ Verify: `/api/nmdb` shows the new row.
 
 ---
 
-### 2.2 Cut WP → Paste to collection (D-CT-WP → move)
+### 2.2 Cut WP -> Paste to collection (D-CT-WP -> move)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=WP_UUID&cmd=10110"
@@ -72,7 +72,7 @@ Expected: same UUID now has `collection_uuid = DST_UUID`; original collection lo
 
 ---
 
-### 2.3 Delete WP (D-WP1 → DEL-WP)
+### 2.3 Delete WP (D-WP1 -> DEL-WP)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=WP_UUID&right_click=WP_UUID&cmd=10410"
@@ -82,7 +82,7 @@ Expected: waypoint row removed. Verify: UUID absent from `/api/nmdb`.
 
 ---
 
-### 2.4 Delete group — dissolve (D-GR1 → DEL-GR)
+### 2.4 Delete group - dissolve (D-GR1 -> DEL-GR)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=GR_UUID&right_click=GR_UUID&cmd=10420"
@@ -94,7 +94,7 @@ member WPs now show `collection_uuid` equal to the parent branch UUID.
 
 ---
 
-### 2.5 Delete group + all members — success (D-GR1 → DEL-GR+WPS)
+### 2.5 Delete group + all members - success (D-GR1 -> DEL-GR+WPS)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=GR_UUID&right_click=GR_UUID&cmd=10421"
@@ -105,18 +105,18 @@ Expected: collection row and all member WPs deleted; UUIDs absent from `/api/nmd
 
 ---
 
-### 2.6 Delete group + all members — blocked (members in route)
+### 2.6 Delete group + all members - blocked (members in route)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=GR_UUID&right_click=GR_UUID&cmd=10421"
 ```
 
 Use a group whose members ARE referenced in a route.
-Expected: WARNING in log (member WP in route — delete blocked); group and members unchanged.
+Expected: WARNING in log (member WP in route - delete blocked); group and members unchanged.
 
 ---
 
-### 2.7 Delete branch (DEL-BR → recursive delete)
+### 2.7 Delete branch (DEL-BR -> recursive delete)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=BR_UUID&right_click=BR_UUID&cmd=10450"
@@ -124,17 +124,17 @@ curl -s "http://localhost:9883/api/test?panel=database&select=BR_UUID&right_clic
 
 Use a branch whose member WPs are not referenced by any route outside the branch (all
 referencing routes are within the same branch subtree, or no WPs are in any route).
-Expected: branch and all its descendants deleted — sub-collections, waypoints, routes,
+Expected: branch and all its descendants deleted - sub-collections, waypoints, routes,
 route_waypoints, tracks, and track_points all removed. Verify via `/api/nmdb`.
 
 Note: `getDeleteMenuItems` hides DEL-BR when `isBranchDeleteSafe` returns 0 (member WP
 in an external route). Firing cmd=10450 directly on a blocked branch logs a WARNING and
-makes no change — this blocked case requires cross-branch route setup and is verified
+makes no change - this blocked case requires cross-branch route setup and is verified
 manually or by direct cmd fire.
 
 ---
 
-### 2.8 Copy branch → COPY_ALL (D-BR → clipboard=all)
+### 2.8 Copy branch -> COPY_ALL (D-BR -> clipboard=all)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=BR_UUID&cmd=10099"
@@ -144,9 +144,9 @@ Expected: clipboard set to `intent=all, source=database`. Status bar shows `[DB]
 
 ---
 
-### 2.9 Copy ALL → Paste New to collection (D-CP-ALL → duplicate branch contents)
+### 2.9 Copy ALL -> Paste New to collection (D-CP-ALL -> duplicate branch contents)
 
-After §2.8, paste to a different collection with Paste New:
+After Section 2.8, paste to a different collection with Paste New:
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=DST_UUID&right_click=DST_UUID&cmd=10301"
 ```
@@ -157,7 +157,7 @@ not supported for tracks).
 
 ---
 
-### 2.10 Cut branch → Paste to collection (D-CT-ALL → move branch contents)
+### 2.10 Cut branch -> Paste to collection (D-CT-ALL -> move branch contents)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=BR_UUID&cmd=10199"
@@ -165,11 +165,11 @@ curl -s "http://localhost:9883/api/test?panel=database&select=DST_UUID&right_cli
 ```
 
 Expected: all items from the source branch are moved (UUID-preserving re-home) to DST.
-Source branch loses its contents. DB→E80 all-paste is tested separately in §3.7.
+Source branch loses its contents. DB->E80 all-paste is tested separately in Section 3.7.
 
 ---
 
-### 2.11 Cut route → Paste to collection (D-CT-RT → move)
+### 2.11 Cut route -> Paste to collection (D-CT-RT -> move)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=RT_UUID&cmd=10130"
@@ -180,7 +180,7 @@ Expected: route record's `collection_uuid` updated to DST; same UUID retained.
 
 ---
 
-### 2.12 Copy route → Paste New to collection (D-CP-RT → fresh UUIDs)
+### 2.12 Copy route -> Paste New to collection (D-CP-RT -> fresh UUIDs)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=RT_UUID&cmd=10030"
@@ -191,7 +191,7 @@ Expected: new route with fresh UUID; each member WP also gets a fresh UUID.
 
 ---
 
-### 2.13 Cut track → Paste to collection (D-CT-TK → move)
+### 2.13 Cut track -> Paste to collection (D-CT-TK -> move)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=TK_UUID&cmd=10140"
@@ -205,7 +205,7 @@ Expected: track's `collection_uuid` updated to DST.
 
 ## 3. E80 tests
 
-The E80 must be connected and empty at the start (§1 above). These tests build
+The E80 must be connected and empty at the start (Section 1 above). These tests build
 up E80 state progressively, so run them in order within a test cycle.
 
 ### 3.0 Populate E80 with test data
@@ -231,12 +231,12 @@ curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_c
 ```
 
 Verify via `/api/db` or the winE80 tree that items appear before proceeding.
-Note the E80-assigned UUIDs from `/api/db` — use them as `E80_WP_UUID`, `E80_GR_UUID`,
+Note the E80-assigned UUIDs from `/api/db` - use them as `E80_WP_UUID`, `E80_GR_UUID`,
 `E80_RT_UUID` in the tests below.
 
 ---
 
-### 3.1 Copy E80 WP → Paste to DB (E-CP-WP → download, UUID-preserving)
+### 3.1 Copy E80 WP -> Paste to DB (E-CP-WP -> download, UUID-preserving)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=E80_WP_UUID&cmd=10010"
@@ -247,7 +247,7 @@ Expected: WP inserted or updated in DB with E80's UUID.
 
 ---
 
-### 3.2 Copy E80 WP → Paste New to DB (E-CP-WP → download, fresh UUID)
+### 3.2 Copy E80 WP -> Paste New to DB (E-CP-WP -> download, fresh UUID)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=E80_WP_UUID&cmd=10010"
@@ -258,7 +258,7 @@ Expected: new WP with fresh navMate UUID (byte 1 = 0x82) inserted in DST.
 
 ---
 
-### 3.3 Delete E80 waypoint (E-WP1 → DEL-WP)
+### 3.3 Delete E80 waypoint (E-WP1 -> DEL-WP)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=E80_WP_UUID&right_click=E80_WP_UUID&cmd=10410"
@@ -268,7 +268,7 @@ Expected: DELETE_ITEM sent to E80; WP disappears from winE80 tree after refresh.
 
 ---
 
-### 3.4 Delete E80 group + members (E-GR1 → DEL-GR+WPS)
+### 3.4 Delete E80 group + members (E-GR1 -> DEL-GR+WPS)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=E80_GR_UUID&right_click=E80_GR_UUID&cmd=10421"
@@ -278,7 +278,7 @@ Expected: DELETE_ITEM for group and each member WP sent to E80.
 
 ---
 
-### 3.5 Copy E80 group → Paste to DB (E-CP-GR → download group)
+### 3.5 Copy E80 group -> Paste to DB (E-CP-GR -> download group)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=E80_GR_UUID&cmd=10020"
@@ -289,7 +289,7 @@ Expected: group collection and member WPs inserted or updated in DB.
 
 ---
 
-### 3.6 Copy E80 route → Paste to DB (E-CP-RT → download route)
+### 3.6 Copy E80 route -> Paste to DB (E-CP-RT -> download route)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=E80_RT_UUID&cmd=10030"
@@ -300,15 +300,15 @@ Expected: route record and member WPs inserted or updated in DB.
 
 ---
 
-### 3.7 DB→E80 all-paste with group+route WP ordering (D-COPY-ALL → E80 root)
+### 3.7 DB->E80 all-paste with group+route WP ordering (D-COPY-ALL -> E80 root)
 
 Exercises the key ordering dependency: a clipboard built from a branch that contains
 groups whose WPs are also referenced by routes. `_pasteAllToE80` must handle the
-dependency correctly regardless of item order — each route paste calls
-`_pasteOneWaypointToE80` per member (idempotent: existing WP → `no_change`).
+dependency correctly regardless of item order - each route paste calls
+`_pasteOneWaypointToE80` per member (idempotent: existing WP -> `no_change`).
 
 The branch used must satisfy the shape requirement: groups with WPs that are also
-route members, plus at least one group whose WPs are already on the E80 from §3.0
+route members, plus at least one group whose WPs are already on the E80 from Section 3.0
 (to exercise the `no_change` idempotency path). See runbook for the specific
 named branch chosen.
 
@@ -319,37 +319,37 @@ curl -s "http://localhost:9883/api/test?panel=e80&select=root&right_click=root&c
 
 Expected:
 - All groups and their WPs appear on E80 (UUIDs preserved)
-- Groups already on E80 from §3.0: their WPs produce `no_change` in log
+- Groups already on E80 from Section 3.0: their WPs produce `no_change` in log
 - All routes created with correct WP UUIDs (WPs already existed from group paste)
-- No duplicate WPs — each UUID appears exactly once
+- No duplicate WPs - each UUID appears exactly once
 
 ---
 
-### 3.8 Paste New WP to E80 (D-CP-WP → E80 Paste New)
+### 3.8 Paste New WP to E80 (D-CP-WP -> E80 Paste New)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=WP_UUID&cmd=10010"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10301"
 ```
 
-Expected: new WP on E80 with fresh navMate UUID (byte 1 = 0x82) ≠ WP_UUID; name preserved.
+Expected: new WP on E80 with fresh navMate UUID (byte 1 = 0x82) != WP_UUID; name preserved.
 `canPasteNew` must return 1 for WP intent to E80 header:groups.
 
 ---
 
-### 3.9 Paste New group to E80 (D-CP-GR → E80 Paste New)
+### 3.9 Paste New group to E80 (D-CP-GR -> E80 Paste New)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=GR_UUID&cmd=10020"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10301"
 ```
 
-Expected: new group on E80 with fresh UUID ≠ GR_UUID; each member WP has a fresh UUID;
+Expected: new group on E80 with fresh UUID != GR_UUID; each member WP has a fresh UUID;
 if the original group UUID was already on E80, that copy is unchanged.
 
 ---
 
-### 3.10 Paste New route to E80 (D-CP-RT → E80 Paste New)
+### 3.10 Paste New route to E80 (D-CP-RT -> E80 Paste New)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=RT_UUID&cmd=10030"
@@ -361,9 +361,9 @@ independent of any same-source WPs already on E80; route references the new WP U
 
 ---
 
-### 3.11 Multi-select two WPs → Paste to E80 (D-CP-WPS → E80)
+### 3.11 Multi-select two WPs -> Paste to E80 (D-CP-WPS -> E80)
 
-Exercises the multi-item clipboard path. Select two WPs by comma-separated UUID —
+Exercises the multi-item clipboard path. Select two WPs by comma-separated UUID -
 `_analyzeNodes` produces `only_wp=true`, menu shows "Copy Waypoints" (cmd=10011, plural intent).
 
 ```
@@ -379,11 +379,11 @@ Expected: both WP UUIDs appear in E80 waypoints; log shows `COPY WAYPOINTS` (plu
 
 ## 4. E80 track tests (requires teensyBoat session)
 
-Tracks on the E80 cannot be uploaded from the database — they must be recorded live
+Tracks on the E80 cannot be uploaded from the database - they must be recorded live
 by driving the boat. This section therefore requires a separate teensyBoat session
 before any tests can run.
 
-### 4.0 Prerequisite — create test tracks on E80
+### 4.0 Prerequisite - create test tracks on E80
 
 Patrick runs teensyBoat (port 9881). Claude drives the boat using `boat_driving_guide.md`
 to produce one or two short test tracks on the E80. Confirm tracks appear in the
@@ -393,7 +393,7 @@ Note the E80-assigned track UUIDs from `/api/db` and use them as `E80_TK_UUID` b
 
 ---
 
-### 4.1 Copy E80 track → Paste to DB (E-CP-TK → download)
+### 4.1 Copy E80 track -> Paste to DB (E-CP-TK -> download)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=E80_TK_UUID&cmd=10040"
@@ -405,7 +405,7 @@ Verify: `/api/nmdb` shows the track; point count matches what E80 reported.
 
 ---
 
-### 4.2 Cut E80 track → Paste to DB (E-CT-TK → download + erase from E80)
+### 4.2 Cut E80 track -> Paste to DB (E-CT-TK -> download + erase from E80)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=E80_TK_UUID&cmd=10140"
@@ -414,13 +414,13 @@ curl -s "http://localhost:9883/api/test?panel=database&select=DST_UUID&right_cli
 
 Expected: track inserted in DB; TRACK_CMD_ERASE sent to E80; track disappears from
 winE80 Tracks after refresh. This is the end-to-end verification of the erase path.
-If it fails, it gets an Issues entry in last_testrun.md — see Recording Results below.
+If it fails, it gets an Issues entry in last_testrun.md - see Recording Results below.
 
 ---
 
-### 4.3 Guard — Paste track TO E80 blocked (tracks read-only on E80)
+### 4.3 Guard - Paste track TO E80 blocked (tracks read-only on E80)
 
-Does not require live tracks — any TK clipboard state suffices. Copy a track from DB:
+Does not require live tracks - any TK clipboard state suffices. Copy a track from DB:
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=TK_UUID&cmd=10040"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_click=header%3Atracks&cmd=10300"
@@ -430,7 +430,7 @@ Expected: paste rejected (track target on E80 is read-only); E80 unchanged.
 
 ---
 
-### 4.4 Guard — Paste New blocked for E80 track clipboard (E-CP-TK → Paste New)
+### 4.4 Guard - Paste New blocked for E80 track clipboard (E-CP-TK -> Paste New)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=E80_TK_UUID&cmd=10040"
@@ -445,7 +445,7 @@ Expected: Paste New rejected for track intent (tracks have no fresh-UUID duplica
 ## 5. Guard / negative tests
 
 These verify that blocked operations do not silently succeed.
-Note: `/api/test` fires the command ID unconditionally — the menu-level `canPaste`
+Note: `/api/test` fires the command ID unconditionally - the menu-level `canPaste`
 check is bypassed. Verify by reading the log, not by absence of menu items.
 
 ---
@@ -457,11 +457,11 @@ Put a WP in a route in the DB. Attempt delete:
 curl -s "http://localhost:9883/api/test?panel=database&select=WP_IN_ROUTE_UUID&right_click=WP_IN_ROUTE_UUID&cmd=10410"
 ```
 
-Expected: warning in log (waypoint in route — delete blocked); DB unchanged.
+Expected: warning in log (waypoint in route - delete blocked); DB unchanged.
 
 ---
 
-### 5.2 Paste blocked — D-CP-TK to database destination
+### 5.2 Paste blocked - D-CP-TK to database destination
 
 Copy a database track, then attempt Paste (not Paste New):
 ```
@@ -473,7 +473,7 @@ Expected: paste rejected in log (intent=track, source=database, cut=0); DB uncha
 
 ---
 
-### 5.3 Paste blocked — any clipboard → E80 header/tracks destination
+### 5.3 Paste blocked - any clipboard -> E80 header/tracks destination
 
 Copy any WP from DB, then attempt Paste to the E80 tracks header:
 ```
@@ -485,7 +485,7 @@ Expected: paste rejected (target is read-only tracks header); E80 unchanged.
 
 ---
 
-### 5.4 Paste blocked — D-CT-* from database → E80 destination
+### 5.4 Paste blocked - D-CT-* from database -> E80 destination
 
 Cut a WP from the database, then attempt Paste to the E80 groups header:
 ```
@@ -494,7 +494,7 @@ curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_c
 ```
 
 Expected: paste rejected by `canPaste` (`cut=1 && source=database && panel=e80`); E80
-unchanged; source WP remains in DB. The database is the authoritative repository —
+unchanged; source WP remains in DB. The database is the authoritative repository -
 uploads to E80 are always copies, never cuts.
 
 
@@ -502,23 +502,23 @@ uploads to E80 are always copies, never cuts.
 
 Each test cycle produces `apps/navMate/docs/notes/last_testrun.md`. The format:
 
-**Header** — cycle number, date, wall-clock start and end times.
+**Header** - cycle number, date, wall-clock start and end times.
 
-**Summary** — one line per §section with its overall result.
+**Summary** - one line per Section section with its overall result.
 
-**Full results table** — every step in this test plan listed with a Status:
-- `PASS` — completed as expected
-- `FAIL` — blocked, data corrupted, or catastrophic
-- `PARTIAL` — some sub-steps passed, others did not
-- `PASSED_BUT` — passed with notable caveats (unexpected warning, workaround required, fragile timing)
-- `NOT_RUN` — step was skipped (teensyBoat unavailable, prerequisite failed, etc.)
+**Full results table** - every step in this test plan listed with a Status:
+- `PASS` - completed as expected
+- `FAIL` - blocked, data corrupted, or catastrophic
+- `PARTIAL` - some sub-steps passed, others did not
+- `PASSED_BUT` - passed with notable caveats (unexpected warning, workaround required, fragile timing)
+- `NOT_RUN` - step was skipped (teensyBoat unavailable, prerequisite failed, etc.)
 
-**Issues section** — one prose subsection per FAIL, PARTIAL, or PASSED_BUT item. This section is
+**Issues section** - one prose subsection per FAIL, PARTIAL, or PASSED_BUT item. This section is
 **always present**, even on a clean cycle (marked "none"). For each entry, include:
-- Which test step (§X.Y and its name)
+- Which test step (Section X.Y and its name)
 - The nodes involved by [Name] from the runbook UUID table
 - What was expected vs. what actually happened
-- The data state left behind — what is corrupted, missing, or unexpectedly changed
+- The data state left behind - what is corrupted, missing, or unexpectedly changed
 - Whether it is a known bug (name the open_bugs.md entry) or new
 - Whether it is catastrophic (prevents subsequent steps from running)
 

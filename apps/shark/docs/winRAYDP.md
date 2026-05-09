@@ -1,4 +1,4 @@
-# winRAYDP — Live Service Discovery
+# winRAYDP - Live Service Discovery
 
 **[Home](../../../docs/readme.md)** --
 **[NET](../../../NET/docs/readme.md)** --
@@ -21,12 +21,12 @@ as devices announce or withdraw services.
 | Column  | Description |
 | ------- | ----------- |
 | DEV_ID  | Friendly device name (e.g. `E80_4`, `E80_1`) resolved from the hardware device ID in the RAYDP advertisement |
-| SID     | Service ID — the numeric RAYNET service_id field |
+| SID     | Service ID - the numeric RAYNET service_id field |
 | NAME    | RAYNAME. Implemented services shown in **blue**; all others in black |
-| PROTO   | Protocol — `tcp`, `udp`, or `mcast` |
+| PROTO   | Protocol - `tcp`, `udp`, or `mcast` |
 | IP      | Device IP address, or multicast group address for mcast services |
 | PORT    | Service port number |
-| CONNECT | Action checkbox. For implemented services ([FILESYS](../../../NET/docs/FILESYS.md), DB, [WPMGR](../../../NET/docs/WPMGR.md), [TRACK](../../../NET/docs/TRACK.md), [DBNAV](../../../NET/docs/DBNAV.md)), labeled **connect** — checking connects shark to that service, unchecking disconnects. For all other services, labeled **spawn** — checking opens a raw connection for manual probing |
+| CONNECT | Action checkbox. For implemented services ([FILESYS](../../../NET/docs/FILESYS.md), DB, [WPMGR](../../../NET/docs/WPMGR.md), [TRACK](../../../NET/docs/TRACK.md), [DBNAV](../../../NET/docs/DBNAV.md)), labeled **connect** - checking connects shark to that service, unchecking disconnects. For all other services, labeled **spawn** - checking opens a raw connection for manual probing |
 | LOCAL   | Local port assigned on the laptop side, shown only when it differs from the service port. Blank for multicast services and when the OS assigns the same port number |
 
 ## Sort by

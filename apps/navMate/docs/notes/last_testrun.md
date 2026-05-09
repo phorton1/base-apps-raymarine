@@ -1,8 +1,8 @@
-# nmOperations Test Run -- Cycle 10
+# nmOperations Test Run -- Cycle 11
 
 **Date:** 2026-05-09
-**Start:** ~23:00 (approximate; §1/§2 completed in prior session before context compaction)
-**End:** 2026-05-09 02:41
+**Start:** unknown (lost in context compaction -- session spans two Claude conversations)
+**End:** 2026-05-09
 **Tester:** Patrick Horton
 
 ---
@@ -11,212 +11,149 @@
 
 | Section | Result | Notes |
 |---------|--------|-------|
-| §1 Reset | PASS | DB reverted; E80 cleared; suppress enabled |
-| §2 Database Tests | PASS | All 18 steps pass |
-| §3 E80 Tests | PARTIAL | 17 PASS, 1 PASSED_BUT, 1 FAIL |
-| §4 Track Tests | PASS | All 5 steps pass |
-| §5 Pre-flight and Guard Tests | PARTIAL | 10 PASS, 3 PASSED_BUT, 1 FAIL, 2 NOT_RUN |
+| Section 1 Reset | PASS | DB reverted; E80 cleared; suppress enabled |
+| Section 2 Database Tests | PASS | All 18 tests pass |
+| Section 3 E80 Tests | PASS | All 26 tests pass |
+| Section 4 Track Tests | PARTIAL | 4 PASS, 2 FAIL |
+| Section 5 Pre-flight and Guard Tests | PARTIAL | 24 PASS, 1 PASSED_BUT, 3 NOT_RUN |
 
 ---
 
 ## Results
 
-### §1 Reset to Known State
+### Section 1 Reset to Known State
 
-| Step | Status |
+| Test | Status |
 |------|--------|
-| §1 Reset | PASS |
+| Section 1 Reset | PASS |
 
-### §2 Database Tests
+### Section 2 Database Tests
 
-| Step | Status |
+| Test | Status |
 |------|--------|
-| §2.1 Copy WP -> Paste New | PASS |
-| §2.2 Cut WP -> Paste (move) | PASS |
-| §2.3 Delete WP | PASS |
-| §2.4 Dissolve group (DEL_GROUP) | PASS |
-| §2.5 Delete group + WPs (DEL_GROUP_WPS) | PASS |
-| §2.6 Delete group blocked -- WP in route | PASS |
-| §2.7 Delete safe branch | PASS |
-| §2.8 Copy branch -> Paste New | PASS |
-| §2.9 Cut branch -> Paste (move) | PASS |
-| §2.10 Copy route -> Paste New | PASS |
-| §2.11 Cut route -> Paste (move) | PASS |
-| §2.12 Cut track -> Paste (move) | PASS |
-| §2.13 Copy route point -> Paste New | PASS |
-| §2.14 Cut route point -> Paste (move) | PASS |
-| §2.15 Paste Before/After -- route object as anchor | PASS |
-| §2.16 Paste Before/After -- group node as anchor | PASS |
-| §2.17 Paste Before/After -- branch node as anchor | PASS |
-| §2.18 Paste Before/After -- non-waypoint item in clipboard | PASS |
+| Section 2.1 Copy WP -> Paste New | PASS |
+| Section 2.2 Cut WP -> Paste (move) | PASS |
+| Section 2.3 Delete WP | PASS |
+| Section 2.4 Dissolve group (DEL_GROUP) | PASS |
+| Section 2.5 Delete group + WPs (DEL_GROUP_WPS) | PASS |
+| Section 2.6 Delete group blocked -- WP in route | PASS |
+| Section 2.7 Delete safe branch | PASS |
+| Section 2.8 Copy branch -> Paste New | PASS |
+| Section 2.9 Cut branch -> Paste (move) | PASS |
+| Section 2.10 Copy route -> Paste New | PASS |
+| Section 2.11 Cut route -> Paste (move) | PASS |
+| Section 2.12 Cut track -> Paste (move) | PASS |
+| Section 2.13 Copy route point -> Paste New | PASS |
+| Section 2.14 Cut route point -> Paste (move) | PASS |
+| Section 2.15 Paste Before/After -- route object as anchor | PASS |
+| Section 2.16 Paste Before/After -- group node as anchor | PASS |
+| Section 2.17 Paste Before/After -- branch node as anchor | PASS |
+| Section 2.18 Paste Before/After -- non-waypoint item in clipboard | PASS |
 
-### §3 E80 Tests
+### Section 3 E80 Tests
 
-| Step | Status |
+| Test | Status |
 |------|--------|
-| §3.1 Paste WP to E80 (UUID-preserving upload) | PASS |
-| §3.2 Paste Group to E80 (UUID-preserving upload) | PASS |
-| §3.3 Paste Route to E80 (UUID-preserving upload) | PASS |
-| §3.4 Copy E80 WP -> Paste to DB | PASS |
-| §3.5 Copy E80 WP -> Paste New to DB | PASS |
-| §3.6 Delete E80 WP | PASS |
-| §3.7 Delete via E80 Routes header | PASS |
-| §3.8 Delete via E80 Groups header | PASS |
-| §3.9 Delete E80 Group + members | PASS |
-| §3.10 Delete via E80 My Waypoints | PASS |
-| §3.11 Delete via E80 Tracks header | FAIL |
-| §3.12 Copy E80 Group -> Paste to DB | PASS |
-| §3.13 Copy E80 Route -> Paste to DB | PASS |
-| §3.14 Copy E80 Group+Route -> Paste to DB (ordered heterogeneous) | PASS |
-| §3.15 Paste New WP to E80 (fresh UUID) | PASS |
-| §3.16 Paste New Group to E80 (all-fresh UUIDs) | PASS |
-| §3.17 Paste New Route to E80 (fresh route UUID, WP refs preserved) | PASS |
-| §3.18 Multi-select WPs -> Paste to E80 | PASS |
-| §3.19 Route point Paste Before/After on E80 | PASSED_BUT |
+| Section 3.1 Paste WP to E80 (UUID-preserving upload) | PASS |
+| Section 3.2 Paste Group to E80 (UUID-preserving upload) | PASS |
+| Section 3.3 Paste Route to E80 (UUID-preserving upload) | PASS |
+| Section 3.4 Copy E80 WP -> Sync to DB (sync-classified) | PASS |
+| Section 3.5 Copy E80 WP -> Paste New to DB (fresh UUID) | PASS |
+| Section 3.6 Delete E80 WP | PASS |
+| Section 3.6b Delete E80 Group+WPS -- blocked (member in route) | PASS |
+| Section 3.7 Delete via E80 Routes header (all routes) | PASS |
+| Section 3.8 Delete via E80 Groups header (all groups) | PASS |
+| Section 3.9a Re-upload Popa group to E80 | PASS |
+| Section 3.9b Delete E80 Group + members via specific group node | PASS |
+| Section 3.10a Re-upload IsolatedWP1 to E80 | PASS |
+| Section 3.10b Delete via E80 My Waypoints (all ungrouped WPs) | PASS |
+| Section 3.11a Re-upload Popa group to E80 | PASS |
+| Section 3.11b Copy E80 Group -> Sync to DB (sync-classified) | PASS |
+| Section 3.12a Re-upload TestRoute to E80 | PASS |
+| Section 3.12b Copy E80 Route -> Sync to DB (sync-classified) | PASS |
+| Section 3.13 Copy E80 Group+Route -> Sync to DB (ordered heterogeneous) | PASS |
+| Section 3.14 Paste New WP to E80 (fresh UUID) | PASS |
+| Section 3.14b Copy E80 fresh-UUID WP -> Paste to DB (paste-classified: absent) | PASS |
+| Section 3.14c Mixed-classified E80 clipboard: status bar + PASTE_NEW | PASS |
+| Section 3.15 Paste New Group to E80 (all-fresh UUIDs) | PASS |
+| Section 3.16a Delete all E80 routes (pre-step) | PASS |
+| Section 3.16b Paste New Route to E80 (fresh route UUID, WP refs preserved) | PASS |
+| Section 3.17 Multi-select WPs -> Paste to E80 (homogeneous flat set) | PASS |
+| Section 3.18 Route point Paste Before/After on E80 | PASS |
 
-### §4 Track Tests
+### Section 4 Track Tests
 
-| Step | Status |
+| Test | Status |
 |------|--------|
-| §4.0 Create test tracks on E80 | PASS |
-| §4.1 Copy E80 Track -> Paste to DB | PASS |
-| §4.2 Cut E80 Track -> Paste to DB | PASS |
-| §4.3 Guard -- Paste Track to E80 blocked (SS10.8) | PASS |
-| §4.4 Paste New E80 Track to DB | PASS |
+| Section 4.0 Create test tracks on E80 | PASS |
+| Section 4.1 Copy E80 Track -> Paste to DB (download, track remains on E80) | FAIL |
+| Section 4.2 Cut E80 Track -> Paste to DB (download + E80 erase) | FAIL |
+| Section 4.3 Guard -- Paste Track to E80 blocked (SS10.8) | PASS |
+| Section 4.4 Paste New E80 Track to DB (download, fresh UUID) | PASS |
+| Section 4.5 Delete via E80 Tracks header -- SS8.2 | PASS |
 
-### §5 Pre-flight and Guard Tests
+### Section 5 Pre-flight and Guard Tests
 
-| Step | Status |
+| Test | Status |
 |------|--------|
-| §5.1 DEL_WAYPOINT blocked -- WP referenced in route | PASS |
-| §5.2 DEL_BRANCH blocked -- member WP in external route | PASS |
-| §5.3 Paste blocked -- DB cut -> E80 destination | PASS |
-| §5.4 Paste blocked -- any clipboard -> E80 tracks header | PASSED_BUT |
-| §5.5 Paste blocked -- DB copy track -> DB paste | PASS |
-| §5.6 Route dependency check -- paste route before WPs exist on E80 | PASS |
-| §5.7 Ancestor-wins -- accept path | PASS |
-| §5.8 Ancestor-wins -- abort path | NOT_RUN |
-| §5.9 Recursive paste guard -- paste Branch into own descendant | FAIL |
-| §5.10 Pre-flight: intra-clipboard name collision | PASS |
-| §5.11 Pre-flight: E80-wide name collision | PASS |
-| §5.12 UUID conflict -- clean create path | PASS |
-| §5.13 UUID conflict -- conflict dialog path | NOT_RUN |
-| §5.14 Menu shape -- DB object node: PASTE and PASTE_NEW absent | PASS |
-| §5.15 Menu shape -- E80 WP node: all paste items absent | PASSED_BUT |
-| §5.16 Menu shape -- route_point with mixed clipboard | PASSED_BUT |
+| Section 5.1 DEL_WAYPOINT blocked -- WP referenced in route | PASS |
+| Section 5.2 DEL_BRANCH blocked -- member WP in external route | PASS |
+| Section 5.3 Paste blocked -- DB cut -> E80 destination (SS9, SS10.5) | PASS |
+| Section 5.4a Delete BOCAS1 from E80 (setup) | PASS |
+| Section 5.4b Delete BOCAS2 from E80 (setup) | PASS |
+| Section 5.4c Paste blocked -- any clipboard -> E80 tracks header (SS10.8) | PASSED_BUT |
+| Section 5.5 Paste blocked -- DB copy track -> DB paste | PASS |
+| Section 5.6a Delete all E80 routes (pre-step) | PASS |
+| Section 5.6b Delete all E80 groups+WPs (pre-step) | PASS |
+| Section 5.6c Delete all E80 ungrouped WPs (pre-step) | PASS |
+| Section 5.6d Route dependency check -- paste route before WPs exist on E80 (SS10.10) | PASS |
+| Section 5.7 Ancestor-wins -- accept path (SS6.2) | PASS |
+| Section 5.8 Ancestor-wins -- abort path | NOT_RUN |
+| Section 5.9 Recursive paste guard -- paste Branch into own descendant | PASS |
+| Section 5.10 Pre-flight: intra-clipboard name collision (SS10.2 Step 6) | PASS |
+| Section 5.11a Upload IsolatedWP1 to E80 (setup for name collision test) | PASS |
+| Section 5.11b Pre-flight: E80-wide name collision (SS10.2 Step 7) | PASS |
+| Section 5.12 UUID conflict -- clean create path | PASS |
+| Section 5.13 UUID conflict -- conflict dialog path | NOT_RUN |
+| Section 5.14a Menu shape -- PASTE at DB WP object node blocked | PASS |
+| Section 5.14b Menu shape -- PASTE_NEW at DB WP object node blocked | PASS |
+| Section 5.14c Menu shape -- PASTE at DB route object node blocked | PASS |
+| Section 5.14d Menu shape -- PASTE at DB track object node blocked | PASS |
+| Section 5.15a Upload IsolatedWP1 to E80 (setup) | NOT_RUN |
+| Section 5.15b Menu shape -- PASTE at E80 WP object node blocked | PASS |
+| Section 5.15c Menu shape -- PASTE_NEW at E80 WP object node blocked | PASS |
+| Section 5.16a Mixed clipboard PASTE_BEFORE at route_point (SS6.4) | PASS |
+| Section 5.16b Mixed clipboard PASTE_NEW_BEFORE at route_point (SS6.4) | PASS |
 
 ---
 
 ## Issues
 
-### §3.11 FAIL -- DELETE_TRACK via E80 Tracks header sends empty UUID
+### Section 4.1 and 4.2 FAIL -- Track UUID not preserved during E80->DB copy/cut (regression)
 
-**Observed:** Fired DELETE_TRACK (cmd=10440) on E80 Tracks header (select=header:tracks).
-Log: `queueTRACKCommand(4=GENERAL_COMMAND) uuid() extra(erase)` with EMPTY uuid.
-Followed by `ERROR - do_general: no uuid`. Tracks on E80 unchanged.
+**Observed:** Copy E80 Track1 (UUID 81b266af3f0024fa, byte[1]=B2, E80-assigned) via COPY, then
+PASTE to DB. Track appears in DB with a fresh navMate-style UUID (byte[1]=4e) instead of the
+original E80 UUID. Same failure for CUT+PASTE (Test 4.2): Track2 (81b266af3f002ffa) appears in DB
+with UUID f14eca5ee1048e1e.
 
-**Analysis:** The E80 tracks header delete path does not iterate track UUIDs the way group/route
-header deletes iterate their members. It fires a single GENERAL_COMMAND with no UUID, which fails
-the uuid-required check. The route and group header deletes call `_deleteE80GroupsAndWPs` and
-`_deleteRoutes` which loop over E80 members; the track header path needs similar iteration.
+**Analysis:** Regression: nmOpsDB.pm:695-696 correctly passes uuid=>$item->{uuid} when source=e80
+and !fresh, but insertTrack in c_db.pm did not honor the uuid parameter at the time the test was
+run. Working-tree c_db.pm has the fix ($a{uuid} // newUUID($dbh)); needs re-test after navMate
+restart to confirm.
 
-**Data state:** E80 tracks unchanged. Non-catastrophic. Test was retried after §4.0 (when tracks
-were present); confirmed same failure mode.
-
----
-
-### §3.19 PASSED_BUT -- E80 route_point PASTE_BEFORE succeeded but required Popa2 workaround
-
-**Observed:** Initial COPY of RP1 (Popa0, 314e56cc09005332) captured 2 items because Popa0 appears
-twice in the fresh-UUID route from §3.17 due to §2.14 copy-splice operations. Pre-flight fired
-"Clipboard contains duplicate route_point name 'Popa0' -- aborting". Workaround: used Popa2
-(454e11a80b002884, which is unique in the route) as source. PASTE_BEFORE Popa3 succeeded; route
-count 12->13.
-
-**Analysis:** The Popa0 duplication is a side effect of §2.14 cut-and-splice operations in the
-ORIGINAL Popa route. The fresh-UUID route from §3.17 inherits this duplication. PASTE_BEFORE
-itself works correctly; the workaround was required to avoid the pre-flight name collision.
-
-**Data state:** Fresh-UUID route has 13 WPs after the paste. Non-catastrophic.
+**Data state:** DB has Track1 (084eb796e0040fb0) and Track2 (f14eca5ee1048e1e) with navMate-style
+UUIDs instead of E80-style UUIDs. Non-catastrophic for remaining tests. Revert DB before Cycle 12.
 
 ---
 
-### §4.3 PASS -- Improvement from Cycle 9
-
-Cycle 9 §4.3 was PASSED_BUT (SS10.8 guard fired silently). Cycle 10: IMPLEMENTATION ERROR logged
-explicitly ("_pasteE80: tracks destination reached paste handler (SS10.8)"). Full PASS.
-
----
-
-### §4.4 PASS -- Runbook clarification
-
-Runbook updated: E80->DB PASTE_NEW of track is ALLOWED (SS10.3 only blocks DB->DB track copy).
-Cycle 9 §4.4 was FAIL because the test expected the operation to be blocked. Cycle 10 correctly
-treats it as PASS. New track created in DST with fresh UUID; track still on E80.
-
----
-
-### §5.4 PASSED_BUT -- Name collision fires before SS10.8 check
+### Section 5.4c PASSED_BUT -- Name collision fires before SS10.8 check
 
 **Observed:** COPY [IsolatedWP1] (BOCAS1) to clipboard; PASTE to E80 tracks header.
-Result: `ERROR - E80 already has a waypoint named 'BOCAS1' -- aborting`. E80 tracks unchanged.
+**Result:** `ERROR - E80 already has a waypoint named 'BOCAS1' -- aborting`. E80 tracks unchanged.
 
-**Analysis:** BOCAS1 was on E80 (from §5.11 setup). The E80-wide name collision guard fires
+**Analysis:** BOCAS1 was on E80 (from Section 5.11b setup). The E80-wide name collision guard fires
 before the SS10.8 (tracks-destination) guard is reached. The operation IS correctly rejected;
-SS10.8 was independently confirmed in §4.3.
+SS10.8 was independently confirmed in Section 4.3.
 
 **Data state:** E80 unchanged. Non-catastrophic.
 
----
-
-### §5.9 FAIL -- Recursive paste guard not triggered; DB corrupted
-
-**Observed:** [NestedBranch] = MandalaLogs (234e412e3104296e). [ChildBranch] = MandalaLogs/Tracks
-(984e7898480427f6). Pasted [NestedBranch] into [ChildBranch] with PASTE_NEW. No WARNING produced.
-Operation succeeded; new MandalaLogs (UUID 684e521aea0463ee) created inside MandalaLogs/Tracks,
-creating a cycle in the DB tree.
-
-**Analysis:** Same root cause as Cycle 9. The recursive paste guard in nmOps.pm/_doPaste is not
-detecting the ancestor relationship. Guard likely checks if destination UUID equals source UUID
-but does not walk the ancestor chain.
-
-**Data state:** DB has unintended cycle: 684e521aea0463ee is inside 984e7898480427f6, which is
-inside 234e412e3104296e (the pasted content). DB corrupted at this subtree. Non-catastrophic for
-remaining §5 steps. Revert DB before Cycle 11.
-
----
-
-### §5.15 PASSED_BUT -- E80 WP node paste rejected by wrong guard
-
-**Observed:** COPY [IsolatedWP1] (BOCAS1, ce4e43181f01b3ae) to clipboard. BOCAS1 was on E80 with
-same UUID. Fired PASTE and PASTE_NEW at the E80 WP node directly.
-Result both times: `ERROR - Cannot paste: destination is a descendant of an item in the clipboard`.
-E80 unchanged.
-
-**Analysis:** The UUID-match/descendant guard fires before the "individual waypoint node
-destination" IMPLEMENTATION ERROR guard. The paste is correctly rejected (E80 unchanged), but
-with a different message than the runbook expects.
-
-**Data state:** E80 unchanged. Non-catastrophic.
-
----
-
-### §5.16 PASSED_BUT -- PASTE_BEFORE blocked (PASS); PASTE_NEW_BEFORE count off by 1
-
-**Observed (PASTE_BEFORE sub-test -- PASS):** Loaded mixed clipboard (rp:[TestRoute]:[RP1] +
-[IsolatedWP1]). COPY captured 3 items (Popa0 appears twice in route). Fired PASTE_BEFORE at RP2.
-Result: `IMPLEMENTATION ERROR: _pasteDB: PASTE_BEFORE/AFTER route_point: clipboard has
-non-route_point items`. Route unchanged at 12. Guard correctly blocks mixed-clipboard PASTE_BEFORE.
-
-**Observed (PASTE_NEW_BEFORE sub-test -- PASSED_BUT):** Same mixed clipboard; fired PASTE_NEW_BEFORE
-at RP2. Clipboard contained 2 Popa0 route_point items + 1 IsolatedWP1 WP item. PASTE_NEW_BEFORE
-filtered IsolatedWP1 correctly but processed BOTH Popa0 items, inserting 2 new entries. Count
-went 12->14 instead of expected 12->13.
-
-**Analysis:** The Popa0 duplication (Popa0 at pos=0 and pos=3, from §2.14 operations) causes the
-multi-select to capture 2 route_point clipboard items for RP1. PASTE_NEW_BEFORE processes all
-route_point items in clipboard, so both Popa0 entries are inserted. This is technically correct
-behavior given the clipboard state; the +2 is a side effect of Popa0 duplication, not a bug in
-the guard logic. The critical guard (PASTE_BEFORE rejection) is confirmed working.
-
-**Data state:** TestRoute has 14 route_waypoints (was 12). Non-catastrophic.

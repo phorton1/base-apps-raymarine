@@ -1,6 +1,6 @@
 # E80 NAV Discovery Notes
 
-> **Historical engineering notes** — This document was written at the very beginning
+> **Historical engineering notes** - This document was written at the very beginning
 > of the RAYNET reverse-engineering effort, before the protocols were understood or
 > named. The terminology and packet interpretations here are early and incomplete.
 > For current protocol documentation, see the

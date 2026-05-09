@@ -1,4 +1,4 @@
-# winShark — Protocol Monitoring Control
+# winShark - Protocol Monitoring Control
 
 **[Home](../../../docs/readme.md)** --
 **[NET](../../../NET/docs/readme.md)** --
@@ -10,7 +10,7 @@
 **[winDBNAV](winDBNAV.md)** --
 **[Cables](../../../NET/docs/ethernet_cables.md)**
 
-**winShark** is the control panel for shark's active protocol monitoring — the
+**winShark** is the control panel for shark's active protocol monitoring - the
 traffic that shark's own [RAYNET](../../../NET/docs/RAYNET.md) service connections send and receive. It has no
 master on/off; individual ports are gated by their active checkbox.
 

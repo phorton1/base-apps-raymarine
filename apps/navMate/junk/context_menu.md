@@ -1,4 +1,4 @@
-# navMate — Context Menu Specification
+# navMate - Context Menu Specification
 
 **[Raymarine](../../../docs/readme.md)** --
 **[Home](readme.md)** --
@@ -23,10 +23,10 @@ they produce exactly the non-null entries specified here and suppress everything
 
 The feature decomposes into two sequential matrices:
 
-- **Matrix 1** — The initial right-click: `(panel, selection set) × command → null | clipboard state | DB/E80 change`
-- **Matrix 2** — The paste target: `(clipboard state, destination node) × {Paste, Paste New} → null | operation`
+- **Matrix 1** - The initial right-click: `(panel, selection set) x command -> null | clipboard state | DB/E80 change`
+- **Matrix 2** - The paste target: `(clipboard state, destination node) x {Paste, Paste New} -> null | operation`
 
-The clipboard state is the interface between the two matrices — the finite output vocabulary
+The clipboard state is the interface between the two matrices - the finite output vocabulary
 of Matrix 1 copy/cut operations and the input vocabulary of Matrix 2.
 
 
@@ -79,11 +79,11 @@ prefix is dropped.
 | E-HDT | header (kind=tracks)        | the tracks header node                |
 
 
-## 2. Database Context Menu — Matrix 1
+## 2. Database Context Menu - Matrix 1
 
 ### 2.1 Copy Commands
 
-Cell values name the clipboard intent set by the command. `—` = command not shown.
+Cell values name the clipboard intent set by the command. `-` = command not shown.
 All database copy operations set `source:database, cut:0`. The `cut:0` flag is implicit.
 
 Selection set codes (column headers): **WP1** = D-WP1, **WPN** = D-WPN, **RP** = D-RP,
@@ -92,28 +92,28 @@ Selection set codes (column headers): **WP1** = D-WP1, **WPN** = D-WPN, **RP** =
 
 | Command   | WP1 | WPN | RP  | RT1 | RTN | TK1 | TKN | GR1 | GRN | BR  | MXW | MX0 |
 |-----------|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|
-| COPY-WP   | WP  | —   | WP  | —   | —   | —   | —   | —   | —   | —   | —   | —   |
-| COPY-WPS  | —   | WPS | —   | WPS | WPS | —   | —   | WPS | WPS | WPS | WPS | —   |
-| COPY-GR   | —   | —   | —   | —   | —   | —   | —   | GR  | —   | —   | —   | —   |
-| COPY-GRS  | —   | —   | —   | —   | —   | —   | —   | —   | GRS | GRS | —   | —   |
-| COPY-RT   | —   | —   | —   | RT  | —   | —   | —   | —   | —   | —   | —   | —   |
-| COPY-RTS  | —   | —   | —   | —   | RTS | —   | —   | —   | —   | RTS | —   | —   |
-| COPY-TK   | —   | —   | —   | —   | —   | TK  | —   | —   | —   | —   | —   | —   |
-| COPY-TKS  | —   | —   | —   | —   | —   | —   | TKS | —   | —   | TKS | —   | —   |
-| COPY-ALL  | —   | —   | —   | —   | —   | —   | —   | —   | —   | ALL | —   | —   |
+| COPY-WP   | WP  | -   | WP  | -   | -   | -   | -   | -   | -   | -   | -   | -   |
+| COPY-WPS  | -   | WPS | -   | WPS | WPS | -   | -   | WPS | WPS | WPS | WPS | -   |
+| COPY-GR   | -   | -   | -   | -   | -   | -   | -   | GR  | -   | -   | -   | -   |
+| COPY-GRS  | -   | -   | -   | -   | -   | -   | -   | -   | GRS | GRS | -   | -   |
+| COPY-RT   | -   | -   | -   | RT  | -   | -   | -   | -   | -   | -   | -   | -   |
+| COPY-RTS  | -   | -   | -   | -   | RTS | -   | -   | -   | -   | RTS | -   | -   |
+| COPY-TK   | -   | -   | -   | -   | -   | TK  | -   | -   | -   | -   | -   | -   |
+| COPY-TKS  | -   | -   | -   | -   | -   | -   | TKS | -   | -   | TKS | -   | -   |
+| COPY-ALL  | -   | -   | -   | -   | -   | -   | -   | -   | -   | ALL | -   | -   |
 
 Notes:
-- D-RP counts as a single waypoint in `_analyzeNodes` (type=`route_point` → `$c{wp}++`), producing COPY-WP.
+- D-RP counts as a single waypoint in `_analyzeNodes` (type=`route_point` -> `$c{wp}++`), producing COPY-WP.
 - D-MX0 (mixed without waypoints, e.g. route + track selected) produces no copy commands at all.
-- D-MXW (mixed including waypoints) produces only COPY-WPS — the non-waypoint types in the selection are ignored.
+- D-MXW (mixed including waypoints) produces only COPY-WPS - the non-waypoint types in the selection are ignored.
 - D-BR produces the full five-command set: ALL + GRS + RTS + WPS + TKS.
 
 ### 2.2 Cut Commands
 
-The null/non-null pattern is identical to Copy (§2.1). All cut operations set `cut:1`.
+The null/non-null pattern is identical to Copy (Section 2.1). All cut operations set `cut:1`.
 The table is omitted to avoid redundancy; substitute `CUT-` for `COPY-` in every row
 and append `cut:1` to the clipboard state. The resulting clipboard states are defined
-in the vocabulary (§5).
+in the vocabulary (Section 5).
 
 ### 2.3 Delete Commands
 
@@ -153,11 +153,11 @@ New is driven by the right-click node type only; selection has no effect.
 | Right-click node type | Commands shown                 |
 |-----------------------|--------------------------------|
 | collection (any)      | NEW-BR, NEW-GR, NEW-RT, NEW-WP |
-| object (any)          | — (none)                       |
-| route_point           | — (none)                       |
+| object (any)          | - (none)                       |
+| route_point           | - (none)                       |
 
 
-## 3. E80 Context Menu — Matrix 1
+## 3. E80 Context Menu - Matrix 1
 
 ### 3.1 Copy Commands
 
@@ -169,26 +169,26 @@ Selection set codes: **WP1** = E-WP1, **WPN** = E-WPN, **RP** = E-RP, **RT1** = 
 
 | Command   | WP1 | WPN | RP  | RT1 | RTN | TK1 | TKN | GR1 | GRN | HDG | HDR | HDT |
 |-----------|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|
-| COPY-WP   | WP  | —   | WP  | —   | —   | —   | —   | —   | —   | —   | —   | —   |
-| COPY-WPS  | —   | WPS | —   | WPS | WPS | —   | —   | WPS | WPS | WPS | WPS | WPS |
-| COPY-GR   | —   | —   | —   | —   | —   | —   | —   | GR  | —   | —   | —   | —   |
-| COPY-GRS  | —   | —   | —   | —   | —   | —   | —   | —   | GRS | GRS | GRS | GRS |
-| COPY-RT   | —   | —   | —   | RT  | —   | —   | —   | —   | —   | —   | —   | —   |
-| COPY-RTS  | —   | —   | —   | —   | RTS | —   | —   | —   | —   | RTS | RTS | RTS |
-| COPY-TK   | —   | —   | —   | —   | —   | TK  | —   | —   | —   | —   | —   | —   |
-| COPY-TKS  | —   | —   | —   | —   | —   | —   | TKS | —   | —   | TKS | TKS | TKS |
-| COPY-ALL  | —   | —   | —   | —   | —   | —   | —   | —   | —   | ALL | ALL | ALL |
+| COPY-WP   | WP  | -   | WP  | -   | -   | -   | -   | -   | -   | -   | -   | -   |
+| COPY-WPS  | -   | WPS | -   | WPS | WPS | -   | -   | WPS | WPS | WPS | WPS | WPS |
+| COPY-GR   | -   | -   | -   | -   | -   | -   | -   | GR  | -   | -   | -   | -   |
+| COPY-GRS  | -   | -   | -   | -   | -   | -   | -   | -   | GRS | GRS | GRS | GRS |
+| COPY-RT   | -   | -   | -   | RT  | -   | -   | -   | -   | -   | -   | -   | -   |
+| COPY-RTS  | -   | -   | -   | -   | RTS | -   | -   | -   | -   | RTS | RTS | RTS |
+| COPY-TK   | -   | -   | -   | -   | -   | TK  | -   | -   | -   | -   | -   | -   |
+| COPY-TKS  | -   | -   | -   | -   | -   | -   | TKS | -   | -   | TKS | TKS | TKS |
+| COPY-ALL  | -   | -   | -   | -   | -   | -   | -   | -   | -   | ALL | ALL | ALL |
 
 Notes:
 - All three header types (HDG, HDR, HDT) produce the same five-command set because
   `_analyzeNodes` classifies them all identically (`$c{header}++`). This means the
-  routes header and tracks header each offer COPY-GRS, COPY-TKS, etc. — commands
+  routes header and tracks header each offer COPY-GRS, COPY-TKS, etc. - commands
   that are semantically irrelevant to their context. See **GAP-03**.
 - E-GR1 includes the `my_waypoints` node type, which counts as `$c{group}++`.
 
 ### 3.2 Cut Commands
 
-Null/non-null pattern is identical to E80 Copy (§3.1); substitute `CUT-` and set `cut:1`.
+Null/non-null pattern is identical to E80 Copy (Section 3.1); substitute `CUT-` and set `cut:1`.
 
 ### 3.3 Delete Commands
 
@@ -203,7 +203,7 @@ Null/non-null pattern is identical to E80 Copy (§3.1); substitute `CUT-` and se
 | track                 | DEL-TK                       | Send TRACK erase command to E80           |
 | header/routes         | DEL-RT (plural label)        | Delete all routes from E80                |
 | header/groups         | DEL-GR, DEL-GR+WPS (plural)  | Delete all groups / groups + members      |
-| header/tracks         | — (none)                     | Read-only; no delete offered              |
+| header/tracks         | - (none)                     | Read-only; no delete offered              |
 
 ### 3.4 New Commands
 
@@ -214,10 +214,10 @@ Null/non-null pattern is identical to E80 Copy (§3.1); substitute `CUT-` and se
 | my_waypoints          | NEW-WP                 |
 | group                 | NEW-WP                 |
 | route                 | NEW-RT, NEW-WP         |
-| waypoint              | — (none)               |
-| route_point           | — (none)               |
-| header/tracks         | — (read-only)          |
-| track                 | — (read-only)          |
+| waypoint              | - (none)               |
+| route_point           | - (none)               |
+| header/tracks         | - (read-only)          |
+| track                 | - (read-only)          |
 
 
 ## 4. Clipboard State Vocabulary
@@ -268,7 +268,7 @@ All valid clipboard states produced by the copy/cut matrices above. The code pre
 ## 5. Paste Compatibility Matrix (Matrix 2)
 
 **Paste** (UUID-preserving) and **Paste New** (fresh UUIDs) are shown as enabled (`Y`)
-or disabled (`—`). Disabled means `canPaste` or `canPasteNew` returns 0 — the menu
+or disabled (`-`). Disabled means `canPaste` or `canPasteNew` returns 0 - the menu
 item appears but is greyed out.
 
 ### 5.1 Database Destination
@@ -277,27 +277,27 @@ Destination node type is what was right-clicked as the paste target.
 
 | Clipboard state        | Dest node        | Paste | Paste New | Semantic                            |
 |------------------------|------------------|-------|-----------|-------------------------------------|
-| D-CP-WP / D-CP-WPS     | any database node | —     | Y         | Duplicate with fresh UUID(s)        |
-| D-CT-WP / D-CT-WPS     | any database node | Y     | —         | Move — re-home `collection_uuid`    |
-| D-CP-GR / D-CP-GRS     | collection       | —     | Y         | Duplicate group(s) + fresh UUIDs    |
-| D-CT-GR / D-CT-GRS     | collection       | Y     | —         | Move — re-home `parent_uuid`        |
-| D-CP-RT / D-CP-RTS     | collection       | —     | Y         | Duplicate route(s) + fresh WP UUIDs |
-| D-CT-RT / D-CT-RTS     | collection       | Y     | —         | Move — re-home `collection_uuid`    |
-| D-CP-TK / D-CP-TKS     | collection       | —     | —         | No paste path (copy-only is blocked)|
-| D-CT-TK / D-CT-TKS     | collection       | Y     | —         | Move — re-home `collection_uuid`    |
-| D-CP-ALL               | collection       | —     | Y         | Duplicate branch contents, fresh UUIDs |
-| D-CT-ALL               | collection       | Y     | —         | Move branch contents to new collection |
-| D-CP-ALL / D-CT-ALL    | root             | —     | —         | Root is not a schema collection        |
+| D-CP-WP / D-CP-WPS     | any database node | -     | Y         | Duplicate with fresh UUID(s)        |
+| D-CT-WP / D-CT-WPS     | any database node | Y     | -         | Move - re-home `collection_uuid`    |
+| D-CP-GR / D-CP-GRS     | collection       | -     | Y         | Duplicate group(s) + fresh UUIDs    |
+| D-CT-GR / D-CT-GRS     | collection       | Y     | -         | Move - re-home `parent_uuid`        |
+| D-CP-RT / D-CP-RTS     | collection       | -     | Y         | Duplicate route(s) + fresh WP UUIDs |
+| D-CT-RT / D-CT-RTS     | collection       | Y     | -         | Move - re-home `collection_uuid`    |
+| D-CP-TK / D-CP-TKS     | collection       | -     | -         | No paste path (copy-only is blocked)|
+| D-CT-TK / D-CT-TKS     | collection       | Y     | -         | Move - re-home `collection_uuid`    |
+| D-CP-ALL               | collection       | -     | Y         | Duplicate branch contents, fresh UUIDs |
+| D-CT-ALL               | collection       | Y     | -         | Move branch contents to new collection |
+| D-CP-ALL / D-CT-ALL    | root             | -     | -         | Root is not a schema collection        |
 | E-CP-WP / E-CP-WPS     | any database node | Y     | Y         | Download / download+duplicate       |
-| E-CT-WP / E-CT-WPS     | any database node | Y     | —         | Download + delete from E80          |
+| E-CT-WP / E-CT-WPS     | any database node | Y     | -         | Download + delete from E80          |
 | E-CP-GR / E-CP-GRS     | collection       | Y     | Y         | Download group(s)                   |
-| E-CT-GR / E-CT-GRS     | collection       | Y     | —         | Download + delete from E80          |
+| E-CT-GR / E-CT-GRS     | collection       | Y     | -         | Download + delete from E80          |
 | E-CP-RT / E-CP-RTS     | collection       | Y     | Y         | Download route(s)                   |
-| E-CT-RT / E-CT-RTS     | collection       | Y     | —         | Download + delete from E80          |
-| E-CP-TK / E-CP-TKS     | collection       | Y     | —         | Download track (no Paste New)       |
-| E-CT-TK / E-CT-TKS     | collection       | Y     | —         | Download + E80 delete               |
-| E-CP-ALL / E-CT-ALL    | collection       | Y     | —         | Download all; tracks included       |
-| any                    | non-collection   | —     | —         | Target incompatible (WP/RT/TK/GR)  |
+| E-CT-RT / E-CT-RTS     | collection       | Y     | -         | Download + delete from E80          |
+| E-CP-TK / E-CP-TKS     | collection       | Y     | -         | Download track (no Paste New)       |
+| E-CT-TK / E-CT-TKS     | collection       | Y     | -         | Download + E80 delete               |
+| E-CP-ALL / E-CT-ALL    | collection       | Y     | -         | Download all; tracks included       |
+| any                    | non-collection   | -     | -         | Target incompatible (WP/RT/TK/GR)  |
 
 Note: waypoint/waypoints intent (`canPaste` check) returns `Y` for **any** database
 destination node, not just collections. The implementation (`_pasteWaypointToDatabase`)
@@ -308,43 +308,43 @@ Groups, routes, tracks, and all require a `collection` target node at the `canPa
 
 | Clipboard state              | Dest node type              | Paste | Paste New | Semantic                   |
 |------------------------------|-----------------------------|-------|-----------|----------------------------|
-| D-CP-WP / D-CP-WPS          | header, mywp, group,        | —     | Y         | Upload+duplicate (copy)    |
+| D-CP-WP / D-CP-WPS          | header, mywp, group,        | -     | Y         | Upload+duplicate (copy)    |
 |                              | route, waypoint, route_pt   |       |           |                            |
-| D-CT-WP / D-CT-WPS          | any E80 node                | —     | —         | DB→E80 cut blocked         |
-| D-CT-GR / D-CT-GRS          | any E80 node                | —     | —         | DB→E80 cut blocked         |
-| D-CT-RT / D-CT-RTS          | any E80 node                | —     | —         | DB→E80 cut blocked         |
-| D-CT-TK / D-CT-TKS          | any E80 node                | —     | —         | DB→E80 cut blocked         |
-| D-CT-ALL                    | any E80 node                | —     | —         | DB→E80 cut blocked         |
+| D-CT-WP / D-CT-WPS          | any E80 node                | -     | -         | DB->E80 cut blocked         |
+| D-CT-GR / D-CT-GRS          | any E80 node                | -     | -         | DB->E80 cut blocked         |
+| D-CT-RT / D-CT-RTS          | any E80 node                | -     | -         | DB->E80 cut blocked         |
+| D-CT-TK / D-CT-TKS          | any E80 node                | -     | -         | DB->E80 cut blocked         |
+| D-CT-ALL                    | any E80 node                | -     | -         | DB->E80 cut blocked         |
 | E-CP-WP / E-CP-WPS          | header, mywp, group,        | Y     | Y         | Upload / upload+duplicate  |
 |                              | route, waypoint, route_pt   |       |           |                            |
-| E-CT-WP / E-CT-WPS          | same set as above           | Y     | —         | Upload + delete from E80   |
+| E-CT-WP / E-CT-WPS          | same set as above           | Y     | -         | Upload + delete from E80   |
 | D-CP-GR / D-CP-GRS          | header/groups               | Y     | Y         | Upload group(s) (copy)     |
 | E-CP-GR / E-CP-GRS          | header/groups               | Y     | Y         | Upload group(s)            |
-| E-CT-GR / E-CT-GRS          | header/groups               | Y     | —         | Upload + delete from E80   |
+| E-CT-GR / E-CT-GRS          | header/groups               | Y     | -         | Upload + delete from E80   |
 | D-CP-RT / D-CP-RTS          | header/routes               | Y     | Y         | Upload route(s) (copy)     |
 | E-CP-RT / E-CP-RTS          | header/routes               | Y     | Y         | Upload route(s)            |
-| E-CT-RT / E-CT-RTS          | header/routes               | Y     | —         | Upload + delete from E80   |
-| any TK intent                | any E80 node                | —     | —         | Tracks read-only on E80    |
-| D-CP-ALL / E-CP-ALL         | root                        | Y     | —         | Upload all; tracks skipped |
-| E-CT-ALL                    | root                        | Y     | —         | Upload all + delete source |
-| any ALL intent               | non-root E80 node           | —     | —         | Root is the only ALL target|
-| any                          | header/tracks or track      | —     | —         | Target incompatible        |
+| E-CT-RT / E-CT-RTS          | header/routes               | Y     | -         | Upload + delete from E80   |
+| any TK intent                | any E80 node                | -     | -         | Tracks read-only on E80    |
+| D-CP-ALL / E-CP-ALL         | root                        | Y     | -         | Upload all; tracks skipped |
+| E-CT-ALL                    | root                        | Y     | -         | Upload all + delete source |
+| any ALL intent               | non-root E80 node           | -     | -         | Root is the only ALL target|
+| any                          | header/tracks or track      | -     | -         | Target incompatible        |
 
-Note: `D-CT-*` → E80 is blocked entirely by `canPaste` (`cut=1 && source=database && panel=e80`).
+Note: `D-CT-*` -> E80 is blocked entirely by `canPaste` (`cut=1 && source=database && panel=e80`).
 The database is the authoritative repository; uploading to E80 is always a copy operation.
-E80→DB cut (download + erase from E80) remains fully supported.
+E80->DB cut (download + erase from E80) remains fully supported.
 
 
 ## 6. Operation Semantics
 
-### 6.1 Paste to Database — E80 Source (download)
+### 6.1 Paste to Database - E80 Source (download)
 
 UUID-preserving merge into the navMate DB. For each item:
-- UUID not in DB → insert record in target collection.
-- UUID in DB, data identical → no-op (`no_change`).
-- UUID in DB, data differs → conflict dialog: Replace / Skip / Replace All / Skip All / Abort.
+- UUID not in DB -> insert record in target collection.
+- UUID in DB, data identical -> no-op (`no_change`).
+- UUID in DB, data differs -> conflict dialog: Replace / Skip / Replace All / Skip All / Abort.
 
-Groups: group collection created under target if absent (merge semantics — existing
+Groups: group collection created under target if absent (merge semantics - existing
 members preserved). Member WPs merged individually per above.
 
 Routes: member WPs merged into target collection individually. Route record inserted or
@@ -353,10 +353,10 @@ updated. Route waypoint list rebuilt as a set (cleared and replaced from clipboa
 Cut variant: after each item is successfully pasted (result not `skipped` or `aborted`),
 the source item is deleted from E80 via WPMGR commands.
 
-### 6.2 Paste to Database — Database Source, Cut (move)
+### 6.2 Paste to Database - Database Source, Cut (move)
 
 Re-homes the object to the new collection without changing its UUID. No conflict check.
-No separate delete step — the move IS the cut.
+No separate delete step - the move IS the cut.
 
 - Waypoints: `UPDATE waypoints SET collection_uuid = ? WHERE uuid = ?`
 - Groups: `UPDATE collections SET parent_uuid = ? WHERE uuid = ?`
@@ -372,7 +372,7 @@ collection they currently occupy.
 ### 6.3 Paste New to Database
 
 Always inserts with fresh navMate UUIDs regardless of source. No conflict check.
-Only available for copy (not cut) — `canPasteNew` returns 0 when `cut:1`.
+Only available for copy (not cut) - `canPasteNew` returns 0 when `cut:1`.
 
 Routes: each member waypoint also receives a fresh UUID; the new route record
 references the new WP UUIDs.
@@ -419,7 +419,7 @@ Context menu operations are driven programmatically via the `/api/test` HTTP end
 (port 9883). The HTTP thread encodes the query params as JSON and stores them in a
 shared variable; `winMain::onIdle` picks up the command within ~20 ms and calls
 `nmTest::dispatchTestCommand`, which walks the tree to set the selection and right-click
-node, then calls `onContextMenuCommand` directly — identical to a real right-click +
+node, then calls `onContextMenuCommand` directly - identical to a real right-click +
 menu pick. Results appear in the ring buffer.
 
 ```
@@ -481,13 +481,13 @@ running any tests.
 #### 7.2.1 Restore navMate.db
 
 Git-revert `C:/dat/Rhapsody/navMate.db` to the committed test baseline, then reload:
-Database → Refresh in navMate.
+Database -> Refresh in navMate.
 
 #### 7.2.2 Clear the E80
 
 The E80 must contain no waypoints, groups, routes, or tracks. Use the test machinery
 or the winE80 context menu. After each dispatch, wait for `dialog_state: idle`
-(see §7.2.4 before proceeding):
+(see Section 7.2.4 before proceeding):
 
 ```
 # Delete all routes
@@ -499,7 +499,7 @@ curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_c
 curl -s "http://localhost:9883/api/command?cmd=dialog_state"   # poll until idle
 
 # If ungrouped waypoints remain (wps > 0, groups = 0), clear the My Waypoints node.
-# NOTE: the node key is 'my_waypoints' — no 'header:' prefix.
+# NOTE: the node key is 'my_waypoints' - no 'header:' prefix.
 # 'header:my_waypoints' will fail (selected 0 nodes).
 curl -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10421&suppress=1"
 curl -s "http://localhost:9883/api/command?cmd=dialog_state"   # poll until idle
@@ -557,7 +557,7 @@ for ($i = 1; $i -le 20; $i++) {
     Start-Sleep 1
 }
 if ($i -gt 20) {
-    [console]::beep(800, 200)   # stuck — inspect screen; optionally close_dialog
+    [console]::beep(800, 200)   # stuck - inspect screen; optionally close_dialog
 }
 ```
 

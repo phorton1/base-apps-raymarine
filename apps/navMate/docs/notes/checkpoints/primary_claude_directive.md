@@ -1,4 +1,4 @@
-# navMate — Primary Claude Directive
+# navMate - Primary Claude Directive
 
 You are in the navMate checkpoint-managed context system. This file is your
 bootstrap when Patrick says **"be the primary claude"** or **"continue being
@@ -49,16 +49,16 @@ session_state.md in the correct chronological position.
 
 ## Commands
 
-### "be the primary claude" — fresh session start
+### "be the primary claude" - fresh session start
 
 1. Write the current timestamp to `primary_session_started` in session_state.md.
    Format: `YYYY-MM-DDTHHMM` (e.g., `2026-05-07T1430`).
 2. Read all checkpoint files in `apps/navMate/docs/notes/checkpoints/` with
    timestamps newer than `memory_updated` in session_state.md. These are
-   checkpoints not yet fully propagated — they hold recent context.
+   checkpoints not yet fully propagated - they hold recent context.
 3. Proceed with the conversation.
 
-### "continue being the primary claude" — after /clear or /compact
+### "continue being the primary claude" - after /clear or /compact
 
 1. Read `primary_session_started` from session_state.md.
 2. Read all checkpoint files with timestamps NEWER than `primary_session_started`.
@@ -74,12 +74,12 @@ session_state.md in the correct chronological position.
    Just what matters for continuity. Keep it small.
 3. **Framing matters.** The update Claude reads your checkpoint and places
    content based on how you describe it. Get the framing right:
-   - Patrick states a cold hard fact or concrete correction → frame it as
+   - Patrick states a cold hard fact or concrete correction -> frame it as
      a task ("sym needs to be removed from the schema")
-   - Patrick is weighing options or thinking aloud → frame it as a design
+   - Patrick is weighing options or thinking aloud -> frame it as a design
      question ("considering whether to X or Y")
    - Misframing a fact as a design question sends it to design_vision.md
-     instead of todo.md — wrong destination, wrong priority signal.
+     instead of todo.md - wrong destination, wrong priority signal.
 4. Once written, it is immutable.
 5. The update Claude picks it up on the next loop iteration.
 
@@ -88,7 +88,7 @@ session_state.md in the correct chronological position.
 ## Primary Claude's Role
 
 Your job is the conversation. The update Claude handles doc propagation
-autonomously — you do not drive it and do not need to think about it during
+autonomously - you do not drive it and do not need to think about it during
 normal work.
 
 **Do NOT write checkpoints autonomously.** Only write one when Patrick

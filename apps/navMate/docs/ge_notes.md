@@ -1,4 +1,4 @@
-# navMate — Google Earth Notes
+# navMate - Google Earth Notes
 
 **[Raymarine](../../../docs/readme.md)** --
 **[Home](readme.md)** --
@@ -19,23 +19,23 @@ changes into navMate.
 
 ## Round-Trip Workflow
 
-1. **Export from navMate** — Database → Export KML produces `navMate.kml`, containing all
+1. **Export from navMate** - Database -> Export KML produces `navMate.kml`, containing all
    navMate data under a single `<Folder name="navMate">` inside a `<Document>` wrapper.
 
-2. **Open in GE** — GE loads the file into Temporary Places as a Document node
+2. **Open in GE** - GE loads the file into Temporary Places as a Document node
    containing the navMate Folder.
 
-3. **Edit in GE** — make changes within the navMate Folder (see Safe and Unsafe
+3. **Edit in GE** - make changes within the navMate Folder (see Safe and Unsafe
    Operations below).
 
-4. **Re-export from GE** — right-click the **navMate Folder** (not the Document
-   wrapper) → Save Place As → `navMate.kml`. Always export the Folder, not the Document.
+4. **Re-export from GE** - right-click the **navMate Folder** (not the Document
+   wrapper) -> Save Place As -> `navMate.kml`. Always export the Folder, not the Document.
 
-5. **Re-import into navMate** — File → Import KML reconciles the KML against the
+5. **Re-import into navMate** - File -> Import KML reconciles the KML against the
    existing database using embedded `nm_uuid` tags. New objects are created; existing
    objects are updated.
 
-6. **Version management** — before replacing the active navMate Folder in GE My Places,
+6. **Version management** - before replacing the active navMate Folder in GE My Places,
    rename the old one (e.g., append the date) so it can be restored if needed.
 
 ## Safe Operations in GE
@@ -43,13 +43,13 @@ changes into navMate.
 The following operations within the navMate GE Folder produce results navMate can
 correctly reconcile on re-import:
 
-- **Edit an existing item's name** — `nm_uuid` identifies it; the name update
+- **Edit an existing item's name** - `nm_uuid` identifies it; the name update
   propagates on re-import
-- **Move an existing waypoint's pin** — coordinate update propagates via UUID match
-- **Edit a color or style** — color update propagates
-- **Create new Placemarks or Folders** anywhere within the navMate hierarchy — items
+- **Move an existing waypoint's pin** - coordinate update propagates via UUID match
+- **Edit a color or style** - color update propagates
+- **Create new Placemarks or Folders** anywhere within the navMate hierarchy - items
   without `nm_uuid` are treated as new objects and receive fresh UUIDs on re-import
-- **Reorder waypoints within a route Folder** — re-import reads order from KML sequence
+- **Reorder waypoints within a route Folder** - re-import reads order from KML sequence
 
 ## Unsafe Operations in GE
 
@@ -59,7 +59,7 @@ correctly reconcile on re-import:
 | **Delete any item** | Re-import is additive; GE deletions are silently ignored. The DB record survives untouched. |
 | **Edit track LineString geometry** | Track point geometry is authoritative in the navMate DB. On re-import of an existing track, point coordinates are not replaced from the KML. See Track Editing below. |
 | **Move route-member waypoints out of their route Folder** | Breaks the route structure on re-import. |
-| **Move items between folders without intent** | Changes the owning collection on re-import — the new parent Folder's UUID becomes the object's collection. |
+| **Move items between folders without intent** | Changes the owning collection on re-import - the new parent Folder's UUID becomes the object's collection. |
 
 ## The Additive Asymmetry
 
@@ -76,7 +76,7 @@ the DB record remains. The next re-export restores the object to GE.
 GE allows editing LineString geometry (track paths) through its geometry editor.
 This is **not part of the navMate/GE workflow**. Track geometry is authoritative
 in the navMate DB, sourced from hardware (E80 TRACK protocol or CF card). Editing
-track paths in GE will not survive re-import — existing track point coordinates
+track paths in GE will not survive re-import - existing track point coordinates
 are not replaced from the KML.
 
 Track geometry editing (trim, split, join) is planned as a navMate application

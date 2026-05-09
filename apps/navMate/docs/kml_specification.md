@@ -1,4 +1,4 @@
-# navMate — KML Specification
+# navMate - KML Specification
 
 **[Raymarine](../../../docs/readme.md)** --
 **[Home](readme.md)** --
@@ -49,12 +49,12 @@ Style IDs follow the pattern:
 nm{V}_{type}_{color}
 ```
 
-- `V` — `$KML_STYLE_VERSION`, a small integer constant in `nmKML.pm`; incremented on
+- `V` - `$KML_STYLE_VERSION`, a small integer constant in `nmKML.pm`; incremented on
   any change to style structure, element attributes, or icon URLs
-- `type` — one of: `track`, `route`, `nav`, `nav_sm`, `label`
-- `color` — the 8-character `aabbggrr` hex string from the DB
+- `type` - one of: `track`, `route`, `nav`, `nav_sm`, `label`
+- `color` - the 8-character `aabbggrr` hex string from the DB
 
-Example: `nm1_track_ff0000ff` — version-1 style for a red track.
+Example: `nm1_track_ff0000ff` - version-1 style for a red track.
 
 Embedding the version in the style ID ensures that if two versions of the navMate
 Folder coexist in GE simultaneously, GE cannot misapply a style from one version
@@ -81,11 +81,11 @@ Only `wht-blank.png` is used as an icon image. Other GE icon URLs found in the s
 ## Color Encoding
 
 Colors are stored in the navMate database as `TEXT` in KML/GE native `aabbggrr`
-format (alpha-blue-green-red, 8 hex chars). This is GE's byte order — not `#aarrggbb`.
+format (alpha-blue-green-red, 8 hex chars). This is GE's byte order - not `#aarrggbb`.
 The stored value is used directly in KML `<color>` elements with no conversion.
 
 At the E80 transport boundary, `_abgrToRouteColor(color)` converts to the nearest
-E80 color index 0–5.
+E80 color index 0-5.
 
 ## ExtendedData Tags
 
@@ -109,7 +109,7 @@ All exported features carry navMate metadata in `<ExtendedData>`:
 
 ## Object Mapping
 
-### Collections → Folders
+### Collections -> Folders
 
 Each navMate collection maps to a KML `<Folder>`. The collection hierarchy maps
 directly to the Folder nesting hierarchy.
@@ -125,7 +125,7 @@ directly to the Folder nesting hierarchy.
 </Folder>
 ```
 
-### Waypoints → Point Placemarks
+### Waypoints -> Point Placemarks
 
 ```xml
 <Placemark>
@@ -141,7 +141,7 @@ directly to the Folder nesting hierarchy.
 </Placemark>
 ```
 
-### Routes → Folders
+### Routes -> Folders
 
 Routes are represented as Folders so GE displays both the route line and the
 individual waypoint pins simultaneously. A route Folder is **not** a collection:
@@ -157,7 +157,7 @@ not recursed into as a collection.
     <Data name="nm_type"><value>route</value></Data>
   </ExtendedData>
 
-  <!-- Display LineString — generated from ordered route_waypoints; not stored in DB -->
+  <!-- Display LineString - generated from ordered route_waypoints; not stored in DB -->
   <Placemark>
     <name>Route Name</name>
     <styleUrl>#nm1_route_ff0000ff</styleUrl>
@@ -190,7 +190,7 @@ Route geometry (the LineString) is generated from ordered `route_waypoints` at e
 time. It is not stored in the DB. On re-import of an existing route, the LineString
 coordinates are not used; the ordered waypoint references rebuild the geometry.
 
-### Tracks → LineString Placemarks
+### Tracks -> LineString Placemarks
 
 ```xml
 <Placemark>
@@ -218,7 +218,7 @@ On re-import, `nm_uuid` is the primary identity key:
 | `nm_uuid` in DB, no `nm_ref` | Update name, color, parent collection from KML |
 | `nm_uuid` in DB, `nm_ref=1` | Append to `route_waypoints`; do not create or update waypoint record |
 | `nm_uuid` absent from DB | Create new record with fresh UUID |
-| Same `nm_uuid` twice, neither has `nm_ref` | Normalization error — flag and skip second occurrence |
+| Same `nm_uuid` twice, neither has `nm_ref` | Normalization error - flag and skip second occurrence |
 
 ### Track geometry on re-import
 

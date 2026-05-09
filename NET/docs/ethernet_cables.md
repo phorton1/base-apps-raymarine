@@ -1,4 +1,4 @@
-# SeatalkHS — E80/E120 Ethernet Cables
+# SeatalkHS - E80/E120 Ethernet Cables
 
 **[Home](../../docs/readme.md)** --
 **[NET](readme.md)** --

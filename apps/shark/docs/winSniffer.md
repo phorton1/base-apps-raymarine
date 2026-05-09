@@ -1,4 +1,4 @@
-# winSniffer — Packet Sniffer Control
+# winSniffer - Packet Sniffer Control
 
 **[Home](../../../docs/readme.md)** --
 **[NET](../../../NET/docs/readme.md)** --
@@ -48,7 +48,7 @@ Two read-only columns at the right update live while the sniffer is running:
 | count      | Total packets captured by tshark for this port |
 | shark/self | Packets on this port that originated from shark itself |
 
-These counters increment regardless of the active checkbox state — tshark captures
+These counters increment regardless of the active checkbox state - tshark captures
 all matching traffic whether or not shark is processing it for display.
 
 ## Relationship to winShark

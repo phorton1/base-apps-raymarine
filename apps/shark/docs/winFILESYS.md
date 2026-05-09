@@ -1,4 +1,4 @@
-# winFILESYS — CF Card File Browser
+# winFILESYS - CF Card File Browser
 
 **[Home](../../../docs/readme.md)** --
 **[NET](../../../NET/docs/readme.md)** --
@@ -40,11 +40,11 @@ sort column.
 
 ## Navigation and download
 
-- **Double-click a directory** — navigate into it
-- **Double-click UP ..** — navigate to the parent directory
-- **Double-click a file** — opens a Save As dialog and downloads the file;
+- **Double-click a directory** - navigate into it
+- **Double-click UP ..** - navigate to the parent directory
+- **Double-click a file** - opens a Save As dialog and downloads the file;
   a progress dialog appears for files larger than 1 MB
-- **Right-click** — context menu with a **Download** option for downloading
+- **Right-click** - context menu with a **Download** option for downloading
   multiple selected items. Selecting a mix of files and directories triggers
   a folder selection dialog followed by a recursive download with a progress
   dialog tracking directories traversed and files downloaded

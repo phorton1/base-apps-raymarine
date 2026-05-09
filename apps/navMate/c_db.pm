@@ -571,7 +571,7 @@ sub appendRouteWaypoint
 sub insertTrack
 {
 	my ($dbh, %a) = @_;
-	my $uuid = newUUID($dbh);
+	my $uuid = $a{uuid} // newUUID($dbh);
 	$dbh->do(qq{
 		INSERT INTO tracks
 			(uuid, name, color, ts_start, ts_end, ts_source,

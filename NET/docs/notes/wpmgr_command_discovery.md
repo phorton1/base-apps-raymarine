@@ -1,4 +1,4 @@
-# WPMGR — Early Command Discovery Notes
+# WPMGR - Early Command Discovery Notes
 
 Raw discovery notes from early WPMGR protocol analysis, predating the
 formalized command constants in e_wp_defs.pm. Command names here (CREATE,

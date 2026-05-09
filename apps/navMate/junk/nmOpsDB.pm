@@ -182,7 +182,7 @@ sub _deleteDatabaseBranch
 	if (!isBranchDeleteSafe($dbh, $uuid))
 	{
 		disconnectDB($dbh);
-		warning(0, 0, "DELETE BRANCH '$name': blocked — member waypoint(s) referenced by external route(s)");
+		warning(0, 0, "DELETE BRANCH '$name': blocked - member waypoint(s) referenced by external route(s)");
 		return;
 	}
 	disconnectDB($dbh);
@@ -711,7 +711,7 @@ sub _pasteTrackToDatabase
 
 
 #----------------------------------------------------
-# Paste New — always fresh UUIDs, no conflict check
+# Paste New - always fresh UUIDs, no conflict check
 #----------------------------------------------------
 
 sub _insertFreshWaypoint
@@ -830,7 +830,7 @@ sub _pasteNewRouteToDatabase
 
 
 #----------------------------------------------------
-# Cut — source deletion after successful paste
+# Cut - source deletion after successful paste
 #----------------------------------------------------
 
 sub _cutDatabaseWaypoint
@@ -841,7 +841,7 @@ sub _cutDatabaseWaypoint
 	if (getWaypointRouteRefCount($dbh, $uuid) > 0)
 	{
 		disconnectDB($dbh);
-		warning(0,0,"_cutDatabaseWaypoint $uuid: in route(s) — not removed from source");
+		warning(0,0,"_cutDatabaseWaypoint $uuid: in route(s) - not removed from source");
 		return;
 	}
 	deleteWaypoint($dbh, $uuid);
@@ -861,7 +861,7 @@ sub _cutDatabaseGroup
 	if ($remaining > 0)
 	{
 		disconnectDB($dbh);
-		warning(0, 0, "_cutDatabaseGroup $uuid: $remaining member(s) still present (in route?) — group not removed from source");
+		warning(0, 0, "_cutDatabaseGroup $uuid: $remaining member(s) still present (in route?) - group not removed from source");
 		return;
 	}
 	deleteCollection($dbh, $uuid);

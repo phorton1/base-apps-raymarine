@@ -1,4 +1,4 @@
-# winDBNAV — Live Navigation Data
+# winDBNAV - Live Navigation Data
 
 **[Home](../../../docs/readme.md)** --
 **[NET](../../../NET/docs/readme.md)** --
@@ -18,7 +18,7 @@ There are no user controls beyond column sorting.
 ![winDBNAV](images/winDBNAV.png)
 
 Above you can see, for example, that the LATLON fields are shown in red, indicating
-they have recently changed — which is useful for probing the protocol by changing
+they have recently changed - which is useful for probing the protocol by changing
 E80 state and observing which fields respond.
 
 ## Columns
@@ -40,7 +40,7 @@ Three field name patterns receive special formatting in the VALUE column:
 
 | Pattern | Format |
 | ------- | ------ |
-| `*latLon*` | Decimal degrees plus degrees-minutes: `9.34492 -82.24205 == 9°20.695 -82°14.523` |
+| `*latLon*` | Decimal degrees plus degrees-minutes: `9.34492 -82.24205 == 9deg20.695 -82deg14.523` |
 | `*northEast*` | Raw E80 integer values plus converted lat/lon in degrees-minutes |
 | `*WindAngle*` | Degrees plus port/starboard notation: `0.0 == 0.0S 359.0T 3G` |
 

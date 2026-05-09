@@ -1,4 +1,4 @@
-# FILESYS — CF Card Filesystem Protocol
+# FILESYS - CF Card Filesystem Protocol
 
 **[Home](../../docs/readme.md)** --
 **[NET](readme.md)** --
@@ -14,7 +14,7 @@
 
 **FILESYS** provides read access to the CF card filesystem on the E80. It operates
 over UDP on port **2049**, service_id **5**. All known operations are read-only
-in practice — see the critical note below about ARCHIVE.FSH.
+in practice - see the critical note below about ARCHIVE.FSH.
 
 Func(5) is advertised by RAYDP over multicast on 224.0.0.1:5800 as the following bytes
 
@@ -106,8 +106,8 @@ The string is card-specific and semi-persistent.
 The reply contains a human-readable ASCII string starting at byte 20
 (with 4 leading spaces):
 
-    "0014910F06D62062"  — RAY_DATA CF card
-    "0014802A08W79223"  — Caribbean Navionics CF card
+    "0014910F06D62062"  - RAY_DATA CF card
+    "0014802A08W79223"  - Caribbean Navionics CF card
 
 CMD_CARD_ID has never been observed to fail with a well-formed packet.
 
@@ -270,7 +270,7 @@ If the file is not found or the request fails, the reply will not contain the Su
 
 FILESYS implements an advisory locking scheme via CMD_LOCK (07) and CMD_UNLOCK (08):
 
-- Call CMD_UNLOCK first. If it returns an error, no lock is held — you are free to
+- Call CMD_UNLOCK first. If it returns an error, no lock is held - you are free to
   call CMD_LOCK (which always succeeds).
 - CMD_UNLOCK succeeds as many times as CMD_LOCK was called, then returns an error.
 - Whether LOCK actually prevents the E80 from writing to the CF card is unknown.
@@ -284,7 +284,7 @@ FILESYS replies are sent to the listener port encoded in each request:
 | 18432 | FILE_RNS       | RNS's listener port           |
 | 18433 | MY_FILE        | shark's listener port         |
 
-These ports are not advertised by RAYDP — they are empirical values observed
+These ports are not advertised by RAYDP - they are empirical values observed
 in RNS traffic (18432) and chosen for the shark implementation (18433).
 
 ## Critical Note: ARCHIVE.FSH
@@ -299,7 +299,7 @@ Note that malformed packets will crash the E80 and will likely crash RNS as well
 
 ## Implementation State
 
-All 10 commands are identified. Commands 0x00–0x02 and 0x09 are confirmed working.
+All 10 commands are identified. Commands 0x00-0x02 and 0x09 are confirmed working.
 CMD_UNKNOWN3 (0x03) was never observed to produce a response. Write-like operations
 (create, delete, modify) have not been observed from RNS and are not implemented.
 

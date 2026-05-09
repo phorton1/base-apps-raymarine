@@ -141,14 +141,14 @@ sub doRefresh
 
 	if (!($wpmgr && $track))
 	{
-		okDialog($parent, "E80 not connected — cannot refresh.", "Refresh E80");
+		okDialog($parent, "E80 not connected - cannot refresh.", "Refresh E80");
 		return;
 	}
 
 	if ($apps::raymarine::NET::d_WPMGR::query_in_progress ||
 	    $apps::raymarine::NET::d_TRACK::query_in_progress)
 	{
-		okDialog($parent, "A query is already in progress — please wait.", "Refresh E80");
+		okDialog($parent, "A query is already in progress - please wait.", "Refresh E80");
 		return;
 	}
 

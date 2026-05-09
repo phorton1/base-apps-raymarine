@@ -89,7 +89,7 @@ html, body { margin: 0; padding: 0; height: 100%; }
 }
 .nm-rp-name { font-size: 10px; }
 
-/* Hover info panel — top right, body-level so map container can't clip it */
+/* Hover info panel  -  top right, body-level so map container can't clip it */
 #nm-info {
     position: absolute;
     top: 10px;

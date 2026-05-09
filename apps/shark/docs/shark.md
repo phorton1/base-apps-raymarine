@@ -1,4 +1,4 @@
-# shark — The SeatalkHS Engineering Tool
+# shark - The SeatalkHS Engineering Tool
 
 **[Home](../../../docs/readme.md)** --
 **[NET](../../../NET/docs/readme.md)** --
@@ -132,11 +132,11 @@ into a serial terminal and processed by `handleSerialCommand()`.
 
 | Panel       | Description                                        |
 | ----------- | -------------------------------------------------- |
-| [winShark](winShark.md)    | Protocol monitoring control — per-port active/log/only checkboxes |
-| [winSniffer](winSniffer.md)  | tshark sniffer control — per-port active/log/only/self checkboxes and live packet counts |
-| [winRAYDP](winRAYDP.md)    | Live RAYDP service discovery — connect/spawn controls per advertised service |
-| [winFILESYS](winFILESYS.md)  | CF card file browser — directory navigation and file download |
-| [winDBNAV](winDBNAV.md)    | Live navigation data — decoded DBNAV multicast field values |
+| [winShark](winShark.md)    | Protocol monitoring control - per-port active/log/only checkboxes |
+| [winSniffer](winSniffer.md)  | tshark sniffer control - per-port active/log/only/self checkboxes and live packet counts |
+| [winRAYDP](winRAYDP.md)    | Live RAYDP service discovery - connect/spawn controls per advertised service |
+| [winFILESYS](winFILESYS.md)  | CF card file browser - directory navigation and file download |
+| [winDBNAV](winDBNAV.md)    | Live navigation data - decoded DBNAV multicast field values |
 
 ## Probe System
 

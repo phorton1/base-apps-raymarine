@@ -26,7 +26,7 @@ for my $wp (@{$d->{waypoints}}) {
     push @{$group_wps{$cid}}, $wp;
 }
 
-# Navigation/Routes UUID — exclude groups under this branch
+# Navigation/Routes UUID  -  exclude groups under this branch
 my $nav_routes = 'ac4e2c500600b9aa';
 
 sub under_nav {

@@ -90,7 +90,7 @@ sub _treeChildNodes
 
 sub _deconflictE80Name
 	# Returns a name that won't clash with existing E80 names or $pending_names.
-	# $hash_name: 'waypoints' (default), 'groups', or 'routes' — which WPMGR hash to check.
+	# $hash_name: 'waypoints' (default), 'groups', or 'routes' - which WPMGR hash to check.
 	# Appends " (2)", " (3)", ... until the name is unique. Logs any rename.
 	# Always records the chosen name in $pending_names if provided.
 {
@@ -553,8 +553,8 @@ sub _deleteE80Tracks
 sub _pasteOneWaypointToE80
 	# UUID-preserving inner helper for paste-to-E80.
 	# Returns: 'created', 'replaced', 'skipped', 'no_change', 'aborted'.
-	# $pending_uuids: hashref — UUIDs queued in this pass; avoids double-queue in _pasteAllToE80.
-	# $pending_names: hashref — lc(name)=>1 for names already used; avoids E80 dup-name reject.
+	# $pending_uuids: hashref - UUIDs queued in this pass; avoids double-queue in _pasteAllToE80.
+	# $pending_names: hashref - lc(name)=>1 for names already used; avoids E80 dup-name reject.
 {
 	my ($wpmgr, $tree, $item, $policy_ref, $title, $progress, $pending_uuids, $pending_names) = @_;
 	my $wp   = $item->{data};
@@ -1157,7 +1157,7 @@ sub _pasteNewRouteToE80
 
 
 #----------------------------------------------------
-# Cut — source deletion after successful paste
+# Cut - source deletion after successful paste
 #----------------------------------------------------
 
 sub _cutE80Waypoint

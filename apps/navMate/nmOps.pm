@@ -562,10 +562,37 @@ sub _doPaste
 
 	my $source = $cb->{source} // '';
 
+	# PASTE_BEFORE/AFTER on a root-level collection has no parent to insert into
+	if (($cmd_id == $CTX_CMD_PASTE_BEFORE    || $cmd_id == $CTX_CMD_PASTE_AFTER ||
+	     $cmd_id == $CTX_CMD_PASTE_NEW_BEFORE || $cmd_id == $CTX_CMD_PASTE_NEW_AFTER)
+	 && ($right_click_node->{type} // '') eq 'collection')
+	{
+		my $dbh = connectDB();
+		if ($dbh)
+		{
+			my $rec = getCollection($dbh, ($right_click_node->{data} // {})->{uuid} // '');
+			disconnectDB($dbh);
+			if ($rec && !defined $rec->{parent_uuid})
+			{
+				error("Cannot paste before/after a root-level branch -- use Paste to add items to it");
+				return;
+			}
+		}
+	}
+
 	# D-CT-DB => E80 is always rejected
 	if ($panel eq 'e80' && $cb->{cut_flag} && $source eq 'database')
 	{
 		error("Cannot paste a database Cut to E80");
+		return;
+	}
+
+	# SS10.8: E80 tracks header is not a valid paste destination
+	if ($panel eq 'e80'
+	 && ($right_click_node->{type} // '') eq 'header'
+	 && ($right_click_node->{kind} // '') eq 'tracks')
+	{
+		error("Cannot paste to E80 tracks header -- tracks are read-only");
 		return;
 	}
 

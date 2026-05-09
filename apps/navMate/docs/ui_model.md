@@ -1,4 +1,4 @@
-# navMate — UI Model
+# navMate - UI Model
 
 **[Raymarine](../../../docs/readme.md)** --
 **[Home](readme.md)** --
@@ -14,19 +14,19 @@
 
 navMate runs three UI surfaces within a single process:
 
-- **winDatabase** — navMate database tree: browse, edit, and upload collections
-- **winE80** — live E80 device tree: view and delete routes, groups, and waypoints
-- **Leaflet canvas** — geographic map view (partially implemented)
+- **winDatabase** - navMate database tree: browse, edit, and upload collections
+- **winE80** - live E80 device tree: view and delete routes, groups, and waypoints
+- **Leaflet canvas** - geographic map view (partially implemented)
 
 winDatabase and winE80 are the operative UI. They open as separate panels inside
 the main notebook frame and together form a two-window transfer interface: items
-can be uploaded from Database → E80, and items can be deleted from either side
+can be uploaded from Database -> E80, and items can be deleted from either side
 independently. The Leaflet canvas is a planned third surface; the architectural
 design is described below but it does not exist yet.
 
 ---
 
-## winDatabase — Collection Tree
+## winDatabase - Collection Tree
 
 `winDatabase.pm` presents the navMate SQLite database as a lazily-loaded wx tree.
 Top-level nodes are root collections; child nodes are loaded on first expand
@@ -50,16 +50,16 @@ Both windows are `Wx::SplitterWindow` with a wx tree on the left. Selecting a
 tree node populates the right pane. Multi-select (`wxTR_MULTIPLE`) is supported
 in both windows; Ctrl+click and Shift+click work normally.
 
-**winE80 right pane** — a single read-only monospaced detail `TextCtrl`.
+**winE80 right pane** - a single read-only monospaced detail `TextCtrl`.
 
-**winDatabase right pane** — a nested `Wx::SplitterWindow` (`right_split`) with
+**winDatabase right pane** - a nested `Wx::SplitterWindow` (`right_split`) with
 an editor panel on top and the monospaced detail `TextCtrl` on the bottom (sash
 opens at `$ED_INITIAL_SASH`; gravity 0 keeps the editor pane fixed on window resize).
 
 #### winDatabase Editor Panel
 
 The editor panel uses absolute positioning with named layout constants. All
-controls are placed directly on the panel at computed positions — no intermediate
+controls are placed directly on the panel at computed positions - no intermediate
 sub-panels. Name and comment (the long-string controls) resize with the panel.
 
 **Header row:** The **Save** button occupies the upper-left (label column). A
@@ -78,12 +78,12 @@ bold title `StaticText` (displaying "Waypoint", "Route", "Track", "Branch", or
 | Route point | none (`_clearEditor`) |
 
 Control details:
-- **name, comment** — plain `TextCtrl`
-- **lat, lon** — `TextCtrl` [110px] with a live DDM `StaticText` label (e.g. `9°26.142' N`) that updates on every keystroke; `parseLatLon()` accepts DD or DDM with optional leading minus or N/S/E/W suffix
-- **wp_type** — `Wx::Choice` with nav / label / sounding strings
-- **color** — 28×20 swatch `Panel` (`wxSIMPLE_BORDER`) plus "Pick…" `Button`; opens `Wx::ColourDialog`; value round-trips as aabbggrr with alpha byte preserved; `_setColorSwatch()` converts aabbggrr → `Wx::Colour` for display
-- **depth** — `TextCtrl` [70px] plus a static unit label ("ft" or "m") from `$PREF_DEPTH_DISPLAY` (read at panel creation); `depth_cm = 0` displays as empty string; ft↔cm multiply/divide by 30.48, m↔cm multiply/divide by 100
-- **Visible** checkbox — three-state; value loaded from the DB `visible` field; shown for all node types except route_point
+- **name, comment** - plain `TextCtrl`
+- **lat, lon** - `TextCtrl` [110px] with a live DDM `StaticText` label (e.g. `9deg26.142' N`) that updates on every keystroke; `parseLatLon()` accepts DD or DDM with optional leading minus or N/S/E/W suffix
+- **wp_type** - `Wx::Choice` with nav / label / sounding strings
+- **color** - 28x20 swatch `Panel` (`wxSIMPLE_BORDER`) plus "Pick..." `Button`; opens `Wx::ColourDialog`; value round-trips as aabbggrr with alpha byte preserved; `_setColorSwatch()` converts aabbggrr -> `Wx::Colour` for display
+- **depth** - `TextCtrl` [70px] plus a static unit label ("ft" or "m") from `$PREF_DEPTH_DISPLAY` (read at panel creation); `depth_cm = 0` displays as empty string; ft<->cm multiply/divide by 30.48, m<->cm multiply/divide by 100
+- **Visible** checkbox - three-state; value loaded from the DB `visible` field; shown for all node types except route_point
 
 **Save button:** Disabled when the editor is clean; enabled on any field change.
 Dirty state is silently discarded on node focus change. `_onSave` writes to the
@@ -108,12 +108,12 @@ refreshes ancestor checkbox states.
 |---|---|---|---|---|
 | `collection` (branch) | All / Groups / Routes / Waypoints / Tracks | Delete Branch | Branch / Group / Route / Waypoint | Upload to E80 |
 | `collection` (group) | Group / Waypoints | Delete Group / +WPs / +WPs+RPs | Branch / Group / Route / Waypoint | Upload to E80 |
-| `object` (waypoint) | Waypoint | Delete Waypoint / +RoutePoints | — | — |
-| `object` (route) | Route / Waypoints | Delete Route / +Waypoints | — | — |
-| `object` (track) | Track | Delete Track | — | — |
-| `route_point` | — | Remove RoutePoint | — | — |
+| `object` (waypoint) | Waypoint | Delete Waypoint / +RoutePoints | - | - |
+| `object` (route) | Route / Waypoints | Delete Route / +Waypoints | - | - |
+| `object` (track) | Track | Delete Track | - | - |
+| `route_point` | - | Remove RoutePoint | - | - |
 
-**Upload to E80** — available on any `collection` node; calls
+**Upload to E80** - available on any `collection` node; calls
 `nmUpload::uploadCollectionToE80` with a shared progress dialog. Uploads all
 waypoints, routes, and groups in the collection.
 
@@ -140,7 +140,7 @@ ExportToText and ImportFromText both show a progress dialog ticking once per tab
 
 ---
 
-## winE80 — Live E80 View
+## winE80 - Live E80 View
 
 `winE80.pm` is a read-only live view of the E80's WPMGR and TRACK in-memory
 state. The tree is rebuilt whenever the global NET version counter increments
@@ -151,13 +151,13 @@ preserved across rebuilds.
 
 ```
 Groups
-    My Waypoints           ← synthesized; waypoints not in any named group
+    My Waypoints           <- synthesized; waypoints not in any named group
         waypoint ...
     GroupName (N wps)
         waypoint ...
 Routes
     RouteName (N pts)
-        route_point ...    ← ordered waypoints in the route
+        route_point ...    <- ordered waypoints in the route
 Tracks (N)
     TrackName (N pts)
 ```
@@ -166,18 +166,18 @@ Tracks (N)
 constructs it from `$wpmgr->{waypoints}` entries absent from every named group's
 `uuids` list. The `my_waypoints` node has no `uuid` field.
 
-**Route children** — each route expands to `route_point` nodes, each carrying
+**Route children** - each route expands to `route_point` nodes, each carrying
 both `uuid` (the waypoint UUID) and `route_uuid` (the parent route).
 
-**Detail pane** — uses `wpmgrRecordToText($item, $kind, 2, 0, undef, $wpmgr)`
+**Detail pane** - uses `wpmgrRecordToText($item, $kind, 2, 0, undef, $wpmgr)`
 at `detail_level=0`, which shows all semantic fields and suppresses structural
 and hex fields.
 
-**Refresh cycle** — triggered from `winMain::onIdle` when `getVersion()` changes,
+**Refresh cycle** - triggered from `winMain::onIdle` when `getVersion()` changes,
 gated by `$pending_commands == 0` so the tree does not rebuild while WPMGR
 commands are still in flight.
 
-### winE80 Context Menu — Delete Operations
+### winE80 Context Menu - Delete Operations
 
 All E80 deletes show a modal progress dialog. The dialog tracks the primary
 DEL_ITEM operation plus the GET_ITEM commands that the E80 automatically generates
@@ -192,28 +192,28 @@ DEL_ITEM operation plus the GET_ITEM commands that the E80 automatically generat
 | `my_waypoints` | Delete Group + Waypoints |
 | `track` | Delete Track |
 
-**Blocked deletes** — "Delete Waypoint" and "Delete Group + Waypoints" are
+**Blocked deletes** - "Delete Waypoint" and "Delete Group + Waypoints" are
 blocked (with a dialog) when the waypoint(s) are members of any route. Remove
 the route memberships first.
 
-**Tracks** — the TRACK service is read-only on the E80. Tracks are visible in
+**Tracks** - the TRACK service is read-only on the E80. Tracks are visible in
 the tree but no delete or modify operations exist for them.
 
-### winE80 Context Menu — Copy, Paste, New
+### winE80 Context Menu - Copy, Paste, New
 
 The same `nmClipboard` machinery as winDatabase:
 
-- **Copy** — copies the right-clicked node into the clipboard as a copy intent
+- **Copy** - copies the right-clicked node into the clipboard as a copy intent
   (waypoint, track, etc.); paste to Database is then enabled
-- **Paste** — enabled when `canPaste` returns true for the clipboard intent and
+- **Paste** - enabled when `canPaste` returns true for the clipboard intent and
   the target node type; currently only waypoint paste to E80 is implemented
-- **New** — New Group and New Waypoint are offered on group-area nodes; New Route
+- **New** - New Group and New Waypoint are offered on group-area nodes; New Route
   on the Routes header; not offered on tracks nodes (read-only)
-- **Refresh E80** — forces an immediate tree rebuild regardless of version
+- **Refresh E80** - forces an immediate tree rebuild regardless of version
 
 ---
 
-## Context Operations — Clipboard Layer
+## Context Operations - Clipboard Layer
 
 `nmClipboard.pm` is the shared clipboard and context-menu generation layer used
 by both windows. Neither window directly inspects node types for menu decisions;
@@ -248,11 +248,11 @@ decide which Copy options are available.
 `onContextMenuCommand($cmd_id, $panel, $node, $tree)` in `nmClipboard.pm`
 dispatches to:
 
-- `nmOps::doCopy` — sets `$clipboard` via `nmClipboard::setCopy`
-- `nmOps::doDelete` — routes to the correct `_delete*` or `_remove*` function in
+- `nmOps::doCopy` - sets `$clipboard` via `nmClipboard::setCopy`
+- `nmOps::doDelete` - routes to the correct `_delete*` or `_remove*` function in
   `nmOpsE80.pm` (E80 leg) or `nmOpsDB.pm` (database leg)
-- `nmOps::doPaste` — routes to `_paste*` functions
-- `nmOps::doNew` — routes to `_new*` functions
+- `nmOps::doPaste` - routes to `_paste*` functions
+- `nmOps::doNew` - routes to `_new*` functions
 
 The clipboard status is reflected in the application status bar via
 `nmClipboard::getClipboardText`.
@@ -277,12 +277,12 @@ UI for all geographic context until the full model described below is built.
 
 ### Intended Rendering
 
-- **Waypoints** — point markers; `wp_type` determines symbol:
+- **Waypoints** - point markers; `wp_type` determines symbol:
   - `nav`: hollow colored circle; color from `waypoints.color`
   - `label`: text div at coordinate; the name is the visible label
   - `sounding`: depth number; red when `depth_cm` below critical threshold
-- **Routes** — dashed polyline connecting ordered waypoints
-- **Tracks** — solid colored polyline
+- **Routes** - dashed polyline connecting ordered waypoints
+- **Tracks** - solid colored polyline
 
 Collections are not rendered in Leaflet; they exist only in the database tree.
 
@@ -304,17 +304,17 @@ On browser connect, `onBrowserConnect` clears the Leaflet canvas and re-pushes a
 
 ### Intended Two-Layer Canvas
 
-**Active layer** — everything currently visible per checkbox state and viewport.
+**Active layer** - everything currently visible per checkbox state and viewport.
 
-**Working set layer** — the current working set as a distinct visual overlay on
+**Working set layer** - the current working set as a distinct visual overlay on
 top of the active layer (color, opacity, or outline treatment TBD). Shows what
 is selected for push to the connected device.
 
 ### Intended Selection Workflow
 
-1. Browse the collection tree; check regions of interest → active layer populates
-2. Draw a rectangle or lasso → items within bounds are selected
-3. "Add to working set" → selected items appear in the working set layer
+1. Browse the collection tree; check regions of interest -> active layer populates
+2. Draw a rectangle or lasso -> items within bounds are selected
+3. "Add to working set" -> selected items appear in the working set layer
 4. Inspect the working set layer; remove any items that don't belong
 5. Upload working set to E80 (waypoints/routes via RAYNET; tracks via FSH export)
 
@@ -326,11 +326,11 @@ UI state that persists between navMate invocations is stored in an ini-format
 settings file alongside the main database (not in the database itself).
 
 **Currently persisted:**
-- winE80 expanded node keys — stored as a comma-joined string of node keys
+- winE80 expanded node keys - stored as a comma-joined string of node keys
   (UUIDs, `header:groups`, `header:routes`, `header:tracks`, `my_waypoints`, etc.)
 - winE80 sash position (tree / detail split)
 - winDatabase sash position
-- Collection tree visibility state — `visible` column in navMate.db (0/1 for all
+- Collection tree visibility state - `visible` column in navMate.db (0/1 for all
   WRT objects and collections; persists across sessions)
 
 **Planned (not yet persisted):**
