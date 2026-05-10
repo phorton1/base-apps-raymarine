@@ -103,10 +103,10 @@ the entire operation.
 **Was:** A cut from the DB (D-CT-DB) could be pasted to E80. This is wrong:
 the DB is the authoritative repository; all uploads to E80 are copies, never
 cuts. The `canPaste` guard blocked it at the UI layer but `doPaste` had no
-handler-level sentinel to catch it if reached via nmTest.
+handler-level sentinel to catch it if reached via navTest.
 
 **Fix (2026-05-04):** Added explicit guard at the top of the E80 branch in
-`doPaste` (nmOps.pm) - fires IMPLEMENTATION ERROR warning and returns if
+`doPaste` (navOps.pm) - fires IMPLEMENTATION ERROR warning and returns if
 `$cb->{cut} && source eq 'database'`. Confirmed Section 5.4 PASS Cycle 5.
 
 ---
@@ -118,6 +118,6 @@ in the pass were not yet in `$wpmgr->{waypoints}` when later items were
 processed (WPMGR thread had not consumed them yet). Route-phase processing
 re-queued the same WPs -> E80 rejected on UUID collision.
 
-**Fix (2026-05-04):** Added shared `%pending_names` in nmOps.pm to track
+**Fix (2026-05-04):** Added shared `%pending_names` in navOps.pm to track
 names queued during the current pass. Pre-check before queuing each item;
 treat already-pending items as `no_change`.

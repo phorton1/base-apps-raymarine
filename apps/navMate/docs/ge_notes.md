@@ -6,7 +6,7 @@
 **[Data Model](data_model.md)** --
 **[UI Model](ui_model.md)** --
 **[Implementation](implementation.md)** --
-**[nmOperations](nmOperations.md)** --
+**[navOperations](navOperations.md)** --
 **[KML Specification](kml_specification.md)** --
 **GE Notes**
 

@@ -1,4 +1,4 @@
-# nmOperations Test Run -- Cycle 11
+# navOperations Test Run -- Cycle 11
 
 **Date:** 2026-05-09
 **Start:** unknown (lost in context compaction -- session spans two Claude conversations)
@@ -136,9 +136,9 @@ PASTE to DB. Track appears in DB with a fresh navMate-style UUID (byte[1]=4e) in
 original E80 UUID. Same failure for CUT+PASTE (Test 4.2): Track2 (81b266af3f002ffa) appears in DB
 with UUID f14eca5ee1048e1e.
 
-**Analysis:** Regression: nmOpsDB.pm:695-696 correctly passes uuid=>$item->{uuid} when source=e80
-and !fresh, but insertTrack in c_db.pm did not honor the uuid parameter at the time the test was
-run. Working-tree c_db.pm has the fix ($a{uuid} // newUUID($dbh)); needs re-test after navMate
+**Analysis:** Regression: navOpsDB.pm:695-696 correctly passes uuid=>$item->{uuid} when source=e80
+and !fresh, but insertTrack in navDB.pm did not honor the uuid parameter at the time the test was
+run. Working-tree navDB.pm has the fix ($a{uuid} // newUUID($dbh)); needs re-test after navMate
 restart to confirm.
 
 **Data state:** DB has Track1 (084eb796e0040fb0) and Track2 (f14eca5ee1048e1e) with navMate-style

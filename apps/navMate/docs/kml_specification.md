@@ -6,7 +6,7 @@
 **[Data Model](data_model.md)** --
 **[UI Model](ui_model.md)** --
 **[Implementation](implementation.md)** --
-**[nmOperations](nmOperations.md)** --
+**[navOperations](navOperations.md)** --
 **KML Specification** --
 **[GE Notes](ge_notes.md)**
 
@@ -14,10 +14,10 @@
 
 navMate uses KML as a bidirectional transport between navMate's SQLite database and
 Google Earth. This document specifies the KML structure navMate produces on export
-and recognizes on import. The implementation is `nmKML.pm`.
+and recognizes on import. The implementation is `navKML.pm`.
 
 The one-time historical migration from `navMate.kml` to the initial navMate database
-is handled separately by `nmOneTimeImport.pm` and is not described here. See
+is handled separately by `navOneTimeImport.pm` and is not described here. See
 [GE Notes](ge_notes.md) for the Google Earth workflow.
 
 ## File Structure
@@ -49,7 +49,7 @@ Style IDs follow the pattern:
 nm{V}_{type}_{color}
 ```
 
-- `V` - `$KML_STYLE_VERSION`, a small integer constant in `nmKML.pm`; incremented on
+- `V` - `$KML_STYLE_VERSION`, a small integer constant in `navKML.pm`; incremented on
   any change to style structure, element attributes, or icon URLs
 - `type` - one of: `track`, `route`, `nav`, `nav_sm`, `label`
 - `color` - the 8-character `aabbggrr` hex string from the DB

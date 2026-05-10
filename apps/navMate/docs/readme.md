@@ -6,7 +6,7 @@
 **[Data Model](data_model.md)** --
 **[UI Model](ui_model.md)** --
 **[Implementation](implementation.md)** --
-**[nmOperations](nmOperations.md)** --
+**[navOperations](navOperations.md)** --
 **[KML Specification](kml_specification.md)** --
 **[GE Notes](ge_notes.md)**
 
@@ -45,7 +45,7 @@ base, data model, and UI are the product. Everything else is a boundary adapter.
   Module inventory by layer: foundation, data transport, context operations,
   HTTP server, and wx UI.
 
-- **[nmOperations](nmOperations.md)** -
+- **[navOperations](navOperations.md)** -
   Copy / Cut / Paste operations across both panels: selection rules, clipboard
   vocabulary, pre-flight validation, paste compatibility matrix, operation
   semantics, and HTTP test machinery.

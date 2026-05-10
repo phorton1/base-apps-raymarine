@@ -6,7 +6,7 @@
 **[Data Model](data_model.md)** --
 **[UI Model](ui_model.md)** --
 **[Implementation](implementation.md)** --
-**[nmOperations](nmOperations.md)** --
+**[navOperations](navOperations.md)** --
 **[KML Specification](kml_specification.md)** --
 **[GE Notes](ge_notes.md)**
 
@@ -196,19 +196,28 @@ established across Patrick's other deployable applications.
 
 ## Code Organization
 
-navMate source modules are divided into two naming zones.
+navMate source modules use a four-tier lexical prefix convention. Prefixes sort
+naturally in a file browser or tab bar, placing lower layers first.
 
-**Lower layers** use alphabetic prefixes with underscore-delimited lowercase names
-(`a_defs.pm`, `c_db.pm`, etc.). The prefix encodes layer position - a lower letter
-means a lower layer, and no module may import from a higher-prefixed module. The
-namespace is assigned sparsely to leave gaps for future layer insertion without
-renaming.
+**`n_` - Foundational** (`n_defs.pm`, `n_utils.pm`). Pure Perl constants and
+utilities with no wx or transport dependencies. Usable from console scripts and
+daemons as well as the wx application.
 
-**Application layer** modules use camelCase (`nmServer.pm`, `winMain.pm`, etc.).
-These are above `navMate.pm` and carry wx dependencies. No strict ordering within
-this zone.
+**`nav` - Portable logic** (`navDB.pm`, `navOps.pm`, `navKML.pm`, etc.). Business
+logic and database access with no wx dependencies. These modules may be tested
+or reused outside the wx application.
 
-`_site/` holds the Leaflet applet HTML/JS, served by `nmServer.pm`'s embedded HTTP
+**`nm` - wx components** (`nmResources.pm`, `nmFrame.pm`). wx-dependent modules
+that are not themselves top-level wx panes. `nmFrame.pm` is the application frame:
+it owns the menu dispatch, status bar, `onIdle` heartbeat, and pane creation.
+
+**`win` - wx panes** (`winDatabase.pm`, `winE80.pm`, `winMonitor.pm`). Top-level
+panel classes that compose the wx UI.
+
+No module may import from a higher layer. `navMate.pm` is the application entry
+point and sits above all layers.
+
+`_site/` holds the Leaflet applet HTML/JS, served by `navServer.pm`'s embedded HTTP
 server. Not a Perl module.
 
 See [Implementation](implementation.md) for the full module inventory organized by

@@ -6,7 +6,7 @@
 **[Data Model](data_model.md)** --
 **UI Model** --
 **[Implementation](implementation.md)** --
-**[nmOperations](nmOperations.md)** --
+**[navOperations](navOperations.md)** --
 **[KML Specification](kml_specification.md)** --
 **[GE Notes](ge_notes.md)**
 
@@ -87,7 +87,7 @@ Control details:
 
 **Save button:** Disabled when the editor is clean; enabled on any field change.
 Dirty state is silently discarded on node focus change. `_onSave` writes to the
-database via `c_db` wrappers where available and direct SQL for collections and
+database via `navDB` wrappers where available and direct SQL for collections and
 tracks, then calls `$this->refresh()` to reload the tree and editor.
 
 #### Tree Visibility Checkboxes
@@ -129,7 +129,7 @@ waypoints, routes, and groups in the collection.
 
 ExportToText and ImportFromText both show a progress dialog ticking once per table (9 tables total). ImportFromText calls `resetDB()` before importing to ensure a clean schema.
 
-**Paste** is always shown in the menu and enabled via `nmClipboard::canPaste`.
+**Paste** is always shown in the menu and enabled via `navClipboard::canPaste`.
 
 ### View Menu
 
@@ -173,7 +173,7 @@ both `uuid` (the waypoint UUID) and `route_uuid` (the parent route).
 at `detail_level=0`, which shows all semantic fields and suppresses structural
 and hex fields.
 
-**Refresh cycle** - triggered from `winMain::onIdle` when `getVersion()` changes,
+**Refresh cycle** - triggered from `nmFrame::onIdle` when `getVersion()` changes,
 gated by `$pending_commands == 0` so the tree does not rebuild while WPMGR
 commands are still in flight.
 
@@ -201,7 +201,7 @@ the tree but no delete or modify operations exist for them.
 
 ### winE80 Context Menu - Copy, Paste, New
 
-The same `nmClipboard` machinery as winDatabase:
+The same `navClipboard` machinery as winDatabase:
 
 - **Copy** - copies the right-clicked node into the clipboard as a copy intent
   (waypoint, track, etc.); paste to Database is then enabled
@@ -215,9 +215,9 @@ The same `nmClipboard` machinery as winDatabase:
 
 ## Context Operations - Clipboard Layer
 
-`nmClipboard.pm` is the shared clipboard and context-menu generation layer used
+`navClipboard.pm` is the shared clipboard and context-menu generation layer used
 by both windows. Neither window directly inspects node types for menu decisions;
-all routing goes through nmClipboard.
+all routing goes through navClipboard.
 
 ### Clipboard State
 
@@ -245,21 +245,21 @@ decide which Copy options are available.
 
 ### Operation Dispatch
 
-`onContextMenuCommand($cmd_id, $panel, $node, $tree)` in `nmClipboard.pm`
+`onContextMenuCommand($cmd_id, $panel, $node, $tree)` in `navClipboard.pm`
 dispatches to:
 
-- `nmOps::doCopy` - sets `$clipboard` via `nmClipboard::setCopy`
-- `nmOps::doDelete` - routes to the correct `_delete*` or `_remove*` function in
-  `nmOpsE80.pm` (E80 leg) or `nmOpsDB.pm` (database leg)
-- `nmOps::doPaste` - routes to `_paste*` functions
-- `nmOps::doNew` - routes to `_new*` functions
+- `navOps::doCopy` - sets `$clipboard` via `navClipboard::setCopy`
+- `navOps::doDelete` - routes to the correct `_delete*` or `_remove*` function in
+  `navOpsE80.pm` (E80 leg) or `navOpsDB.pm` (database leg)
+- `navOps::doPaste` - routes to `_paste*` functions
+- `navOps::doNew` - routes to `_new*` functions
 
 The clipboard status is reflected in the application status bar via
-`nmClipboard::getClipboardText`.
+`navClipboard::getClipboardText`.
 
 The full context menu feature is implemented across both panels. For the complete
 specification of every operation, clipboard state, and paste compatibility matrix,
-see [nmOperations](nmOperations.md).
+see [navOperations](navOperations.md).
 
 ### Cut Semantics
 

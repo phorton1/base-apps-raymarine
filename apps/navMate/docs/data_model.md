@@ -6,7 +6,7 @@
 **Data Model** --
 **[UI Model](ui_model.md)** --
 **[Implementation](implementation.md)** --
-**[nmOperations](nmOperations.md)** --
+**[navOperations](navOperations.md)** --
 **[KML Specification](kml_specification.md)** --
 **[GE Notes](ge_notes.md)**
 
@@ -250,7 +250,7 @@ Initial entries:
 
 | key | Purpose |
 |-----|---------|
-| `schema_version` | Current value `'10.0'`; `openDB` in `c_db.pm` migrates known prior versions in place |
+| `schema_version` | Current value `'10.0'`; `openDB` in `navDB.pm` migrates known prior versions in place |
 | `uuid_counter` | Integer; persistent counter for navMate UUID generation (bytes 4-5 of the UUID) |
 
 The `uuid_counter` entry is incremented atomically within the same transaction as
@@ -345,14 +345,14 @@ navMate depends on.
 
 ## Data Migration
 
-The initial database was populated from a Google Earth export by `nmOneTimeImport.pm`.
-The migration is substantially complete. `nmOneTimeImport.pm` is retained as a
+The initial database was populated from a Google Earth export by `navOneTimeImport.pm`.
+The migration is substantially complete. `navOneTimeImport.pm` is retained as a
 fallback should subsequent changes to the original GE source data require re-import.
 
 navMate is intended to be the primary UX for managing navigation data, but key
 editing tooling - tree node ordering and generalized property editors - is not yet
 built. Until that tooling exists, the GE/KML round-trip workflow remains a
-practical editing path alongside the application. `nmKML.pm` handles all ongoing
+practical editing path alongside the application. `navKML.pm` handles all ongoing
 KML import/export operations.
 
 ---
