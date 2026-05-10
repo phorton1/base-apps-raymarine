@@ -1506,13 +1506,118 @@ sub _cutE80Track
 
 
 #----------------------------------------------------
-# _syncToE80 -- DB->E80 sync up (stub)
+# _pushToE80 -- DB->E80 push up
 #----------------------------------------------------
 
-sub _syncToE80
+sub _pushToE80
 {
     my ($right_click_node, $tree, $items) = @_;
-    warning(0, 0, "_syncToE80: DB->E80 sync not yet implemented");
+
+    my $wpmgr = _wpmgr();
+    if (!$wpmgr)
+    {
+        error("_pushToE80: WPMGR not connected");
+        return;
+    }
+
+    my $total = 0;
+    for my $item (@$items)
+    {
+        my $t = $item->{type} // '';
+        if    ($t eq 'waypoint') { $total++;                                                  }
+        elsif ($t eq 'group')    { $total += scalar(@{$item->{members} // []}) + 1;           }
+        elsif ($t eq 'route')    { $total++;                                                  }
+    }
+
+    my $progress = _openE80Progress("Push to E80", $total,
+        {cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
+    return if !$progress;
+
+    for my $item (@$items)
+    {
+        last if $progress->{cancelled};
+        my $t    = $item->{type} // '';
+        my $uuid = $item->{uuid} // '';
+        my $d    = $item->{data} // {};
+        next if !$uuid;
+
+        if ($t eq 'waypoint')
+        {
+            if (!$wpmgr->{waypoints}{$uuid})
+            {
+                warning(0, 0, "_pushToE80: waypoint $uuid not on E80 -- skipping");
+                $progress->{done}++;
+                next;
+            }
+            $wpmgr->modifyWaypoint({
+                uuid     => $uuid,
+                name     => $d->{name}       // '',
+                lat      => $d->{lat},
+                lon      => $d->{lon},
+                sym      => 0,
+                ts       => $d->{created_ts} // $d->{ts} // time(),
+                comment  => $d->{comment}    // '',
+                depth    => $d->{depth_cm}   // 0,
+                progress => $progress,
+            });
+        }
+        elsif ($t eq 'group')
+        {
+            if (!$wpmgr->{groups}{$uuid})
+            {
+                warning(0, 0, "_pushToE80: group $uuid not on E80 -- skipping");
+                $progress->{done} += scalar(@{$item->{members} // []}) + 1;
+                next;
+            }
+            for my $member (@{$item->{members} // []})
+            {
+                last if $progress->{cancelled};
+                my $mu = $member->{uuid} // '';
+                my $md = $member->{data} // {};
+                next if !$mu || !$wpmgr->{waypoints}{$mu};
+                $wpmgr->modifyWaypoint({
+                    uuid     => $mu,
+                    name     => $md->{name}       // '',
+                    lat      => $md->{lat},
+                    lon      => $md->{lon},
+                    sym      => 0,
+                    ts       => $md->{created_ts} // $md->{ts} // time(),
+                    comment  => $md->{comment}    // '',
+                    depth    => $md->{depth_cm}   // 0,
+                    progress => $progress,
+                });
+            }
+            if (!$progress->{cancelled})
+            {
+                my @member_uuids = map { $_->{uuid} } grep { $_->{uuid} } @{$item->{members} // []};
+                $wpmgr->modifyGroup({
+                    uuid     => $uuid,
+                    name     => $d->{name}    // '',
+                    comment  => $d->{comment} // '',
+                    members  => \@member_uuids,
+                    progress => $progress,
+                });
+            }
+        }
+        elsif ($t eq 'route')
+        {
+            if (!$wpmgr->{routes}{$uuid})
+            {
+                warning(0, 0, "_pushToE80: route $uuid not on E80 -- skipping");
+                $progress->{done}++;
+                next;
+            }
+            my @wp_uuids = map { $_->{uuid} } grep { $_->{uuid} } @{$item->{route_points} // []};
+            $wpmgr->modifyRoute({
+                uuid      => $uuid,
+                name      => $d->{name}    // '',
+                comment   => $d->{comment} // '',
+                color     => abgrToE80Index($d->{color} // ''),
+                waypoints => \@wp_uuids,
+                progress  => $progress,
+            });
+        }
+    }
 }
 
 

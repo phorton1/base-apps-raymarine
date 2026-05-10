@@ -111,7 +111,7 @@ avoids dialog_state entirely for normal operations.
 | `DELETE_ROUTE`     | 10223 |
 | `DELETE_TRACK`     | 10225 |
 | `DELETE_BRANCH`    | 10226 |
-| `SYNC`             | 10250 |
+| `PUSH`             | 10250 |
 
 ---
 
@@ -650,10 +650,10 @@ Note [E80_RT] = f34efdd6070022e8 from /api/db routes.
 
 ---
 
-### Test 3.4 Copy E80 WP -> Sync to DB (sync-classified)
+### Test 3.4 Copy E80 WP -> Push to DB (push-classified)
 
-[E80_WP] = [IsolatedWP1] UUID (ce4e43181f01b3ae). That UUID is in DB -> clipboard_class='sync'.
-SYNC (10250) is offered at DB destination; PASTE is not.
+[E80_WP] = [IsolatedWP1] UUID (ce4e43181f01b3ae). That UUID is in DB -> clipboard_class='push'.
+PUSH (10250) is offered at DB destination; PASTE is not.
 
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_WP]&cmd=10200"
@@ -661,7 +661,7 @@ curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=
 ```
 Expected: [IsolatedWP1] DB record updated from E80 field values (name, lat, lon, comment,
 depth_cm). DB-managed fields (wp_type, color, source) preserved. collection_uuid unchanged.
-Clipboard cleared. Log: SYNC STARTED/FINISHED, no errors.
+Clipboard cleared. Log: PUSH STARTED/FINISHED, no errors.
 
 ---
 
@@ -783,7 +783,7 @@ Skip (NOT_RUN) if [E80_GR] is still present.
 
 ---
 
-### Test 3.11b Copy E80 Group -> Sync to DB (group sync-classified)
+### Test 3.11b Copy E80 Group -> Push to DB (group push-classified)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_GR]&cmd=10200"
@@ -791,7 +791,7 @@ curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=
 ```
 Expected: Popa group name and 11 member WPs (name/lat/lon/comment/depth_cm) updated from E80.
 DB-managed fields (wp_type, color, source) preserved. Collection memberships unchanged.
-Clipboard cleared. Log: SYNC STARTED/FINISHED, no errors.
+Clipboard cleared. Log: PUSH STARTED/FINISHED, no errors.
 
 ---
 
@@ -808,7 +808,7 @@ Skip (NOT_RUN) if [E80_RT] is still present.
 
 ---
 
-### Test 3.12b Copy E80 Route -> Sync to DB (route sync-classified)
+### Test 3.12b Copy E80 Route -> Push to DB (route push-classified)
 
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_RT]&cmd=10200"
@@ -816,21 +816,21 @@ curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=
 ```
 Expected: route name/color/comment updated from E80; route_waypoints rebuilt to match E80 sequence.
 Member WP UUIDs preserved; no new WP records. collection_uuid unchanged. Clipboard cleared.
-Log: SYNC STARTED/FINISHED, no errors.
+Log: PUSH STARTED/FINISHED, no errors.
 
 ---
 
-### Test 3.13 Copy E80 Group+Route -> Sync to DB (multi-item sync)
+### Test 3.13 Copy E80 Group+Route -> Push to DB (multi-item push)
 
 After Test 3.11b and Test 3.12b, E80 has both [E80_GR] (Popa group + 11 WPs) and [E80_RT] (Popa route).
-Both UUIDs in DB -> clipboard_class='sync'. Select both simultaneously (cmd=10250):
+Both UUIDs in DB -> clipboard_class='push'. Select both simultaneously (cmd=10250):
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_GR],[E80_RT]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10250"
 ```
-Expected: group (name + 11 member WPs) and route (name/color/route_waypoints) both synced.
+Expected: group (name + 11 member WPs) and route (name/color/route_waypoints) both pushed.
 All UUIDs preserved; no new records. Clipboard cleared. No ERROR or WARNING.
-Note: SS12.1 ordering only matters for paste (new items); sync updates existing records and
+Note: SS12.1 ordering only matters for paste (new items); push updates existing records and
 needs no ordering guarantee.
 
 ---
@@ -865,8 +865,8 @@ Log: COPY STARTED/FINISHED, PASTE STARTED/FINISHED, no errors.
 ### Test 3.14c Mixed-classified E80 clipboard: status bar + PASTE_NEW
 
 **State after Test 3.14b:** [E80_FRESH_WP] is on E80 and its UUID is NOW IN DB (Test 3.14b
-pasted it there) -- it is sync-classified. [E80_WP] (IsolatedWP1) was deleted back in Test 3.6
-and is NOT on E80. The test requires two E80 WPs: one sync-classified and one paste-classified.
+pasted it there) -- it is push-classified. [E80_WP] (IsolatedWP1) was deleted back in Test 3.6
+and is NOT on E80. The test requires two E80 WPs: one push-classified and one paste-classified.
 
 **Setup -- create [E80_FRESH_WP2]:** PASTE_NEW [IsolatedWP1] from DB to E80 to generate a second
 fresh UUID that is NOT in DB (paste-classified). Call it [E80_FRESH_WP2]; derive UUID from /api/db.
@@ -877,13 +877,13 @@ curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_c
 Wait for ProgressDialog FINISHED. Note [E80_FRESH_WP2] UUID from /api/db waypoints
 (it will be byte 1 = 0x82, different from ce4e43181f01b3ae and different from [E80_FRESH_WP]).
 
-Now select both [E80_FRESH_WP] (sync-classified: UUID in DB) and [E80_FRESH_WP2]
+Now select both [E80_FRESH_WP] (push-classified: UUID in DB) and [E80_FRESH_WP2]
 (paste-classified: UUID not in DB) -> clipboard_class='mixed'.
 
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_FRESH_WP],[E80_FRESH_WP2]&cmd=10200"
 ```
-Verify status bar text in navMate UI: "[e80] copy (2) -- Paste/Sync not available: ..."
+Verify status bar text in navMate UI: "[e80] copy (2) -- Paste/Push not available: ..."
 
 Execute PASTE_NEW (10211) -- the only collection option for mixed clipboard:
 ```

@@ -155,19 +155,18 @@ position; the underlying waypoint record is preserved. The menu label is "Delete
 dialog. Placement follows the New command rules in SS11. New commands are excluded from
 automated testing.
 
-### 2.6 Sync
+### 2.6 Push
 
-**SYNC** (10600) -- pushes one side's version of an item to the matching UUID on the other
-panel. SYNC is a direct in-place operation, like Delete -- it does not consume or produce
+**PUSH** (10250) -- pushes one side's version of an item to the matching UUID on the other
+panel. PUSH is a direct in-place operation, like Delete -- it does not consume or produce
 clipboard state. It clears the clipboard unconditionally after execution.
 
-SYNC is available on both panels when the selected item(s) have UUID counterparts on the
-other panel. Multi-select is supported. Pre-flight presents a "newer-wins" confirmation if
-any target counterpart appears newer than the source.
+PUSH is available on both panels when the selected item(s) have UUID counterparts on the
+other panel. Multi-select is supported. Pre-flight presents a confirmation before overwriting.
 
-SYNC is also offered at DB paste destinations when an E80-source clipboard is
-sync-classified -- meaning all clipboard item UUIDs are already present in the navMate DB.
-In that case the clipboard items function as the effective selection for the sync-down
+PUSH is also offered at DB paste destinations when an E80-source clipboard is
+push-classified -- meaning all clipboard item UUIDs are already present in the navMate DB.
+In that case the clipboard items function as the effective selection for the push-down
 operation.
 
 
@@ -217,16 +216,16 @@ checked against the navMate DB:
 
 - **paste-classified** -- all item UUIDs absent from the DB. PASTE and PASTE_NEW are
   offered at DB destinations.
-- **sync-classified** -- all item UUIDs present in the DB. SYNC (SS2.6) is offered;
+- **push-classified** -- all item UUIDs present in the DB. PUSH (SS2.6) is offered;
   PASTE is disabled at DB destinations.
-- **mixed-classified** -- some UUIDs absent, some present. Both PASTE and SYNC are
-  disabled; PASTE_NEW remains available. The status bar shows: "Paste/Sync not available:
+- **mixed-classified** -- some UUIDs absent, some present. Both PASTE and PUSH are
+  disabled; PASTE_NEW remains available. The status bar shows: "Paste/Push not available:
   clipboard contains both new and existing items -- use Paste New."
 
 DB-sourced clipboards carry no classification; this step applies to E80-source only.
 
 The clipboard remains populated until replaced by a subsequent Copy or Cut. Paste does not
-clear the clipboard. DELETE and SYNC both clear the entire clipboard unconditionally; there
+clear the clipboard. DELETE and PUSH both clear the entire clipboard unconditionally; there
 is no partial clearing.
 
 
@@ -653,7 +652,7 @@ copy/cut time. The check runs in SS10.1 Step 3 when the destination is known.
 
 **E80-source classification.** Immediately after snapshotting an E80-source selection,
 pre-flight checks each item UUID against the navMate DB and stores a clipboard_class
-(paste / sync / mixed) per SS4. This classification governs which paste commands are
+(paste / push / mixed) per SS4. This classification governs which paste commands are
 offered when the clipboard is pasted to a DB destination (SS10.3).
 
 
@@ -770,10 +769,10 @@ name "My Waypoints" is not used.
 **E80-source copy classification and PASTE availability.** The E80-source copy rows above
 (cut_flag = no) assume a paste-classified clipboard (all item UUIDs absent from the DB).
 For other classifications:
-- **sync-classified** (all UUIDs present in DB): PASTE is not offered. SYNC (SS2.6) is
+- **push-classified** (all UUIDs present in DB): PASTE is not offered. PUSH (SS2.6) is
   offered at the DB destination instead. PASTE_NEW remains available.
-- **mixed-classified** (some UUIDs absent, some present): both PASTE and SYNC are
-  disabled. PASTE_NEW remains available. The status bar displays: "Paste/Sync not
+- **mixed-classified** (some UUIDs absent, some present): both PASTE and PUSH are
+  disabled. PASTE_NEW remains available. The status bar displays: "Paste/Push not
   available: clipboard contains both new and existing items -- use Paste New."
 
 E80-source cut (cut_flag = yes) rows are unaffected by classification: CUT+PASTE is
@@ -934,7 +933,7 @@ records are created by the route paste.
 **Cut variant:** after each item is successfully pasted, the source item is deleted from
 E80 via WPMGR commands.
 
-For E80-source clipboards where some or all UUIDs are already in the DB, see SYNC (SS2.6)
+For E80-source clipboards where some or all UUIDs are already in the DB, see PUSH (SS2.6)
 and SS12.9.
 
 ### 12.2 Paste to Database from Database -- Cut (move)
@@ -1085,31 +1084,27 @@ DELETE_ROUTE -> DELETE_GROUP / DELETE_GROUP_WPS -> DELETE_WAYPOINT -> DELETE_TRA
 regardless of its source or contents. There is no partial clearing.
 
 
-### 12.9 Sync
+### 12.9 Push
 
-SYNC is a direct in-place update between DB and E80 counterparts sharing the same UUID.
+PUSH is a direct in-place update between DB and E80 counterparts sharing the same UUID.
 It does not consume or produce clipboard state. The clipboard is cleared unconditionally
-after SYNC execution.
+after PUSH execution.
 
-**Pre-flight.** SYNC is available when the selected items on one panel each have a UUID
-counterpart on the other panel. Multi-select is supported. If any target-panel counterpart
-appears newer than the source (based on `db_version` / `e80_version` comparison),
-pre-flight presents a "newer-wins" confirmation identifying those items. The user may
-proceed or abort.
+**Pre-flight.** PUSH is available when the selected items on one panel each have a UUID
+counterpart on the other panel. Multi-select is supported. Pre-flight presents a
+confirmation before overwriting. The user may proceed or abort.
 
-**Execution -- DB to E80 (sync up).** For each selected DB item whose UUID exists on E80,
-overwrite the E80 record with the current DB field values via WPMGR. After WPMGR confirms,
-set `e80_version = db_version` on the DB record.
+**Execution -- DB to E80 (push up).** For each selected DB item whose UUID exists on E80,
+overwrite the E80 record with the current DB field values via WPMGR.
 
-**Execution -- E80 to DB (sync down).** For each selected E80 item whose UUID exists in
-the DB, update the DB record's data fields with the E80 values. Increment `db_version`;
-set `e80_version = db_version` (synchronized).
+**Execution -- E80 to DB (push down).** For each selected E80 item whose UUID exists in
+the DB, update the DB record's data fields with the E80 values.
 
-**Clipboard-triggered SYNC.** When an E80-source clipboard is sync-classified (SS4) and
-the user invokes SYNC at a DB destination, the clipboard items function as the effective
-selection. Execution proceeds as E80-to-DB sync down above.
+**Clipboard-triggered PUSH.** When an E80-source clipboard is push-classified (SS4) and
+the user invokes PUSH at a DB destination, the clipboard items function as the effective
+selection. Execution proceeds as E80-to-DB push down above.
 
-**Clipboard clearing.** SYNC clears the entire clipboard unconditionally after execution.
+**Clipboard clearing.** PUSH clears the entire clipboard unconditionally after execution.
 
 
 ## 13. Testability
@@ -1192,7 +1187,7 @@ NEW_GROUP    = 10520
 NEW_ROUTE    = 10530
 NEW_BRANCH   = 10550
 
-SYNC = 10600
+PUSH = 10250
 ```
 
 NEW_* commands open name-input dialogs and are excluded from automation.

@@ -1308,10 +1308,10 @@ sub _newDatabaseRoute
 
 
 #----------------------------------------------------
-# _syncFromE80 -- E80->DB sync down
+# _pushFromE80 -- E80->DB push down
 #----------------------------------------------------
 
-sub _syncFromE80
+sub _pushFromE80
 {
 	my ($right_click_node, $tree, $items) = @_;
 
@@ -1387,7 +1387,7 @@ sub _syncFromE80
 				);
 			}
 		}
-		# tracks: read-only on E80; sync-down not applicable
+		# tracks: read-only on E80; push-down not applicable
 	}
 
 	disconnectDB($dbh);

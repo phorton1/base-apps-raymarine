@@ -53,35 +53,19 @@ Collision tests in Test 5.10 and Test 5.11a-5.11b use dynamic setup; see those s
 
 ## Infrastructure
 
-### Command constants
-
-These are the context-menu command names used throughout this plan.
+### Command names
 
 ```
-COPY  = 10010
-CUT   = 10110
+COPY  CUT
 
-PASTE             = 10300
-PASTE_NEW         = 10301
-PASTE_BEFORE      = 10302
-PASTE_AFTER       = 10303
-PASTE_NEW_BEFORE  = 10304
-PASTE_NEW_AFTER   = 10305
+PASTE  PASTE_NEW  PASTE_BEFORE  PASTE_AFTER  PASTE_NEW_BEFORE  PASTE_NEW_AFTER
 
-DELETE_WAYPOINT   = 10410
-DELETE_GROUP      = 10420
-DELETE_GROUP_WPS  = 10421
-DELETE_ROUTE      = 10430
-REMOVE_ROUTEPOINT = 10431
-DELETE_TRACK      = 10440
-DELETE_BRANCH     = 10450
+DELETE_WAYPOINT  DELETE_GROUP  DELETE_GROUP_WPS
+DELETE_ROUTE  REMOVE_ROUTEPOINT  DELETE_TRACK  DELETE_BRANCH
 
-NEW_WAYPOINT = 10510
-NEW_GROUP    = 10520
-NEW_ROUTE    = 10530
-NEW_BRANCH   = 10550
+NEW_WAYPOINT  NEW_GROUP  NEW_ROUTE  NEW_BRANCH
 
-SYNC = 10600
+PUSH
 ```
 
 COPY and CUT are unified commands. The selection set determines clipboard contents;
@@ -437,20 +421,20 @@ matches the DB ordering (same WP UUIDs, same positional order).
 
 ---
 
-### Test 3.4 Copy E80 WP -> Sync to DB (sync-classified: UUID present in DB)
+### Test 3.4 Copy E80 WP -> Push to DB (push-classified: UUID present in DB)
 
 At COPY time from an E80 source, `_classifyE80Items` checks each item UUID against the
 navMate DB. After Test 3.1 uploads [IsolatedWP1] to E80, [E80_WP] UUID equals [IsolatedWP1]'s
-UUID -- which already exists in DB. This gives clipboard_class='sync'.
+UUID -- which already exists in DB. This gives clipboard_class='push'.
 
 In the E80 panel, COPY [E80_WP]. Right-click [DST] in the DB panel. The context menu shows
-SYNC (not PASTE) because the clipboard is sync-classified from an E80 source. Execute SYNC.
+PUSH (not PASTE) because the clipboard is push-classified from an E80 source. Execute PUSH.
 
-Expected: `_syncFromE80` updates the [IsolatedWP1] DB record from E80 field values (name,
+Expected: `_pushFromE80` updates the [IsolatedWP1] DB record from E80 field values (name,
 lat, lon, comment, depth_cm). DB-managed fields (wp_type, color, source) are preserved from
 the existing record. The WP's collection_uuid (tree location) is unchanged. Clipboard is
-cleared after SYNC completes.
-Log: SYNC STARTED/FINISHED, no errors.
+cleared after PUSH completes.
+Log: PUSH STARTED/FINISHED, no errors.
 
 ---
 
@@ -549,15 +533,15 @@ Expected: the Popa group and its member WPs are present on the E80.
 
 ---
 
-### Test 3.11b Copy E80 Group -> Sync to DB (group sync-classified)
+### Test 3.11b Copy E80 Group -> Push to DB (group push-classified)
 
-COPY [E80_GR]. The Popa group UUID exists in DB -> clipboard_class='sync'. Right-click [DST]
-in the DB panel: SYNC is offered (not PASTE). Execute SYNC.
+COPY [E80_GR]. The Popa group UUID exists in DB -> clipboard_class='push'. Right-click [DST]
+in the DB panel: PUSH is offered (not PASTE). Execute PUSH.
 
-Expected: `_syncFromE80` updates the Popa group record (name) and all 11 member WPs
+Expected: `_pushFromE80` updates the Popa group record (name) and all 11 member WPs
 (name, lat, lon, comment, depth_cm) from E80 field values. DB-managed fields (wp_type,
 color, source) for each WP are preserved. Collection memberships are unchanged.
-Log: SYNC STARTED/FINISHED, no errors. Clipboard cleared.
+Log: PUSH STARTED/FINISHED, no errors. Clipboard cleared.
 
 ---
 
@@ -569,29 +553,29 @@ Expected: [E80_RT] is present on the E80.
 
 ---
 
-### Test 3.12b Copy E80 Route -> Sync to DB (route sync-classified)
+### Test 3.12b Copy E80 Route -> Push to DB (route push-classified)
 
-COPY [E80_RT]. The Popa route UUID (f34efdd6070022e8) exists in DB -> clipboard_class='sync'.
-Right-click [DST] in the DB panel: SYNC is offered (not PASTE). Execute SYNC.
+COPY [E80_RT]. The Popa route UUID (f34efdd6070022e8) exists in DB -> clipboard_class='push'.
+Right-click [DST] in the DB panel: PUSH is offered (not PASTE). Execute PUSH.
 
-Expected: `_syncFromE80` updates the route name/color/comment from E80 and rebuilds
+Expected: `_pushFromE80` updates the route name/color/comment from E80 and rebuilds
 route_waypoints to match the E80 sequence. Member WP UUIDs are preserved; no new WP records
 created. Route's collection_uuid (tree location) unchanged.
-Log: SYNC STARTED/FINISHED, no errors. Clipboard cleared.
+Log: PUSH STARTED/FINISHED, no errors. Clipboard cleared.
 
 ---
 
-### Test 3.13 Copy E80 Group+Route -> Sync to DB (multi-item sync)
+### Test 3.13 Copy E80 Group+Route -> Push to DB (multi-item push)
 
 After Test 3.11b and Test 3.12b, E80 has both [E80_GR] (Popa group + 11 WPs) and [E80_RT] (Popa route).
-Both UUIDs exist in DB -> clipboard_class='sync' for the multi-item selection. Select both
-simultaneously. COPY. Right-click [DST]: SYNC is offered. Execute SYNC.
+Both UUIDs exist in DB -> clipboard_class='push' for the multi-item selection. Select both
+simultaneously. COPY. Right-click [DST]: PUSH is offered. Execute PUSH.
 
-Expected: `_syncFromE80` processes both items -- group (name + member WP fields) and route
+Expected: `_pushFromE80` processes both items -- group (name + member WP fields) and route
 (name/color/comment + route_waypoints sequence). All WP UUIDs remain unchanged in DB. No new
 records created. Clipboard cleared.
-Log: SYNC STARTED/FINISHED, no errors.
-Note: SS12.1 item-ordering (groups before routes) is enforced in the paste path only. The sync
+Log: PUSH STARTED/FINISHED, no errors.
+Note: SS12.1 item-ordering (groups before routes) is enforced in the paste path only. The push
 path updates existing records and does not require ordered processing.
 
 ---
@@ -611,7 +595,7 @@ is the clean create path; Test 5.12 verifies this by checking the Test 3.14 log)
 
 After Test 3.14, the E80 has a WP with a fresh navMate UUID (byte 1 = 0x82) that is NOT in the
 navMate DB. COPY that WP. At copy time, clipboard_class='paste' (UUID absent from DB). Right-
-click [DST] in the DB panel: PASTE is offered (not SYNC, because the UUID is absent). Execute
+click [DST] in the DB panel: PASTE is offered (not PUSH, because the UUID is absent). Execute
 PASTE.
 
 Expected: a new WP record is inserted in [DST] with the E80's fresh UUID preserved (byte 1 =
@@ -619,26 +603,26 @@ Expected: a new WP record is inserted in [DST] with the E80's fresh UUID preserv
 Log: COPY STARTED/FINISHED, PASTE STARTED/FINISHED, no errors.
 
 This exercises the paste-classified branch of E80->DB download (absent UUID -> insert). For the
-sync-classified branch (present UUID -> sync-down), see Test 3.4.
+push-classified branch (present UUID -> push-down), see Test 3.4.
 
 ---
 
 ### Test 3.14c Mixed-classified E80 clipboard: status bar and PASTE_NEW
 
-The mixed-classified case requires two E80 WPs: one with UUID present in DB (sync-classified)
+The mixed-classified case requires two E80 WPs: one with UUID present in DB (push-classified)
 and one with UUID absent (paste-classified). After Test 3.14b: [E80_FRESH_WP] is still on E80
-and its UUID is now in DB (Test 3.14b pasted it there) -- it is sync-classified. A second WP
+and its UUID is now in DB (Test 3.14b pasted it there) -- it is push-classified. A second WP
 must be created on E80 via PASTE_NEW from DB to obtain [E80_FRESH_WP2] -- a new fresh UUID that
 is not in DB, making it paste-classified.
 
 Setup: PASTE_NEW an isolated DB waypoint to E80 to create [E80_FRESH_WP2]. Derive its UUID from
-/api/db. Then select both [E80_FRESH_WP] (sync-classified) and [E80_FRESH_WP2] (paste-classified)
+/api/db. Then select both [E80_FRESH_WP] (push-classified) and [E80_FRESH_WP2] (paste-classified)
 in the E80 panel. COPY. At copy time, clipboard_class='mixed' (some present, some absent). Verify
 the status bar shows:
-"[e80] copy (2) -- Paste/Sync not available: clipboard contains both new and existing items --
+"[e80] copy (2) -- Paste/Push not available: clipboard contains both new and existing items --
 use Paste New"
 
-Right-click [DST] in the DB panel: PASTE_NEW is offered; PASTE and SYNC are absent from the
+Right-click [DST] in the DB panel: PASTE_NEW is offered; PASTE and PUSH are absent from the
 menu (verified visually -- test API bypasses menu). Execute PASTE_NEW.
 
 Expected: both WPs inserted in [DST] with fresh navMate UUIDs (PASTE_NEW always assigns fresh

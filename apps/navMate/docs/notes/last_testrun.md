@@ -57,7 +57,7 @@
 | Section 3.1 Paste WP to E80 (UUID-preserving upload) | PASS |
 | Section 3.2 Paste Group to E80 (UUID-preserving upload) | PASS |
 | Section 3.3 Paste Route to E80 (UUID-preserving upload) | PASS |
-| Section 3.4 Copy E80 WP -> Sync to DB (sync-classified) | PASS |
+| Section 3.4 Copy E80 WP -> Push to DB (push-classified) | PASS |
 | Section 3.5 Copy E80 WP -> Paste New to DB (fresh UUID) | PASS |
 | Section 3.6 Delete E80 WP | PASS |
 | Section 3.6b Delete E80 Group+WPS -- blocked (member in route) | PASS |

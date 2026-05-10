@@ -36,6 +36,7 @@ BEGIN
 		getCopyMenuItems
 		getCutMenuItems
 		getPasteMenuItems
+		getPushMenuItems
 
 	);
 }
@@ -52,7 +53,7 @@ my @ALL_PASTE_CMDS = (
 	$CTX_CMD_PASTE_AFTER,
 	$CTX_CMD_PASTE_NEW_BEFORE,
 	$CTX_CMD_PASTE_NEW_AFTER,
-	$CTX_CMD_SYNC,
+	$CTX_CMD_PUSH,
 );
 my @ALL_NEW_CMDS = (
 	$CTX_CMD_NEW_WAYPOINT, $CTX_CMD_NEW_GROUP, $CTX_CMD_NEW_ROUTE, $CTX_CMD_NEW_BRANCH,
@@ -101,7 +102,7 @@ sub _classifyE80Items
 	}
 	disconnectDB($dbh);
 	return 'paste' if $n_present == 0;
-	return 'sync'  if $n_absent  == 0;
+	return 'push'  if $n_absent  == 0;
 	return 'mixed';
 }
 
@@ -136,7 +137,7 @@ sub getClipboardText
 	my $text = "[$src] $verb ($n)";
 	if (($clipboard->{clipboard_class} // '') eq 'mixed')
 	{
-		$text .= " -- Paste/Sync not available: clipboard contains both new and existing items -- use Paste New";
+		$text .= " -- Paste/Push not available: clipboard contains both new and existing items -- use Paste New";
 	}
 	return $text;
 }
@@ -376,11 +377,11 @@ sub getPasteMenuItems
 		{
 			push @items, { id => $CTX_CMD_PASTE, label => 'Paste' };
 		}
-		elsif ($class eq 'sync')
+		elsif ($class eq 'push')
 		{
-			push @items, { id => $CTX_CMD_SYNC, label => 'Sync' };
+			push @items, { id => $CTX_CMD_PUSH, label => 'Push' };
 		}
-		# mixed: no PASTE, no SYNC offered
+		# mixed: no PASTE, no PUSH offered
 
 		push @items, { id => $CTX_CMD_PASTE_NEW, label => 'Paste New' } if !$cut;
 	}
@@ -409,6 +410,80 @@ sub getPasteMenuItems
 	}
 
 	return @items;
+}
+
+
+#----------------------------------------------------
+# getPushMenuItems
+# Direct selection-based push (no clipboard required).
+# E80 panel: offers "Push to DB" when all selected items have DB counterparts.
+# DB panel:  offers "Push to E80" when all selected items have E80 counterparts.
+#----------------------------------------------------
+
+sub getPushMenuItems
+{
+	my ($panel, $wpmgr, @nodes) = @_;
+	return () if !@nodes;
+	return () if grep { ($_->{type} // '') eq 'root' } @nodes;
+
+	if ($panel eq 'e80')
+	{
+		my $dbh = connectDB();
+		return () unless $dbh;
+		my $all_present = 1;
+		for my $node (@nodes)
+		{
+			my $t    = $node->{type} // '';
+			my $uuid = $node->{uuid} // '';
+			if (!$uuid || $t eq 'track' || $t eq 'header'
+			           || $t eq 'my_waypoints' || $t eq 'route_point')
+			{
+				$all_present = 0;
+				last;
+			}
+			my $found;
+			if    ($t eq 'waypoint') { $found = getWaypoint($dbh, $uuid);   }
+			elsif ($t eq 'group')    { $found = getCollection($dbh, $uuid); }
+			elsif ($t eq 'route')    { $found = getRoute($dbh, $uuid);      }
+			else                     { $all_present = 0; last; }
+			unless ($found) { $all_present = 0; last; }
+		}
+		disconnectDB($dbh);
+		return $all_present ? ({ id => $CTX_CMD_PUSH, label => 'Push to DB' }) : ();
+	}
+	else  # database panel
+	{
+		return () unless $wpmgr;
+		my $all_present = 1;
+		for my $node (@nodes)
+		{
+			my $t  = $node->{type}  // '';
+			my $d  = $node->{data}  // {};
+			my $ot = $d->{obj_type}  // '';
+			my $nt = $d->{node_type} // '';
+			my $uuid = $d->{uuid} // '';
+			if (!$uuid || $t eq 'root' || $t eq 'route_point')
+			{
+				$all_present = 0;
+				last;
+			}
+			my $found;
+			if ($t eq 'object')
+			{
+				if    ($ot eq 'waypoint') { $found = $wpmgr->{waypoints}{$uuid}; }
+				elsif ($ot eq 'route')    { $found = $wpmgr->{routes}{$uuid};    }
+				else                      { $all_present = 0; last; }
+			}
+			elsif ($t eq 'collection')
+			{
+				if ($nt eq 'group') { $found = $wpmgr->{groups}{$uuid}; }
+				else                { $all_present = 0; last; }
+			}
+			else { $all_present = 0; last; }
+			unless ($found) { $all_present = 0; last; }
+		}
+		return $all_present ? ({ id => $CTX_CMD_PUSH, label => 'Push to E80' }) : ();
+	}
 }
 
 

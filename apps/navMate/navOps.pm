@@ -96,6 +96,7 @@ sub buildContextMenu
 	my @new   = getNewMenuItems($panel, $right_click_node);
 	my @copy  = getCopyMenuItems($panel, @nodes);
 	my @cut   = getCutMenuItems($panel, @nodes);
+	my @push  = getPushMenuItems($panel, _wpmgr(), @nodes);
 	my @paste = getPasteMenuItems($panel, $right_click_node);
 
 	# SS10.10: suppress PASTE and PASTE_NEW when any route in clipboard has member WPs
@@ -128,19 +129,25 @@ sub buildContextMenu
 	{
 		$menu->Append($item->{id}, $item->{label});
 	}
-	$menu->AppendSeparator() if @del && (@new || @copy || @cut || @paste);
+	$menu->AppendSeparator() if @del && (@new || @copy || @cut || @push || @paste);
 
 	for my $item (@new)
 	{
 		$menu->Append($item->{id}, $item->{label});
 	}
-	$menu->AppendSeparator() if @new && (@copy || @cut || @paste);
+	$menu->AppendSeparator() if @new && (@copy || @cut || @push || @paste);
 
 	for my $item (@copy, @cut)
 	{
 		$menu->Append($item->{id}, $item->{label});
 	}
-	$menu->AppendSeparator() if (@copy || @cut) && @paste;
+	$menu->AppendSeparator() if (@copy || @cut) && (@push || @paste);
+
+	for my $item (@push)
+	{
+		$menu->Append($item->{id}, $item->{label});
+	}
+	$menu->AppendSeparator() if @push && @paste;
 
 	for my $item (@paste)
 	{
@@ -181,9 +188,9 @@ sub onContextMenuCommand
 	{
 		_doNew($cmd_id, $panel, $right_click_node, $tree);
 	}
-	elsif ($cmd_id == $CTX_CMD_SYNC)
+	elsif ($cmd_id == $CTX_CMD_PUSH)
 	{
-		_doSync($panel, $right_click_node, $tree, @nodes);
+		_doPush($panel, $right_click_node, $tree, @nodes);
 	}
 	else
 	{
@@ -812,43 +819,67 @@ sub _resolveAncestorWins
 
 
 #----------------------------------------------------
-# _doSync
+# _doPush
 #----------------------------------------------------
 
-sub _doSync
+sub _doPush
 {
 	my ($panel, $right_click_node, $tree, @nodes) = @_;
 
 	if ($panel eq 'e80')
 	{
-		navOps::_syncToE80($right_click_node, $tree, \@nodes);
+		# Direct push: E80 selection -> DB
+		my @items = _snapshotNodes($panel, @nodes);
+		if (!@items)
+		{
+			warning(0, 0, "_doPush: nothing to push");
+			return;
+		}
+		my $n       = scalar @items;
+		my $msg     = "Push $n item(s) from E80 to database?";
+		my $proceed = $nmDialogs::suppress_confirm
+			? 1
+			: confirmDialog($tree, $msg, 'Push');
+		return unless $proceed;
+		navOps::_pushFromE80($right_click_node, $tree, \@items);
 		return;
 	}
 
-	# DB panel: clipboard-triggered sync down (E80->DB)
+	# DB panel: check for clipboard-triggered push (E80->DB) first
 	my $cb = $clipboard;
-	if (!$cb || ($cb->{clipboard_class} // '') ne 'sync')
+	if ($cb && ($cb->{clipboard_class} // '') eq 'push')
 	{
-		warning(0, 0, "IMPLEMENTATION ERROR: _doSync called with non-sync-classified clipboard");
+		my @items = @{$cb->{items} // []};
+		if (!@items)
+		{
+			warning(0, 0, "_doPush: empty clipboard");
+			return;
+		}
+		my $n       = scalar @items;
+		my $msg     = "Push $n item(s) from E80 to database?";
+		my $proceed = $nmDialogs::suppress_confirm
+			? 1
+			: confirmDialog($tree, $msg, 'Push');
+		return unless $proceed;
+		navOps::_pushFromE80($right_click_node, $tree, \@items);
+		clearClipboard();
 		return;
 	}
 
-	my @items = @{$cb->{items} // []};
-	if (!@items)
+	# DB panel: direct push DB -> E80
+	my @db_items = _snapshotNodes('database', @nodes);
+	if (!@db_items)
 	{
-		warning(0, 0, "_doSync: empty clipboard");
+		warning(0, 0, "_doPush: nothing to push");
 		return;
 	}
-
-	my $n       = scalar @items;
-	my $msg     = "Sync $n item(s) from E80 to database?";
-	my $proceed = $nmDialogs::suppress_confirm
+	my $n2      = scalar @db_items;
+	my $msg2    = "Push $n2 item(s) from database to E80?";
+	my $proceed2 = $nmDialogs::suppress_confirm
 		? 1
-		: confirmDialog($tree, $msg, 'Sync');
-	return unless $proceed;
-
-	navOps::_syncFromE80($right_click_node, $tree, \@items);
-	clearClipboard();
+		: confirmDialog($tree, $msg2, 'Push');
+	return unless $proceed2;
+	navOps::_pushToE80($right_click_node, $tree, \@db_items);
 }
 
 
@@ -1046,7 +1077,7 @@ sub _cmdLabel
 	return 'NEW GROUP'         if $cmd_id == $CTX_CMD_NEW_GROUP;
 	return 'NEW ROUTE'         if $cmd_id == $CTX_CMD_NEW_ROUTE;
 	return 'NEW BRANCH'        if $cmd_id == $CTX_CMD_NEW_BRANCH;
-	return 'SYNC'              if $cmd_id == $CTX_CMD_SYNC;
+	return 'PUSH'              if $cmd_id == $CTX_CMD_PUSH;
 	return "CMD_$cmd_id";
 }
 
