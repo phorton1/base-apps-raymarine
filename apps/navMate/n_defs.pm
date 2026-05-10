@@ -1,8 +1,8 @@
 #---------------------------------------------
-# a_defs.pm
+# n_defs.pm
 #---------------------------------------------
 
-package a_defs;
+package n_defs;
 use strict;
 use warnings;
 use threads;
@@ -91,30 +91,30 @@ our $NODE_TYPE_BRANCH = 'branch';
 our $NODE_TYPE_GROUP  = 'group';
 
 # Context menu command IDs
-our $CTX_CMD_COPY = 10010;
-our $CTX_CMD_CUT  = 10110;
+our $CTX_CMD_COPY				= 10200;
+our $CTX_CMD_CUT				= 10201;
 
-our $CTX_CMD_PASTE           = 10300;
-our $CTX_CMD_PASTE_NEW       = 10301;
-our $CTX_CMD_PASTE_BEFORE    = 10302;
-our $CTX_CMD_PASTE_AFTER     = 10303;
-our $CTX_CMD_PASTE_NEW_BEFORE = 10304;
-our $CTX_CMD_PASTE_NEW_AFTER  = 10305;
+our $CTX_CMD_PASTE				= 10210;
+our $CTX_CMD_PASTE_NEW			= 10211;
+our $CTX_CMD_PASTE_BEFORE		= 10212;
+our $CTX_CMD_PASTE_AFTER		= 10213;
+our $CTX_CMD_PASTE_NEW_BEFORE	= 10214;
+our $CTX_CMD_PASTE_NEW_AFTER	= 10215;
 
-our $CTX_CMD_DELETE_WAYPOINT   = 10410;
-our $CTX_CMD_DELETE_GROUP      = 10420;
-our $CTX_CMD_DELETE_GROUP_WPS  = 10421;
-our $CTX_CMD_DELETE_ROUTE      = 10430;
-our $CTX_CMD_REMOVE_ROUTEPOINT = 10431;
-our $CTX_CMD_DELETE_TRACK      = 10440;
-our $CTX_CMD_DELETE_BRANCH     = 10450;
+our $CTX_CMD_DELETE_WAYPOINT	= 10220;
+our $CTX_CMD_DELETE_GROUP		= 10221;
+our $CTX_CMD_DELETE_GROUP_WPS	= 10222;
+our $CTX_CMD_DELETE_ROUTE		= 10223;
+our $CTX_CMD_REMOVE_ROUTEPOINT	= 10224;
+our $CTX_CMD_DELETE_TRACK		= 10225;
+our $CTX_CMD_DELETE_BRANCH		= 10226;
 
-our $CTX_CMD_NEW_WAYPOINT = 10510;
-our $CTX_CMD_NEW_GROUP    = 10520;
-our $CTX_CMD_NEW_ROUTE    = 10530;
-our $CTX_CMD_NEW_BRANCH   = 10550;
+our $CTX_CMD_NEW_WAYPOINT		= 10230;
+our $CTX_CMD_NEW_GROUP			= 10231;
+our $CTX_CMD_NEW_ROUTE			= 10232;
+our $CTX_CMD_NEW_BRANCH			= 10233;
 
-our $CTX_CMD_SYNC = 10600;
+our $CTX_CMD_SYNC				= 10250;
 
 
 1;

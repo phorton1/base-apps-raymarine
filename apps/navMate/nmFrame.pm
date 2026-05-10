@@ -1,35 +1,36 @@
 #!/usr/bin/perl
 #-------------------------------------------------------------------------
-# winMain.pm
+# nmFrame.pm
 #-------------------------------------------------------------------------
 
-package winMain;
+package nmFrame;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
+use Time::HiRes qw(time sleep);
 use Wx qw(:everything);
 use Wx::Event qw(
 	EVT_IDLE
 	EVT_MENU
 	EVT_UPDATE_UI);
-use Time::HiRes qw(time sleep);
 use Pub::Utils qw(display warning error _def);
 use Pub::WX::AppConfig;
 use Pub::WX::Frame;
 use Pub::WX::Dialogs;
 use apps::raymarine::NET::c_RAYDP;
-use c_visibility qw(saveViewState);
-use c_selection;
-use w_resources;
-use nmServer;
-use nmTest;
+use navVisibility qw(saveViewState);
+use navSelection;
+use nmResources;
+use nmDialogs;
+use navServer;
+use navTest;
 use winDatabase;
 use winE80;
 use winMonitor;
-use nmOneTimeImport;
-use nmKML;
-use base qw(w_frame);
+use navOneTimeImport;
+use navKML;
+use base qw(Pub::WX::Frame);
 
 
 sub new
@@ -99,6 +100,14 @@ sub setClipboardStatus
 {
 	my ($this, $text) = @_;
 	$this->{statusbar}->SetStatusText($text // '', 2);
+}
+
+
+sub showError
+{
+	my ($this, $msg) = @_;
+	return if $nmDialogs::suppress_error_dialog;
+	$this->SUPER::showError($msg);
 }
 
 
@@ -215,10 +224,10 @@ sub createPane
 	my ($this, $id, $book, $data) = @_;
 	return error("No id in createPane()") if !$id;
 	$book ||= $this->{book};
-	display(0, 0, "winMain::createPane($id) book=" . _def($book) . "  data=" . _def($data));
+	display(0, 0, "nmFrame::createPane($id) book=" . _def($book) . "  data=" . _def($data));
 	return winDatabase->new($this, $book, $id, $data)  if $id == $WIN_DATABASE;
-	return winE80->new($this, $book, $id, $data)      if $id == $WIN_E80;
-	return winMonitor->new($this, $book, $id, $data)  if $id == $WIN_MONITOR;
+	return winE80->new($this, $book, $id, $data)       if $id == $WIN_E80;
+	return winMonitor->new($this, $book, $id, $data)   if $id == $WIN_MONITOR;
 	return $this->SUPER::createPane($id, $book, $data);
 }
 
@@ -230,7 +239,15 @@ sub onCommand
 	if ($id == $WIN_DATABASE || $id == $WIN_E80 || $id == $WIN_MONITOR)
 	{
 		my $pane = $this->findPane($id);
-		$this->createPane($id) if !$pane;
+		if (!$pane)
+		{
+			$this->createPane($id);
+			if ($id == $WIN_E80 && $this->{_e80_stable})
+			{
+				my $e80 = $this->findPane($WIN_E80);
+				$e80->onSessionStart() if $e80;
+			}
+		}
 	}
 	elsif ($id == $COMMAND_OPEN_MAP)
 	{
@@ -315,7 +332,7 @@ sub onCommand
 		my $database = $this->findPane($WIN_DATABASE);
 		if ($database)
 		{
-			my @names = c_selection::getSelectionSetNames();
+			my @names = navSelection::getSelectionSetNames();
 			if (!@names)
 			{
 				okDialog($this, 'No saved selection sets.', 'Restore Selection');
@@ -389,15 +406,15 @@ sub _doExportDB
 	{
 		my $filename = $dialog->GetPath();
 		writeConfig('db_backup_dir', $dialog->GetDirectory());
-		my $dbh = c_db::connectDB();
+		my $dbh = navDB::connectDB();
 		if ($dbh)
 		{
-			display(0,0,"winMain: exporting database to $filename");
+			display(0,0,"nmFrame: exporting database to $filename");
 			my $progress = Pub::WX::ProgressDialog->new($this, 'Exporting Database...', 0, 9);
 			$dbh->exportDatabaseText($filename, $progress);
 			$progress->Destroy();
-			c_db::disconnectDB($dbh);
-			display(0,0,"winMain: export complete");
+			navDB::disconnectDB($dbh);
+			display(0,0,"nmFrame: export complete");
 		}
 	}
 	$dialog->Destroy();
@@ -420,18 +437,18 @@ sub _doImportDB
 	{
 		my $filename = $dialog->GetPath();
 		writeConfig('db_backup_dir', $dialog->GetDirectory());
-		display(0,0,"winMain: importing database from $filename");
-		c_db::resetDB();
-		my $dbh = c_db::connectDB();
+		display(0,0,"nmFrame: importing database from $filename");
+		navDB::resetDB();
+		my $dbh = navDB::connectDB();
 		if ($dbh)
 		{
 			my $progress = Pub::WX::ProgressDialog->new($this, 'Importing Database...', 0, 9);
 			$dbh->importDatabase($filename, $progress);
 			$progress->Destroy();
-			c_db::disconnectDB($dbh);
+			navDB::disconnectDB($dbh);
 			my $database = $this->findPane($WIN_DATABASE);
 			$database->refresh() if $database;
-			display(0,0,"winMain: import complete");
+			display(0,0,"nmFrame: import complete");
 		}
 	}
 	$dialog->Destroy();
@@ -451,7 +468,7 @@ sub _doExportKML
 	{
 		my $filename = $dialog->GetPath();
 		writeConfig('kml_dir', $dialog->GetDirectory());
-		eval { nmKML::exportKML($filename) };
+		eval { navKML::exportKML($filename) };
 		error("Export KML failed: $@") if $@;
 	}
 	$dialog->Destroy();
@@ -471,7 +488,7 @@ sub _doImportKMLNM
 	{
 		my $filename = $dialog->GetPath();
 		writeConfig('kml_dir', $dialog->GetDirectory());
-		eval { nmKML::importKML($filename) };
+		eval { navKML::importKML($filename) };
 		if ($@)
 		{
 			error("Import KML failed: $@");
@@ -492,17 +509,17 @@ sub _doImportKML
 	return if !yesNoDialog($this,
 		"This will DELETE and rebuild the entire navMate database from KML files.\n\nAre you sure?",
 		'OneTimeImportKML');
-	display(0,0,"winMain: ImportKML starting");
-	my $rc = c_db::resetDB();
+	display(0,0,"nmFrame: ImportKML starting");
+	my $rc = navDB::resetDB();
 	if ($rc <= 0)
 	{
-		warning(0,0,"winMain: ImportKML aborted - resetDB returned $rc");
+		warning(0,0,"nmFrame: ImportKML aborted - resetDB returned $rc");
 		return;
 	}
-	nmOneTimeImport::run();
+	navOneTimeImport::run();
 	my $database = $this->findPane($WIN_DATABASE);
 	$database->refresh() if $database;
-	display(0,0,"winMain: ImportKML done");
+	display(0,0,"nmFrame: ImportKML done");
 }
 
 
@@ -543,9 +560,9 @@ sub _doRevertDB
 		error("Revert navMate.db failed: $out");
 		return;
 	}
-	display(0, 0, "winMain: navMate.db reverted to last committed version");
-	my $rc = c_db::openDB();
-	warning(0, 0, "winMain: openDB after revert returned $rc") if $rc <= 0;
+	display(0, 0, "nmFrame: navMate.db reverted to last committed version");
+	my $rc = navDB::openDB();
+	warning(0, 0, "nmFrame: openDB after revert returned $rc") if $rc <= 0;
 	my $database = $this->findPane($WIN_DATABASE);
 	if ($database)
 	{
@@ -587,9 +604,8 @@ sub _doCommitDB
 		error("Commit navMate.db git commit failed: $out");
 		return;
 	}
-	display(0, 0, "winMain: navMate.db committed: $msg");
+	display(0, 0, "nmFrame: navMate.db committed: $msg");
 }
 
 
 1;
-

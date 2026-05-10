@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #------------------------------------------
-# c_visibility.pm
+# navVisibility.pm
 #------------------------------------------
 # Stores Leaflet map visibility state (which UUIDs are shown) for
 # navMate DB objects and E80-DB objects separately.
@@ -11,7 +11,7 @@
 # is the sole source of truth for visibility.
 # TODO: remove 'visible' column from schema once stable.
 
-package c_visibility;
+package navVisibility;
 use strict;
 use warnings;
 use JSON::PP qw(encode_json decode_json);
@@ -67,7 +67,7 @@ sub loadViewState
 	my $e80 = $state{e80_visibility};
 	%e80_vis = ($e80 && ref $e80 eq 'HASH') ? %$e80 : ();
 
-	display(0, 0, 'c_visibility: loaded ' . scalar(keys %db_vis) . ' db + ' . scalar(keys %e80_vis) . ' e80 visible objects');
+	display(0, 0, 'navVisibility: loaded ' . scalar(keys %db_vis) . ' db + ' . scalar(keys %e80_vis) . ' e80 visible objects');
 }
 
 
@@ -79,10 +79,10 @@ sub saveViewState
 		e80_visibility => \%e80_vis,
 	};
 	my $json = encode_json($state);
-	open(my $fh, '>:raw', $file) or do { error("c_visibility: cannot write $file: $!"); return; };
+	open(my $fh, '>:raw', $file) or do { error("navVisibility: cannot write $file: $!"); return; };
 	print $fh $json;
 	close $fh;
-	display(0, 0, 'c_visibility: saved view state');
+	display(0, 0, 'navVisibility: saved view state');
 }
 
 
@@ -97,7 +97,7 @@ sub seedDbVisibility
 {
 	my ($uuids_ref) = @_;
 	%db_vis = map { $_ => 1 } @$uuids_ref;
-	display(0, 0, 'c_visibility: seeded ' . scalar(@$uuids_ref) . ' db visible objects');
+	display(0, 0, 'navVisibility: seeded ' . scalar(@$uuids_ref) . ' db visible objects');
 }
 
 

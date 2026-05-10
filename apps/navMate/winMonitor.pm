@@ -19,7 +19,7 @@ use Pub::WX::Window;
 use apps::raymarine::NET::a_defs;
 use apps::raymarine::NET::a_mon;
 use apps::raymarine::NET::c_RAYDP;
-use w_resources;
+use nmResources;
 use base qw(Wx::Panel Pub::WX::Window);
 
 

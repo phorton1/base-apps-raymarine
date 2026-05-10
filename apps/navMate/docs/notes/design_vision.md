@@ -16,7 +16,7 @@ on the E80 it is a distinctly two step process.
 ### [item ordering UI]
 
 Drag/Drop UI for reordering items in winDatabase based on implmented
-nmOperations operators.
+navOperations operators.
 
 
 ### [winE80 / Leaflet integration cluster]
@@ -78,6 +78,12 @@ Suggested thresholds (to be tuned against the Bocas dataset):
 
 GE does real-time collision-based decluttering; this is a simpler zoom-gate
 that approximates the same result without that complexity.
+
+
+### [navMate preferences dialog]
+
+- navMate DB location
+- keybindings to command functions (a whole concept of its own)
 
 
 

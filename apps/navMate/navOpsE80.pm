@@ -1,22 +1,22 @@
 #!/usr/bin/perl
 #---------------------------------------------
-# nmOpsE80.pm
+# navOpsE80.pm
 #---------------------------------------------
 # E80-side operations for navMate context menu.
-# Continues as package nmOps (loaded via require from nmOps.pm).
+# Continues as package navOps (loaded via require from navOps.pm).
 
-package nmOps;
+package navOps;
 use strict;
 use warnings;
 use Wx qw(:everything);
 use Pub::Utils qw(display warning error getAppFrame);
 use Pub::WX::Dialogs;
-use a_defs;
-use a_utils;
+use n_defs;
+use n_utils;
 use nmDialogs;
 
 
-our $dbg_e80_ops;    # declared in nmOps.pm
+our $dbg_e80_ops;    # declared in navOps.pm
 
 
 #----------------------------------------------------
@@ -121,7 +121,7 @@ sub _openE80Progress
 {
     my ($title, $total, $opts) = @_;
     return undef if !$total;
-    display(0, 0, "nmOps::_openE80Progress '$title' total=$total");
+    display(0, 0, "navOps::_openE80Progress '$title' total=$total");
     my $progress = Pub::WX::ProgressDialog::newProgressData($total);
     $progress->{label}        = $title;
     $progress->{cancel_label} = $opts->{cancel_label} if $opts && $opts->{cancel_label};
@@ -342,7 +342,7 @@ sub _deleteE80GroupsAndWPs
             : "Delete $n groups from E80? Cannot be undone.";
     }
     return if !confirmDialog($tree, $msg, "Delete Groups + Waypoints");
-    display($dbg_e80_ops, 0, "nmOps::_deleteE80GroupsAndWPs n=$n total_wps=$total_wps");
+    display($dbg_e80_ops, 0, "navOps::_deleteE80GroupsAndWPs n=$n total_wps=$total_wps");
     my $total_ops = (2 * $total_wps) + $n;
     my $progress  = _openE80Progress("Delete Groups + Waypoints", $total_ops);
     return if !$progress;

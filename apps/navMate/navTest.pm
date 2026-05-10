@@ -1,30 +1,31 @@
 #!/usr/bin/perl
 #---------------------------------------------
-# nmTest.pm
+# navTest.pm
 #---------------------------------------------
 # HTTP-driven test dispatcher for navMate context menu testing.
-# Called from winMain::onIdle when a test command is queued
+# Called from nmFrame::onIdle when a test command is queued
 # via the /api/test HTTP endpoint.
 #
 # API (all params are query params on GET /api/test):
 #   panel=database|e80        which tree window to target
 #   select=key1,key2,...      node keys to select (UUIDs or "header:groups" etc.)
 #   right_click=key           which node is the right-click target (defaults to first in select)
-#   cmd=10010                 numeric CTX_CMD_* constant to fire
-#   suppress=0|1              auto-confirm dialogs before firing
+#   cmd=10200                 numeric CTX_CMD_* constant to fire
 #   op=suppress&val=0|1       set suppress_confirm without any tree or fire action
+#   op=suppress&val=1&outcome=reject   also set suppress_outcome for two-outcome dialogs
+#   op=refresh                reload navMate.db from disk
 #
-# NOTE: NEW_* commands (10510-10550) open name-input dialogs and will block the
-# test machinery.  Do not issue them via this endpoint.
+# NOTE: NEW_* commands (10230-10233) open name-input dialogs and will block the
+# test machinery. Do not issue them via this endpoint.
 
-package nmTest;
+package navTest;
 use strict;
 use warnings;
 use JSON::PP qw(decode_json);
 use Pub::Utils qw(display warning);
+use navOps qw(onContextMenuCommand);
 use nmDialogs qw($suppress_confirm);
-use nmClipboard qw(onContextMenuCommand);
-use w_resources qw($WIN_DATABASE $WIN_E80);
+use nmResources qw($WIN_DATABASE $WIN_E80);
 
 
 BEGIN
@@ -41,14 +42,23 @@ sub dispatchTestCommand
 {
 	my ($main_win, $cmd_json) = @_;
 	my $cmd = eval { decode_json($cmd_json) };
-	if ($@) { warning(0,0,"nmTest: bad JSON: $@"); return; }
+	if ($@) { warning(0,0,"navTest: bad JSON: $@"); return; }
 
 	# Pure ops - handle before panel resolution
 	my $op = $cmd->{op} // '';
 	if ($op eq 'suppress')
 	{
-		$suppress_confirm = ($cmd->{val} // 0) ? 1 : 0;
-		display(0,0,"nmTest: suppress_confirm=$suppress_confirm");
+		$suppress_confirm                 = ($cmd->{val} // 0) ? 1 : 0;
+		$nmDialogs::suppress_error_dialog = $suppress_confirm;
+		if (exists $cmd->{outcome})
+		{
+			$nmDialogs::suppress_outcome = $cmd->{outcome} // 'accept';
+			display(0,0,"navTest: suppress_confirm=$suppress_confirm suppress_outcome=$nmDialogs::suppress_outcome");
+		}
+		else
+		{
+			display(0,0,"navTest: suppress_confirm=$suppress_confirm");
+		}
 		return;
 	}
 	if ($op eq 'refresh')
@@ -56,17 +66,18 @@ sub dispatchTestCommand
 		my $pname = $cmd->{panel} // 'database';
 		my $pid   = ($pname eq 'e80') ? $WIN_E80 : $WIN_DATABASE;
 		my $pane  = $main_win->findPane($pid);
-		if (!$pane) { warning(0,0,"nmTest: refresh - panel '$pname' not open"); return; }
+		if (!$pane) { warning(0,0,"navTest: refresh - panel '$pname' not open"); return; }
 		$pane->refresh();
-		display(0,0,"nmTest: refresh done panel=$pname");
+		display(0,0,"navTest: refresh done panel=$pname");
 		return;
 	}
 
-	# Apply suppress flag if present on any op
+	# Apply suppress flag if present on a fire command
 	if (exists $cmd->{suppress})
 	{
-		$suppress_confirm = $cmd->{suppress} ? 1 : 0;
-		display(0,0,"nmTest: suppress_confirm=$suppress_confirm");
+		$suppress_confirm                 = $cmd->{suppress} ? 1 : 0;
+		$nmDialogs::suppress_error_dialog = $suppress_confirm;
+		display(0,0,"navTest: suppress_confirm=$suppress_confirm");
 	}
 
 	# Resolve panel
@@ -75,12 +86,12 @@ sub dispatchTestCommand
 	my $panel      = $main_win->findPane($panel_id);
 	if (!$panel)
 	{
-		warning(0,0,"nmTest: panel '$panel_name' not open");
+		warning(0,0,"navTest: panel '$panel_name' not open");
 		return;
 	}
 
 	# auto_expanded: keys of branches collapsed before this command that we expand
-	# to reach target nodes.  _doFire collapses them again after the command runs.
+	# to reach target nodes. _doFire collapses them again after the command runs.
 	my @auto_expanded;
 
 	# Select nodes if requested
@@ -186,7 +197,7 @@ sub _doSelect
 
 	my @selected;
 	my $rc_node = undef;
-	my $root = $tree->GetRootItem();
+	my $root    = $tree->GetRootItem();
 	_walkSelect($tree, $root, \%want, $rc_key, \@selected, \$rc_node, $expanded_ref);
 
 	$panel->{_context_nodes}    = \@selected;
@@ -194,7 +205,7 @@ sub _doSelect
 
 	my $found = scalar @selected;
 	my $rc_t  = $panel->{_right_click_node} ? $panel->{_right_click_node}{type} : 'none';
-	display(0,0,"nmTest: selected $found node(s), right_click=$rc_t");
+	display(0,0,"navTest: selected $found node(s), right_click=$rc_t");
 }
 
 
@@ -246,11 +257,11 @@ sub _doFire
 
 	if (!$rc)
 	{
-		warning(0,0,"nmTest: fire cmd=$cmd_id - no right_click_node set");
+		warning(0,0,"navTest: fire cmd=$cmd_id - no right_click_node set");
 		return;
 	}
 
-	display(0,0,"nmTest: firing cmd=$cmd_id panel=$panel_name");
+	display(0,0,"navTest: firing cmd=$cmd_id panel=$panel_name");
 	onContextMenuCommand($cmd_id, $panel_name, $rc, $panel->{tree}, @nodes);
 
 	# Collapse branches that were expanded solely to reach the target node.

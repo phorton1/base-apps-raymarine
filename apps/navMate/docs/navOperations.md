@@ -1,4 +1,4 @@
-# navMate -- nmOperations
+# navMate -- navOperations
 
 **[Raymarine](../../../docs/readme.md)** --
 **[Home](readme.md)** --
@@ -6,15 +6,15 @@
 **[Data Model](data_model.md)** --
 **[UI Model](ui_model.md)** --
 **[Implementation](implementation.md)** --
-**nmOperations** --
+**navOperations** --
 **[KML Specification](kml_specification.md)** --
 **[GE Notes](ge_notes.md)**
 
 ## Overview
 
-nmOperations is the feature that bridges navMate's two panels through familiar Copy / Cut /
+navOperations is the feature that bridges navMate's two panels through familiar Copy / Cut /
 Paste / New / Delete semantics. The **database panel** shows the navMate SQLite knowledge store; the
-**E80 panel** shows the live device state. nmOperations defines every right-click context
+**E80 panel** shows the live device state. navOperations defines every right-click context
 menu action across both panels: what commands appear, under what conditions, what the
 clipboard holds after a copy or cut, and what happens when the user pastes.
 
@@ -29,15 +29,15 @@ destination panel, determines which commands are valid, and either commits to ex
 or aborts with a user-facing explanation. The rule sections (SS8-SS10) are the pre-flight
 specification; they are not a separate documentation view from the operation behavior.
 
-The feature is implemented across four modules: `nmClipboard.pm` owns the clipboard state;
-`nmOps.pm` dispatches each command; `nmOpsDB.pm` executes database-side operations;
-`nmOpsE80.pm` executes E80-side operations. The `nmTest.pm` module provides the HTTP-driven
+The feature is implemented across four modules: `navClipboard.pm` owns the clipboard state;
+`navOps.pm` dispatches each command; `navOpsDB.pm` executes database-side operations;
+`navOpsE80.pm` executes E80-side operations. The `navTest.pm` module provides the HTTP-driven
 test dispatcher. See [Implementation](implementation.md) for the full module inventory.
 
 
 ## 1. Invariants
 
-nmOperations is a primary database/E80 data modification system. It must enforce data model
+navOperations is a primary database/E80 data modification system. It must enforce data model
 invariants not enforced by the database schema itself.
 
 ### 1.1 A Group is a Homogeneous Collection of Waypoints
@@ -69,7 +69,7 @@ before any E80 write.
 
 ### 1.4 The FLOAT Position Ordering Scheme Must Be Maintained and Repacked
 
-All nmOperations must correctly maintain the FLOAT position ordering scheme when modifying
+All navOperations must correctly maintain the FLOAT position ordering scheme when modifying
 the database. New position FLOAT values must be assigned during operations such as cut/paste
 and copy/paste new. A repacking mechanism must execute when the ordering values approach
 the 32-bit boundary (not the 51-bit limit).
@@ -100,7 +100,7 @@ DB accepts heterogeneous pastes.
 
 ## 2. Command Vocabulary
 
-The commands below constitute the nmOperations context menu. Each has a symbolic name
+The commands below constitute the navOperations context menu. Each has a symbolic name
 used throughout this document and a numeric CTX_CMD constant used in the Wx implementation
 and the HTTP test API.
 
@@ -968,7 +968,7 @@ once in the DB they are ordinary records, and PASTE_NEW copies them like any oth
 Every item in the navMate database carries two version fields: `db_version` (incremented
 each time the DB record is modified) and `e80_version` (the `db_version` value that was
 current at the time the item was last successfully written to the E80). These fields are
-maintained by nmOperations on every write path.
+maintained by navOperations on every write path.
 
 **New item created in DB (any NEW_* command):**
 `db_version` is set to 1. `e80_version` is set to NULL, indicating the item has never
@@ -1022,7 +1022,7 @@ Sends WPMGR NEW_ITEM commands in dependency order:
   upload proceeds per the rules for that single type above.
 
 The progress dialog protection pattern wraps all Paste-to-E80 operations, using the same
-pattern as `_doRefreshE80Data` in `winMain.pm`. Do not reinvent this pattern.
+pattern as `_doRefreshE80Data` in `nmFrame.pm`. Do not reinvent this pattern.
 
 ### 12.6 Paste Before and After
 
@@ -1119,7 +1119,7 @@ selection. Execution proceeds as E80-to-DB sync down above.
 `nmDialogs.pm` exports `$suppress_confirm`, a threads-shared variable. When set to 1,
 both confirmation dialogs **and** error/warning dialogs are suppressed -- they auto-accept
 their default response without user interaction. This covers all modal dialogs in the
-nmOperations flow and enables fully automated test execution through failure paths, not
+navOperations flow and enables fully automated test execution through failure paths, not
 just success paths.
 
 Reset `$suppress_confirm` to 0 for any test step that needs to verify a specific dialog
@@ -1129,8 +1129,8 @@ fires rather than auto-accepting.
 
 Context menu operations are driven programmatically via the `/api/test` HTTP endpoint
 (port 9883). The HTTP thread encodes the query params as JSON and stores them in a shared
-variable; `winMain::onIdle` picks up the command within ~20 ms and calls
-`nmTest::dispatchTestCommand`, which walks the tree to set the selection and right-click
+variable; `nmFrame::onIdle` picks up the command within ~20 ms and calls
+`navTest::dispatchTestCommand`, which walks the tree to set the selection and right-click
 node, then calls `onContextMenuCommand` directly -- the same code path as a real right-click
 and menu pick.
 
@@ -1200,7 +1200,7 @@ NEW_* commands open name-input dialogs and are excluded from automation.
 ### 13.4 Progress dialog pattern
 
 Any Paste-to-E80 operation opens a ProgressDialog using the same pattern as
-`_doRefreshE80Data` in `winMain.pm`. The `onIdle` dispatch guard prevents new
+`_doRefreshE80Data` in `nmFrame.pm`. The `onIdle` dispatch guard prevents new
 `/api/test` commands from firing while the dialog is active. Poll `dialog_state` before
 issuing the next step:
 

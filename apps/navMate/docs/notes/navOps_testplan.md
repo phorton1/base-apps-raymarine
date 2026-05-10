@@ -1,8 +1,8 @@
-# navMate -- nmOps Test Plan
+# navMate -- navOps Test Plan
 
-Test cases for the nmOperations feature. For the design specification and pre-flight rules
-see nmOperations.md (SS1-SS13). For the companion execution script with UUID table and curl
-commands see nmOps_testplan_runbook.md (in docs/notes/).
+Test cases for the navOperations feature. For the design specification and pre-flight rules
+see navOperations.md (SS1-SS13). For the companion execution script with UUID table and curl
+commands see navOps_testplan_runbook.md (in docs/notes/).
 
 This plan describes WHAT to test and WHAT to expect -- in terms of user operations and
 system behavior. It reads as a spec a human tester could follow manually without knowing
@@ -97,7 +97,7 @@ that would otherwise block on user input.
 **Outcome control (two-outcome dialogs).** Some pre-flight paths produce dialogs with two
 meaningful outcomes -- ancestor-wins (proceed vs. abort), UUID conflict (skip+continue vs.
 abort), E80 DEL-WP with route-ref warning (proceed vs. abort). Testing the non-default
-path requires outcome=reject support. See [nmOps testability prerequisites] in todo.md.
+path requires outcome=reject support. See [navOps testability prerequisites] in todo.md.
 Tests in Section 5 that require outcome=reject are flagged PREREQUISITE in their headers.
 
 For all other tests in this plan, suppress=1 with default accept behavior is assumed.
@@ -784,7 +784,7 @@ absence of menu items. All blocked operations should produce WARNING or IMPLEMEN
 ERROR in the log with no data change.
 
 Tests marked **PREREQUISITE: outcome=reject** require `$suppress_outcome` support; see
-[nmOps testability prerequisites] in todo.md. Run the accept-path variant only until the
+[navOps testability prerequisites] in todo.md. Run the accept-path variant only until the
 prerequisite is implemented; mark the reject-path variant NOT_RUN.
 
 ---

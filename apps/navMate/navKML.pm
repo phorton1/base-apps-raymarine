@@ -1,14 +1,14 @@
 #-----------------------------------------
-# nmKML.pm
+# navKML.pm
 #-----------------------------------------
-package nmKML;
+package navKML;
 use strict;
 use warnings;
 use XML::Simple;
 use Pub::Utils qw(display warning error);
-use a_defs;
-use a_utils;
-use c_db;
+use n_defs;
+use n_utils;
+use navDB;
 
 my $KML_STYLE_VERSION = 1;
 my $WHT_BLANK         = 'http://maps.google.com/mapfiles/kml/paddle/wht-blank.png';
@@ -35,7 +35,7 @@ sub exportKML
 sub _export
 {
 	my ($dbh, $path) = @_;
-	display(0,0,"nmKML: exporting to $path");
+	display(0,0,"navKML: exporting to $path");
 
 	my %styles;
 	my $content = '';
@@ -50,7 +50,7 @@ sub _export
 	my $fh;
 	if (!open($fh, '>:encoding(UTF-8)', $path))
 	{
-		error("nmKML: cannot write $path: $!");
+		error("navKML: cannot write $path: $!");
 		return;
 	}
 	print $fh qq{<?xml version="1.0" encoding="UTF-8"?>\n};
@@ -65,7 +65,7 @@ sub _export
 	print $fh qq{</Document>\n};
 	print $fh qq{</kml>\n};
 	close $fh;
-	display(0,0,"nmKML: export complete");
+	display(0,0,"navKML: export complete");
 }
 
 
@@ -294,16 +294,16 @@ sub _import
 	my ($dbh, $path) = @_;
 	if (!-f $path)
 	{
-		error("nmKML: not found: $path");
+		error("navKML: not found: $path");
 		return;
 	}
-	display(0,0,"nmKML: importing $path");
+	display(0,0,"navKML: importing $path");
 
 	my $data = $xs->XMLin($path);
 	my $root = $data->{Document}[0];
 	if (!$root)
 	{
-		error("nmKML: no root Document in $path");
+		error("navKML: no root Document in $path");
 		return;
 	}
 
@@ -328,7 +328,7 @@ sub _import
 		_importRouteFolder($dbh, $r->{folder}, $r->{coll_uuid}, \%seen);
 	}
 
-	display(0,0,"nmKML: import complete");
+	display(0,0,"navKML: import complete");
 }
 
 
@@ -370,7 +370,7 @@ sub _importFolder
 	{
 		if ($seen->{$nm_uuid})
 		{
-			warning(0,0,"nmKML: duplicate nm_uuid '$nm_uuid' collection '$name' - skipped");
+			warning(0,0,"navKML: duplicate nm_uuid '$nm_uuid' collection '$name' - skipped");
 			return;
 		}
 		$seen->{$nm_uuid} = 1;
@@ -437,7 +437,7 @@ sub _importWaypoint
 	{
 		if ($seen->{$nm_uuid})
 		{
-			warning(0,0,"nmKML: duplicate nm_uuid '$nm_uuid' waypoint '$name' - skipped");
+			warning(0,0,"navKML: duplicate nm_uuid '$nm_uuid' waypoint '$name' - skipped");
 			return;
 		}
 		$seen->{$nm_uuid} = 1;
@@ -501,7 +501,7 @@ sub _importTrack
 	{
 		if ($seen->{$nm_uuid})
 		{
-			warning(0,0,"nmKML: duplicate nm_uuid '$nm_uuid' track '$name' - skipped");
+			warning(0,0,"navKML: duplicate nm_uuid '$nm_uuid' track '$name' - skipped");
 			return;
 		}
 		$seen->{$nm_uuid} = 1;
@@ -556,7 +556,7 @@ sub _importRouteFolder
 	{
 		if ($seen->{$nm_uuid})
 		{
-			warning(0,0,"nmKML: duplicate nm_uuid '$nm_uuid' route '$name' - skipped");
+			warning(0,0,"navKML: duplicate nm_uuid '$nm_uuid' route '$name' - skipped");
 			return;
 		}
 		$seen->{$nm_uuid} = 1;
@@ -591,7 +591,7 @@ sub _appendRefWaypoints
 		my $wp_uuid = _parseExt($pm)->{nm_uuid} // next;
 		if (!getWaypoint($dbh, $wp_uuid))
 		{
-			warning(0,0,"nmKML: route '$route_name' ref to unknown waypoint '$wp_uuid' - skipped");
+			warning(0,0,"navKML: route '$route_name' ref to unknown waypoint '$wp_uuid' - skipped");
 			next;
 		}
 		appendRouteWaypoint($dbh, $route_uuid, $wp_uuid, $pos++);

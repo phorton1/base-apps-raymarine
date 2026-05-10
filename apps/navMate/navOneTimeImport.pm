@@ -1,7 +1,7 @@
 #-----------------------------------------
-# nmOneTimeImport.pm
+# navOneTimeImport.pm
 #-----------------------------------------
-# Called from winMain File->Import KML menu item.
+# Called from nmFrame File->Import KML menu item.
 # run() parses C:/junk/navMate.kml and imports every top-level Folder
 # and Document found there.  GE folder names become collection names directly.
 #
@@ -13,15 +13,15 @@
 #   - After all sources are imported, promoteWaypointOnlyBranches() promotes
 #     any branch collection with only direct waypoints to node_type='group'.
 
-package nmOneTimeImport;
+package navOneTimeImport;
 use strict;
 use warnings;
 use XML::Simple;
 use Time::Local qw(timegm);
 use Pub::Utils;
-use a_defs;
-use a_utils;
-use c_db;
+use n_defs;
+use n_utils;
+use navDB;
 
 
 my $NAVMATE_KML = 'C:/junk/navMate.kml';
@@ -39,7 +39,7 @@ sub run
 	my $dbh = connectDB();
 	_run($dbh);
 	disconnectDB($dbh);
-	display(0,0,"nmOneTimeImport done");
+	display(0,0,"navOneTimeImport done");
 }
 
 
@@ -52,7 +52,7 @@ sub _run
 	my ($dbh) = @_;
 	if (!-f $NAVMATE_KML)
 	{
-		error("nmOneTimeImport: not found: $NAVMATE_KML");
+		error("navOneTimeImport: not found: $NAVMATE_KML");
 		return;
 	}
 	display(0,0,"importing $NAVMATE_KML");
@@ -60,7 +60,7 @@ sub _run
 	my $root = $data->{Document}[0];
 	if (!$root)
 	{
-		error("nmOneTimeImport: no root Document in $NAVMATE_KML");
+		error("navOneTimeImport: no root Document in $NAVMATE_KML");
 		return;
 	}
 	my $style_colors = _buildStyleMap($root);
@@ -76,13 +76,13 @@ sub _run
 	{
 		next if ($folder->{name} // '') =~ /\(no import\)/i;
 		eval { _importTopLevel($dbh, $folder, $style_colors) };
-		error("nmOneTimeImport: folder '" . ($folder->{name}//'?') . "' failed: $@") if $@;
+		error("navOneTimeImport: folder '" . ($folder->{name}//'?') . "' failed: $@") if $@;
 	}
 	for my $doc (@{$container->{Document} // []})
 	{
 		next if ($doc->{name} // '') =~ /\(no import\)/i;
 		eval { _importTopLevel($dbh, $doc, $style_colors) };
-		error("nmOneTimeImport: document '" . ($doc->{name}//'?') . "' failed: $@") if $@;
+		error("navOneTimeImport: document '" . ($doc->{name}//'?') . "' failed: $@") if $@;
 	}
 
 	promoteWaypointOnlyBranches($dbh);

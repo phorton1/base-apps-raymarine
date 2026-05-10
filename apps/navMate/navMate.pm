@@ -26,17 +26,17 @@ use apps::raymarine::NET::e_WPMGR;
 use apps::raymarine::NET::e_TRACK;
 use apps::raymarine::NET::e_wp_api;
 
-use a_defs;
-use a_utils;
-use nmPrefs;
-use c_db;
-use c_visibility;
-use c_outline;
-use c_selection;
-use nmServer;
+use n_defs;
+use n_utils;
+use navPrefs;
+use navDB;
+use navVisibility;
+use navOutline;
+use navSelection;
+use navServer;
 use apps::raymarine::NET::s_serial;
-use w_resources;
-use winMain;
+use nmResources;
+use nmFrame;
 
 use base 'Wx::App';
 
@@ -59,7 +59,7 @@ sub _handleSerialCommand
 
 my $serial = apps::raymarine::NET::s_serial->new(\&_handleSerialCommand);
 
-my $db_rc = c_db::openDB();
+my $db_rc = navDB::openDB();
 if ($db_rc == -1)
 {
 	display(0,0,"navMate: schema mismatch - use File->Import KML to rebuild database");
@@ -67,7 +67,7 @@ if ($db_rc == -1)
 loadViewState();
 loadOutlineState();
 loadSelectionSets();
-nmServer::startNavMateServer();
+navServer::startNavMateServer();
 
 apps::raymarine::NET::a_defs::initServices(wpmgr => 1, track => 1, auto_query => 1);
 apps::raymarine::NET::c_RAYDP->new();
@@ -81,7 +81,7 @@ my $frame;
 
 sub OnInit
 {
-	$frame = winMain->new();
+	$frame = nmFrame->new();
 	if (!$frame)
 	{
 		error("unable to create frame");

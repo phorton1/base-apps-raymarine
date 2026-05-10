@@ -1,19 +1,19 @@
 #!/usr/bin/perl
 #---------------------------------------------
-# nmOpsDB.pm
+# navOpsDB.pm
 #---------------------------------------------
 # Database-side operations for navMate context menu.
-# Continues as package nmOps (loaded via require from nmOps.pm).
+# Continues as package navOps (loaded via require from navOps.pm).
 
-package nmOps;
+package navOps;
 use strict;
 use warnings;
 use Wx qw(:everything);
 use Pub::Utils qw(display warning error getAppFrame);
 use Pub::WX::Dialogs;
-use c_db;
-use a_defs;
-use a_utils;
+use navDB;
+use n_defs;
+use n_utils;
 use nmDialogs;
 
 
@@ -491,7 +491,7 @@ sub _deleteDB
 
 	if ($cmd_id == $CTX_CMD_DELETE_BRANCH)
 	{
-		# Branch-safety check was done in nmOps::_doDelete pre-flight
+		# Branch-safety check was done in navOps::_doDelete pre-flight
 		my $node = $right_click_node;
 		my $uuid = ($node->{data} // {})->{uuid};
 		my $name = ($node->{data} // {})->{name} // '?';
@@ -561,7 +561,7 @@ sub _pasteItemsToCollection
 				if ($cut_flag && $result ne 'skipped' && $result ne 'aborted')
 				{
 					$source eq 'e80'
-						? nmOps::_cutE80Waypoint($item->{uuid}, $tree)
+						? navOps::_cutE80Waypoint($item->{uuid}, $tree)
 						: _cutDatabaseWaypoint($item->{uuid}, $tree);
 				}
 			}
@@ -604,14 +604,14 @@ sub _pasteItemsToCollection
 					if ($cut_flag && $result ne 'skipped' && $result ne 'aborted')
 					{
 						$source eq 'e80'
-							? nmOps::_cutE80Waypoint($member->{uuid}, $tree)
+							? navOps::_cutE80Waypoint($member->{uuid}, $tree)
 							: _cutDatabaseWaypoint($member->{uuid}, $tree);
 					}
 				}
 				if ($cut_flag && !($$policy_ref && $$policy_ref eq 'abort') && !$any_skipped && $group_uuid)
 				{
 					$source eq 'e80'
-						? nmOps::_cutE80Group($group_uuid, $tree)
+						? navOps::_cutE80Group($group_uuid, $tree)
 						: _cutDatabaseGroup($group_uuid, $tree);
 				}
 			}
@@ -667,7 +667,7 @@ sub _pasteItemsToCollection
 				if ($cut_flag)
 				{
 					$source eq 'e80'
-						? nmOps::_cutE80Route($route_uuid, $tree)
+						? navOps::_cutE80Route($route_uuid, $tree)
 						: _cutDatabaseRoute($route_uuid, $tree);
 				}
 			}
@@ -716,7 +716,7 @@ sub _pasteItemsToCollection
 				if ($cut_flag)
 				{
 					$source eq 'e80'
-						? nmOps::_cutE80Track($item->{uuid}, $tree)
+						? navOps::_cutE80Track($item->{uuid}, $tree)
 						: _cutDatabaseTrack($item->{uuid}, $tree);
 				}
 			}
@@ -1054,19 +1054,19 @@ sub _pasteDB
 				if ($t eq 'waypoint' || $t eq 'route_point')
 				{
 					$source eq 'e80'
-						? nmOps::_cutE80Waypoint($item->{uuid}, $tree)
+						? navOps::_cutE80Waypoint($item->{uuid}, $tree)
 						: _cutDatabaseWaypoint($item->{uuid}, $tree);
 				}
 				elsif ($t eq 'route')
 				{
 					$source eq 'e80'
-						? nmOps::_cutE80Route($item->{uuid}, $tree)
+						? navOps::_cutE80Route($item->{uuid}, $tree)
 						: _cutDatabaseRoute($item->{uuid}, $tree);
 				}
 				elsif ($t eq 'track')
 				{
 					$source eq 'e80'
-						? nmOps::_cutE80Track($item->{uuid}, $tree)
+						? navOps::_cutE80Track($item->{uuid}, $tree)
 						: _cutDatabaseTrack($item->{uuid}, $tree);
 				}
 				# groups/branches from DB are already repositioned in-place; no separate cut
@@ -1197,7 +1197,7 @@ sub _pasteDB
 		{
 			next if ($item->{type} // '') eq 'route_point' && $source eq 'database';
 			$source eq 'e80'
-				? nmOps::_cutE80Waypoint($item->{uuid}, $tree)
+				? navOps::_cutE80Waypoint($item->{uuid}, $tree)
 				: _cutDatabaseWaypoint($item->{uuid}, $tree);
 		}
 

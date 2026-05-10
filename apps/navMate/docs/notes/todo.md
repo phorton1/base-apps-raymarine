@@ -8,6 +8,11 @@ own context here.
 
 ## Next
 
+[ schema update ] - remove the visibility columns in the database and
+remove the entire working set tables and any code references (comments,
+etc) to them.  A schema change forces updates to official documents, but
+not, in this case any other working documents.
+
 
 
 ## Soon
@@ -107,13 +112,13 @@ abandons the clipboard), the WP is permanently gone from DB - a data-loss risk.
 
 Options:
 - **A** - Defer DB deletion to paste-success. Clipboard stores a "pending
-  delete" flag. Safest; requires refactoring the CUT path in nmOpsDB.pm.
+  delete" flag. Safest; requires refactoring the CUT path in navOpsDB.pm.
 - **B** - Disallow D-CT-DB in the UI menu. Force user to delete explicitly
   only after confirming paste succeeded.
 - **C** - Accept and document: cut = delete, paste = re-create. User
   responsibility to not abandon a cut clipboard.
 
-Affects: nmOpsDB.pm (`_cutDatabaseWaypoint`), nmOps.pm (doCut).
+Affects: navOpsDB.pm (`_cutDatabaseWaypoint`), navOps.pm (doCut).
 
 ### [wp_type semantics after operations]
 The `wp_type` field (sounding / label / nav) was assigned by the original
@@ -125,7 +130,7 @@ a sounding or label playing that role - nav seems like the only sensible
 route-point type. But it is unclear whether wp_type should be coerced on paste
 into a route, or left alone and treated as display metadata only.
 
-A second angle: wp_type may interact with the nmOperations scheme in ways not
+A second angle: wp_type may interact with the navOperations scheme in ways not
 yet designed - e.g. filtering what can be pasted where, or affecting how items
 are rendered in the tree. No decision yet; capture here before the question
 gets lost. Resolve before any work that touches wp_type assignment at paste time.
@@ -135,7 +140,7 @@ gets lost. Resolve before any work that touches wp_type assignment at paste time
 ## Ongoing
 
 ### [Doc hierarchy pruning]
-After the nmOps scheme redesign is complete, a severe pruning pass is
+After the navOps scheme redesign is complete, a severe pruning pass is
 needed: context_menu.md, context_menu_testplan.md, last_testrun.md,
 and large portions of the runbook, implementation.md, and architecture.md
 will need to be rewritten or retired. Primary Claude must explicitly

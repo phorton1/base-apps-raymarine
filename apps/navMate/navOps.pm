@@ -1,12 +1,12 @@
 #!/usr/bin/perl
 #---------------------------------------------
-# nmOps.pm
+# navOps.pm
 #---------------------------------------------
 # Context-menu operation orchestrator for navMate.
-# nmOpsDB.pm (DB operations) and nmOpsE80.pm (E80 operations)
-# are in package nmOps and are loaded at the bottom of this file.
+# navOpsDB.pm (DB operations) and navOpsE80.pm (E80 operations)
+# are in package navOps and are loaded at the bottom of this file.
 
-package nmOps;
+package navOps;
 use strict;
 use warnings;
 use threads;
@@ -17,14 +17,14 @@ use Pub::Utils qw(display warning error getAppFrame $UTILS_COLOR_LIGHT_MAGENTA);
 use Pub::WX::Dialogs;
 use apps::raymarine::NET::a_defs qw($SCALE_LATLON);
 use apps::raymarine::NET::c_RAYDP;
-use c_db;
-use a_defs;
-use w_resources;
-use nmClipboard;
+use navDB;
+use n_defs;
+use nmResources;
+use navClipboard;
 use nmDialogs;
 
-require nmOpsDB;
-require nmOpsE80;
+require navOpsDB;
+require navOpsE80;
 
 
 BEGIN
@@ -168,15 +168,15 @@ sub onContextMenuCommand
 	{
 		_doCut($panel, $right_click_node, $tree, @nodes);
 	}
-	elsif ($cmd_id >= 10300 && $cmd_id <= 10305)
+	elsif ($cmd_id >= 10210 && $cmd_id <= 10215)
 	{
 		_doPaste($cmd_id, $panel, $right_click_node, $tree, @nodes);
 	}
-	elsif ($cmd_id >= 10410 && $cmd_id <= 10450)
+	elsif ($cmd_id >= 10220 && $cmd_id <= 10226)
 	{
 		_doDelete($cmd_id, $panel, $right_click_node, $tree, @nodes);
 	}
-	elsif ($cmd_id >= 10510 && $cmd_id <= 10550)
+	elsif ($cmd_id >= 10230 && $cmd_id <= 10233)
 	{
 		_doNew($cmd_id, $panel, $right_click_node, $tree);
 	}
@@ -186,7 +186,7 @@ sub onContextMenuCommand
 	}
 	else
 	{
-		warning(0, 0, "nmOps: unknown cmd_id=$cmd_id");
+		warning(0, 0, "navOps: unknown cmd_id=$cmd_id");
 	}
 
 	display(-1, 0, "===== $label ($panel) FINISHED =====", 0, $UTILS_COLOR_LIGHT_MAGENTA);
@@ -535,11 +535,11 @@ sub _doDelete
 
 	if ($panel eq 'e80')
 	{
-		nmOps::_deleteE80($cmd_id, $right_click_node, $tree, @nodes);
+		navOps::_deleteE80($cmd_id, $right_click_node, $tree, @nodes);
 	}
 	else
 	{
-		nmOps::_deleteDB($cmd_id, $right_click_node, $tree, @nodes);
+		navOps::_deleteDB($cmd_id, $right_click_node, $tree, @nodes);
 	}
 	clearClipboard();
 }
@@ -773,12 +773,13 @@ sub _doPaste
 			}
 		}
 
-		nmOps::_pasteE80($cmd_id, $right_click_node, $tree, \@effective, $cb);
+		navOps::_pasteE80($cmd_id, $right_click_node, $tree, \@effective, $cb);
 	}
 	else
 	{
-		nmOps::_pasteDB($cmd_id, $right_click_node, $tree, \@resolved, $cb);
+		navOps::_pasteDB($cmd_id, $right_click_node, $tree, \@resolved, $cb);
 	}
+	clearClipboard() if $cb->{cut_flag};
 }
 
 
@@ -819,7 +820,7 @@ sub _doSync
 
 	if ($panel eq 'e80')
 	{
-		nmOps::_syncToE80($right_click_node, $tree, \@nodes);
+		navOps::_syncToE80($right_click_node, $tree, \@nodes);
 		return;
 	}
 
@@ -845,7 +846,7 @@ sub _doSync
 		: confirmDialog($tree, $msg, 'Sync');
 	return unless $proceed;
 
-	nmOps::_syncFromE80($right_click_node, $tree, \@items);
+	navOps::_syncFromE80($right_click_node, $tree, \@items);
 	clearClipboard();
 }
 
@@ -949,29 +950,29 @@ sub _doNew
 		}
 		else
 		{
-			nmOps::_newE80Group($right_click_node, $tree);
+			navOps::_newE80Group($right_click_node, $tree);
 		}
 	}
 	elsif ($cmd_id == $CTX_CMD_NEW_ROUTE)
 	{
 		if ($panel eq 'database')
 		{
-			nmOps::_newDatabaseRoute($right_click_node, $tree);
+			navOps::_newDatabaseRoute($right_click_node, $tree);
 		}
 		else
 		{
-			nmOps::_newE80Route($right_click_node, $tree);
+			navOps::_newE80Route($right_click_node, $tree);
 		}
 	}
 	elsif ($cmd_id == $CTX_CMD_NEW_WAYPOINT)
 	{
 		if ($panel eq 'database')
 		{
-			nmOps::_newDatabaseWaypoint($right_click_node, $tree);
+			navOps::_newDatabaseWaypoint($right_click_node, $tree);
 		}
 		else
 		{
-			nmOps::_newE80Waypoint($right_click_node, $tree);
+			navOps::_newE80Waypoint($right_click_node, $tree);
 		}
 	}
 	else

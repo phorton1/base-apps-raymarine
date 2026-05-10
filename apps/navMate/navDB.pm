@@ -1,17 +1,17 @@
 #---------------------------------------------
-# c_db.pm
+# navDB.pm
 #---------------------------------------------
 
-package c_db;
+package navDB;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils;
 use Pub::Database;
-use a_defs;
-use a_utils;
-use c_visibility;
+use n_defs;
+use n_utils;
+use navVisibility;
 
 
 BEGIN
@@ -195,13 +195,13 @@ my $db_def = {
 
 sub openDB
 {
-	display(0,0,"c_db::openDB($db_path)");
+	display(0,0,"navDB::openDB($db_path)");
 	$db_ready = 0;
 
 	my $dbh = Pub::Database->connect(_db_params());
 	if (!$dbh)
 	{
-		error("c_db::openDB connect failed");
+		error("navDB::openDB connect failed");
 		return 0;
 	}
 
@@ -217,7 +217,7 @@ sub openDB
 
 	if ($stored eq '7.0' || $stored eq '8.0')
 	{
-		display(0,0,"c_db::openDB migrating schema $stored -> 9.0");
+		display(0,0,"navDB::openDB migrating schema $stored -> 9.0");
 		if ($stored eq '7.0')
 		{
 			for my $table (qw(collections waypoints routes tracks))
@@ -233,12 +233,12 @@ sub openDB
 		}
 		$dbh->do("UPDATE key_values SET value='9.0' WHERE key='schema_version'", []);
 		$stored = '9.0';
-		display(0,0,"c_db::openDB migration to 9.0 complete");
+		display(0,0,"navDB::openDB migration to 9.0 complete");
 	}
 
 	if ($stored eq '9.0')
 	{
-		display(0,0,"c_db::openDB migrating schema 9.0 -> 10.0");
+		display(0,0,"navDB::openDB migrating schema 9.0 -> 10.0");
 		for my $table (qw(collections waypoints routes tracks))
 		{
 			$dbh->do("ALTER TABLE $table ADD COLUMN position REAL NOT NULL DEFAULT 0", []);
@@ -266,7 +266,7 @@ sub openDB
 		)", []);
 		$dbh->do("UPDATE key_values SET value='10.0' WHERE key='schema_version'", []);
 		$stored = '10.0';
-		display(0,0,"c_db::openDB migration to 10.0 complete");
+		display(0,0,"navDB::openDB migration to 10.0 complete");
 	}
 
 	my ($stored_major)   = split(/\./, $stored);
@@ -284,10 +284,10 @@ sub openDB
 		warning(0,0,"schema_version advisory: DB has $stored, code expects $SCHEMA_VERSION");
 	}
 
-	display(0,0,"c_db::openDB ok (schema $stored)");
+	display(0,0,"navDB::openDB ok (schema $stored)");
 	if (!hasDbVisibility())
 	{
-		display(0,0,"c_db::openDB seeding visibility from DB visible column");
+		display(0,0,"navDB::openDB seeding visibility from DB visible column");
 		my @uuids;
 		for my $table (qw(waypoints routes tracks))
 		{
@@ -311,7 +311,7 @@ sub connectDB
 {
 	return undef if !$db_ready;
 	my $dbh = Pub::Database->connect(_db_params());
-	error("c_db::connectDB failed") if !$dbh;
+	error("navDB::connectDB failed") if !$dbh;
 	return $dbh;
 }
 
@@ -362,7 +362,7 @@ sub _createTables
 	{
 		next if $dbh->tableExists($table);
 		$dbh->createTable($table)
-			or return error("c_db::_createTables failed for $table: $dbh->{errstr}");
+			or return error("navDB::_createTables failed for $table: $dbh->{errstr}");
 	}
 	return 1;
 }
@@ -401,7 +401,7 @@ sub newUUID
 	if ($@)
 	{
 		eval { $dbh->rollback() };
-		error("c_db::newUUID failed: $@");
+		error("navDB::newUUID failed: $@");
 		return undef;
 	}
 	return makeUUID($counter);
@@ -631,7 +631,7 @@ sub insertTrackPoints
 	if ($@)
 	{
 		eval { $dbh->rollback() };
-		error("c_db::insertTrackPoints failed: $@");
+		error("navDB::insertTrackPoints failed: $@");
 		return 0;
 	}
 	return scalar @$points;

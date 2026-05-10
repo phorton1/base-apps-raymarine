@@ -15,7 +15,7 @@
 #   Tracks
 #     track ...
 #
-# Refresh is triggered by winMain::onIdle whenever the global NET version
+# Refresh is triggered by nmFrame::onIdle whenever the global NET version
 # increments (i.e. any WPMGR or TRACK item changes).
 
 package winE80;
@@ -41,12 +41,12 @@ use Pub::Utils qw(display warning error);
 use Pub::WX::Window;
 use apps::raymarine::NET::b_records qw(wpmgrRecordToText);
 use apps::raymarine::NET::c_RAYDP;
-use a_defs;
-use a_utils;
-use nmOps qw(buildContextMenu onContextMenuCommand);
-use nmServer qw(addRenderFeatures removeRenderFeatures openMapBrowser isBrowserConnected);
-use c_visibility qw(getE80Visible setE80Visible clearAllE80Visible getAllE80VisibleUUIDs batchRemoveE80Visible);
-use w_resources;
+use n_defs;
+use n_utils;
+use navOps qw(buildContextMenu onContextMenuCommand);
+use navServer qw(addRenderFeatures removeRenderFeatures openMapBrowser isBrowserConnected);
+use navVisibility qw(getE80Visible setE80Visible clearAllE80Visible getAllE80VisibleUUIDs batchRemoveE80Visible);
+use nmResources;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
 our $dbg_wine80 = 0;
@@ -198,7 +198,7 @@ sub new
 	EVT_MENU($this, $COMMAND_REFRESH_WIN_E80, sub { refresh($_[0]) });
 	EVT_MENU($this, $CTX_CMD_SHOW_MAP,   \&_onShowMap);
 	EVT_MENU($this, $CTX_CMD_HIDE_MAP,   \&_onHideMap);
-	EVT_MENU_RANGE($this, 10010, 10559, \&_onNmOpsCmd);
+	EVT_MENU_RANGE($this, 10200, 10299, \&_onNmOpsCmd);
 	EVT_TEXT($this,   $this->{ed_name},    \&_onFieldChanged);
 	EVT_TEXT($this,   $this->{ed_lat},     \&_onLatEdit);
 	EVT_TEXT($this,   $this->{ed_lon},     \&_onLonEdit);
@@ -270,6 +270,7 @@ sub _buildAndRestore
 	my $wpmgr     = $raydp ? $raydp->findImplementedService('WPMGR', 1) : undef;
 	my $track_mgr = $raydp ? $raydp->findImplementedService('TRACK', 1) : undef;
 
+	return if !$tree;
 	$tree->DeleteAllItems();
 	$this->{detail}->SetValue('');
 
@@ -857,18 +858,18 @@ sub _onTreeKeyDown
 			if ($key == ord('C'))
 			{
 				$cmd_id = $CTX_CMD_COPY
-					if nmClipboard::getCopyMenuItems('e80', @nodes);
+					if navClipboard::getCopyMenuItems('e80', @nodes);
 			}
 			elsif ($key == ord('X'))
 			{
 				$cmd_id = $CTX_CMD_CUT
-					if nmClipboard::getCutMenuItems('e80', @nodes);
+					if navClipboard::getCutMenuItems('e80', @nodes);
 			}
 			else
 			{
 				if (scalar(@nodes) == 1)
 				{
-					my @paste = nmClipboard::getPasteMenuItems('e80', $right_click_node);
+					my @paste = navClipboard::getPasteMenuItems('e80', $right_click_node);
 					$cmd_id = $CTX_CMD_PASTE
 						if grep { $_->{id} == $CTX_CMD_PASTE } @paste;
 				}
@@ -896,7 +897,7 @@ sub _applyCutStyle
 {
 	my ($this) = @_;
 	$CUT_COLOR //= Wx::Colour->new(160, 160, 160);
-	my $cb = $nmClipboard::clipboard;
+	my $cb = $navClipboard::clipboard;
 	my %cut;
 	if ($cb && $cb->{cut_flag} && ($cb->{source} // '') eq 'e80')
 	{

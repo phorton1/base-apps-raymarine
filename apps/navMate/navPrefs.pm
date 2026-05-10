@@ -1,8 +1,8 @@
 #---------------------------------------------
-# nmPrefs.pm
+# navPrefs.pm
 #---------------------------------------------
 
-package nmPrefs;
+package navPrefs;
 use strict;
 use warnings;
 use threads;

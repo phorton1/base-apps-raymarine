@@ -38,16 +38,16 @@ use POSIX qw(strftime);
 use Pub::Utils qw(display warning error);
 use Pub::WX::Window;
 use Pub::WX::Menu;
-use c_db;
-use c_visibility qw(getDbVisible);
-use c_outline;
-use c_selection;
-use a_defs;
-use a_utils;
-use nmPrefs;
-use nmServer;
-use nmOps qw(buildContextMenu onContextMenuCommand);
-use w_resources;
+use navDB;
+use navVisibility qw(getDbVisible);
+use navOutline;
+use navSelection;
+use n_defs;
+use n_utils;
+use navPrefs;
+use navServer;
+use navOps qw(buildContextMenu onContextMenuCommand);
+use nmResources;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
 my $DUMMY = '__dummy__';
@@ -206,7 +206,7 @@ sub new
 	$this->SplitVertically($this->{tree}, $right_split, $sash);
 	$this->SetSashGravity(0);
 
-	my @outline_uuids = c_outline::getExpandedUUIDs();
+	my @outline_uuids = navOutline::getExpandedUUIDs();
 	$this->{_expanded_uuids} = { map { $_ => 1 } @outline_uuids };
 	$this->{_selected_uuids} = {};
 
@@ -223,7 +223,7 @@ sub new
 	EVT_MENU($this, $CTX_CMD_NEW_GROUP,  \&_onNewGroup);
 	EVT_MENU($this, $CTX_CMD_SHOW_MAP,   \&_onShowMap);
 	EVT_MENU($this, $CTX_CMD_HIDE_MAP,   \&_onHideMap);
-	EVT_MENU_RANGE($this, 10010, 10559,  \&_onNmOpsCmd);
+	EVT_MENU_RANGE($this, 10200, 10299,  \&_onNmOpsCmd);
 	EVT_TEXT($this,   $this->{ed_name},    \&_onFieldChanged);
 	EVT_TEXT($this,   $this->{ed_comment}, \&_onFieldChanged);
 	EVT_TEXT($this,   $this->{ed_lat},     \&_onLatEdit);
@@ -1487,21 +1487,21 @@ sub _onTreeKeyDown
 			if ($key == ord('C'))
 			{
 				$cmd_id = $CTX_CMD_COPY
-					if nmClipboard::getCopyMenuItems('database', @nodes);
+					if navClipboard::getCopyMenuItems('database', @nodes);
 			}
 			elsif ($key == ord('X'))
 			{
 				$cmd_id = $CTX_CMD_CUT
-					if nmClipboard::getCutMenuItems('database', @nodes);
+					if navClipboard::getCutMenuItems('database', @nodes);
 			}
 			elsif (scalar(@nodes) == 1)
 			{
 				my $t    = $right_click_node->{type} // '';
-				my $cut  = $nmClipboard::clipboard ? ($nmClipboard::clipboard->{cut_flag} // 0) : 0;
+				my $cut  = $navClipboard::clipboard ? ($navClipboard::clipboard->{cut_flag} // 0) : 0;
 				my $want = ($t eq 'root' || $t eq 'collection')
 				         ? ($cut ? $CTX_CMD_PASTE       : $CTX_CMD_PASTE_NEW)
 				         : ($cut ? $CTX_CMD_PASTE_AFTER : $CTX_CMD_PASTE_NEW_AFTER);
-				my @paste = nmClipboard::getPasteMenuItems('database', $right_click_node);
+				my @paste = navClipboard::getPasteMenuItems('database', $right_click_node);
 				$cmd_id = $want if grep { $_->{id} == $want } @paste;
 			}
 
@@ -1527,7 +1527,7 @@ sub _applyCutStyle
 {
 	my ($this) = @_;
 	$CUT_COLOR //= Wx::Colour->new(160, 160, 160);
-	my $cb = $nmClipboard::clipboard;
+	my $cb = $navClipboard::clipboard;
 	my %cut;
 	if ($cb && $cb->{cut_flag} && ($cb->{source} // '') eq 'database')
 	{
@@ -1957,15 +1957,15 @@ sub doSaveOutline
 	my ($this) = @_;
 	_captureExpandedInto($this);
 	my @uuids = sort keys %{$this->{_expanded_uuids}};
-	c_outline::setExpandedUUIDs(\@uuids);
-	c_outline::saveOutlineState();
+	navOutline::setExpandedUUIDs(\@uuids);
+	navOutline::saveOutlineState();
 }
 
 
 sub doRestoreOutline
 {
 	my ($this) = @_;
-	my @uuids = c_outline::getExpandedUUIDs();
+	my @uuids = navOutline::getExpandedUUIDs();
 	$this->{_expanded_uuids} = { map { $_ => 1 } @uuids };
 	_clearEditor($this);
 	$this->{detail}->SetValue('');
@@ -1978,14 +1978,14 @@ sub doSaveSelection
 	my ($this, $name) = @_;
 	_captureSelectedInto($this);
 	my @uuids = sort keys %{$this->{_selected_uuids}};
-	c_selection::putSelectionSet($name, \@uuids);
+	navSelection::putSelectionSet($name, \@uuids);
 }
 
 
 sub doRestoreSelection
 {
 	my ($this, $name) = @_;
-	my $uuids_ref = c_selection::getSelectionSet($name);
+	my $uuids_ref = navSelection::getSelectionSet($name);
 	return if !@$uuids_ref;
 	$this->{_selected_uuids} = { map { $_ => 1 } @$uuids_ref };
 	my $tree = $this->{tree};

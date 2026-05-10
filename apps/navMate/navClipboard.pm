@@ -1,16 +1,16 @@
 #!/usr/bin/perl
 #---------------------------------------------
-# nmClipboard.pm
+# navClipboard.pm
 #---------------------------------------------
 
-package nmClipboard;
+package navClipboard;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils qw(warning error getAppFrame);
-use c_db;
-use a_defs;
+use navDB;
+use n_defs;
 
 
 BEGIN
@@ -197,7 +197,7 @@ sub getNewMenuItems
 
 #----------------------------------------------------
 # getDeleteMenuItems (SS8)
-# Route-ref and branch-safety checks are deferred to pre-flight in nmOps.pm.
+# Route-ref and branch-safety checks are deferred to pre-flight in navOps.pm.
 #----------------------------------------------------
 
 sub getDeleteMenuItems

@@ -1,5 +1,5 @@
 #---------------------------------------------
-# nmServer.pm
+# navServer.pm
 #---------------------------------------------
 # navMate HTTP server.  Extends h_server.pm.
 # Port 9883.  Static files from _site/.
@@ -17,7 +17,7 @@
 #   /api/query   - SELECT against navMate SQLite DB
 #   /api/nmdb    - structured snapshot: collections, waypoints, routes, route_waypoints, tracks
 
-package nmServer;
+package navServer;
 use strict;
 use warnings;
 use threads;
@@ -28,7 +28,7 @@ use JSON::PP qw(encode_json decode_json);
 use Pub::Utils qw(display warning error);
 use Pub::HTTP::Response qw(json_response);
 use apps::raymarine::NET::h_server;
-use c_db;
+use navDB;
 use base qw(apps::raymarine::NET::h_server);
 
 
@@ -71,10 +71,10 @@ BEGIN
 
 sub startNavMateServer
 {
-	display(0,0,"starting nmServer on port $SERVER_PORT");
-	$nm_server = nmServer->new();
+	display(0,0,"starting navServer on port $SERVER_PORT");
+	$nm_server = navServer->new();
 	$nm_server->start();
-	display(0,0,"nmServer started");
+	display(0,0,"navServer started");
 }
 
 
@@ -220,28 +220,28 @@ sub handle_request
 		return json_response($request,{ error => 'no sql' }) if !$sql;
 		return json_response($request,{ error => 'only SELECT allowed' })
 			if ($sql !~ /^\s*SELECT\s/i);
-		my $dbh = c_db::connectDB();
-		my ($rows,$err) = c_db::rawQuery($dbh,$sql);
-		c_db::disconnectDB($dbh);
+		my $dbh = navDB::connectDB();
+		my ($rows,$err) = navDB::rawQuery($dbh,$sql);
+		navDB::disconnectDB($dbh);
 		return $err
 			? json_response($request,{ error => $err })
 			: json_response($request,{ rows  => $rows });
 	}
 	elsif ($uri eq '/api/nmdb')
 	{
-		my $dbh = c_db::connectDB();
+		my $dbh = navDB::connectDB();
 		return json_response($request,{ error => 'db connect failed' }) if !$dbh;
-		my ($colls,  $e1) = c_db::rawQuery($dbh,
+		my ($colls,  $e1) = navDB::rawQuery($dbh,
 			"SELECT uuid, name, parent_uuid, node_type, visible, position FROM collections ORDER BY name");
-		my ($wps,    $e2) = c_db::rawQuery($dbh,
+		my ($wps,    $e2) = navDB::rawQuery($dbh,
 			"SELECT uuid, name, collection_uuid, wp_type, color, visible, db_version, e80_version, kml_version, position FROM waypoints ORDER BY name");
-		my ($routes, $e3) = c_db::rawQuery($dbh,
+		my ($routes, $e3) = navDB::rawQuery($dbh,
 			"SELECT uuid, name, collection_uuid, color, visible, db_version, e80_version, kml_version, position FROM routes ORDER BY name");
-		my ($rtwps,  $e4) = c_db::rawQuery($dbh,
+		my ($rtwps,  $e4) = navDB::rawQuery($dbh,
 			"SELECT route_uuid, wp_uuid, position FROM route_waypoints ORDER BY route_uuid, position");
-		my ($tracks, $e5) = c_db::rawQuery($dbh,
+		my ($tracks, $e5) = navDB::rawQuery($dbh,
 			"SELECT uuid, name, collection_uuid, ts_start, color, visible, db_version, e80_version, kml_version, position FROM tracks ORDER BY name");
-		c_db::disconnectDB($dbh);
+		navDB::disconnectDB($dbh);
 		my $err = $e1 || $e2 || $e3 || $e4 || $e5;
 		return json_response($request,{ error => $err }) if $err;
 		return json_response($request,{
