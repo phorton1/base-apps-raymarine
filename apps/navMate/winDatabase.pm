@@ -528,6 +528,19 @@ sub _showObject
 		$text .= _fmt('point_count',     $t->{point_count});
 		$text .= _fmt('collection_uuid', $t->{collection_uuid});
 		$text .= _fmt('position',        $t->{position});
+		my $pts = getTrackPoints($dbh, $t->{uuid});
+		if (@$pts)
+		{
+			$text .= "\n";
+			for my $i (0 .. $#$pts)
+			{
+				my $pt   = $pts->[$i];
+				my $d_ft = ($pt->{depth_cm} // 0) ? sprintf('%.1fft', $pt->{depth_cm} / 30.48) : '-';
+				my $t_f  = ($pt->{temp_k}   // 0) ? sprintf('%.1fF', ($pt->{temp_k} / 100 - 273) * 9 / 5 + 32) : '-';
+				$text .= sprintf("  %2d  %9.6f  %10.6f  %7s  %s\n",
+					$i + 1, $pt->{lat} // 0, $pt->{lon} // 0, $d_ft, $t_f);
+			}
+		}
 	}
 	elsif ($obj_stub->{obj_type} eq 'waypoint')
 	{

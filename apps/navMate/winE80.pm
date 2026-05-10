@@ -558,6 +558,19 @@ sub onTreeSelect
 		$text .= "UUID:   $node->{uuid}\n";
 		$text .= "Points: $pts\n";
 		$text .= "Color:  $track->{color}\n" if defined $track->{color};
+		my $point_list = ref $track->{points} eq 'ARRAY' ? $track->{points} : [];
+		if (@$point_list)
+		{
+			$text .= "\n";
+			for my $i (0 .. $#$point_list)
+			{
+				my $pt   = $point_list->[$i];
+				my $d_ft = ($pt->{depth} // 0) ? sprintf('%.1fft', $pt->{depth} / 30.48) : '-';
+				my $t_f  = ($pt->{tempr} // 0) ? sprintf('%.1fF', ($pt->{tempr} / 100 - 273) * 9 / 5 + 32) : '-';
+				$text .= sprintf("  %2d  %9.6f  %10.6f  %7s  %s\n",
+					$i + 1, ($pt->{lat} // 0) + 0, ($pt->{lon} // 0) + 0, $d_ft, $t_f);
+			}
+		}
 	}
 	else
 	{
