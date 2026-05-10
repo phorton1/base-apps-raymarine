@@ -40,6 +40,7 @@ my $dbg_mods = 0;
 
 
 our $query_in_progress :shared = 0;
+our $query_completed   :shared = 0;
 our $pending_commands  :shared = 0;
 my $delete_progress = shared_clone({progress => undef});
 
@@ -77,6 +78,8 @@ sub destroy
 	my ($this) = @_;
 	display($dbg,0,"d_WPMGR destroy($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
 
+	$query_completed   = 0;
+	$query_in_progress = 0;
 	$this->SUPER::destroy();
 
     delete @$this{qw(waypoints routes groups)};
@@ -341,6 +344,7 @@ sub do_query
 		$this->query_one($WHAT_ROUTE,    $progress) &&
 		$this->query_one($WHAT_GROUP,    $progress);
 	$query_in_progress--;
+	$query_completed = 1;
 
 	if ($progress && exists $progress->{workers})
 	{

@@ -23,11 +23,7 @@
 # Some service_ids are known.
 # Some service_ports are fully implemented.
 
-# $AUTO_START_IMPLEMENTED_SERVICES
-#
-#	- Locally, some service_port are fully implemented, and, based on
-#	  $AUTO_START_IMPLEMENTED_SERVICES we 'promote' and start() them
-#     upon discovery.
+# Implemented service_ports are 'promoted' and start()ed upon discovery.
 #   - Implemented service ports are promoted with EXIT_ON_CLOSE=0,
 #     and the ability to attempt to reconnect, with the idea that they are
 #     resilient to read/write errors with the socket (i.e. bad commands, etc,
@@ -354,8 +350,7 @@ sub addServicePort
 	# not already been starrted.
 	
 	my $name = $service_port->{name};
-	if ($AUTO_START_IMPLEMENTED_SERVICES &&
-		$service_port->{implemented} &&
+	if ($service_port->{implemented} &&
 		!$this->findImplementedService($name,1))
 	{
 		$this->startImplementedService($service_port);

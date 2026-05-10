@@ -12,17 +12,14 @@ use Pub::Utils;
 
 
 
-our $AUTO_START_IMPLEMENTED_SERVICES = 1;
-	# RAYDP will automatically start service_ports marked as 'implemented'.
-	# Otherwise shark will start them, and they will wait for RAYDP to find them.
-	
+
+
 
 BEGIN
 {
  	use Exporter qw( import );
     our @EXPORT = qw(
 
-		$AUTO_START_IMPLEMENTED_SERVICES
 		initServices
 	
 		$LOCAL_IP
@@ -427,31 +424,32 @@ our %SERVICE_PORT_DEFS  = (
 sub initServices
 {
 	my (%want) = @_;
+	my $auto_query = $want{auto_query} // 0;
 	mergeHash($SERVICE_PORT_DEFS{$SPORT_FILESYS},{
 		parser_class	=> 'apps::raymarine::NET::e_FILESYS',
 		implemented 	=> $want{filesys} || 0,
 		auto_connect 	=> 1,
-		auto_populate	=> 1 });
+		auto_populate	=> $auto_query });
 	mergeHash($SERVICE_PORT_DEFS{$SPORT_WPMGR},{
 		parser_class	=> 'apps::raymarine::NET::e_WPMGR',
 		implemented 	=> $want{wpmgr} || 0,
 		auto_connect 	=> 1,
-		auto_populate 	=> 1 });
+		auto_populate 	=> $auto_query });
 	mergeHash($SERVICE_PORT_DEFS{$SPORT_TRACK},{
 		parser_class	=> 'apps::raymarine::NET::e_TRACK',
 		implemented 	=> $want{track} || 0,
 		auto_connect 	=> 1,
-		auto_populate 	=> 1 });
+		auto_populate 	=> $auto_query });
 	mergeHash($SERVICE_PORT_DEFS{$SPORT_DBNAV},{
 		parser_class	=> 'apps::raymarine::NET::e_DBNAV',
 		implemented 	=> $want{dbnav} || 0,
 		auto_connect 	=> 1,
-		auto_populate 	=> 1 });
+		auto_populate 	=> $auto_query });
 	mergeHash($SERVICE_PORT_DEFS{$SPORT_DB},{
 		parser_class	=> 'apps::raymarine::NET::e_DB',
 		implemented 	=> $want{db} || 0,
 		auto_connect 	=> 1,
-		auto_populate 	=> 1 });
+		auto_populate 	=> $auto_query });
 }
 
 

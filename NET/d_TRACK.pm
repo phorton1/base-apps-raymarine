@@ -33,6 +33,7 @@ my $WITH_EVENT_PROCESSING	= 1;
 my $WITH_MOD_PROCESSING 	= 1;
 
 our $query_in_progress :shared = 0;
+our $query_completed   :shared = 0;
 
 
 BEGIN
@@ -104,6 +105,8 @@ sub destroy
 	my ($this) = @_;
 	display($dbg,0,"d_TRACK destroy($this->{name},$this->{ip}:$this->{port}) proto=$this->{proto}");
 
+	$query_completed   = 0;
+	$query_in_progress = 0;
 	$this->SUPER::destroy();
 
     delete @$this{qw(tracks current_track_uuid)};
@@ -573,6 +576,7 @@ sub get_tracks
 	my $tracks = $this->{tracks};
 	display($dbg+1,1,"keys(tracks) = ".join(" ",keys %$tracks));
 	$query_in_progress--;	# get_tracks itself done; N get_track calls still pending
+	$query_completed = 1 if $query_in_progress == 0;	# no tracks in dict
 
 	# If no saved tracks at all, close out progress here (get_track won't run)
 	if (!@$uuids && $progress && exists $progress->{workers})
@@ -624,17 +628,22 @@ sub get_track
 
 	warning($dbg_got,0,"got track($uuid) = '$item->{name}'");
 	$query_in_progress-- if $query_in_progress > 0;
-
-	my $progress = $this->{_active_progress};
-	if ($progress)
+	if ($query_in_progress == 0)
 	{
-		$progress->{label} = $item->{name} // '';
-		$progress->{done}++;
-		if ($query_in_progress == 0)
+		$query_completed = 1;
+		my $progress = $this->{_active_progress};
+		if ($progress)
 		{
+			$progress->{label} = $item->{name} // '';
+			$progress->{done}++;
 			$progress->{workers}-- if exists $progress->{workers};
 			$this->{_active_progress} = undef;
 		}
+	}
+	elsif ($this->{_active_progress})
+	{
+		$this->{_active_progress}{label} = $item->{name} // '';
+		$this->{_active_progress}{done}++;
 	}
 
 	return 1;
