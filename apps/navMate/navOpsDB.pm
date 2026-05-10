@@ -623,7 +623,7 @@ sub _pasteItemsToCollection
 				my $route_data   = $item->{data};
 				my $route_points = $item->{route_points} // [];
 				my $route_color  = $source eq 'e80'
-					? e80RouteIndexToAbgr($route_data->{color})
+					? e80ColorIndexToAbgr($route_data->{color})
 					: $route_data->{color};
 				my $new_route_uuid = insertRoute($dbh,
 					$route_data->{name}    // '',
@@ -643,7 +643,7 @@ sub _pasteItemsToCollection
 				my $route_data   = $item->{data};
 				my $route_points = $item->{route_points} // [];
 				my $route_color  = $source eq 'e80'
-					? e80RouteIndexToAbgr($route_data->{color})
+					? e80ColorIndexToAbgr($route_data->{color})
 					: $route_data->{color};
 				my $existing = getRoute($dbh, $route_uuid);
 				if (!$existing)
@@ -690,7 +690,7 @@ sub _pasteItemsToCollection
 				my $ts_end      = $track->{ts_end}   // (@$pts ? $pts->[-1]{ts}       : undef);
 				my $ts_source   = $source eq 'e80' ? 'e80' : ($track->{ts_source} // 'user');
 				my $track_color = $source eq 'e80'
-					? e80TrackIndexToAbgr($track->{color})
+					? e80ColorIndexToAbgr($track->{color})
 					: $track->{color};
 				my $track_uuid = insertTrack($dbh,
 					($source eq 'e80' && !$fresh ? (uuid => $item->{uuid}) : ()),
@@ -910,7 +910,7 @@ sub _pasteDB
 				elsif ($t eq 'route')
 				{
 					my $rd    = $item->{data};
-					my $color = $source eq 'e80' ? e80RouteIndexToAbgr($rd->{color}) : $rd->{color};
+					my $color = $source eq 'e80' ? e80ColorIndexToAbgr($rd->{color}) : $rd->{color};
 					if ($fresh)
 					{
 						my $new_uuid = insertRoute($dbh, $rd->{name} // '', $color, $rd->{comment} // '', $coll_uuid);
@@ -953,7 +953,7 @@ sub _pasteDB
 					my $tr       = $item->{data};
 					my $pts      = $tr->{points} // [];
 					my $ts_src   = $source eq 'e80' ? 'e80' : ($tr->{ts_source} // 'user');
-					my $color    = $source eq 'e80' ? e80TrackIndexToAbgr($tr->{color}) : $tr->{color};
+					my $color    = $source eq 'e80' ? e80ColorIndexToAbgr($tr->{color}) : $tr->{color};
 					my $ts_start = $tr->{ts_start} // (@$pts ? ($pts->[0]{ts} // 0) : 0);
 					my $ts_end   = $tr->{ts_end}   // (@$pts ? $pts->[-1]{ts}       : undef);
 					if ($cut_flag && $source eq 'database' && !$fresh)
@@ -1350,7 +1350,7 @@ sub _pushFromE80
 			next if !$rec;
 			updateRoute($dbh, $uuid,
 				$rd->{name}    // '',
-				e80RouteIndexToAbgr($rd->{color} // 0),
+				e80ColorIndexToAbgr($rd->{color} // 0),
 				$rd->{comment} // '');
 			clearRouteWaypoints($dbh, $uuid);
 			my $pos = 0;

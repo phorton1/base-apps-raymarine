@@ -15,7 +15,7 @@ use Scalar::Util qw(looks_like_number);
 use Wx qw(:everything);
 use Pub::Utils qw(display warning error getAppFrame $UTILS_COLOR_LIGHT_MAGENTA);
 use Pub::WX::Dialogs;
-use apps::raymarine::NET::a_defs qw($SCALE_LATLON);
+use apps::raymarine::NET::a_defs qw($SCALE_LATLON $E80_MAX_NAME $E80_MAX_COMMENT);
 use apps::raymarine::NET::c_RAYDP;
 use navDB;
 use n_defs;
@@ -781,6 +781,14 @@ sub _doPaste
 			}
 		}
 
+		if (($cb->{source} // '') eq 'database')
+		{
+			my $paste_issues = _preflightLossyTransform(\@effective, 'db_to_e80');
+			if (_hasLossyIssues($paste_issues))
+			{
+				return if !nmDialogs::lossyTransformWarning($tree, $paste_issues);
+			}
+		}
 		navOps::_pasteE80($cmd_id, $right_click_node, $tree, \@effective, $cb);
 	}
 	else
@@ -841,6 +849,11 @@ sub _doPush
 			? 1
 			: confirmDialog($tree, $msg, 'Push');
 		return if !$proceed;
+		my $issues = _preflightLossyTransform(\@items, 'e80_to_db');
+		if (_hasLossyIssues($issues))
+		{
+			return if !nmDialogs::lossyTransformWarning($tree, $issues);
+		}
 		navOps::_pushFromE80($right_click_node, $tree, \@items);
 		return;
 	}
@@ -861,6 +874,11 @@ sub _doPush
 			? 1
 			: confirmDialog($tree, $msg, 'Push');
 		return if !$proceed;
+		my $cb_issues = _preflightLossyTransform(\@items, 'e80_to_db');
+		if (_hasLossyIssues($cb_issues))
+		{
+			return if !nmDialogs::lossyTransformWarning($tree, $cb_issues);
+		}
 		navOps::_pushFromE80($right_click_node, $tree, \@items);
 		clearClipboard();
 		return;
@@ -879,6 +897,11 @@ sub _doPush
 		? 1
 		: confirmDialog($tree, $msg2, 'Push');
 	return if !$proceed2;
+	my $db_issues = _preflightLossyTransform(\@db_items, 'db_to_e80');
+	if (_hasLossyIssues($db_issues))
+	{
+		return if !nmDialogs::lossyTransformWarning($tree, $db_issues);
+	}
 	navOps::_pushToE80($right_click_node, $tree, \@db_items);
 }
 
@@ -1044,11 +1067,87 @@ sub abgrToE80Index
 	return $best_idx;
 }
 
-my @E80_ROUTE_INDEX_TO_ABGR = qw(ff0000ff ff00ffff ff00ff00 ffff0000 ffff00ff ffffffff);
-my @E80_TRACK_INDEX_TO_ABGR = qw(ff0000ff ff00ffff ff00ff00 ffff0000 ffff00ff ff000000);
+my @E80_COLOR_INDEX_TO_ABGR = qw(ff0000ff ff00ffff ff00ff00 ffff0000 ffff00ff ffffffff);
+my %E80_EXACT_COLOR = map { $_ => 1 } @E80_COLOR_INDEX_TO_ABGR;
 
-sub e80RouteIndexToAbgr { $E80_ROUTE_INDEX_TO_ABGR[$_[0] // 0] // $E80_ROUTE_INDEX_TO_ABGR[0] }
-sub e80TrackIndexToAbgr { $E80_TRACK_INDEX_TO_ABGR[$_[0] // 0] // $E80_TRACK_INDEX_TO_ABGR[0] }
+sub e80ColorIndexToAbgr { $E80_COLOR_INDEX_TO_ABGR[$_[0] // 0] // $E80_COLOR_INDEX_TO_ABGR[0] }
+sub isExactE80Color     { $E80_EXACT_COLOR{lc($_[0] // '')} ? 1 : 0 }
+
+
+#----------------------------------------------------
+# _preflightLossyTransform / _hasLossyIssues
+#----------------------------------------------------
+
+sub _hasLossyIssues
+{
+	my ($issues) = @_;
+	return @{$issues->{truncated_names}    // []}
+	    || @{$issues->{truncated_comments} // []}
+	    || @{$issues->{color_mismatch}     // []};
+}
+
+sub _preflightLossyTransform
+{
+	my ($items, $direction) = @_;
+	my (@trunc_names, @trunc_comments, @color_mismatch);
+
+	my $dbh = ($direction eq 'e80_to_db') ? connectDB() : undef;
+
+	for my $item (@$items)
+	{
+		my $t    = $item->{type} // '';
+		my $d    = $item->{data} // {};
+		my $name = $d->{name}   // '';
+
+		if ($direction eq 'db_to_e80')
+		{
+			push @trunc_names, $name
+				if length($name) > $E80_MAX_NAME;
+			push @trunc_comments, $name
+				if length($d->{comment} // '') > $E80_MAX_COMMENT;
+
+			if ($t eq 'group')
+			{
+				for my $m (@{$item->{members} // []})
+				{
+					my $md = $m->{data} // {};
+					my $mn = $md->{name} // '';
+					push @trunc_names, $mn
+						if length($mn) > $E80_MAX_NAME;
+					push @trunc_comments, $mn
+						if length($md->{comment} // '') > $E80_MAX_COMMENT;
+				}
+			}
+
+			push @color_mismatch, $name
+				if $t eq 'route' && !isExactE80Color($d->{color} // '');
+		}
+		elsif ($direction eq 'e80_to_db' && $dbh)
+		{
+			if ($t eq 'route' || $t eq 'track')
+			{
+				my $new_abgr = e80ColorIndexToAbgr($d->{color} // 0);
+				my $existing = ($t eq 'route')
+					? getRoute($dbh, $item->{uuid} // '')
+					: getTrack($dbh, $item->{uuid} // '');
+				if ($existing)
+				{
+					my $db_color = lc($existing->{color} // '');
+					push @color_mismatch, $name
+						if $db_color ne '' && $db_color ne lc($new_abgr);
+				}
+			}
+		}
+	}
+
+	disconnectDB($dbh) if $dbh;
+
+	return {
+		truncated_names    => \@trunc_names,
+		truncated_comments => \@trunc_comments,
+		color_mismatch     => \@color_mismatch,
+	};
+}
 
 
 #----------------------------------------------------

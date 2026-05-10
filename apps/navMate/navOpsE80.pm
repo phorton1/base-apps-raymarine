@@ -11,6 +11,7 @@ use warnings;
 use Wx qw(:everything);
 use Pub::Utils qw(display warning error getAppFrame);
 use Pub::WX::Dialogs;
+use apps::raymarine::NET::a_defs qw($E80_MAX_NAME $E80_MAX_COMMENT);
 use n_defs;
 use n_utils;
 use nmDialogs;
@@ -623,18 +624,19 @@ sub _pasteOneWaypointToE80
 
     if (!$existing)
     {
-        my $wp_name = defined($pending_names)
+        my $wp_name_raw = defined($pending_names)
             ? _deconflictE80Name($wpmgr, $wp->{name}, $pending_names)
             : ($wp->{name} // '');
         $pending_uuids->{$uuid} = 1 if $pending_uuids;
+        my ($pa_wp_name, $pa_wp_comment) = _truncForE80($wp_name_raw, $wp->{comment} // '');
         $wpmgr->createWaypoint({
-            name     => $wp_name,
+            name     => $pa_wp_name,
             uuid     => $uuid,
             lat      => $wp->{lat},
             lon      => $wp->{lon},
             sym      => 0,
             ts       => $wp->{created_ts} // $wp->{ts} // time(),
-            comment  => $wp->{comment} // '',
+            comment  => $pa_wp_comment,
             depth    => $wp->{depth_cm} // $wp->{depth} // 0,
             progress => $progress,
         });
@@ -832,10 +834,11 @@ sub _pasteGroupToE80
         }
         else
         {
+            my ($pg_name, $pg_comment) = _truncForE80($group_data->{name} // '', $group_data->{comment} // '');
             $wpmgr->createGroup({
-                name     => $group_data->{name}    // '',
+                name     => $pg_name,
                 uuid     => $group_uuid,
-                comment  => $group_data->{comment} // '',
+                comment  => $pg_comment,
                 members  => \@placed_uuids,
                 progress => $progress,
             });
@@ -902,10 +905,11 @@ sub _pasteRouteToE80
     }
     else
     {
+        my ($pr_name, $pr_comment) = _truncForE80($route_data->{name} // '', $route_data->{comment} // '');
         $wpmgr->createRoute({
-            name      => $route_data->{name}    // '',
+            name      => $pr_name,
             uuid      => $route_uuid,
-            comment   => $route_data->{comment} // '',
+            comment   => $pr_comment,
             color     => $cb->{source} eq 'database'
                 ? abgrToE80Index($route_data->{color})
                 : ($route_data->{color} // 0),
@@ -1057,14 +1061,15 @@ sub _pasteNewWaypointToE80
 
     my %pending_names;
     my $wp_name = _deconflictE80Name($wpmgr, $wp->{name}, \%pending_names);
+    my ($pnw_name, $pnw_comment) = _truncForE80($wp_name, $wp->{comment} // '');
     $wpmgr->createWaypoint({
-        name     => $wp_name,
+        name     => $pnw_name,
         uuid     => $new_uuid,
         lat      => $wp->{lat},
         lon      => $wp->{lon},
         sym      => 0,
         ts       => $wp->{created_ts} // $wp->{ts} // time(),
-        comment  => $wp->{comment} // '',
+        comment  => $pnw_comment,
         depth    => $wp->{depth_cm} // $wp->{depth} // 0,
         progress => $progress,
     });
@@ -1126,14 +1131,15 @@ sub _pasteNewGroupToE80
             last;
         }
         my $wp_name = _deconflictE80Name($wpmgr, $wp->{name}, \%pending_names);
+        my ($png_wp_name, $png_wp_comment) = _truncForE80($wp_name, $wp->{comment} // '');
         $wpmgr->createWaypoint({
-            name     => $wp_name,
+            name     => $png_wp_name,
             uuid     => $new_uuid,
             lat      => $wp->{lat},
             lon      => $wp->{lon},
             sym      => 0,
             ts       => $wp->{created_ts} // $wp->{ts} // time(),
-            comment  => $wp->{comment} // '',
+            comment  => $png_wp_comment,
             depth    => $wp->{depth_cm} // $wp->{depth} // 0,
             progress => $progress,
         });
@@ -1153,10 +1159,11 @@ sub _pasteNewGroupToE80
             my %pending_group_names;
             my $group_name = _deconflictE80Name($wpmgr, $group_data->{name} // '',
                 \%pending_group_names, 'groups');
+            my ($png_grp_name, $png_grp_comment) = _truncForE80($group_name, $group_data->{comment} // '');
             $wpmgr->createGroup({
-                name     => $group_name,
+                name     => $png_grp_name,
                 uuid     => $new_group_uuid,
-                comment  => $group_data->{comment} // '',
+                comment  => $png_grp_comment,
                 members  => \@new_wp_uuids,
                 progress => $progress,
             });
@@ -1205,11 +1212,12 @@ sub _pasteNewRouteToE80
     my %pending_route_names;
     my $route_name = _deconflictE80Name($wpmgr, $route_data->{name} // '',
         \%pending_route_names, 'routes');
+    my ($pnr_name, $pnr_comment) = _truncForE80($route_name, $route_data->{comment} // '');
     my @wp_uuids = map { $_->{uuid} } @$members;
     $wpmgr->createRoute({
-        name      => $route_name,
+        name      => $pnr_name,
         uuid      => $new_route_uuid,
-        comment   => $route_data->{comment} // '',
+        comment   => $pnr_comment,
         color     => $cb->{source} eq 'database'
             ? abgrToE80Index($route_data->{color})
             : ($route_data->{color} // 0),
@@ -1382,14 +1390,15 @@ sub _pasteBeforeAfterE80
                 last;
             }
             my $wp_name = _deconflictE80Name($wpmgr, $wp->{name}, \%pending_names);
+            my ($pba_name, $pba_comment) = _truncForE80($wp_name, $wp->{comment} // '');
             $wpmgr->createWaypoint({
-                name     => $wp_name,
+                name     => $pba_name,
                 uuid     => $wp_uuid,
                 lat      => $wp->{lat},
                 lon      => $wp->{lon},
                 sym      => 0,
                 ts       => $wp->{created_ts} // $wp->{ts} // time(),
-                comment  => $wp->{comment} // '',
+                comment  => $pba_comment,
                 depth    => $wp->{depth_cm} // $wp->{depth} // 0,
                 progress => $progress,
             });
@@ -1506,6 +1515,27 @@ sub _cutE80Track
 
 
 #----------------------------------------------------
+# _truncForE80
+#----------------------------------------------------
+
+sub _truncForE80
+{
+    my ($name, $comment) = @_;
+    if (length($name) > $E80_MAX_NAME)
+    {
+        warning(0, 0, "_truncForE80: name truncated to $E80_MAX_NAME chars: '$name'");
+        $name = substr($name, 0, $E80_MAX_NAME);
+    }
+    if (length($comment) > $E80_MAX_COMMENT)
+    {
+        warning(0, 0, "_truncForE80: comment truncated to $E80_MAX_COMMENT chars");
+        $comment = substr($comment, 0, $E80_MAX_COMMENT);
+    }
+    return ($name, $comment);
+}
+
+
+#----------------------------------------------------
 # _pushToE80 -- DB->E80 push up
 #----------------------------------------------------
 
@@ -1549,14 +1579,15 @@ sub _pushToE80
                 $progress->{done}++;
                 next;
             }
+            my ($wp_name, $wp_comment) = _truncForE80($d->{name} // '', $d->{comment} // '');
             $wpmgr->modifyWaypoint({
                 uuid     => $uuid,
-                name     => $d->{name}       // '',
+                name     => $wp_name,
                 lat      => $d->{lat},
                 lon      => $d->{lon},
                 sym      => 0,
                 ts       => $d->{created_ts} // $d->{ts} // time(),
-                comment  => $d->{comment}    // '',
+                comment  => $wp_comment,
                 depth    => $d->{depth_cm}   // 0,
                 progress => $progress,
             });
@@ -1575,14 +1606,15 @@ sub _pushToE80
                 my $mu = $member->{uuid} // '';
                 my $md = $member->{data} // {};
                 next if !$mu || !$wpmgr->{waypoints}{$mu};
+                my ($mw_name, $mw_comment) = _truncForE80($md->{name} // '', $md->{comment} // '');
                 $wpmgr->modifyWaypoint({
                     uuid     => $mu,
-                    name     => $md->{name}       // '',
+                    name     => $mw_name,
                     lat      => $md->{lat},
                     lon      => $md->{lon},
                     sym      => 0,
                     ts       => $md->{created_ts} // $md->{ts} // time(),
-                    comment  => $md->{comment}    // '',
+                    comment  => $mw_comment,
                     depth    => $md->{depth_cm}   // 0,
                     progress => $progress,
                 });
@@ -1590,10 +1622,11 @@ sub _pushToE80
             if (!$progress->{cancelled})
             {
                 my @member_uuids = map { $_->{uuid} } grep { $_->{uuid} } @{$item->{members} // []};
+                my ($grp_name, $grp_comment) = _truncForE80($d->{name} // '', $d->{comment} // '');
                 $wpmgr->modifyGroup({
                     uuid     => $uuid,
-                    name     => $d->{name}    // '',
-                    comment  => $d->{comment} // '',
+                    name     => $grp_name,
+                    comment  => $grp_comment,
                     members  => \@member_uuids,
                     progress => $progress,
                 });
@@ -1608,10 +1641,11 @@ sub _pushToE80
                 next;
             }
             my @wp_uuids = map { $_->{uuid} } grep { $_->{uuid} } @{$item->{route_points} // []};
+            my ($rt_name, $rt_comment) = _truncForE80($d->{name} // '', $d->{comment} // '');
             $wpmgr->modifyRoute({
                 uuid      => $uuid,
-                name      => $d->{name}    // '',
-                comment   => $d->{comment} // '',
+                name      => $rt_name,
+                comment   => $rt_comment,
                 color     => abgrToE80Index($d->{color} // ''),
                 waypoints => \@wp_uuids,
                 progress  => $progress,

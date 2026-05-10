@@ -264,6 +264,66 @@ right-click, and the behavior of any invoked command, are fully determined by th
 sections.
 
 
+### 5.1 Lossy Transform Pre-flight
+
+Some cross-panel operations cause irreversible data loss due to transport-layer constraints
+of the E80 hardware. A **lossy transform** is any field mutation the destination cannot
+represent with full fidelity. Before any such operation begins, a **lossy-transform
+pre-flight analysis** runs over the resolved item list and identifies all issues. If any
+are found, a single summary dialog presents the full set by category; the user proceeds or
+aborts the entire operation. There are no per-item dialogs.
+
+**Truncation (DB to E80, all types).**
+The E80 enforces hard limits: name <= 15 characters, comment <= 31 characters. If any
+selected item's DB name or comment exceeds these limits, the item is listed in the summary.
+If the user proceeds, the name or comment is truncated to the limit and a `warning()` log
+entry is emitted. The NET layer enforces these limits as a hard error backstop regardless.
+
+**Color mismatch (routes, DB to E80).**
+Route colors are stored in the DB as aabbggrr hex (GE byte order). The E80 supports exactly
+six route colors (indices 0-5). If a DB route color does not map exactly to one of the six
+E80 palette values, the color cannot survive a round-trip: pushing it to the E80 would set
+up a future E80-to-DB overwrite that destroys the richer DB color. This case is listed in
+the summary. If the user proceeds, the color is approximated to the nearest E80 index via
+`abgrToE80Index`.
+
+**Color mismatch (routes and tracks, E80 to DB).**
+When an E80-to-DB operation would overwrite an existing DB record, the E80 color (index
+0-5) is compared against the existing DB color. If the DB color is not an exact palette
+match for that index, overwriting would be lossy. This case is listed in the summary. If
+the user proceeds, the DB color is overwritten with the palette-exact aabbggrr value for
+that index.
+
+**Tracks (DB to E80).** Tracks cannot be sent to the E80 via the WPMGR or TRACK protocols.
+Track color mismatch in the DB-to-E80 direction is not applicable and is deferred to a
+future file-based transport path.
+
+**Waypoints.** Waypoint icons on the E80 (sym index 0-39) and waypoint colors in the DB
+(aabbggrr) are unrelated fields with no current mapping between them. No color transfer
+occurs in either direction; waypoints are not subject to color-mismatch pre-flight.
+
+**Groups.** Groups carry no color field on the E80 or in the DB and are not subject to
+color-mismatch pre-flight.
+
+**Suppress mechanism.** When `$suppress_confirm` is set (SS13.1), the lossy-transform
+summary dialog auto-proceeds. This allows automated test execution to pass through
+pre-flight without user interaction.
+
+**Exact E80 palette values** (aabbggrr, GE byte order):
+
+| E80 index | Name   | aabbggrr |
+|-----------|--------|----------|
+| 0         | RED    | ff0000ff |
+| 1         | YELLOW | ff00ffff |
+| 2         | GREEN  | ff00ff00 |
+| 3         | BLUE   | ffff0000 |
+| 4         | PURPLE | ffff00ff |
+| 5         | WHITE  | ffffffff |
+
+Index 5 is named BLACK in the E80 protocol but is mapped to WHITE in navMate because
+black is not visible against satellite imagery backgrounds.
+
+
 ## 6. Selection and Clipboard Vocabulary
 
 This section defines formal terms used throughout SS8-SS10. Rules in those sections use
@@ -871,6 +931,11 @@ removes the entire group (shell and members) from the operation.
 skip conflicting items and continue with clean creates, or abort. If Abort, no E80 writes
 occur.
 
+**Lossy-transform pre-flight.** After all structural and UUID checks above pass,
+`_preflightLossyTransform` runs on the resolved item list for all E80-destination pastes
+(SS5.1). If any truncation or color-mismatch issues are detected, the summary dialog is
+presented. If the user aborts, no E80 writes occur.
+
 
 ## 11. New Item Placement
 
@@ -1091,8 +1156,16 @@ It does not consume or produce clipboard state. The clipboard is cleared uncondi
 after PUSH execution.
 
 **Pre-flight.** PUSH is available when the selected items on one panel each have a UUID
-counterpart on the other panel. Multi-select is supported. Pre-flight presents a
-confirmation before overwriting. The user may proceed or abort.
+counterpart on the other panel. Multi-select is supported. Pre-flight runs in two steps:
+
+1. **Confirm overwrite.** A confirmation dialog presents the item count and direction.
+   The user may proceed or abort.
+2. **Lossy-transform analysis (SS5.1).** `_preflightLossyTransform` runs on the resolved
+   item list. For DB-to-E80 pushes: truncation and route color-mismatch checks. For
+   E80-to-DB pushes: route and track color-mismatch checks against existing DB records.
+   If issues are found, the summary dialog is presented. If the user aborts, no writes occur.
+
+Both steps must pass before execution begins.
 
 **Execution -- DB to E80 (push up).** For each selected DB item whose UUID exists on E80,
 overwrite the E80 record with the current DB field values via WPMGR.
