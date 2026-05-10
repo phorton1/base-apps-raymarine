@@ -126,6 +126,18 @@ GET_STATE must be called before GET_CUR2. GET_STATE returns `stopable=1` if the
 E80 is currently recording a track. If the E80 is not recording (stopable=0),
 calling GET_CUR2 may not produce a meaningful result.
 
+## Field Length Limits
+
+The `name16` parameter in SET_NAME, RENAME, and BUMP_NAME is a 16-byte fixed-width
+field (`Z16` wire format). The 16th byte is the null terminator, leaving **15 usable
+characters** for the track name. Supplying a name longer than 15 characters causes
+silent truncation on the E80.
+
+The TRACK protocol has no comment field - tracks carry only a name.
+
+The limit is defined as `$E80_MAX_NAME = 15` in `a_defs.pm` and is enforced as a
+hard error in `d_TRACK.pm` before any SET_NAME or RENAME command is queued.
+
 ## Known Limitations
 
 These limitations are inherent to the TRACK protocol as observed:

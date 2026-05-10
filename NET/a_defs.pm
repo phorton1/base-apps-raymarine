@@ -68,7 +68,10 @@ BEGIN
 		$ROUTE_COLOR_PURPLE
 		$ROUTE_COLOR_BLACK
 		$NUM_ROUTE_COLORS
-		
+
+		$E80_MAX_NAME
+		$E80_MAX_COMMENT
+
 		$PI
 		$PI_OVER_2
 		$SCALE_LATLON
@@ -164,6 +167,17 @@ our %DIRECTION_NAME = (
 	$DIRECTION_EVENT => 'event',
 );
 
+
+
+#------------------------------
+# E80 transport limits
+#------------------------------
+# Empirically confirmed hard limits on the E80 hardware.
+# Exceeding these causes silent data loss on the device.
+# The NET layer enforces these as hard errors; the DB has no such limits.
+
+our $E80_MAX_NAME    = 15;    # waypoints, groups, routes, tracks
+our $E80_MAX_COMMENT = 31;    # waypoints, groups, routes (tracks have no comment field)
 
 
 #------------------------------

@@ -346,6 +346,27 @@ implemented. See `d_WPMGR.pm` for current state - the header comments in that
 file may not reflect the current implementation. This area is flagged for
 empirical validation with the live program.
 
+## Field Length Limits
+
+The E80 hardware imposes hard limits on the length of name and comment fields
+for all WPMGR object types (waypoints, groups, routes). Exceeding these limits
+causes silent data loss on the device - the E80 accepts the create/modify
+request without error but truncates or discards the excess characters.
+
+| Field   | Max length | Applies to                    |
+| ------- | ---------- | ----------------------------- |
+| name    | 15 chars   | waypoints, groups, routes     |
+| comment | 31 chars   | waypoints, groups, routes     |
+
+These limits are defined as `$E80_MAX_NAME` and `$E80_MAX_COMMENT` in `a_defs.pm`
+and are enforced as hard errors in `e_wp_api.pm`: `createWaypoint`, `modifyWaypoint`,
+`createGroup`, `modifyGroup`, `createRoute`, and `modifyRoute` all reject inputs
+that exceed these limits with an `error()` call before touching the wire.
+
+The navMate database deliberately does **not** enforce these limits - long names
+(e.g. `2024-06-15-BocasToPanama`) are valid DB records. The mapping to the 15-char
+E80 limit is a transport-layer concern handled at the navOperations layer.
+
 ## Implementation Notes
 
 **Socket lifecycle:** It is inadvisable to close and re-open a TCP socket to
