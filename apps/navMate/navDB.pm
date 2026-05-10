@@ -1190,13 +1190,13 @@ sub isBranchDeleteSafe
 			SELECT c.uuid FROM collections c JOIN subtree s ON c.parent_uuid = s.uuid
 		) SELECT uuid FROM subtree",
 		[$uuid]);
-	return 1 unless @$col_rows;
+	return 1 if !@$col_rows;
 	my @col_uuids = map { $_->{uuid} } @$col_rows;
 	my $col_ph    = join(',', map { '?' } @col_uuids);
 	my $wp_rows   = $dbh->get_records(
 		"SELECT uuid FROM waypoints WHERE collection_uuid IN ($col_ph)",
 		\@col_uuids);
-	return 1 unless @$wp_rows;
+	return 1 if !@$wp_rows;
 	my $rt_rows = $dbh->get_records(
 		"SELECT uuid FROM routes WHERE collection_uuid IN ($col_ph)",
 		\@col_uuids);
@@ -1208,7 +1208,7 @@ sub isBranchDeleteSafe
 		\@wp_uuids);
 	for my $row (@$ref_rows)
 	{
-		return 0 unless $route_set{$row->{route_uuid}};
+		return 0 if !$route_set{$row->{route_uuid}};
 	}
 	return 1;
 }
@@ -1230,7 +1230,7 @@ sub deleteBranch
 			SELECT c.uuid FROM collections c JOIN subtree s ON c.parent_uuid = s.uuid
 		) SELECT uuid FROM subtree",
 		[$uuid]);
-	return unless @$col_rows;
+	return if !@$col_rows;
 	my @col_uuids = map { $_->{uuid} } @$col_rows;
 	my $col_ph    = join(',', map { '?' } @col_uuids);
 	my $rt_rows = $dbh->get_records(

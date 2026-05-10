@@ -118,7 +118,7 @@ sub onIdle
 	my ($this, $event) = @_;
 
 	Pub::WX::ProgressDialog::forceCloseActive();
-	unless (Pub::WX::ProgressDialog::isActive())
+	if (!Pub::WX::ProgressDialog::isActive())
 	{
 		my $test_cmd = pollTestCommand();
 		dispatchTestCommand($this, $test_cmd) if $test_cmd;
@@ -394,10 +394,10 @@ sub onCommandEnable
 		else
 		{
 			my $track = $raydp ? $raydp->findImplementedService('TRACK', 1) : undef;
-			$enable = 0 unless %{$wpmgr->{routes}    // {}}
-			               || %{$wpmgr->{groups}    // {}}
-			               || %{$wpmgr->{waypoints} // {}}
-			               || ($track && %{$track->{tracks} // {}});
+			$enable = 0 if !(%{$wpmgr->{routes}    // {}}
+			             || %{$wpmgr->{groups}    // {}}
+			             || %{$wpmgr->{waypoints} // {}}
+			             || ($track && %{$track->{tracks} // {}}));
 		}
 	}
 	elsif ($id == $COMMAND_REVERT_DB || $id == $COMMAND_COMMIT_DB)

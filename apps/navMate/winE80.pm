@@ -1154,14 +1154,14 @@ sub _onShowHideE80Map
 	my $track_mgr = $raydp ? $raydp->findImplementedService('TRACK', 1)  : undef;
 
 	my @items = $tree->GetSelections();
-	return unless @items;
+	return if !@items;
 
 	for my $item (@items)
 	{
 		my $d = $tree->GetItemData($item);
-		next unless $d;
+		next if !$d;
 		my $node = $d->GetData();
-		next unless ref $node eq 'HASH';
+		next if ref $node ne 'HASH';
 		_applyNodeVisibility($this, $item, $node, $new_visible, $wpmgr, $track_mgr);
 	}
 
@@ -1268,10 +1268,10 @@ sub _applyNodeVisibility
 sub _applyWpVisibility
 {
 	my ($uuid, $wp, $new_visible) = @_;
-	return unless $uuid;
+	return if !$uuid;
 	if ($new_visible)
 	{
-		return unless $wp;
+		return if !$wp;
 		setE80Visible($uuid, 1);
 		addRenderFeatures([_buildWpFeature($uuid, $wp)]);
 	}
@@ -1286,12 +1286,12 @@ sub _applyWpVisibility
 sub _applyRouteVisibility
 {
 	my ($uuid, $r, $wpmgr, $new_visible) = @_;
-	return unless $uuid;
+	return if !$uuid;
 	if ($new_visible)
 	{
-		return unless $r;
+		return if !$r;
 		my $feature = _buildRouteFeature($uuid, $r, $wpmgr);
-		return unless $feature;
+		return if !$feature;
 		setE80Visible($uuid, 1);
 		addRenderFeatures([$feature]);
 	}
@@ -1306,12 +1306,12 @@ sub _applyRouteVisibility
 sub _applyTrackVisibility
 {
 	my ($uuid, $track, $new_visible) = @_;
-	return unless $uuid;
+	return if !$uuid;
 	if ($new_visible)
 	{
-		return unless $track;
+		return if !$track;
 		my $feature = _buildTrackFeature($uuid, $track);
-		return unless $feature;
+		return if !$feature;
 		setE80Visible($uuid, 1);
 		addRenderFeatures([$feature]);
 	}
@@ -1359,7 +1359,7 @@ sub _buildRouteFeature
 		my $wp = $wps->{$wp_uuid};
 		push @pts, $wp if $wp && defined $wp->{lat} && defined $wp->{lon};
 	}
-	return undef unless @pts;
+	return undef if !@pts;
 	my @rp_names = map { ($wps->{$_} ? ($wps->{$_}{name} // '') : '') } @{$r->{uuids} // []};
 	my $cidx  = defined($r->{color}) ? ($r->{color} + 0) : 0;
 	my $color = $E80_ROUTE_COLOR_ABGR[$cidx] // 'FF888888';
@@ -1384,7 +1384,7 @@ sub _buildTrackFeature
 {
 	my ($uuid, $track) = @_;
 	my $pts = ref $track->{points} eq 'ARRAY' ? $track->{points} : [];
-	return undef unless @$pts;
+	return undef if !@$pts;
 	return {
 		type       => 'Feature',
 		properties => {
@@ -1408,7 +1408,7 @@ sub _buildTrackFeature
 sub _walkRestoreStateImages
 {
 	my ($tree, $item) = @_;
-	return unless $item && $item->IsOk();
+	return if !$item || !$item->IsOk();
 	my $d = $tree->GetItemData($item);
 	if ($d)
 	{
@@ -1466,7 +1466,7 @@ sub _walkSetSubtreeState
 		my $d = $tree->GetItemData($child);
 		my $type = '';
 		if ($d) { my $n = $d->GetData(); $type = (ref $n eq 'HASH') ? ($n->{type} // '') : ''; }
-		$tree->SetItemState($child, $visible ? 1 : 0) unless $type eq 'route_point';
+		$tree->SetItemState($child, $visible ? 1 : 0) if $type ne 'route_point';
 		_walkSetSubtreeState($tree, $child, $visible);
 		($child, $cookie) = $tree->GetNextChild($item, $cookie);
 	}
@@ -1492,7 +1492,7 @@ sub _computeContainerState
 		}
 		($child, $cookie) = $tree->GetNextChild($item, $cookie);
 	}
-	return 0 unless $total;
+	return 0 if !$total;
 	return $visible == $total ? 1 : $visible == 0 ? 0 : 2;
 }
 
@@ -1505,9 +1505,9 @@ sub _refreshAncestorStates
 	while ($parent && $parent->IsOk())
 	{
 		my $d = $tree->GetItemData($parent);
-		last unless $d;
+		last if !$d;
 		my $node = $d->GetData();
-		last unless ref $node eq 'HASH';
+		last if ref $node ne 'HASH';
 		last if ($node->{type} // '') eq 'root';
 		$tree->SetItemState($parent, _computeContainerState($tree, $parent));
 		$parent = $tree->GetItemParent($parent);
@@ -1523,7 +1523,7 @@ sub _syncLeafletAfterRebuild
 {
 	my ($wpmgr, $track_mgr) = @_;
 	my @all_visible = getAllE80VisibleUUIDs();
-	return unless @all_visible;
+	return if !@all_visible;
 
 	my $wps    = $wpmgr ? ($wpmgr->{waypoints} // {}) : {};
 	my $routes = $wpmgr ? ($wpmgr->{routes}    // {}) : {};

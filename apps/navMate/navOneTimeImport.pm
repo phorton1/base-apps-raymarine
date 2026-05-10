@@ -412,7 +412,7 @@ sub _importSumwoodRoute
 		my $raw = $pm->{Point}{coordinates} // '';
 		$raw =~ s/^\s+|\s+$//g;
 		my ($lon, $lat) = split /,/, $raw;
-		next unless defined $lat && defined $lon;
+		next if !defined $lat || !defined $lon;
 		my $wp_uuid = findWaypointByLatLon($dbh, $lat+0, $lon+0);
 		appendRouteWaypoint($dbh, $route_uuid, $wp_uuid, $pos++) if $wp_uuid;
 	}
@@ -452,7 +452,7 @@ sub _importRonAzul
 		my $raw = $pm->{Point}{coordinates} // '';
 		$raw =~ s/^\s+|\s+$//g;
 		my ($lon, $lat) = split /,/, $raw;
-		next unless defined $lat && defined $lon;
+		next if !defined $lat || !defined $lon;
 		my $wp_uuid = findWaypointByLatLon($dbh, $lat+0, $lon+0);
 		appendRouteWaypoint($dbh, $route_uuid, $wp_uuid, $pos++) if $wp_uuid;
 	}
@@ -500,7 +500,7 @@ sub _buildStyleMap
 				$color = $GE_ICON_COLORS{$1};
 			}
 		}
-		next unless defined $color;
+		next if !defined $color;
 		$sc{"#$id"} = $color;
 	}
 

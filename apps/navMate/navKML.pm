@@ -396,7 +396,7 @@ sub _importFolder
 		          // insertCollection($dbh, $name, $parent_uuid, $db_type, '');
 	}
 
-	return unless $coll_uuid;
+	return if !$coll_uuid;
 
 	for my $child (@{$folder->{Folder} // []})
 	{

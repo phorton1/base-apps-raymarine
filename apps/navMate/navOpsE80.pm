@@ -871,7 +871,7 @@ sub _pasteRouteToE80
     for my $rp (@$route_points)
     {
         my $uuid = $rp->{uuid};
-        unless ($wpmgr->{waypoints}{$uuid})
+        if (!$wpmgr->{waypoints}{$uuid})
         {
             error("_pasteRouteToE80: IMPLEMENTATION ERROR -- route member $uuid not on E80 (SS10.10)");
             return;
@@ -940,7 +940,7 @@ sub _pasteAllToE80
     {
         my $route_uuid = $node->{uuid};
         my $route      = $wpmgr->{routes}{$route_uuid};
-        unless ($route)
+        if (!$route)
         {
             error("_pasteAllToE80: route $route_uuid not found on E80");
             return;
@@ -948,7 +948,7 @@ sub _pasteAllToE80
         my @add_uuids;
         for my $item (@$items)
         {
-            next unless ($item->{type} // '') eq 'waypoint';
+            next if ($item->{type} // '') ne 'waypoint';
             my $uuid = $item->{uuid} // '';
             push @add_uuids, $uuid if $uuid && $wpmgr->{waypoints}{$uuid};
         }
@@ -1140,7 +1140,7 @@ sub _pasteNewGroupToE80
         push @new_wp_uuids, $new_uuid;
     }
 
-    unless ($progress && ($progress->{cancelled} || $progress->{error}))
+    if (!$progress || (!$progress->{cancelled} && !$progress->{error}))
     {
         my $new_group_uuid = _newNavUUID();
         if (!$new_group_uuid)
@@ -1238,7 +1238,7 @@ sub _pasteNewAllToE80
     {
         my $route_uuid = $node->{uuid};
         my $route      = $wpmgr->{routes}{$route_uuid};
-        unless ($route)
+        if (!$route)
         {
             error("_pasteNewAllToE80: route $route_uuid not found on E80");
             return;
@@ -1247,7 +1247,7 @@ sub _pasteNewAllToE80
         for my $item (@$items)
         {
             my $t = $item->{type} // '';
-            next unless $t eq 'waypoint' || $t eq 'route_point';
+            next if $t ne 'waypoint' && $t ne 'route_point';
             my $uuid = $item->{uuid} // '';
             push @add_uuids, $uuid if $uuid && $wpmgr->{waypoints}{$uuid};
         }
@@ -1345,7 +1345,7 @@ sub _pasteBeforeAfterE80
         elsif ($type eq 'route_point') { push @flat_wps, $item; }
         elsif ($type eq 'group')       { push @flat_wps, @{$item->{members} // []}; }
     }
-    return unless @flat_wps;
+    return if !@flat_wps;
 
     my $fresh = ($cmd_id == $CTX_CMD_PASTE_NEW_BEFORE || $cmd_id == $CTX_CMD_PASTE_NEW_AFTER);
 
@@ -1651,7 +1651,7 @@ sub _clearE80_DB
     my @named_wps     = grep {  $grouped_wp{$_} } @all_wp_uuids;
     my @ungrouped_wps = grep { !$grouped_wp{$_} } @all_wp_uuids;
 
-    unless (@route_uuids || @group_uuids || @all_wp_uuids || @track_uuids)
+    if (!@route_uuids && !@group_uuids && !@all_wp_uuids && !@track_uuids)
     {
         okDialog($parent, "E80 is already empty.", "Clear E80 DB");
         return;

@@ -49,7 +49,7 @@ sub ancestor_path {
         my $c = $coll{$cur // ''} or last;
         unshift @parts, $c->{name};
         $cur = $c->{parent_uuid};
-        last unless defined $cur;
+        last if !defined $cur;
     }
     return join(' / ', @parts);
 }
@@ -58,10 +58,10 @@ printf("%-34s  %-22s  %4s  %5s  %s\n", 'UUID', 'Name', 'Mbrs', 'InRte', 'Path');
 print '-' x 100 . "\n";
 
 for my $c (sort { $a->{name} cmp $b->{name} } @{$d->{collections}}) {
-    next unless ($c->{node_type} // '') eq 'group';
+    next if ($c->{node_type} // '') ne 'group';
     my $uuid = $c->{uuid};
     my $wps  = $group_wps{$uuid} // [];
-    next unless @$wps;                # skip empty groups
+    next if !@$wps;                # skip empty groups
     next if under_nav($uuid);         # skip Navigation/Routes subtree
 
     my $in_rt   = scalar grep { $in_route{$_->{uuid}} } @$wps;

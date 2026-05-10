@@ -113,7 +113,7 @@ sub buildContextMenu
 				next if ($cb_item->{type} // '') ne 'route';
 				for my $rp (@{$cb_item->{route_points} // []})
 				{
-					unless ($wpmgr->{waypoints}{$rp->{uuid}})
+					if (!$wpmgr->{waypoints}{$rp->{uuid}})
 					{
 						$missing = 1;
 						last ROUTE_CHECK;
@@ -662,7 +662,7 @@ sub _doPaste
 				for my $rp (@{$route->{route_points} // []})
 				{
 					my $u = $rp->{uuid} // '';
-					push @missing, $u unless $clip_wp_uuids{$u} || ($wpmgr_dep && $wpmgr_dep->{waypoints}{$u});
+					push @missing, $u if !$clip_wp_uuids{$u} && !($wpmgr_dep && $wpmgr_dep->{waypoints}{$u});
 				}
 				if (@missing)
 				{
@@ -683,10 +683,10 @@ sub _doPaste
 				for my $rp (@{$route->{route_points} // []})
 				{
 					my $u = $rp->{uuid} // '';
-					unless ($clip_wp_uuids{$u})
+					if (!$clip_wp_uuids{$u})
 					{
 						my $wp = getWaypoint($dep_dbh, $u);
-						push @missing, $u unless $wp;
+						push @missing, $u if !$wp;
 					}
 				}
 				if (@missing)
@@ -812,7 +812,7 @@ sub _resolveAncestorWins
 				}
 			}
 		}
-		push @result, $item unless $absorbed;
+		push @result, $item if !$absorbed;
 	}
 	return @result;
 }
@@ -840,7 +840,7 @@ sub _doPush
 		my $proceed = $nmDialogs::suppress_confirm
 			? 1
 			: confirmDialog($tree, $msg, 'Push');
-		return unless $proceed;
+		return if !$proceed;
 		navOps::_pushFromE80($right_click_node, $tree, \@items);
 		return;
 	}
@@ -860,7 +860,7 @@ sub _doPush
 		my $proceed = $nmDialogs::suppress_confirm
 			? 1
 			: confirmDialog($tree, $msg, 'Push');
-		return unless $proceed;
+		return if !$proceed;
 		navOps::_pushFromE80($right_click_node, $tree, \@items);
 		clearClipboard();
 		return;
@@ -878,7 +878,7 @@ sub _doPush
 	my $proceed2 = $nmDialogs::suppress_confirm
 		? 1
 		: confirmDialog($tree, $msg2, 'Push');
-	return unless $proceed2;
+	return if !$proceed2;
 	navOps::_pushToE80($right_click_node, $tree, \@db_items);
 }
 
@@ -890,7 +890,7 @@ sub _doPush
 sub _destIsDescendantOfClipboard
 {
 	my ($node, $panel, $clip_uuids) = @_;
-	return 0 unless $node;
+	return 0 if !$node;
 
 	# Collection tree nodes store uuid only in data->{uuid}, not at top level.
 	my $node_uuid = $node->{uuid} // ($node->{data} // {})->{uuid} // '';
@@ -898,10 +898,10 @@ sub _destIsDescendantOfClipboard
 
 	if ($panel eq 'database')
 	{
-		return 0 unless $node_uuid;
+		return 0 if !$node_uuid;
 
 		my $dbh = connectDB();
-		return 0 unless $dbh;
+		return 0 if !$dbh;
 
 		# getCollectionChildren omits parent_uuid from its SELECT, so tree node data
 		# never carries parent_uuid.  Fetch the full record to start the ancestor walk.
@@ -916,7 +916,7 @@ sub _destIsDescendantOfClipboard
 				return 1;
 			}
 			$coll = getCollection($dbh, $parent_uuid);
-			last unless $coll;
+			last if !$coll;
 			$parent_uuid = $coll->{parent_uuid};
 		}
 		disconnectDB($dbh);

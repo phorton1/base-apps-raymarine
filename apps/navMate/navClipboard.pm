@@ -83,14 +83,14 @@ sub allDeleteCmds { return @ALL_DELETE_CMDS }
 sub _classifyE80Items
 {
 	my ($items) = @_;
-	return undef unless $items && @$items;
+	return undef if !$items || !@$items;
 	my $dbh = connectDB();
-	return undef unless $dbh;
+	return undef if !$dbh;
 	my ($n_present, $n_absent) = (0, 0);
 	for my $item (@$items)
 	{
 		my $uuid = $item->{uuid} // '';
-		next unless $uuid;
+		next if !$uuid;
 		my $t = $item->{type} // '';
 		my $found;
 		if    ($t eq 'waypoint')    { $found = getWaypoint($dbh, $uuid);    }
@@ -429,7 +429,7 @@ sub getPushMenuItems
 	if ($panel eq 'e80')
 	{
 		my $dbh = connectDB();
-		return () unless $dbh;
+		return () if !$dbh;
 		my $all_present = 1;
 		for my $node (@nodes)
 		{
@@ -446,14 +446,14 @@ sub getPushMenuItems
 			elsif ($t eq 'group')    { $found = getCollection($dbh, $uuid); }
 			elsif ($t eq 'route')    { $found = getRoute($dbh, $uuid);      }
 			else                     { $all_present = 0; last; }
-			unless ($found) { $all_present = 0; last; }
+			if (!$found) { $all_present = 0; last; }
 		}
 		disconnectDB($dbh);
 		return $all_present ? ({ id => $CTX_CMD_PUSH, label => 'Push to DB' }) : ();
 	}
 	else  # database panel
 	{
-		return () unless $wpmgr;
+		return () if !$wpmgr;
 		my $all_present = 1;
 		for my $node (@nodes)
 		{
@@ -480,7 +480,7 @@ sub getPushMenuItems
 				else                { $all_present = 0; last; }
 			}
 			else { $all_present = 0; last; }
-			unless ($found) { $all_present = 0; last; }
+			if (!$found) { $all_present = 0; last; }
 		}
 		return $all_present ? ({ id => $CTX_CMD_PUSH, label => 'Push to E80' }) : ();
 	}

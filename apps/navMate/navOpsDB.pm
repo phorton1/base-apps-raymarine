@@ -1183,7 +1183,7 @@ sub _pasteDB
 		{
 			for my $item (@to_cut)
 			{
-				next unless ($item->{type} // '') eq 'route_point' && $item->{route_uuid};
+				next if ($item->{type} // '') ne 'route_point' || !$item->{route_uuid};
 				my $orig = $item->{position} // 0;
 				my $adj  = ($orig >= $insert_pos) ? $orig + $n : $orig;
 				removeRoutePoint($dbh, $item->{route_uuid}, $adj);
@@ -1207,7 +1207,7 @@ sub _pasteDB
 
 	# Standard paste into a collection
 	my $rcn_type = $right_click_node ? ($right_click_node->{type} // '') : '';
-	unless ($rcn_type eq 'collection' || $rcn_type eq 'root')
+	if ($rcn_type ne 'collection' && $rcn_type ne 'root')
 	{
 		warning(0, 0, "IMPLEMENTATION ERROR: _pasteDB: non-collection destination '$rcn_type' reached paste handler");
 		return;
@@ -1316,19 +1316,19 @@ sub _pushFromE80
 	my ($right_click_node, $tree, $items) = @_;
 
 	my $dbh = connectDB();
-	return unless $dbh;
+	return if !$dbh;
 
 	for my $item (@$items)
 	{
 		my $t    = $item->{type} // '';
 		my $uuid = $item->{uuid} // '';
-		next unless $uuid;
+		next if !$uuid;
 
 		if ($t eq 'waypoint')
 		{
 			my $wp  = $item->{data} // {};
 			my $rec = getWaypoint($dbh, $uuid);
-			next unless $rec;
+			next if !$rec;
 			updateWaypoint($dbh, $uuid,
 				name       => $wp->{name}    // '',
 				comment    => $wp->{comment} // '',
@@ -1347,7 +1347,7 @@ sub _pushFromE80
 			my $rd  = $item->{data} // {};
 			my $rps = $item->{route_points} // [];
 			my $rec = getRoute($dbh, $uuid);
-			next unless $rec;
+			next if !$rec;
 			updateRoute($dbh, $uuid,
 				$rd->{name}    // '',
 				e80RouteIndexToAbgr($rd->{color} // 0),
@@ -1360,7 +1360,7 @@ sub _pushFromE80
 		{
 			my $gd  = $item->{data} // {};
 			my $rec = getCollection($dbh, $uuid);
-			next unless $rec;
+			next if !$rec;
 			if (($rec->{name} // '') ne ($gd->{name} // ''))
 			{
 				$dbh->do("UPDATE collections SET name=? WHERE uuid=?",
@@ -1370,9 +1370,9 @@ sub _pushFromE80
 			{
 				my $mu   = $member->{uuid} // '';
 				my $md   = $member->{data} // {};
-				next unless $mu;
+				next if !$mu;
 				my $mrec = getWaypoint($dbh, $mu);
-				next unless $mrec;
+				next if !$mrec;
 				updateWaypoint($dbh, $mu,
 					name       => $md->{name}    // '',
 					comment    => $md->{comment} // '',
