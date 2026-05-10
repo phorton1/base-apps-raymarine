@@ -18,6 +18,7 @@ BEGIN
 		$DEPTH_DISPLAY_METERS
 		$DEPTH_DISPLAY_FEET
 		$PREF_DEPTH_DISPLAY
+		$PREF_FAHRENHEIT
 	);
 	push @EXPORT, grep { $_ ne 'initPrefs' } @Pub::Prefs::EXPORT;
 }
@@ -25,12 +26,16 @@ BEGIN
 our $DEPTH_DISPLAY_METERS = 0;
 our $DEPTH_DISPLAY_FEET   = 1;
 our $PREF_DEPTH_DISPLAY   = 'DEPTH_DISPLAY';
+our $PREF_FAHRENHEIT      = 'FAHRENHEIT';
 
 sub init_prefs
 {
 	Pub::Prefs::initPrefs(
 		"$data_dir/navMate.prefs",
-		{ $PREF_DEPTH_DISPLAY => $DEPTH_DISPLAY_FEET });
+		{
+			$PREF_DEPTH_DISPLAY => $DEPTH_DISPLAY_FEET,
+			$PREF_FAHRENHEIT    => 1,
+		});
 }
 
 1;

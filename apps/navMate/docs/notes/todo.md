@@ -8,28 +8,23 @@ own context here.
 
 ## Next
 
+### [testplan cleanup] - there are a number (all) of the routes in the current
+database that carry non-exact mappings to colors on the E80.  There are other
+issues as well, most predominantly the possibility that the particular items
+selected in the uuid map in the runbook might incur truncation warnings if used.
 
+Before the next testrun not only do the continued existence of the uuid/items
+need to be confirmed, but any that might trigger name uniqueness traps that
+didnt occur need to be prevented from unintentionally being used in the runbook.
 
+To the degree that the testplan is intended as a destructive test to the database
+(i.e. a revert must be done before using the actual database after a test run),
+the issue is actually to make sure that the test running claude (the runbook)
+knows how to deal with the abort/continue warnings and continue in spite of them.
 
-## Soon
+Apart from that, and not, per-se, to be driven by the runbook, these routes in
+the current database corrected so they have exact two way color mappings.
 
-### [sort database collecton context menu command]
-I would like the ability to sort the immediate children of at least a single selected
-collection (branch or group). The simplest visision is a collection of terminal "objects"
-that would be sorted by their name.  The sort is essentially lexical but for two objects
-that have the same prefix but only end in digits different, the digits would be sub-sorted
-numerically. My vision is not so clear when the children of the colllection also includes
-other collections.  On the one hand, the same sort criteria could be used and so collections
-would normally end up inter-mixed with terminal objects in the resultant ordering. On
-the other hand, it might be nice to have something like the way windows explorer puts
-collections at the top, and then terminal objects after them.   Possibly if, upon executing
-the sort command, the system detected a collection in the children, it could then provide
-a UI to allow the user to specify the sort criteria in that one case.
-
-The other insteresting idea is to allow sorting of an explicit non-sparse range selection
-of items within a single parent ... sorting them in place as a group.  I could see that
-being handy, though the ui for the collection first would hardly seem to make sense in
-that case.
 
 
 ### [db_version increment wiring]
@@ -63,12 +58,38 @@ the sync feature is ready to implement. See `[db_version increment wiring]` in t
 ### [synchronization color scheme]
 Between winDatabase and winE80 highlight common "same" items in bold blue,
 "older items" in bold magenta, and newer items in "bold green" via inter-window
-analaysis. See design_vision: [E80 sync / versioning system].
+analaysis.
 
 ### [synchronization operations]
 Implement "sync->E80" and "sync<-DB" menu commands to synchronize
-out of date items in one-step directional manner.
-See design_vision: [E80 sync / versioning system].
+out of date items in one-step directional manner.  These may be very
+similar but subtly different to the degree that any uuids showing up
+on the E80 should probably be considered "new" items, colored appropriately
+and downloaded to the database on a synch operation.
+
+
+
+
+## Soon
+
+### [sort database collecton context menu command]
+I would like the ability to sort the immediate children of at least a single selected
+collection (branch or group). The simplest visision is a collection of terminal "objects"
+that would be sorted by their name.  The sort is essentially lexical but for two objects
+that have the same prefix but only end in digits different, the digits would be sub-sorted
+numerically. My vision is not so clear when the children of the colllection also includes
+other collections.  On the one hand, the same sort criteria could be used and so collections
+would normally end up inter-mixed with terminal objects in the resultant ordering. On
+the other hand, it might be nice to have something like the way windows explorer puts
+collections at the top, and then terminal objects after them.   Possibly if, upon executing
+the sort command, the system detected a collection in the children, it could then provide
+a UI to allow the user to specify the sort criteria in that one case.
+
+The other insteresting idea is to allow sorting of an explicit non-sparse range selection
+of items within a single parent ... sorting them in place as a group.  I could see that
+being handy, though the ui for the collection first would hardly seem to make sense in
+that case.
+
 
 
 ### [INSERT position assignment]

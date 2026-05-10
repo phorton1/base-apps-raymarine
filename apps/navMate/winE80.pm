@@ -23,7 +23,10 @@ use strict;
 use warnings;
 use threads;
 use threads::shared;
+use Time::Local qw(timegm);
 use Wx qw(:everything);
+use Wx::DateTime;
+use Wx::Calendar;
 use Wx::Event qw(
 	EVT_TREE_SEL_CHANGED
 	EVT_TREE_ITEM_ACTIVATED
@@ -36,6 +39,7 @@ use Wx::Event qw(
 	EVT_BUTTON
 	EVT_CHOICE
 	EVT_CHECKBOX
+	EVT_DATE_CHANGED
 	EVT_SIZE);
 use Pub::Utils qw(display warning error);
 use Pub::WX::Window;
@@ -47,6 +51,7 @@ use navOps qw(buildContextMenu onContextMenuCommand doClearE80DB);
 use navServer qw(addRenderFeatures removeRenderFeatures openMapBrowser isBrowserConnected);
 use navVisibility qw(getE80Visible setE80Visible clearAllE80Visible getAllE80VisibleUUIDs batchRemoveE80Visible);
 use nmResources;
+use navPrefs;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
 our $dbg_wine80 = 0;
@@ -89,7 +94,7 @@ sub new
 	my $ED_ROW_H         = $ED_CTRL_H + $ED_ROW_GAP;
 	my $ED_HEADER_SIZE   = $ED_MARGIN + $ED_ROW_H;
 	my $ED_BOTTOM_MARGIN = 8;
-	my $ED_MAX_ROWS      = 5;
+	my $ED_MAX_ROWS      = 6;
 	my $ED_TITLE_W       = 80;
 	my $ED_VIS_X         = $ED_CTRL_X + $ED_TITLE_W + 8;
 	$this->{_ed_ctrl_x}  = $ED_CTRL_X;
@@ -97,6 +102,9 @@ sub new
 	$this->{_ed_margin}  = $ED_MARGIN;
 
 	my $ED_INITIAL_SASH  = $ED_HEADER_SIZE + $ED_MAX_ROWS * $ED_ROW_H + $ED_BOTTOM_MARGIN;
+	my $ED_WP_ROWS       = 9;
+	$this->{_ed_sash_other} = $ED_INITIAL_SASH;
+	$this->{_ed_sash_wp}    = $ED_HEADER_SIZE + $ED_WP_ROWS * $ED_ROW_H + $ED_BOTTOM_MARGIN;
 
 	my $ey = sub { $ED_HEADER_SIZE + $_[0] * $ED_ROW_H };
 
@@ -122,37 +130,74 @@ sub new
 		[$ED_MARGIN, $ey->(0)], [$ED_LABEL_W, $ED_CTRL_H]);
 	$this->{ed_name} = Wx::TextCtrl->new($editor_panel, -1, '',
 		[$ED_CTRL_X, $ey->(0)], [200, $ED_CTRL_H]);
+	$this->{ed_name}->SetMaxLength(15);
 
-	# lat row (row 1)
-	$this->{ed_lbl_lat} = Wx::StaticText->new($editor_panel, -1, 'Lat',
+	# comment row (row 1) - waypoint, group, route
+	$this->{ed_lbl_comment} = Wx::StaticText->new($editor_panel, -1, 'Comment',
 		[$ED_MARGIN, $ey->(1)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_lat} = Wx::TextCtrl->new($editor_panel, -1, '',
-		[$ED_CTRL_X, $ey->(1)], [110, $ED_CTRL_H]);
-	$this->{ed_lat_ddm} = Wx::StaticText->new($editor_panel, -1, '',
-		[$ED_CTRL_X + 110 + 6, $ey->(1)], [-1, $ED_CTRL_H]);
+	$this->{ed_comment} = Wx::TextCtrl->new($editor_panel, -1, '',
+		[$ED_CTRL_X, $ey->(1)], [200, $ED_CTRL_H]);
+	$this->{ed_comment}->SetMaxLength(31);
 
-	# lon row (row 2)
-	$this->{ed_lbl_lon} = Wx::StaticText->new($editor_panel, -1, 'Lon',
+	# lat row (row 2)
+	$this->{ed_lbl_lat} = Wx::StaticText->new($editor_panel, -1, 'Lat',
 		[$ED_MARGIN, $ey->(2)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_lon} = Wx::TextCtrl->new($editor_panel, -1, '',
+	$this->{ed_lat} = Wx::TextCtrl->new($editor_panel, -1, '',
 		[$ED_CTRL_X, $ey->(2)], [110, $ED_CTRL_H]);
-	$this->{ed_lon_ddm} = Wx::StaticText->new($editor_panel, -1, '',
+	$this->{ed_lat_ddm} = Wx::StaticText->new($editor_panel, -1, '',
 		[$ED_CTRL_X + 110 + 6, $ey->(2)], [-1, $ED_CTRL_H]);
 
-	# sym row (row 3) - waypoint symbol index 0-39
-	$this->{ed_lbl_sym} = Wx::StaticText->new($editor_panel, -1, 'Sym',
+	# lon row (row 3)
+	$this->{ed_lbl_lon} = Wx::StaticText->new($editor_panel, -1, 'Lon',
 		[$ED_MARGIN, $ey->(3)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_lon} = Wx::TextCtrl->new($editor_panel, -1, '',
+		[$ED_CTRL_X, $ey->(3)], [110, $ED_CTRL_H]);
+	$this->{ed_lon_ddm} = Wx::StaticText->new($editor_panel, -1, '',
+		[$ED_CTRL_X + 110 + 6, $ey->(3)], [-1, $ED_CTRL_H]);
+
+	# sym row (row 4) - waypoint symbol index 0-39
+	$this->{ed_lbl_sym} = Wx::StaticText->new($editor_panel, -1, 'Sym',
+		[$ED_MARGIN, $ey->(4)], [$ED_LABEL_W, $ED_CTRL_H]);
 	$this->{ed_sym} = Wx::Choice->new($editor_panel, -1,
-		[$ED_CTRL_X, $ey->(3)], [-1, $ED_CTRL_H],
+		[$ED_CTRL_X, $ey->(4)], [-1, $ED_CTRL_H],
 		[map { sprintf('%2d - %s', $_, $apps::raymarine::NET::a_utils::WPICON_TABLE[$_][0]) }
 		 0..$#apps::raymarine::NET::a_utils::WPICON_TABLE]);
 
-	# color row (row 4) - route color index 0-5
+	# color row (row 5) - route color index 0-5
 	$this->{ed_lbl_color} = Wx::StaticText->new($editor_panel, -1, 'Color',
-		[$ED_MARGIN, $ey->(4)], [$ED_LABEL_W, $ED_CTRL_H]);
+		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
 	$this->{ed_color_choice} = Wx::Choice->new($editor_panel, -1,
-		[$ED_CTRL_X, $ey->(4)], [-1, $ED_CTRL_H],
+		[$ED_CTRL_X, $ey->(5)], [-1, $ED_CTRL_H],
 		['Red', 'Yellow', 'Green', 'Blue', 'Purple', 'Black']);
+
+	# depth row (row 5, same as color - mutually exclusive) - waypoint only; wire value is cm (int32)
+	$this->{ed_lbl_depth} = Wx::StaticText->new($editor_panel, -1, 'Depth',
+		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_depth} = Wx::TextCtrl->new($editor_panel, -1, '',
+		[$ED_CTRL_X, $ey->(5)], [80, $ED_CTRL_H]);
+	$this->{ed_depth_unit} = Wx::StaticText->new($editor_panel, -1, '',
+		[$ED_CTRL_X + 86, $ey->(5)], [-1, $ED_CTRL_H]);
+
+	# temp row (row 6) - waypoint only; wire value is Kelvin * 100 (uint16)
+	$this->{ed_lbl_temp} = Wx::StaticText->new($editor_panel, -1, 'Temp',
+		[$ED_MARGIN, $ey->(6)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_temp} = Wx::TextCtrl->new($editor_panel, -1, '',
+		[$ED_CTRL_X, $ey->(6)], [80, $ED_CTRL_H]);
+	$this->{ed_temp_unit} = Wx::StaticText->new($editor_panel, -1, '',
+		[$ED_CTRL_X + 86, $ey->(6)], [-1, $ED_CTRL_H]);
+
+	# date row (row 7) - waypoint only; wire value is days since 1970-01-01 (uint16)
+	$this->{ed_lbl_date} = Wx::StaticText->new($editor_panel, -1, 'Date',
+		[$ED_MARGIN, $ey->(7)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_date} = Wx::DatePickerCtrl->new($editor_panel, -1,
+		Wx::DateTime::Today(), [$ED_CTRL_X, $ey->(7)], [-1, $ED_CTRL_H],
+		wxDP_DROPDOWN | wxDP_SHOWCENTURY);
+
+	# time row (row 8) - waypoint only; wire value is seconds since midnight (uint32)
+	$this->{ed_lbl_time} = Wx::StaticText->new($editor_panel, -1, 'Time',
+		[$ED_MARGIN, $ey->(8)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_time} = Wx::TextCtrl->new($editor_panel, -1, '',
+		[$ED_CTRL_X, $ey->(8)], [80, $ED_CTRL_H]);
 
 	EVT_SIZE($editor_panel, sub {
 		my ($panel, $event) = @_;
@@ -161,6 +206,7 @@ sub new
 		my $ctrl_w = $w - $this->{_ed_ctrl_x} - $this->{_ed_margin};
 		$ctrl_w = 80 if $ctrl_w < 80;
 		$this->{ed_name}->SetSize($ctrl_w, $this->{_ed_ctrl_h});
+		$this->{ed_comment}->SetSize($ctrl_w, $this->{_ed_ctrl_h});
 	});
 
 	_clearEditor($this);
@@ -205,6 +251,11 @@ sub new
 	EVT_TEXT($this,   $this->{ed_lon},     \&_onLonEdit);
 	EVT_CHOICE($this, $this->{ed_sym},          \&_onFieldChanged);
 	EVT_CHOICE($this, $this->{ed_color_choice}, \&_onFieldChanged);
+	EVT_TEXT($this,         $this->{ed_comment}, \&_onFieldChanged);
+	EVT_TEXT($this,         $this->{ed_depth},   \&_onFieldChanged);
+	EVT_TEXT($this,         $this->{ed_temp},    \&_onFieldChanged);
+	EVT_TEXT($this,         $this->{ed_time},    \&_onFieldChanged);
+	EVT_DATE_CHANGED($this, $this->{ed_date},    \&_onFieldChanged);
 	EVT_BUTTON($this,   $this->{ed_save},       \&_onSave);
 	EVT_CHECKBOX($this, $this->{ed_visible},    \&_onEdVisibleChanged);
 
@@ -544,7 +595,15 @@ sub _clearEditor
 	_ed_show_row($this->{ed_lbl_lon},   $this->{ed_lon},          0);
 	$this->{ed_lon_ddm}->Show(0);
 	_ed_show_row($this->{ed_lbl_sym},   $this->{ed_sym},          0);
-	_ed_show_row($this->{ed_lbl_color}, $this->{ed_color_choice}, 0);
+	_ed_show_row($this->{ed_lbl_color},   $this->{ed_color_choice}, 0);
+	_ed_show_row($this->{ed_lbl_comment}, $this->{ed_comment},     0);
+	_ed_show_row($this->{ed_lbl_depth},  $this->{ed_depth},       0);
+	$this->{ed_depth_unit}->Show(0);
+	_ed_show_row($this->{ed_lbl_temp},   $this->{ed_temp},        0);
+	$this->{ed_temp_unit}->Show(0);
+	_ed_show_row($this->{ed_lbl_date},   $this->{ed_date},        0);
+	_ed_show_row($this->{ed_lbl_time},   $this->{ed_time},        0);
+	$this->{right_split}->SetSashPosition($this->{_ed_sash_other}) if $this->{right_split};
 	$this->{ed_save}->Enable(0);
 }
 
@@ -556,11 +615,13 @@ sub _loadEditor
 	my $uuid = $node->{uuid};
 	my $data = $node->{data} // {};
 
-	my $show_name   = ($type eq 'waypoint' || $type eq 'group'
-	               || $type eq 'route'    || $type eq 'track');
-	my $show_latlon = ($type eq 'waypoint');
-	my $show_sym    = ($type eq 'waypoint');
-	my $show_color  = ($type eq 'route');
+	my $show_name    = ($type eq 'waypoint' || $type eq 'group'
+	                || $type eq 'route'    || $type eq 'track');
+	my $show_latlon  = ($type eq 'waypoint');
+	my $show_sym     = ($type eq 'waypoint');
+	my $show_color   = ($type eq 'route');
+	my $show_comment = ($type eq 'waypoint' || $type eq 'group' || $type eq 'route');
+	my $show_wp      = ($type eq 'waypoint');
 
 	$this->{_edit_uuid}    = $uuid;
 	$this->{_edit_type}    = $type;
@@ -579,11 +640,19 @@ sub _loadEditor
 	_ed_show_row($this->{ed_lbl_lon},     $this->{ed_lon},          $show_latlon);
 	$this->{ed_lon_ddm}->Show($show_latlon ? 1 : 0);
 	_ed_show_row($this->{ed_lbl_sym},   $this->{ed_sym},          $show_sym);
-	_ed_show_row($this->{ed_lbl_color}, $this->{ed_color_choice}, $show_color);
+	_ed_show_row($this->{ed_lbl_color},   $this->{ed_color_choice}, $show_color);
+	_ed_show_row($this->{ed_lbl_comment}, $this->{ed_comment},     $show_comment);
+	_ed_show_row($this->{ed_lbl_depth},  $this->{ed_depth},       $show_wp);
+	$this->{ed_depth_unit}->Show($show_wp ? 1 : 0);
+	_ed_show_row($this->{ed_lbl_temp},   $this->{ed_temp},        $show_wp);
+	$this->{ed_temp_unit}->Show($show_wp ? 1 : 0);
+	_ed_show_row($this->{ed_lbl_date},   $this->{ed_date},        $show_wp);
+	_ed_show_row($this->{ed_lbl_time},   $this->{ed_time},        $show_wp);
 
 	$this->{_loading_editor} = 1;
 
-	$this->{ed_name}->SetValue($data->{name} // '') if $show_name;
+	$this->{ed_name}->SetValue($data->{name}       // '') if $show_name;
+	$this->{ed_comment}->SetValue($data->{comment} // '') if $show_comment;
 
 	if ($show_latlon)
 	{
@@ -595,8 +664,35 @@ sub _loadEditor
 		_updateLonDDM($this);
 	}
 
-	$this->{ed_sym}->SetSelection(($data->{sym} // 0) + 0)          if $show_sym;
+	$this->{ed_sym}->SetSelection(($data->{sym} // 0) + 0)            if $show_sym;
 	$this->{ed_color_choice}->SetSelection(($data->{color} // 0) + 0) if $show_color;
+
+	if ($show_wp)
+	{
+		my $use_feet = getPref($PREF_DEPTH_DISPLAY);
+		my $use_fahr = getPref($PREF_FAHRENHEIT);
+
+		my $depth_cm   = ($data->{depth} // 0) + 0;
+		my $depth_disp = $use_feet ? $depth_cm * 0.0328084 : $depth_cm / 100;
+		$this->{ed_depth}->SetValue(sprintf('%.1f', $depth_disp));
+		$this->{ed_depth_unit}->SetLabel($use_feet ? 'ft' : 'm');
+
+		my $temp_k100  = ($data->{temp} // 0) + 0;
+		my $temp_c     = $temp_k100 / 100 - 273.15;
+		my $temp_disp  = $use_fahr ? $temp_c * 9 / 5 + 32 : $temp_c;
+		$this->{ed_temp}->SetValue(sprintf('%.1f', $temp_disp));
+		$this->{ed_temp_unit}->SetLabel($use_fahr ? 'F' : 'C');
+
+		my $date_val              = ($data->{date} // 0) + 0;
+		my ($d_mday, $d_mon, $d_yr) = (gmtime($date_val * 86400))[3, 4, 5];
+		$this->{ed_date}->SetValue(Wx::DateTime->newFromDMY($d_mday, $d_mon, $d_yr + 1900));
+
+		my $time_sec = ($data->{time} // 0) + 0;
+		$this->{ed_time}->SetValue(sprintf('%02d:%02d:%02d',
+			int($time_sec / 3600),
+			int(($time_sec % 3600) / 60),
+			$time_sec % 60));
+	}
 
 	$this->{ed_visible}->Show(1);
 	if ($type eq 'group')
@@ -617,6 +713,8 @@ sub _loadEditor
 	}
 
 	$this->{_loading_editor} = 0;
+	$this->{right_split}->SetSashPosition(
+		$show_wp ? $this->{_ed_sash_wp} : $this->{_ed_sash_other});
 	$this->{ed_save}->Enable(0);
 }
 
@@ -696,27 +794,53 @@ sub _onSave
 			warning(0, 0, "invalid lat/lon - save aborted");
 			return;
 		}
+		my $use_feet   = getPref($PREF_DEPTH_DISPLAY);
+		my $use_fahr   = getPref($PREF_FAHRENHEIT);
+
+		my $depth_disp = $this->{ed_depth}->GetValue() + 0;
+		my $depth_cm   = int($use_feet ? $depth_disp / 0.0328084 : $depth_disp * 100);
+
+		my $temp_disp  = $this->{ed_temp}->GetValue() + 0;
+		my $temp_c     = $use_fahr ? ($temp_disp - 32) * 5 / 9 : $temp_disp;
+		my $temp_k100  = int(($temp_c + 273.15) * 100);
+		$temp_k100     = 0 if $temp_k100 < 0;
+
+		my $wx_dt    = $this->{ed_date}->GetValue();
+		my $date_val = int(timegm(0, 0, 12,
+			$wx_dt->GetDay(), $wx_dt->GetMonth(), $wx_dt->GetYear() - 1900) / 86400);
+
+		my $time_str   = $this->{ed_time}->GetValue();
+		$time_str =~ /^(\d+):(\d+):(\d+)$/;
+		my $time_sec   = ($1 // 0) * 3600 + ($2 // 0) * 60 + ($3 // 0);
+
 		$wpmgr->modifyWaypoint({
-			uuid => $uuid,
-			name => $this->{ed_name}->GetValue(),
-			lat  => $lat,
-			lon  => $lon,
-			sym  => $this->{ed_sym}->GetSelection(),
+			uuid    => $uuid,
+			name    => $this->{ed_name}->GetValue(),
+			lat     => $lat,
+			lon     => $lon,
+			sym     => $this->{ed_sym}->GetSelection(),
+			comment => $this->{ed_comment}->GetValue(),
+			depth   => $depth_cm,
+			temp    => $temp_k100,
+			date    => $date_val,
+			time    => $time_sec,
 		});
 	}
 	elsif ($type eq 'group' && $wpmgr)
 	{
 		$wpmgr->modifyGroup({
-			uuid => $uuid,
-			name => $this->{ed_name}->GetValue(),
+			uuid    => $uuid,
+			name    => $this->{ed_name}->GetValue(),
+			comment => $this->{ed_comment}->GetValue(),
 		});
 	}
 	elsif ($type eq 'route' && $wpmgr)
 	{
 		$wpmgr->modifyRoute({
-			uuid  => $uuid,
-			name  => $this->{ed_name}->GetValue(),
-			color => $this->{ed_color_choice}->GetSelection(),
+			uuid    => $uuid,
+			name    => $this->{ed_name}->GetValue(),
+			color   => $this->{ed_color_choice}->GetSelection(),
+			comment => $this->{ed_comment}->GetValue(),
 		});
 	}
 	elsif ($type eq 'track' && $track_mgr)
