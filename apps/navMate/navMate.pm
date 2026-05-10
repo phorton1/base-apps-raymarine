@@ -30,6 +30,9 @@ use a_defs;
 use a_utils;
 use nmPrefs;
 use c_db;
+use c_visibility;
+use c_outline;
+use c_selection;
 use nmServer;
 use apps::raymarine::NET::s_serial;
 use w_resources;
@@ -61,9 +64,12 @@ if ($db_rc == -1)
 {
 	display(0,0,"navMate: schema mismatch - use File->Import KML to rebuild database");
 }
+loadViewState();
+loadOutlineState();
+loadSelectionSets();
 nmServer::startNavMateServer();
 
-apps::raymarine::NET::a_defs::initServices(wpmgr => 1, track => 1);
+apps::raymarine::NET::a_defs::initServices(wpmgr => 1, track => 1, auto_query => 1);
 apps::raymarine::NET::c_RAYDP->new();
 $raydp->start();
 

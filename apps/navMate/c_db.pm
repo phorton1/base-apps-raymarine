@@ -11,6 +11,7 @@ use Pub::Utils;
 use Pub::Database;
 use a_defs;
 use a_utils;
+use c_visibility;
 
 
 BEGIN
@@ -69,6 +70,7 @@ BEGIN
 		moveRoute
 		moveTrack
 		isDBReady
+		getCollectionTerminalUUIDs
 		getCollectionVisibleState
 		setTerminalVisible
 		setCollectionVisibleRecursive
@@ -283,6 +285,18 @@ sub openDB
 	}
 
 	display(0,0,"c_db::openDB ok (schema $stored)");
+	if (!hasDbVisibility())
+	{
+		display(0,0,"c_db::openDB seeding visibility from DB visible column");
+		my @uuids;
+		for my $table (qw(waypoints routes tracks))
+		{
+			my $rows = $dbh->get_records("SELECT uuid FROM $table WHERE visible=1", []);
+			push @uuids, map { $_->{uuid} } @{$rows // []};
+		}
+		seedDbVisibility(\@uuids);
+		saveViewState();
+	}
 	$db_ready = 1;
 	$dbh->disconnect();
 	return 1;
@@ -875,6 +889,23 @@ sub getCollectionWRGTs
 sub getCollectionVisibleState
 {
 	my ($dbh, $uuid) = @_;
+	my $uuids = getCollectionTerminalUUIDs($dbh, $uuid);
+	return 0 if !@$uuids;
+	my $vis = grep { getDbVisible($_) } @$uuids;
+	return 0 if $vis == 0;
+	return 1 if $vis == scalar @$uuids;
+	return 2;
+}
+
+
+#---------------------------------
+# getCollectionTerminalUUIDs
+#---------------------------------
+# Returns arrayref of all waypoint/route/track UUIDs under $uuid (recursive).
+
+sub getCollectionTerminalUUIDs
+{
+	my ($dbh, $uuid) = @_;
 	my $cte = qq{
 		WITH RECURSIVE tree(uuid) AS (
 			SELECT uuid FROM collections WHERE uuid=?
@@ -882,40 +913,25 @@ sub getCollectionVisibleState
 			SELECT c.uuid FROM collections c JOIN tree ON c.parent_uuid=tree.uuid
 		)
 	};
-	my $row = $dbh->get_record(
-		$cte . qq{
-			SELECT SUM(total) AS total, SUM(vis) AS vis FROM (
-				SELECT COUNT(*) AS total, SUM(visible) AS vis
-				FROM waypoints WHERE collection_uuid IN (SELECT uuid FROM tree)
-				UNION ALL
-				SELECT COUNT(*), SUM(visible)
-				FROM routes WHERE collection_uuid IN (SELECT uuid FROM tree)
-				UNION ALL
-				SELECT COUNT(*), SUM(visible)
-				FROM tracks WHERE collection_uuid IN (SELECT uuid FROM tree)
-			)
-		},
-		[$uuid]);
-	my $total = ($row && defined $row->{total}) ? $row->{total} + 0 : 0;
-	my $vis   = ($row && defined $row->{vis})   ? $row->{vis}   + 0 : 0;
-	return 0 if $total == 0 || $vis == 0;
-	return 1 if $vis == $total;
-	return 2;
+	my $wps    = $dbh->get_records($cte . "SELECT uuid FROM waypoints WHERE collection_uuid IN (SELECT uuid FROM tree)", [$uuid]);
+	my $routes = $dbh->get_records($cte . "SELECT uuid FROM routes    WHERE collection_uuid IN (SELECT uuid FROM tree)", [$uuid]);
+	my $tracks = $dbh->get_records($cte . "SELECT uuid FROM tracks    WHERE collection_uuid IN (SELECT uuid FROM tree)", [$uuid]);
+	return [
+		(map { $_->{uuid} } @{$wps    // []}),
+		(map { $_->{uuid} } @{$routes // []}),
+		(map { $_->{uuid} } @{$tracks // []}),
+	];
 }
 
 
 #---------------------------------
 # setTerminalVisible
 #---------------------------------
-# Set visible flag on a single terminal node (waypoint, route, or track).
 
 sub setTerminalVisible
 {
 	my ($dbh, $uuid, $obj_type, $visible) = @_;
-	my $table = $obj_type eq 'waypoint' ? 'waypoints'
-	          : $obj_type eq 'route'    ? 'routes'
-	          :                           'tracks';
-	$dbh->do("UPDATE $table SET visible=? WHERE uuid=?", [$visible, $uuid]);
+	setDbVisible($uuid, $visible);
 	return 1;
 }
 
@@ -923,26 +939,12 @@ sub setTerminalVisible
 #---------------------------------
 # setCollectionVisibleRecursive
 #---------------------------------
-# Set visible on all terminal descendants AND the collection itself.
 
 sub setCollectionVisibleRecursive
 {
 	my ($dbh, $uuid, $visible) = @_;
-	my $cte = qq{
-		WITH RECURSIVE tree(uuid) AS (
-			SELECT uuid FROM collections WHERE uuid=?
-			UNION ALL
-			SELECT c.uuid FROM collections c JOIN tree ON c.parent_uuid=tree.uuid
-		)
-	};
-	$dbh->do($cte . "UPDATE waypoints SET visible=? WHERE collection_uuid IN (SELECT uuid FROM tree)",
-		[$uuid, $visible]);
-	$dbh->do($cte . "UPDATE routes SET visible=? WHERE collection_uuid IN (SELECT uuid FROM tree)",
-		[$uuid, $visible]);
-	$dbh->do($cte . "UPDATE tracks SET visible=? WHERE collection_uuid IN (SELECT uuid FROM tree)",
-		[$uuid, $visible]);
-	$dbh->do($cte . "UPDATE collections SET visible=? WHERE uuid IN (SELECT uuid FROM tree)",
-		[$uuid, $visible]);
+	my $uuids = getCollectionTerminalUUIDs($dbh, $uuid);
+	batchSetDbVisible($visible, $uuids);
 	return 1;
 }
 
@@ -950,15 +952,11 @@ sub setCollectionVisibleRecursive
 #---------------------------------
 # clearAllVisible
 #---------------------------------
-# Set visible=0 on every object in the database.
 
 sub clearAllVisible
 {
 	my ($dbh) = @_;
-	$dbh->do("UPDATE collections SET visible=0", []);
-	$dbh->do("UPDATE waypoints  SET visible=0", []);
-	$dbh->do("UPDATE routes     SET visible=0", []);
-	$dbh->do("UPDATE tracks     SET visible=0", []);
+	clearAllDbVisible();
 	return 1;
 }
 
@@ -966,36 +964,33 @@ sub clearAllVisible
 #---------------------------------
 # getAllVisibleFeatures
 #---------------------------------
-# Returns all visible=1 terminal objects with enough data for Leaflet rendering.
+# Returns all visible terminal objects with enough data for Leaflet rendering.
 # Routes include their ordered waypoints; tracks include their points.
 
 sub getAllVisibleFeatures
 {
 	my ($dbh) = @_;
-	my $wps = $dbh->get_records(
+	my $all_wps = $dbh->get_records(
 		"SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm,
 		 created_ts, ts_source, source, collection_uuid
-		 FROM waypoints WHERE visible=1",
-		[]);
-	my $routes = $dbh->get_records(
-		"SELECT uuid, name, comment, color, collection_uuid FROM routes WHERE visible=1",
-		[]);
-	my $tracks = $dbh->get_records(
+		 FROM waypoints", []);
+	my $wps = [grep { getDbVisible($_->{uuid}) } @{$all_wps // []}];
+
+	my $all_routes = $dbh->get_records(
+		"SELECT uuid, name, comment, color, collection_uuid FROM routes", []);
+	my $routes = [grep { getDbVisible($_->{uuid}) } @{$all_routes // []}];
+
+	my $all_tracks = $dbh->get_records(
 		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, collection_uuid
-		 FROM tracks WHERE visible=1",
-		[]);
-	for my $r (@{$routes // []})
-	{
-		$r->{waypoints} = getRouteWaypoints($dbh, $r->{uuid});
-	}
-	for my $t (@{$tracks // []})
-	{
-		$t->{points} = getTrackPoints($dbh, $t->{uuid});
-	}
+		 FROM tracks", []);
+	my $tracks = [grep { getDbVisible($_->{uuid}) } @{$all_tracks // []}];
+
+	for my $r (@$routes) { $r->{waypoints} = getRouteWaypoints($dbh, $r->{uuid}) }
+	for my $t (@$tracks) { $t->{points}    = getTrackPoints($dbh,    $t->{uuid}) }
 	return {
-		waypoints => $wps    // [],
-		routes    => $routes // [],
-		tracks    => $tracks // [],
+		waypoints => $wps,
+		routes    => $routes,
+		tracks    => $tracks,
 	};
 }
 

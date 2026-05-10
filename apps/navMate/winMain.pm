@@ -11,13 +11,16 @@ use threads::shared;
 use Wx qw(:everything);
 use Wx::Event qw(
 	EVT_IDLE
-	EVT_MENU);
+	EVT_MENU
+	EVT_UPDATE_UI);
 use Time::HiRes qw(time sleep);
 use Pub::Utils qw(display warning error _def);
 use Pub::WX::AppConfig;
 use Pub::WX::Frame;
 use Pub::WX::Dialogs;
 use apps::raymarine::NET::c_RAYDP;
+use c_visibility qw(saveViewState);
+use c_selection;
 use w_resources;
 use nmServer;
 use nmTest;
@@ -38,22 +41,29 @@ sub new
 
 	my $this = $class->SUPER::new($parent, $rect);
 
-	EVT_MENU($this, $WIN_DATABASE,      \&onCommand);
-	EVT_MENU($this, $WIN_E80,          \&onCommand);
-	EVT_MENU($this, $WIN_MONITOR,      \&onCommand);
-	EVT_MENU($this, $COMMAND_OPEN_MAP,     \&onCommand);
-	EVT_MENU($this, $COMMAND_IMPORT_KML,   \&onCommand);
-	EVT_MENU($this, $COMMAND_REFRESH_E80,      \&onCommand);
-	EVT_MENU($this, $COMMAND_REFRESH_E80_DATA, \&onCommand);
-	EVT_MENU($this, $COMMAND_REFRESH_DB,       \&onCommand);
-	EVT_MENU($this, $COMMAND_IMPORT_OLDE80,    \&onCommand);
-	EVT_MENU($this, $COMMAND_EXPORT_DB_TEXT,   \&onCommand);
-	EVT_MENU($this, $COMMAND_IMPORT_DB_TEXT,   \&onCommand);
-	EVT_MENU($this, $COMMAND_EXPORT_KML,       \&onCommand);
-	EVT_MENU($this, $COMMAND_IMPORT_KML_NM,    \&onCommand);
-	EVT_MENU($this, $COMMAND_CLEAR_MAP,        \&onCommand);
-	EVT_MENU($this, $COMMAND_REVERT_DB,        \&onCommand);
-	EVT_MENU($this, $COMMAND_COMMIT_DB,        \&onCommand);
+	EVT_MENU($this, $WIN_DATABASE,				\&onCommand);
+	EVT_MENU($this, $WIN_E80,					\&onCommand);
+	EVT_MENU($this, $WIN_MONITOR,				\&onCommand);
+	EVT_MENU($this, $COMMAND_OPEN_MAP,			\&onCommand);
+	EVT_MENU($this, $COMMAND_IMPORT_KML,		\&onCommand);
+	EVT_MENU($this, $COMMAND_REFRESH_WIN_E80,	\&onCommand);
+	EVT_MENU($this, $COMMAND_REFRESH_E80_DB,	\&onCommand);
+	EVT_MENU($this, $COMMAND_REFRESH_DB,		\&onCommand);
+	EVT_MENU($this, $COMMAND_EXPORT_DB_TEXT,	\&onCommand);
+	EVT_MENU($this, $COMMAND_IMPORT_DB_TEXT,	\&onCommand);
+	EVT_MENU($this, $COMMAND_EXPORT_KML,		\&onCommand);
+	EVT_MENU($this, $COMMAND_IMPORT_KML_NM,		\&onCommand);
+	EVT_MENU($this, $COMMAND_CLEAR_MAP,			\&onCommand);
+	EVT_MENU($this, $COMMAND_REVERT_DB,			\&onCommand);
+	EVT_MENU($this, $COMMAND_COMMIT_DB,			\&onCommand);
+	EVT_MENU($this, $COMMAND_SAVE_OUTLINE,		\&onCommand);
+	EVT_MENU($this, $COMMAND_RESTORE_OUTLINE,	\&onCommand);
+	EVT_MENU($this, $COMMAND_SAVE_SELECTION,	\&onCommand);
+	EVT_MENU($this, $COMMAND_RESTORE_SELECTION,	\&onCommand);
+	EVT_UPDATE_UI($this, $COMMAND_REFRESH_WIN_E80,	\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_REFRESH_E80_DB,	\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_REVERT_DB,		\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_COMMIT_DB,		\&onCommandEnable);
 	EVT_IDLE($this, \&onIdle);
 
 	my $sb = Wx::StatusBar->new($this, -1);
@@ -121,67 +131,29 @@ sub onIdle
 
 	if ($wpmgr_on != ($this->{_wpmgr_on} // -1))
 	{
-		if (!$wpmgr_on)
-		{
-			$this->{_wpmgr_queried}  = 0;
-			$this->{_wpmgr_in_query} = 0;
-		}
 		$this->{_wpmgr_on} = $wpmgr_on;
 		$this->{st_wpmgr}->SetForegroundColour($wpmgr_on ? $this->{color_on} : $this->{color_off});
 		$this->{st_wpmgr}->Refresh();
 	}
 	if ($track_on != ($this->{_track_on} // -1))
 	{
-		if (!$track_on)
-		{
-			$this->{_track_queried}  = 0;
-			$this->{_track_in_query} = 0;
-		}
 		$this->{_track_on} = $track_on;
 		$this->{st_track}->SetForegroundColour($track_on ? $this->{color_on} : $this->{color_off});
 		$this->{st_track}->Refresh();
 	}
 
-	my $wpmgr_busy = $apps::raymarine::NET::d_WPMGR::query_in_progress // 0;
-	my $track_busy = $apps::raymarine::NET::d_TRACK::query_in_progress // 0;
-
-	# Detect query lifecycle: in-flight -> completed
-	if ($wpmgr_on && $wpmgr_busy)
-	{
-		$this->{_wpmgr_in_query} = 1;
-	}
-	elsif ($this->{_wpmgr_in_query} && !$wpmgr_busy)
-	{
-		$this->{_wpmgr_in_query} = 0;
-		$this->{_wpmgr_queried}  = 1;
-	}
-	elsif ($wpmgr_on && !$wpmgr_busy && !($this->{_wpmgr_queried}//0) && !($this->{_wpmgr_in_query}//0))
-	{
-		# startup race: initial query finished before onIdle ever saw it busy
-		$this->{_wpmgr_queried} = 1;
-	}
-	if ($track_on && $track_busy)
-	{
-		$this->{_track_in_query} = 1;
-	}
-	elsif ($this->{_track_in_query} && !$track_busy)
-	{
-		$this->{_track_in_query} = 0;
-		$this->{_track_queried}  = 1;
-	}
-	elsif ($track_on && !$track_busy && !($this->{_track_queried}//0) && !($this->{_track_in_query}//0))
-	{
-		# startup race: initial query finished before onIdle ever saw it busy
-		$this->{_track_queried} = 1;
-	}
+	my $wpmgr_busy    = $apps::raymarine::NET::d_WPMGR::query_in_progress // 0;
+	my $track_busy    = $apps::raymarine::NET::d_TRACK::query_in_progress // 0;
+	my $wpmgr_queried = $apps::raymarine::NET::d_WPMGR::query_completed   // 0;
+	my $track_queried = $apps::raymarine::NET::d_TRACK::query_completed    // 0;
 
 	# Session is stable once WPMGR has completed a real query and no service
 	# is currently downloading.  TRACK is optional: if absent, ignore it.
 	my $session_stable =
 		($wpmgr_on &&
 		 !$wpmgr_busy &&
-		 ($this->{_wpmgr_queried} // 0) &&
-		 (!$track_on || (!$track_busy && ($this->{_track_queried} // 0))))
+		 $wpmgr_queried &&
+		 (!$track_on || (!$track_busy && $track_queried)))
 		? 1 : 0;
 
 	my $prev_stable = $this->{_e80_stable} // -1;
@@ -268,12 +240,12 @@ sub onCommand
 	{
 		_doImportKML($this);
 	}
-	elsif ($id == $COMMAND_REFRESH_E80)
+	elsif ($id == $COMMAND_REFRESH_WIN_E80)
 	{
 		my $e80 = $this->findPane($WIN_E80);
 		$e80->refresh() if $e80;
 	}
-	elsif ($id == $COMMAND_REFRESH_E80_DATA)
+	elsif ($id == $COMMAND_REFRESH_E80_DB)
 	{
 		_doRefreshE80Data($this);
 	}
@@ -281,10 +253,6 @@ sub onCommand
 	{
 		my $database = $this->findPane($WIN_DATABASE);
 		$database->refresh() if $database;
-	}
-	elsif ($id == $COMMAND_IMPORT_OLDE80)
-	{
-		warning(0, 0, "Import oldE80 Residue: no longer available");
 	}
 	elsif ($id == $COMMAND_EXPORT_DB_TEXT)
 	{
@@ -317,6 +285,94 @@ sub onCommand
 	{
 		_doCommitDB($this);
 	}
+	elsif ($id == $COMMAND_SAVE_OUTLINE)
+	{
+		my $database = $this->findPane($WIN_DATABASE);
+		$database->doSaveOutline() if $database;
+	}
+	elsif ($id == $COMMAND_RESTORE_OUTLINE)
+	{
+		my $database = $this->findPane($WIN_DATABASE);
+		$database->doRestoreOutline() if $database;
+	}
+	elsif ($id == $COMMAND_SAVE_SELECTION)
+	{
+		my $database = $this->findPane($WIN_DATABASE);
+		if ($database)
+		{
+			my $dialog = Wx::TextEntryDialog->new(
+				$this, 'Selection set name:', 'Save Selection', '');
+			if ($dialog->ShowModal() == wxID_OK)
+			{
+				my $name = $dialog->GetValue();
+				$database->doSaveSelection($name) if $name ne '';
+			}
+			$dialog->Destroy();
+		}
+	}
+	elsif ($id == $COMMAND_RESTORE_SELECTION)
+	{
+		my $database = $this->findPane($WIN_DATABASE);
+		if ($database)
+		{
+			my @names = c_selection::getSelectionSetNames();
+			if (!@names)
+			{
+				okDialog($this, 'No saved selection sets.', 'Restore Selection');
+			}
+			else
+			{
+				my $dialog = Wx::SingleChoiceDialog->new(
+					$this, 'Choose a selection set:', 'Restore Selection', \@names);
+				if ($dialog->ShowModal() == wxID_OK)
+				{
+					my $name = $dialog->GetStringSelection();
+					$database->doRestoreSelection($name);
+				}
+				$dialog->Destroy();
+			}
+		}
+	}
+}
+
+
+sub onCloseFrame
+{
+	my ($this, $event) = @_;
+	my $database = $this->findPane($WIN_DATABASE);
+	$database->doSaveOutline() if $database;
+	saveViewState();
+	$this->SUPER::onCloseFrame($event);
+}
+
+
+sub onCommandEnable
+{
+	my ($this, $event) = @_;
+	my $id = $event->GetId();
+	my $enable = 1;
+
+	if ($id == $COMMAND_REFRESH_WIN_E80)
+	{
+		$enable = 0 if !$this->findPane($WIN_E80);
+	}
+	elsif ($id == $COMMAND_REFRESH_E80_DB)
+	{
+		$enable = 0 if !($raydp && $raydp->findImplementedService('WPMGR', 1));
+	}
+	elsif ($id == $COMMAND_REVERT_DB || $id == $COMMAND_COMMIT_DB)
+	{
+		my $now = time();
+		if (!defined($this->{_db_dirty_time}) || $now - $this->{_db_dirty_time} >= 2)
+		{
+			$this->{_db_dirty_time} = $now;
+			my $out = qx(git -C "C:/dat/Rhapsody" status --porcelain navMate.db 2>&1);
+			$this->{_db_dirty} = ($out =~ /\S/) ? 1 : 0;
+		}
+		$enable = 0 if !$this->{_db_dirty};
+	}
+
+	$event->Enable($enable);
 }
 
 
@@ -491,7 +547,11 @@ sub _doRevertDB
 	my $rc = c_db::openDB();
 	warning(0, 0, "winMain: openDB after revert returned $rc") if $rc <= 0;
 	my $database = $this->findPane($WIN_DATABASE);
-	$database->refresh() if $database;
+	if ($database)
+	{
+		$database->refresh();
+		$database->onBrowserConnect();
+	}
 }
 
 

@@ -29,6 +29,7 @@ use Wx::Event qw(
 	EVT_TREE_ITEM_ACTIVATED
 	EVT_TREE_ITEM_RIGHT_CLICK
 	EVT_LEFT_DOWN
+	EVT_KEY_DOWN
 	EVT_MENU
 	EVT_MENU_RANGE
 	EVT_TEXT
@@ -44,12 +45,12 @@ use a_defs;
 use a_utils;
 use nmOps qw(buildContextMenu onContextMenuCommand);
 use nmServer qw(addRenderFeatures removeRenderFeatures openMapBrowser isBrowserConnected);
+use c_visibility qw(getE80Visible setE80Visible clearAllE80Visible getAllE80VisibleUUIDs batchRemoveE80Visible);
 use w_resources;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
 our $dbg_wine80 = 0;
-
-my %e80_visible :shared;
+my $CUT_COLOR;
 
 # E80 route color index 0-5 to ABGR hex (FFBBGGRR, converted to #RRGGBB by abgrToCSS)
 my @E80_ROUTE_COLOR_ABGR = qw(
@@ -193,7 +194,8 @@ sub new
 	EVT_TREE_ITEM_ACTIVATED($this,   $this->{tree}, \&_onTreeActivated);
 	EVT_TREE_ITEM_RIGHT_CLICK($this, $this->{tree}, \&onTreeRightClick);
 	EVT_LEFT_DOWN($this->{tree},     sub { _onTreeLeftDown($this, @_) });
-	EVT_MENU($this, $COMMAND_REFRESH_E80, sub { refresh($_[0]) });
+	EVT_KEY_DOWN($this->{tree},      sub { _onTreeKeyDown($this, @_) });
+	EVT_MENU($this, $COMMAND_REFRESH_WIN_E80, sub { refresh($_[0]) });
 	EVT_MENU($this, $CTX_CMD_SHOW_MAP,   \&_onShowMap);
 	EVT_MENU($this, $CTX_CMD_HIDE_MAP,   \&_onHideMap);
 	EVT_MENU_RANGE($this, 10010, 10559, \&_onNmOpsCmd);
@@ -257,6 +259,7 @@ sub refresh
 		_captureSelectedInto($this);
 	}
 	_buildAndRestore($this);
+	_applyCutStyle($this);
 }
 
 
@@ -598,7 +601,7 @@ sub _loadEditor
 	{
 		my @member_uuids = @{$data->{uuids} // []};
 		my $total   = scalar @member_uuids;
-		my $visible = scalar grep { $e80_visible{$_} } @member_uuids;
+		my $visible = scalar grep { getE80Visible($_) } @member_uuids;
 		my $vs = ($total && $visible == $total) ? 1 : ($visible > 0) ? 2 : 0;
 		$this->{ed_visible}->Set3StateValue(
 			$vs == 1 ? wxCHK_CHECKED :
@@ -608,7 +611,7 @@ sub _loadEditor
 	else
 	{
 		$this->{ed_visible}->Set3StateValue(
-			$e80_visible{$uuid // ''} ? wxCHK_CHECKED : wxCHK_UNCHECKED);
+			getE80Visible($uuid // '') ? wxCHK_CHECKED : wxCHK_UNCHECKED);
 	}
 
 	$this->{_loading_editor} = 0;
@@ -815,7 +818,7 @@ sub _buildContextMenu
 	}
 
 	$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
-	$menu->Append($COMMAND_REFRESH_E80, 'Refresh E80');
+	$menu->Append($COMMAND_REFRESH_WIN_E80, 'Refresh winE80');
 
 	return $menu;
 }
@@ -828,6 +831,105 @@ sub _onNmOpsCmd
 	my $right_click = $this->{_right_click_node} // {};
 	my @nodes       = @{$this->{_context_nodes} // []};
 	onContextMenuCommand($cmd_id, 'e80', $right_click, $this->{tree}, @nodes);
+	_applyCutStyle($this);
+}
+
+
+sub _onTreeKeyDown
+{
+	my ($this, $tree, $event) = @_;
+	if ($event->ControlDown())
+	{
+		my $key = $event->GetKeyCode();
+		if ($key == ord('C') || $key == ord('X') || $key == ord('V'))
+		{
+			my @nodes;
+			for my $item ($tree->GetSelections())
+			{
+				my $d = $tree->GetItemData($item);
+				next if !$d;
+				my $n = $d->GetData();
+				push @nodes, $n if ref $n eq 'HASH';
+			}
+			my $right_click_node = @nodes ? $nodes[0] : {};
+
+			my $cmd_id;
+			if ($key == ord('C'))
+			{
+				$cmd_id = $CTX_CMD_COPY
+					if nmClipboard::getCopyMenuItems('e80', @nodes);
+			}
+			elsif ($key == ord('X'))
+			{
+				$cmd_id = $CTX_CMD_CUT
+					if nmClipboard::getCutMenuItems('e80', @nodes);
+			}
+			else
+			{
+				if (scalar(@nodes) == 1)
+				{
+					my @paste = nmClipboard::getPasteMenuItems('e80', $right_click_node);
+					$cmd_id = $CTX_CMD_PASTE
+						if grep { $_->{id} == $CTX_CMD_PASTE } @paste;
+				}
+			}
+
+			if ($cmd_id)
+			{
+				$this->{_right_click_node} = $right_click_node;
+				$this->{_context_nodes}    = \@nodes;
+				onContextMenuCommand($cmd_id, 'e80', $right_click_node, $tree, @nodes);
+				_applyCutStyle($this);
+			}
+			return;
+		}
+	}
+	$event->Skip();
+}
+
+
+#---------------------------------
+# cut-item grey styling
+#---------------------------------
+
+sub _applyCutStyle
+{
+	my ($this) = @_;
+	$CUT_COLOR //= Wx::Colour->new(160, 160, 160);
+	my $cb = $nmClipboard::clipboard;
+	my %cut;
+	if ($cb && $cb->{cut_flag} && ($cb->{source} // '') eq 'e80')
+	{
+		%cut = map { ($_->{uuid} // '') => 1 }
+		       grep { $_->{uuid} } @{$cb->{items} // []};
+	}
+	my $tree = $this->{tree};
+	my $root = $tree->GetRootItem();
+	_applyStyleWalk($tree, $root, \%cut) if $root && $root->IsOk();
+}
+
+sub _applyStyleWalk
+{
+	my ($tree, $item, $cut) = @_;
+	my $d = $tree->GetItemData($item);
+	if ($d)
+	{
+		my $node = $d->GetData();
+		if (ref $node eq 'HASH')
+		{
+			my $uuid = ($node->{type} // '') eq 'route_point'
+			         ? ($node->{uuid} // '')
+			         : (($node->{data} // {})->{uuid} // '');
+			$tree->SetItemTextColour($item,
+				($uuid && $cut->{$uuid}) ? $CUT_COLOR : wxNullColour);
+		}
+	}
+	my ($child, $cookie) = $tree->GetFirstChild($item);
+	while ($child && $child->IsOk())
+	{
+		_applyStyleWalk($tree, $child, $cut);
+		($child, $cookie) = $tree->GetNextChild($item, $cookie);
+	}
 }
 
 
@@ -1055,7 +1157,7 @@ sub _onShowHideE80Map
 sub onClearMap
 {
 	my ($this) = @_;
-	%e80_visible = ();
+	clearAllE80Visible();
 	my $tree = $this->{tree};
 	my $root = $tree->GetRootItem();
 	_walkSetSubtreeState($tree, $root, 0) if $root && $root->IsOk();
@@ -1154,12 +1256,12 @@ sub _applyWpVisibility
 	if ($new_visible)
 	{
 		return unless $wp;
-		$e80_visible{$uuid} = 1;
+		setE80Visible($uuid, 1);
 		addRenderFeatures([_buildWpFeature($uuid, $wp)]);
 	}
 	else
 	{
-		delete $e80_visible{$uuid};
+		setE80Visible($uuid, 0);
 		removeRenderFeatures([$uuid]);
 	}
 }
@@ -1174,12 +1276,12 @@ sub _applyRouteVisibility
 		return unless $r;
 		my $feature = _buildRouteFeature($uuid, $r, $wpmgr);
 		return unless $feature;
-		$e80_visible{$uuid} = 1;
+		setE80Visible($uuid, 1);
 		addRenderFeatures([$feature]);
 	}
 	else
 	{
-		delete $e80_visible{$uuid};
+		setE80Visible($uuid, 0);
 		removeRenderFeatures([$uuid]);
 	}
 }
@@ -1194,12 +1296,12 @@ sub _applyTrackVisibility
 		return unless $track;
 		my $feature = _buildTrackFeature($uuid, $track);
 		return unless $feature;
-		$e80_visible{$uuid} = 1;
+		setE80Visible($uuid, 1);
 		addRenderFeatures([$feature]);
 	}
 	else
 	{
-		delete $e80_visible{$uuid};
+		setE80Visible($uuid, 0);
 		removeRenderFeatures([$uuid]);
 	}
 }
@@ -1300,7 +1402,7 @@ sub _walkRestoreStateImages
 			my $type = $node->{type} // '';
 			if ($type eq 'waypoint' || $type eq 'route' || $type eq 'track')
 			{
-				$tree->SetItemState($item, $e80_visible{$node->{uuid} // ''} ? 1 : 0);
+				$tree->SetItemState($item, getE80Visible($node->{uuid} // '') ? 1 : 0);
 				if ($type eq 'route')
 				{
 					my ($child, $cookie) = $tree->GetFirstChild($item);
@@ -1404,14 +1506,15 @@ sub _refreshAncestorStates
 sub _syncLeafletAfterRebuild
 {
 	my ($wpmgr, $track_mgr) = @_;
-	return unless %e80_visible;
+	my @all_visible = getAllE80VisibleUUIDs();
+	return unless @all_visible;
 
 	my $wps    = $wpmgr ? ($wpmgr->{waypoints} // {}) : {};
 	my $routes = $wpmgr ? ($wpmgr->{routes}    // {}) : {};
 	my $tracks = ($track_mgr && $track_mgr->{tracks}) ? $track_mgr->{tracks} : {};
 
-	my (@to_remove, @features);
-	for my $uuid (keys %e80_visible)
+	my (@stale, @to_remove, @features);
+	for my $uuid (@all_visible)
 	{
 		if (my $wp = $wps->{$uuid})
 		{
@@ -1429,10 +1532,11 @@ sub _syncLeafletAfterRebuild
 		}
 		else
 		{
+			push @stale,     $uuid;
 			push @to_remove, $uuid;
-			delete $e80_visible{$uuid};
 		}
 	}
+	batchRemoveE80Visible(\@stale)    if @stale;
 	removeRenderFeatures(\@to_remove) if @to_remove;
 	addRenderFeatures(\@features)     if @features;
 }

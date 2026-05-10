@@ -31,6 +31,7 @@ use Wx::Event qw(
 	EVT_CHOICE
 	EVT_CHECKBOX
 	EVT_LEFT_DOWN
+	EVT_KEY_DOWN
 	EVT_SIZE);
 use Pub::WX::Dialogs;
 use POSIX qw(strftime);
@@ -38,6 +39,9 @@ use Pub::Utils qw(display warning error);
 use Pub::WX::Window;
 use Pub::WX::Menu;
 use c_db;
+use c_visibility qw(getDbVisible);
+use c_outline;
+use c_selection;
 use a_defs;
 use a_utils;
 use nmPrefs;
@@ -56,6 +60,7 @@ my $CTX_CMD_NEW_GROUP  = 10564;
 
 my %rendered_uuids;
 my $last_clear_version = 0;
+my $CUT_COLOR;
 
 
 sub new
@@ -201,12 +206,8 @@ sub new
 	$this->SplitVertically($this->{tree}, $right_split, $sash);
 	$this->SetSashGravity(0);
 
-	my %init_expanded;
-	if ($data && ref($data) eq 'HASH' && $data->{expanded})
-	{
-		$init_expanded{$_} = 1 for split(/,/, $data->{expanded});
-	}
-	$this->{_expanded_uuids} = \%init_expanded;
+	my @outline_uuids = c_outline::getExpandedUUIDs();
+	$this->{_expanded_uuids} = { map { $_ => 1 } @outline_uuids };
 	$this->{_selected_uuids} = {};
 
 	# Bind events BEFORE _loadTopLevel so that Expand() calls in _restoreExpanded
@@ -233,6 +234,7 @@ sub new
 	EVT_BUTTON($this,   $this->{ed_pick_btn}, \&_onColorPick);
 	EVT_CHECKBOX($this, $this->{ed_visible},  \&_onEdVisibleChanged);
 	EVT_LEFT_DOWN($this->{tree}, sub { _onTreeLeftDown($this, @_) });
+	EVT_KEY_DOWN($this->{tree},  sub { _onTreeKeyDown($this, @_) });
 
 	_loadTopLevel($this);
 
@@ -285,6 +287,7 @@ sub refresh
 	_clearEditor($this);
 	$this->{detail}->SetValue('');
 	_loadTopLevel($this);
+	_applyCutStyle($this);
 }
 
 
@@ -346,9 +349,11 @@ sub _addObjectItem
 	{
 		$label = "[waypoint] $obj->{name}";
 	}
+	my $vis = getDbVisible($obj->{uuid});
+	$obj->{visible} = $vis;
 	my $item = $this->{tree}->AppendItem($parent, $label, -1, -1,
 		Wx::TreeItemData->new({ type => 'object', data => $obj }));
-	$this->{tree}->SetItemState($item, ($obj->{visible} // 0) ? 1 : 0);
+	$this->{tree}->SetItemState($item, $vis ? 1 : 0);
 	$this->{tree}->AppendItem($item, $DUMMY) if $obj->{obj_type} eq 'route' && $n > 0;
 }
 
@@ -384,6 +389,7 @@ sub onTreeExpanding
 		_populateRoutePoints($dbh, $this, $item, $node->{data});
 	}
 	disconnectDB($dbh);
+	_applyCutStyle($this);
 }
 
 
@@ -1177,7 +1183,7 @@ sub _loadEditor
 	else
 	{
 		$this->{ed_visible}->Set3StateValue(
-			($data->{visible} // 0) ? wxCHK_CHECKED : wxCHK_UNCHECKED);
+			getDbVisible($data->{uuid} // '') ? wxCHK_CHECKED : wxCHK_UNCHECKED);
 	}
 
 	$this->{_loading_editor} = 0;
@@ -1440,6 +1446,121 @@ sub _onNmOpsCmd
 	my $right_click = $this->{_right_click_node} // {};
 	my @nodes       = @{$this->{_context_nodes} // []};
 	onContextMenuCommand($cmd_id, 'database', $right_click, $this->{tree}, @nodes);
+	_applyCutStyle($this);
+}
+
+
+sub _onTreeKeyDown
+{
+	# Ctrl+C / Ctrl+X: gated by getCopyMenuItems / getCutMenuItems (requires non-empty
+	# selection with no root nodes).
+	#
+	# Ctrl+V: requires exactly one node selected.  Command chosen by destination type
+	# and whether the clipboard holds a cut or a copy:
+	#
+	#   destination         cut      copy
+	#   root / collection   PASTE    PASTE_NEW
+	#   object / rte_point  PASTE_AFTER  PASTE_NEW_AFTER
+	#
+	# Cut maps to the identity-preserving variant (same UUID, i.e. a move).
+	# Copy maps to the fresh-UUID variant (true duplication within the DB).
+	# In both cases the chosen command is confirmed against getPasteMenuItems before
+	# dispatch, so the same enable/disable logic as the context menu applies.
+
+	my ($this, $tree, $event) = @_;
+	if ($event->ControlDown())
+	{
+		my $key = $event->GetKeyCode();
+		if ($key == ord('C') || $key == ord('X') || $key == ord('V'))
+		{
+			my @nodes;
+			for my $item ($tree->GetSelections())
+			{
+				my $d = $tree->GetItemData($item);
+				next if !$d;
+				my $n = $d->GetData();
+				push @nodes, $n if ref $n eq 'HASH';
+			}
+			my $right_click_node = @nodes ? $nodes[0] : {};
+
+			my $cmd_id;
+			if ($key == ord('C'))
+			{
+				$cmd_id = $CTX_CMD_COPY
+					if nmClipboard::getCopyMenuItems('database', @nodes);
+			}
+			elsif ($key == ord('X'))
+			{
+				$cmd_id = $CTX_CMD_CUT
+					if nmClipboard::getCutMenuItems('database', @nodes);
+			}
+			elsif (scalar(@nodes) == 1)
+			{
+				my $t    = $right_click_node->{type} // '';
+				my $cut  = $nmClipboard::clipboard ? ($nmClipboard::clipboard->{cut_flag} // 0) : 0;
+				my $want = ($t eq 'root' || $t eq 'collection')
+				         ? ($cut ? $CTX_CMD_PASTE       : $CTX_CMD_PASTE_NEW)
+				         : ($cut ? $CTX_CMD_PASTE_AFTER : $CTX_CMD_PASTE_NEW_AFTER);
+				my @paste = nmClipboard::getPasteMenuItems('database', $right_click_node);
+				$cmd_id = $want if grep { $_->{id} == $want } @paste;
+			}
+
+			if ($cmd_id)
+			{
+				$this->{_right_click_node} = $right_click_node;
+				$this->{_context_nodes}    = \@nodes;
+				onContextMenuCommand($cmd_id, 'database', $right_click_node, $tree, @nodes);
+				_applyCutStyle($this);
+			}
+			return;
+		}
+	}
+	$event->Skip();
+}
+
+
+#---------------------------------
+# cut-item grey styling
+#---------------------------------
+
+sub _applyCutStyle
+{
+	my ($this) = @_;
+	$CUT_COLOR //= Wx::Colour->new(160, 160, 160);
+	my $cb = $nmClipboard::clipboard;
+	my %cut;
+	if ($cb && $cb->{cut_flag} && ($cb->{source} // '') eq 'database')
+	{
+		%cut = map { ($_->{uuid} // '') => 1 }
+		       grep { $_->{uuid} } @{$cb->{items} // []};
+	}
+	my $tree = $this->{tree};
+	my $root = $tree->GetRootItem();
+	_applyStyleWalk($tree, $root, \%cut) if $root && $root->IsOk();
+}
+
+sub _applyStyleWalk
+{
+	my ($tree, $item, $cut) = @_;
+	my $d = $tree->GetItemData($item);
+	if ($d)
+	{
+		my $node = $d->GetData();
+		if (ref $node eq 'HASH')
+		{
+			my $uuid = ($node->{type} // '') eq 'route_point'
+			         ? ($node->{uuid} // '')
+			         : (($node->{data} // {})->{uuid} // '');
+			$tree->SetItemTextColour($item,
+				($uuid && $cut->{$uuid}) ? $CUT_COLOR : wxNullColour);
+		}
+	}
+	my ($child, $cookie) = $tree->GetFirstChild($item);
+	while ($child && $child->IsOk())
+	{
+		_applyStyleWalk($tree, $child, $cut);
+		($child, $cookie) = $tree->GetNextChild($item, $cookie);
+	}
 }
 
 
@@ -1704,11 +1825,7 @@ sub _hasSelectedDescendant
 sub getDataForIniFile
 {
 	my ($this) = @_;
-	_captureExpandedInto($this) if $this->{tree}->GetCount() > 0;
-	return {
-		sash     => $this->GetSashPosition(),
-		expanded => join(',', sort keys %{$this->{_expanded_uuids}}),
-	};
+	return { sash => $this->GetSashPosition() };
 }
 
 
@@ -1828,6 +1945,52 @@ sub _restoreSelected
 		_restoreSelected($tree, $child, $selected);
 		($child, $cookie) = $tree->GetNextChild($item, $cookie);
 	}
+}
+
+
+#---------------------------------
+# outline / selection persistence
+#---------------------------------
+
+sub doSaveOutline
+{
+	my ($this) = @_;
+	_captureExpandedInto($this);
+	my @uuids = sort keys %{$this->{_expanded_uuids}};
+	c_outline::setExpandedUUIDs(\@uuids);
+	c_outline::saveOutlineState();
+}
+
+
+sub doRestoreOutline
+{
+	my ($this) = @_;
+	my @uuids = c_outline::getExpandedUUIDs();
+	$this->{_expanded_uuids} = { map { $_ => 1 } @uuids };
+	_clearEditor($this);
+	$this->{detail}->SetValue('');
+	_loadTopLevel($this);
+}
+
+
+sub doSaveSelection
+{
+	my ($this, $name) = @_;
+	_captureSelectedInto($this);
+	my @uuids = sort keys %{$this->{_selected_uuids}};
+	c_selection::putSelectionSet($name, \@uuids);
+}
+
+
+sub doRestoreSelection
+{
+	my ($this, $name) = @_;
+	my $uuids_ref = c_selection::getSelectionSet($name);
+	return if !@$uuids_ref;
+	$this->{_selected_uuids} = { map { $_ => 1 } @$uuids_ref };
+	my $tree = $this->{tree};
+	$tree->UnselectAll();
+	_restoreSelected($tree, $tree->GetRootItem(), $this->{_selected_uuids});
 }
 
 
