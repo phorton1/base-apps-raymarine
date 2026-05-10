@@ -24,8 +24,7 @@ BEGIN
 	our @EXPORT = qw(
 		loadViewState
 		saveViewState
-		hasDbVisibility
-		seedDbVisibility
+		pruneDbVisible
 		getDbVisible
 		setDbVisible
 		batchSetDbVisible
@@ -90,14 +89,13 @@ sub saveViewState
 # DB visibility
 #----------------------------------
 
-sub hasDbVisibility { return scalar(keys %db_vis) > 0 ? 1 : 0 }
-
-
-sub seedDbVisibility
+sub pruneDbVisible
 {
-	my ($uuids_ref) = @_;
-	%db_vis = map { $_ => 1 } @$uuids_ref;
-	display(0, 0, 'navVisibility: seeded ' . scalar(@$uuids_ref) . ' db visible objects');
+	my ($live_ref) = @_;
+	my $before = scalar keys %db_vis;
+	delete $db_vis{$_} for grep { !$live_ref->{$_} } keys %db_vis;
+	my $pruned = $before - scalar(keys %db_vis);
+	display(0, 0, "navVisibility: pruned $pruned stale entries (" . scalar(keys %db_vis) . " remain)") if $pruned;
 }
 
 

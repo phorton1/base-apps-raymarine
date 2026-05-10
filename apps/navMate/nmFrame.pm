@@ -358,6 +358,7 @@ sub onCloseFrame
 	my ($this, $event) = @_;
 	my $database = $this->findPane($WIN_DATABASE);
 	$database->doSaveOutline() if $database;
+	navDB::pruneDbVisibility();
 	saveViewState();
 	$this->SUPER::onCloseFrame($event);
 }
@@ -563,6 +564,11 @@ sub _doRevertDB
 	display(0, 0, "nmFrame: navMate.db reverted to last committed version");
 	my $rc = navDB::openDB();
 	warning(0, 0, "nmFrame: openDB after revert returned $rc") if $rc <= 0;
+	if ($rc > 0)
+	{
+		navDB::pruneDbVisibility();
+		saveViewState();
+	}
 	my $database = $this->findPane($WIN_DATABASE);
 	if ($database)
 	{

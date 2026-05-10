@@ -11,7 +11,7 @@ use Pub::Utils;
 use Pub::Database;
 use n_defs;
 use n_utils;
-use navVisibility;
+use navVisibility qw(pruneDbVisible getDbVisible setDbVisible batchSetDbVisible clearAllDbVisible);
 
 
 BEGIN
@@ -76,6 +76,7 @@ BEGIN
 		setCollectionVisibleRecursive
 		clearAllVisible
 		getAllVisibleFeatures
+		pruneDbVisibility
 	);
 }
 
@@ -285,18 +286,6 @@ sub openDB
 	}
 
 	display(0,0,"navDB::openDB ok (schema $stored)");
-	if (!hasDbVisibility())
-	{
-		display(0,0,"navDB::openDB seeding visibility from DB visible column");
-		my @uuids;
-		for my $table (qw(waypoints routes tracks))
-		{
-			my $rows = $dbh->get_records("SELECT uuid FROM $table WHERE visible=1", []);
-			push @uuids, map { $_->{uuid} } @{$rows // []};
-		}
-		seedDbVisibility(\@uuids);
-		saveViewState();
-	}
 	$db_ready = 1;
 	$dbh->disconnect();
 	return 1;
@@ -958,6 +947,25 @@ sub clearAllVisible
 	my ($dbh) = @_;
 	clearAllDbVisible();
 	return 1;
+}
+
+
+#---------------------------------
+# pruneDbVisibility
+#---------------------------------
+
+sub pruneDbVisibility
+{
+	my $dbh = connectDB();
+	return if !$dbh;
+	my %live;
+	for my $table (qw(waypoints routes tracks))
+	{
+		my $rows = $dbh->get_records("SELECT uuid FROM $table", []);
+		$live{$_->{uuid}} = 1 for @{$rows // []};
+	}
+	disconnectDB($dbh);
+	pruneDbVisible(\%live);
 }
 
 

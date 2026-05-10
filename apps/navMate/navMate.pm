@@ -59,14 +59,19 @@ sub _handleSerialCommand
 
 my $serial = apps::raymarine::NET::s_serial->new(\&_handleSerialCommand);
 
+loadOutlineState();
+loadSelectionSets();
 my $db_rc = navDB::openDB();
 if ($db_rc == -1)
 {
 	display(0,0,"navMate: schema mismatch - use File->Import KML to rebuild database");
 }
 loadViewState();
-loadOutlineState();
-loadSelectionSets();
+if ($db_rc > 0)
+{
+	pruneDbVisibility();
+	saveViewState();
+}
 navServer::startNavMateServer();
 
 apps::raymarine::NET::a_defs::initServices(wpmgr => 1, track => 1, auto_query => 1);
