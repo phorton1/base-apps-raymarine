@@ -1516,4 +1516,87 @@ sub _syncToE80
 }
 
 
+#----------------------------------------------------
+# _clearE80_DB / doClearE80DB
+#----------------------------------------------------
+
+sub _clearE80_DB
+{
+    my ($parent) = @_;
+
+    my $wpmgr = _wpmgr();
+    my $track = _track();
+
+    if (!$wpmgr)
+    {
+        error("_clearE80_DB: WPMGR not connected");
+        return;
+    }
+
+    my @route_uuids  = sort keys %{$wpmgr->{routes}    // {}};
+    my @group_uuids  = sort keys %{$wpmgr->{groups}    // {}};
+    my @all_wp_uuids = sort keys %{$wpmgr->{waypoints} // {}};
+    my @track_uuids  = $track ? sort keys %{$track->{tracks} // {}} : ();
+
+    my %grouped_wp;
+    for my $g_uuid (@group_uuids)
+    {
+        $grouped_wp{$_} = 1 for @{$wpmgr->{groups}{$g_uuid}{uuids} // []};
+    }
+    my @named_wps     = grep {  $grouped_wp{$_} } @all_wp_uuids;
+    my @ungrouped_wps = grep { !$grouped_wp{$_} } @all_wp_uuids;
+
+    unless (@route_uuids || @group_uuids || @all_wp_uuids || @track_uuids)
+    {
+        okDialog($parent, "E80 is already empty.", "Clear E80 DB");
+        return;
+    }
+
+    my @parts;
+    push @parts, scalar(@route_uuids)  . " route(s)"    if @route_uuids;
+    push @parts, scalar(@group_uuids)  . " group(s)"    if @group_uuids;
+    push @parts, scalar(@all_wp_uuids) . " waypoint(s)" if @all_wp_uuids;
+    push @parts, scalar(@track_uuids)  . " track(s)"    if @track_uuids;
+    my $summary = join(', ', @parts);
+
+    return if !confirmDialog($parent,
+        "Delete ALL E80 data ($summary)? Cannot be undone.",
+        "Clear E80 DB");
+
+    my $total_route_pts = 0;
+    $total_route_pts += scalar @{($wpmgr->{routes}{$_} // {})->{uuids} // []}
+        for @route_uuids;
+
+    my $total_ops = ($total_route_pts + scalar @route_uuids)
+                  + (scalar @group_uuids + scalar @named_wps)
+                  + scalar @ungrouped_wps;
+    $total_ops = 1 if !$total_ops;
+
+    my $progress = _openE80Progress("Clear E80 DB", $total_ops);
+    return if !$progress;
+    $progress->{_counting_get_items} = 1;
+
+    $wpmgr->deleteRoute($_, $progress) for @route_uuids;
+    $wpmgr->deleteGroup($_, $progress) for @group_uuids;
+    $wpmgr->deleteWaypoint($_, $progress, 1) for @named_wps;
+    $wpmgr->deleteWaypoint($_, $progress, 1) for @ungrouped_wps;
+
+    if ($track)
+    {
+        $track->queueTRACKCommand(
+            $apps::raymarine::NET::d_TRACK::API_GENERAL_CMD,
+            $_, 'erase') for @track_uuids;
+    }
+}
+
+
+sub doClearE80DB
+{
+    my ($parent) = @_;
+    display(-1, 0, "===== Clear E80 DB STARTED =====", 0, $UTILS_COLOR_LIGHT_MAGENTA);
+    _clearE80_DB($parent);
+    display(-1, 0, "===== Clear E80 DB FINISHED =====", 0, $UTILS_COLOR_LIGHT_MAGENTA);
+}
+
+
 1;

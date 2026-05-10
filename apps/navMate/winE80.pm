@@ -43,7 +43,7 @@ use apps::raymarine::NET::b_records qw(wpmgrRecordToText);
 use apps::raymarine::NET::c_RAYDP;
 use n_defs;
 use n_utils;
-use navOps qw(buildContextMenu onContextMenuCommand);
+use navOps qw(buildContextMenu onContextMenuCommand doClearE80DB);
 use navServer qw(addRenderFeatures removeRenderFeatures openMapBrowser isBrowserConnected);
 use navVisibility qw(getE80Visible setE80Visible clearAllE80Visible getAllE80VisibleUUIDs batchRemoveE80Visible);
 use nmResources;
@@ -196,8 +196,9 @@ sub new
 	EVT_LEFT_DOWN($this->{tree},     sub { _onTreeLeftDown($this, @_) });
 	EVT_KEY_DOWN($this->{tree},      sub { _onTreeKeyDown($this, @_) });
 	EVT_MENU($this, $COMMAND_REFRESH_WIN_E80, sub { refresh($_[0]) });
-	EVT_MENU($this, $CTX_CMD_SHOW_MAP,   \&_onShowMap);
-	EVT_MENU($this, $CTX_CMD_HIDE_MAP,   \&_onHideMap);
+	EVT_MENU($this, $COMMAND_CLEAR_E80_DB,   sub { doClearE80DB($_[0]->{tree}) });
+	EVT_MENU($this, $CTX_CMD_SHOW_MAP,       \&_onShowMap);
+	EVT_MENU($this, $CTX_CMD_HIDE_MAP,       \&_onHideMap);
 	EVT_MENU_RANGE($this, 10200, 10299, \&_onNmOpsCmd);
 	EVT_TEXT($this,   $this->{ed_name},    \&_onFieldChanged);
 	EVT_TEXT($this,   $this->{ed_lat},     \&_onLatEdit);
@@ -811,7 +812,21 @@ sub _buildContextMenu
 
 	my $menu = buildContextMenu('e80', $right_click_node, @nodes);
 
-	if (($right_click_node->{type} // '') ne 'root')
+	if (($right_click_node->{type} // '') eq 'root')
+	{
+		my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR', 1) : undef;
+		my $track = $raydp ? $raydp->findImplementedService('TRACK', 1) : undef;
+		my $has_content = ($wpmgr && (%{$wpmgr->{routes}    // {}}
+		                           || %{$wpmgr->{groups}    // {}}
+		                           || %{$wpmgr->{waypoints} // {}}))
+		               || ($track  &&  %{$track->{tracks}   // {}});
+		if ($has_content)
+		{
+			$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
+			$menu->Append($COMMAND_CLEAR_E80_DB, 'Clear E80 DB');
+		}
+	}
+	else
 	{
 		$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
 		$menu->Append($CTX_CMD_SHOW_MAP, 'Show on Map');

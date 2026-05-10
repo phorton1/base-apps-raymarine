@@ -33,6 +33,7 @@ BEGIN
 	our @EXPORT = qw(
 		buildContextMenu
 		onContextMenuCommand
+		doClearE80DB
 	);
 }
 

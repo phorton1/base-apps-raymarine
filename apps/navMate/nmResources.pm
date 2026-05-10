@@ -30,6 +30,7 @@ BEGIN
 		$COMMAND_EXPORT_KML
 		$COMMAND_REFRESH_DB
 		$COMMAND_REFRESH_E80_DB
+		$COMMAND_CLEAR_E80_DB
 		$COMMAND_REFRESH_WIN_E80
 		$COMMAND_IMPORT_DB_TEXT
 		$COMMAND_EXPORT_DB_TEXT
@@ -56,7 +57,8 @@ our $COMMAND_IMPORT_KML			= 10031;
 our $COMMAND_EXPORT_KML			= 10032;
 our $COMMAND_REFRESH_DB			= 10041;
 our $COMMAND_REFRESH_E80_DB		= 10042;
-our $COMMAND_REFRESH_WIN_E80	= 10045;
+our $COMMAND_CLEAR_E80_DB		= 10043;
+our $COMMAND_REFRESH_WIN_E80	= 10050;
 our $COMMAND_IMPORT_DB_TEXT		= 10061;
 our $COMMAND_EXPORT_DB_TEXT		= 10062;
 our $COMMAND_SAVE_OUTLINE		= 10071;
@@ -75,25 +77,26 @@ my $pane_data = {
 
 my $command_data = {
 	%{$resources->{command_data}},
-	$WIN_DATABASE				=> ['Database',		'navMate database browser'],
-	$WIN_E80					=> ['E80',		'Live E80 contents'],
-	$WIN_MONITOR				=> ['Monitor',		'Monitor and control service monitoring bits'],
-	$COMMAND_OPEN_MAP			=> ['Open Map',		'Open the Leaflet map in a browser'],
-	$COMMAND_CLEAR_MAP			=> ['Clear Map',	'Set all visible=0 and clear the Leaflet map'],
-	$COMMAND_IMPORT_KML_NM		=> ['Import KML',	'Additive re-import from a navMate KML file'],
-	$COMMAND_IMPORT_KML			=> ['OneTimeImportKML',	'Delete and rebuild database from KML files'],
-	$COMMAND_EXPORT_KML			=> ['Export KML',	'Export navMate database to a KML file for Google Earth'],
-	$COMMAND_REFRESH_DB			=> ['Refresh Window',	'Reload database window from current navMate.db'],
-	$COMMAND_REFRESH_E80_DB		=> ['Refresh E80-DB',	'Re-query all waypoints, routes, groups, and tracks from E80'],
-	$COMMAND_REFRESH_WIN_E80	=> ['Refresh winE80',	'Reload E80 window from in-memory data'],
-	$COMMAND_IMPORT_DB_TEXT		=> ['ImportFromText',	'Replace navMate database from a text backup file'],
-	$COMMAND_EXPORT_DB_TEXT		=> ['ExportToText',	'Export navMate database to a text backup file'],
-	$COMMAND_SAVE_OUTLINE		=> ['Save Outline',	'Save tree expansion state to navMateOutline.json'],
-	$COMMAND_RESTORE_OUTLINE	=> ['Restore Outline',	'Restore tree expansion state from navMateOutline.json'],
+	$WIN_DATABASE				=> ['Database',				'navMate database browser'],
+	$WIN_E80					=> ['E80',					'Live E80 contents'],
+	$WIN_MONITOR				=> ['Monitor',				'Monitor and control service monitoring bits'],
+	$COMMAND_OPEN_MAP			=> ['Open Map',				'Open the Leaflet map in a browser'],
+	$COMMAND_CLEAR_MAP			=> ['Clear Map',			'Set all visible=0 and clear the Leaflet map'],
+	$COMMAND_IMPORT_KML_NM		=> ['Import KML',			'Additive re-import from a navMate KML file'],
+	$COMMAND_IMPORT_KML			=> ['OneTimeImportKML',		'Delete and rebuild database from KML files'],
+	$COMMAND_EXPORT_KML			=> ['Export KML',			'Export navMate database to a KML file for Google Earth'],
+	$COMMAND_REFRESH_DB			=> ['Refresh Window',		'Reload database window from current navMate.db'],
+	$COMMAND_REFRESH_E80_DB		=> ['Refresh E80-DB',		'Re-query all waypoints, routes, groups, and tracks from E80'],
+	$COMMAND_CLEAR_E80_DB		=> ['Clear E80 DB',			'Delete all waypoints, routes, groups, and tracks from E80'],
+	$COMMAND_REFRESH_WIN_E80	=> ['Refresh winE80',		'Reload E80 window from in-memory data'],
+	$COMMAND_IMPORT_DB_TEXT		=> ['ImportFromText',		'Replace navMate database from a text backup file'],
+	$COMMAND_EXPORT_DB_TEXT		=> ['ExportToText',			'Export navMate database to a text backup file'],
+	$COMMAND_SAVE_OUTLINE		=> ['Save Outline',			'Save tree expansion state to navMateOutline.json'],
+	$COMMAND_RESTORE_OUTLINE	=> ['Restore Outline',		'Restore tree expansion state from navMateOutline.json'],
 	$COMMAND_SAVE_SELECTION		=> ['Save Selection...',	'Save current tree selection to a named set'],
 	$COMMAND_RESTORE_SELECTION	=> ['Restore Selection',	'Restore a named selection set in the tree'],
-	$COMMAND_REVERT_DB			=> ['Revert DB',	'Revert navMate.db to last git-committed version'],
-	$COMMAND_COMMIT_DB			=> ['Commit DB',	'Commit navMate.db to git with a message'],
+	$COMMAND_REVERT_DB			=> ['Revert DB',			'Revert navMate.db to last git-committed version'],
+	$COMMAND_COMMIT_DB			=> ['Commit DB',			'Commit navMate.db to git with a message'],
 };
 
 
@@ -129,6 +132,7 @@ my $database_menu = [
 my $e80_menu = [
 	$COMMAND_REFRESH_WIN_E80,
 	$COMMAND_REFRESH_E80_DB,
+	$COMMAND_CLEAR_E80_DB,
 ];
 
 my $utils_menu = [

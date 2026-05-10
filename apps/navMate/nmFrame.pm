@@ -49,6 +49,7 @@ sub new
 	EVT_MENU($this, $COMMAND_IMPORT_KML,		\&onCommand);
 	EVT_MENU($this, $COMMAND_REFRESH_WIN_E80,	\&onCommand);
 	EVT_MENU($this, $COMMAND_REFRESH_E80_DB,	\&onCommand);
+	EVT_MENU($this, $COMMAND_CLEAR_E80_DB,		\&onCommand);
 	EVT_MENU($this, $COMMAND_REFRESH_DB,		\&onCommand);
 	EVT_MENU($this, $COMMAND_EXPORT_DB_TEXT,	\&onCommand);
 	EVT_MENU($this, $COMMAND_IMPORT_DB_TEXT,	\&onCommand);
@@ -63,6 +64,7 @@ sub new
 	EVT_MENU($this, $COMMAND_RESTORE_SELECTION,	\&onCommand);
 	EVT_UPDATE_UI($this, $COMMAND_REFRESH_WIN_E80,	\&onCommandEnable);
 	EVT_UPDATE_UI($this, $COMMAND_REFRESH_E80_DB,	\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_CLEAR_E80_DB,		\&onCommandEnable);
 	EVT_UPDATE_UI($this, $COMMAND_REVERT_DB,		\&onCommandEnable);
 	EVT_UPDATE_UI($this, $COMMAND_COMMIT_DB,		\&onCommandEnable);
 	EVT_IDLE($this, \&onIdle);
@@ -266,6 +268,10 @@ sub onCommand
 	{
 		_doRefreshE80Data($this);
 	}
+	elsif ($id == $COMMAND_CLEAR_E80_DB)
+	{
+		navOps::doClearE80DB($this);
+	}
 	elsif ($id == $COMMAND_REFRESH_DB)
 	{
 		my $database = $this->findPane($WIN_DATABASE);
@@ -377,6 +383,22 @@ sub onCommandEnable
 	elsif ($id == $COMMAND_REFRESH_E80_DB)
 	{
 		$enable = 0 if !($raydp && $raydp->findImplementedService('WPMGR', 1));
+	}
+	elsif ($id == $COMMAND_CLEAR_E80_DB)
+	{
+		my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR', 1) : undef;
+		if (!$wpmgr)
+		{
+			$enable = 0;
+		}
+		else
+		{
+			my $track = $raydp ? $raydp->findImplementedService('TRACK', 1) : undef;
+			$enable = 0 unless %{$wpmgr->{routes}    // {}}
+			               || %{$wpmgr->{groups}    // {}}
+			               || %{$wpmgr->{waypoints} // {}}
+			               || ($track && %{$track->{tracks} // {}});
+		}
 	}
 	elsif ($id == $COMMAND_REVERT_DB || $id == $COMMAND_COMMIT_DB)
 	{

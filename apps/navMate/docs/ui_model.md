@@ -137,6 +137,7 @@ ExportToText and ImportFromText both show a progress dialog ticking once per tab
 |---|---|
 | Refresh winE80 | Rebuilds the winE80 tree from current in-memory WPMGR/TRACK data; no network traffic |
 | Refresh E80-DB | Re-queries all waypoints, routes, groups, and tracks from the E80 via WPMGR and TRACK protocols; shows a progress dialog; requires an active E80 connection |
+| Clear E80 DB | Deletes all routes, groups, waypoints, and tracks from the E80; prompts for confirmation showing item counts before proceeding; uses a progress dialog; enabled only when WPMGR is connected and the E80 has at least one item |
 
 ### View Menu
 
@@ -217,6 +218,10 @@ DEL_ITEM operation plus the GET_ITEM commands that the E80 automatically generat
 **Blocked deletes** - "Delete Waypoint" and "Delete Group + Waypoints" are
 blocked (with a dialog) when the waypoint(s) are members of any route. Remove
 the route memberships first.
+
+**Root node** - right-clicking the tree root (when no specific item is selected)
+appends "Clear E80 DB" at the bottom of the context menu when the tree has any
+content. This is the same operation as the E80 menu command.
 
 **Tracks** - the TRACK service is read-only on the E80. Tracks are visible in
 the tree but no delete or modify operations exist for them.
