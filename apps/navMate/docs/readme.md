@@ -34,11 +34,11 @@ base, data model, and UI are the product. Everything else is a boundary adapter.
 
 - **[Data Model](data_model.md)** -
   SQLite schema: collections hierarchy, WRT tables (Waypoints, Routes, Tracks),
-  waypoint types, working sets, UUID strategy, timestamp sources, design decisions.
+  waypoint types, UUID strategy, timestamp sources, design decisions.
 
 - **[UI Model](ui_model.md)** -
   Three concurrent UI surfaces (console, wx panels, Leaflet canvas), collection
-  tree with checkbox visibility control, active and working set layers, Leaflet
+  tree with checkbox visibility control, Leaflet
   selection operations, session state persistence.
 
 - **[Implementation](implementation.md)** -

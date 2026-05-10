@@ -8,10 +8,6 @@ own context here.
 
 ## Next
 
-[ schema update ] - remove the visibility columns in the database and
-remove the entire working set tables and any code references (comments,
-etc) to them.  A schema change forces updates to official documents, but
-not, in this case any other working documents.
 
 
 
@@ -42,8 +38,7 @@ that case.
 `waypoints`, `routes`, and `tracks` (not on `collections` or `route_waypoints`).
 Columns carry correct defaults; increment logic is not yet wired.
 
-**db_version** - bumped on every navMate edit (UPDATE of any non-`visible` field).
-Starts at 1 on INSERT.
+**db_version** - bumped on every navMate edit (UPDATE). Starts at 1 on INSERT.
 
 **e80_version** - NULL = never synced. Set to `db_version` at time of a successful
 upload or download. Version numbers are not stored on the E80 hardware. At connect
@@ -60,9 +55,6 @@ at time of export.
 **Transport columns in core tables** - a deliberate choice. The alternative
 junction table `sync_state(object_uuid, transport, db_version_at_sync)` was
 rejected in favor of simplicity given the small, slow-moving transport list.
-
-**Visibility** - the `visible` column is NOT a versioned field. Toggling
-visibility does not bump `db_version`.
 
 **Wiring deferred** - all increment logic belongs in a dedicated session when
 the sync feature is ready to implement. See `[db_version increment wiring]` in todo.md.

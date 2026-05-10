@@ -7,10 +7,6 @@
 # State is persisted in $temp_dir/navMate.json.
 # Written only at clean exit or by explicit save command.
 #
-# The navMate DB 'visible' column is no longer written; this module
-# is the sole source of truth for visibility.
-# TODO: remove 'visible' column from schema once stable.
-
 package navVisibility;
 use strict;
 use warnings;

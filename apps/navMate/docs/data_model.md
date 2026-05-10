@@ -70,7 +70,6 @@ collections (
   parent_uuid   TEXT REFERENCES collections(uuid),  -- NULL = root-level node
   node_type     TEXT NOT NULL DEFAULT 'branch',     -- 'branch' or 'group'
   comment       TEXT DEFAULT '',
-  visible       INTEGER NOT NULL DEFAULT 0,
   position      REAL    NOT NULL DEFAULT 0          -- display order within parent (schema 10.0)
 )
 ```
@@ -105,7 +104,6 @@ waypoints (
   ts_source         TEXT NOT NULL,       -- see Timestamp Sources
   source            TEXT,                -- 'kml', 'e80', 'user'
   collection_uuid   TEXT NOT NULL REFERENCES collections(uuid),
-  visible           INTEGER NOT NULL DEFAULT 0,
   db_version        INTEGER NOT NULL DEFAULT 1,
   e80_version       INTEGER,             -- NULL = never synced to E80
   kml_version       INTEGER,             -- NULL = never exported via versioned KML
@@ -144,7 +142,6 @@ routes (
   comment           TEXT DEFAULT '',
   color             TEXT DEFAULT NULL,   -- aabbggrr hex (GE byte order)
   collection_uuid   TEXT NOT NULL REFERENCES collections(uuid),
-  visible           INTEGER NOT NULL DEFAULT 0,
   db_version        INTEGER NOT NULL DEFAULT 1,
   e80_version       INTEGER,             -- NULL = never synced to E80
   kml_version       INTEGER,             -- NULL = never exported via versioned KML
@@ -176,7 +173,6 @@ tracks (
   point_count       INTEGER,
   source_file       TEXT,                -- KML filename when sourced from KML
   collection_uuid   TEXT NOT NULL REFERENCES collections(uuid),
-  visible           INTEGER NOT NULL DEFAULT 0,
   db_version        INTEGER NOT NULL DEFAULT 1,
   e80_version       INTEGER,             -- NULL = never synced to E80
   kml_version       INTEGER,             -- NULL = never exported via versioned KML
@@ -199,41 +195,6 @@ track_points (
 protocol downloads carry this data; KML imports do not. Both are valid; the schema
 accommodates both without fabricating values.
 
-### working sets
-
-Working sets are named subsets of the WRT database, curated for a specific
-operational context and used as the unit of push to a connected device.
-
-```sql
-working_sets (
-  uuid          TEXT PRIMARY KEY,
-  name          TEXT NOT NULL,
-  comment       TEXT DEFAULT '',
-  bbox_north    REAL,    -- derived from members; not prescriptive
-  bbox_south    REAL,
-  bbox_east     REAL,
-  bbox_west     REAL
-)
-
-working_set_members (
-  ws_uuid       TEXT NOT NULL REFERENCES working_sets(uuid),
-  object_uuid   TEXT NOT NULL,
-  object_type   TEXT NOT NULL,   -- 'waypoint', 'route', 'track'
-  PRIMARY KEY (ws_uuid, object_uuid)
-)
-```
-
-Working sets are populated interactively via the Leaflet canvas. The bounding box
-is a derived summary of the members' geographic extent, computed on save and used
-for UI purposes (zoom-to-set). It does not drive membership.
-
-Tracks are full members of working sets. The E80 has no RAYNET path to receive
-tracks; the FSH file transfer path handles this at push time. That asymmetry is
-a transport-layer concern; the schema makes no distinction.
-
-Working sets also serve as the unit for the working set layer of the Leaflet canvas -
-showing what is staged for push as a distinct visual overlay.
-
 ### key_values
 
 A general-purpose metadata table used to persist application-level values that
@@ -250,7 +211,7 @@ Initial entries:
 
 | key | Purpose |
 |-----|---------|
-| `schema_version` | Current value `'10.0'`; `openDB` in `navDB.pm` migrates known prior versions in place |
+| `schema_version` | Current value `'11.0'`; `openDB` in `navDB.pm` migrates known prior versions in place |
 | `uuid_counter` | Integer; persistent counter for navMate UUID generation (bytes 4-5 of the UUID) |
 
 The `uuid_counter` entry is incremented atomically within the same transaction as
@@ -297,15 +258,10 @@ migration initialized all values from rowid order within parent, giving integer 
 positions; subsequent insertions use bisection. `route_waypoints.position` and
 `track_points.position` are separate INTEGER primary-key components and were not changed.
 
-**`visible` is a display preference, not a sync field.** Every WRT object and
-collection carries a `visible` column (default 0). Toggling visibility updates the
-Leaflet canvas but does not bump `db_version`. Visibility is navMate-local and is
-not propagated to any transport.
-
 **Version columns are transport-specific fields in core tables.** `db_version`,
 `e80_version`, and `kml_version` are present on `waypoints`, `routes`, and `tracks`
 (not on `collections` or `route_waypoints`). `db_version` starts at 1 on INSERT and
-increments on every non-visibility UPDATE. `e80_version` and `kml_version` are NULL
+increments on every UPDATE. `e80_version` and `kml_version` are NULL
 until the first sync; each is set to `db_version` at time of successful sync.
 Version numbers are not stored on the E80 itself - `e80_version` is initialized at
 connect time from a token in the E80 comment field (encoding TBD pending E80
@@ -338,8 +294,7 @@ structure, round-trip semantics, and GE workflow are documented in
 
 ## Sync Model
 
-navMate operates fully - browse, edit, organize, build working sets - with no
-transport active. The local SQLite database is always sufficient for local work.
+navMate operates fully - browse, edit, organize - with no transport active. The local SQLite database is always sufficient for local work.
 Transports are optional, user-activated concerns, not permanent connections
 navMate depends on.
 

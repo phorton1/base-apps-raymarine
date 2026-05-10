@@ -83,7 +83,7 @@ Control details:
 - **wp_type** - `Wx::Choice` with nav / label / sounding strings
 - **color** - 28x20 swatch `Panel` (`wxSIMPLE_BORDER`) plus "Pick..." `Button`; opens `Wx::ColourDialog`; value round-trips as aabbggrr with alpha byte preserved; `_setColorSwatch()` converts aabbggrr -> `Wx::Colour` for display
 - **depth** - `TextCtrl` [70px] plus a static unit label ("ft" or "m") from `$PREF_DEPTH_DISPLAY` (read at panel creation); `depth_cm = 0` displays as empty string; ft<->cm multiply/divide by 30.48, m<->cm multiply/divide by 100
-- **Visible** checkbox - three-state; value loaded from the DB `visible` field; shown for all node types except route_point
+- **Visible** checkbox - three-state; value loaded from the in-memory visibility state (navMate.json); shown for all node types except route_point
 
 **Save button:** Disabled when the editor is clean; enabled on any field change.
 Dirty state is silently discarded on node focus change. `_onSave` writes to the
@@ -94,11 +94,11 @@ tracks, then calls `$this->refresh()` to reload the tree and editor.
 
 Each tree node displays a three-state checkbox icon (unchecked / checked / indeterminate).
 
-- **Object nodes** (waypoint, route, track): checked or unchecked from the `visible` DB column
+- **Object nodes** (waypoint, route, track): checked or unchecked from in-memory visibility state
 - **Collection nodes**: indeterminate when only some descendants are visible, determined
-  by a recursive DB query across all descendants
+  by a recursive query across all descendants
 
-Clicking the checkbox icon toggles `visible` for terminal nodes or bulk-sets all
+Clicking the checkbox icon toggles visibility for terminal nodes or bulk-sets all
 descendants for collection nodes, updates the Leaflet canvas accordingly, and
 refreshes ancestor checkbox states.
 
@@ -127,16 +127,38 @@ waypoints, routes, and groups in the collection.
 | ExportToText | Export the entire database to a `.txt` backup file (one INSERT per table) |
 | ImportFromText | Replace the entire database from a `.txt` backup file; prompts for confirmation |
 
-ExportToText and ImportFromText both show a progress dialog ticking once per table (9 tables total). ImportFromText calls `resetDB()` before importing to ensure a clean schema.
+ExportToText and ImportFromText both show a progress dialog ticking once per table (7 tables total). ImportFromText calls `resetDB()` before importing to ensure a clean schema.
 
 **Paste** is always shown in the menu and enabled via `navClipboard::canPaste`.
+
+### E80 Menu
+
+| Command | Description |
+|---|---|
+| Refresh winE80 | Rebuilds the winE80 tree from current in-memory WPMGR/TRACK data; no network traffic |
+| Refresh E80-DB | Re-queries all waypoints, routes, groups, and tracks from the E80 via WPMGR and TRACK protocols; shows a progress dialog; requires an active E80 connection |
 
 ### View Menu
 
 | Command | Description |
 |---|---|
-| Open Map | Opens the Leaflet canvas in the default browser |
-| Clear Map | Sets `visible=0` on all four tables, clears the Leaflet canvas, and refreshes all tree checkboxes to unchecked; also triggered by the Leaflet `/clear` HTTP command |
+| Database | Opens (or focuses) the winDatabase panel |
+| E80 | Opens (or focuses) the winE80 panel |
+| Monitor | Opens (or focuses) the winMonitor console panel |
+| Open Map | Opens the Leaflet canvas in the default browser; no-op if already connected |
+| Clear Map | Clears all in-memory visibility state (both DB and E80), clears the Leaflet canvas, and refreshes all tree checkboxes to unchecked; also triggered by the Leaflet `/clear` HTTP command |
+
+### Utils Menu
+
+| Command | Description |
+|---|---|
+| OneTimeImportKML | Destructive: prompts for confirmation, then deletes and rebuilds the entire navMate database from the canonical KML source files via `navOneTimeImport::run()` |
+| Revert DB | Prompts for confirmation, then runs `git restore navMate.db` to reset the database to the last committed version; reopens the DB and refreshes all UI |
+| Commit DB | Prompts for a commit message, then runs `git add navMate.db` and `git commit` to commit the current database to the local git repo |
+| Save Outline | Captures the current winDatabase tree expansion state and saves it to `navMateOutline.json` |
+| Restore Outline | Loads `navMateOutline.json` and applies it to the winDatabase tree |
+| Save Selection... | Prompts for a name, then saves the current winDatabase tree selection as a named set to `navMateSelection.json` |
+| Restore Selection | Shows a picker of saved selection set names; applies the chosen set to the winDatabase tree |
 
 ---
 
@@ -288,35 +310,20 @@ Collections are not rendered in Leaflet; they exist only in the database tree.
 
 ### Visibility Model
 
-Visibility state is persisted in the `visible` column of navMate.db (0 = hidden,
-1 = visible; default 0 on all new objects). The winDatabase tree displays all
-nodes with three-state checkboxes; checking or unchecking a node immediately
-updates the DB and the Leaflet canvas:
+Visibility state is persisted in `navMate.json` (in `$temp_dir`), managed by
+`navVisibility.pm` as an in-memory hash of UUID -> 1. It is written at clean exit
+and loaded at startup. The winDatabase tree displays all nodes with three-state
+checkboxes; checking or unchecking a node immediately updates the in-memory state
+and the Leaflet canvas:
 
-- Checking an object node sets `visible=1` and pushes a GeoJSON feature to Leaflet
+- Checking an object node marks it visible and pushes a GeoJSON feature to Leaflet
 - Unchecking removes the feature from Leaflet
 - Checking a collection bulk-sets all descendants via `setCollectionVisibleRecursive`
   and pushes their features; unchecking pulls them all
 - Collection nodes show indeterminate state when only some descendants are visible
 
 On browser connect, `onBrowserConnect` clears the Leaflet canvas and re-pushes all
-`visible=1` features, keeping the canvas in sync after page reload or reconnect.
-
-### Intended Two-Layer Canvas
-
-**Active layer** - everything currently visible per checkbox state and viewport.
-
-**Working set layer** - the current working set as a distinct visual overlay on
-top of the active layer (color, opacity, or outline treatment TBD). Shows what
-is selected for push to the connected device.
-
-### Intended Selection Workflow
-
-1. Browse the collection tree; check regions of interest -> active layer populates
-2. Draw a rectangle or lasso -> items within bounds are selected
-3. "Add to working set" -> selected items appear in the working set layer
-4. Inspect the working set layer; remove any items that don't belong
-5. Upload working set to E80 (waypoints/routes via RAYNET; tracks via FSH export)
+visible features, keeping the canvas in sync after page reload or reconnect.
 
 ---
 
@@ -330,11 +337,9 @@ settings file alongside the main database (not in the database itself).
   (UUIDs, `header:groups`, `header:routes`, `header:tracks`, `my_waypoints`, etc.)
 - winE80 sash position (tree / detail split)
 - winDatabase sash position
-- Collection tree visibility state - `visible` column in navMate.db (0/1 for all
-  WRT objects and collections; persists across sessions)
+- Collection tree visibility state - navMate.json in $temp_dir (in-memory hash of visible UUIDs)
 
 **Planned (not yet persisted):**
-- Currently active working set
 - Last Leaflet viewport (center coordinates and zoom level)
 - Full window geometry and panel layout
 

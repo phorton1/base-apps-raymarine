@@ -28,10 +28,6 @@ BEGIN
 		$TS_SOURCE_PHORTON
 		$TS_SOURCE_IMPORT
 
-		$OBJ_TYPE_WAYPOINT
-		$OBJ_TYPE_ROUTE
-		$OBJ_TYPE_TRACK
-
 		$NODE_TYPE_BRANCH
 		$NODE_TYPE_GROUP
 
@@ -68,7 +64,7 @@ our $NAVMATE_DATABASE = 'C:/dat/Rhapsody/navMate.db';
 
 # Schema version: integer part = breaking change (reimport required),
 # decimal part = non-breaking change (advisory).
-our $SCHEMA_VERSION = '10.0';
+our $SCHEMA_VERSION = '11.0';
 
 # waypoints.wp_type values
 our $WP_TYPE_NAV      = 'nav';
@@ -80,11 +76,6 @@ our $TS_SOURCE_E80          = 'e80';
 our $TS_SOURCE_KML_TIMESPAN = 'kml_timespan';
 our $TS_SOURCE_PHORTON      = 'phorton';
 our $TS_SOURCE_IMPORT       = 'import';
-
-# working_set_members.object_type values
-our $OBJ_TYPE_WAYPOINT = 'waypoint';
-our $OBJ_TYPE_ROUTE    = 'route';
-our $OBJ_TYPE_TRACK    = 'track';
 
 # collections.node_type values (DB-level only; import uses transient 'routes'/'groups'/'tracks' strings internally)
 our $NODE_TYPE_BRANCH = 'branch';

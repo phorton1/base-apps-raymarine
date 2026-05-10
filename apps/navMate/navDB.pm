@@ -98,7 +98,6 @@ my $db_def = {
 		"parent_uuid TEXT",
 		"node_type   TEXT NOT NULL DEFAULT 'branch'",
 		"comment     TEXT DEFAULT ''",
-		"visible     INTEGER NOT NULL DEFAULT 0",
 		"position    REAL    NOT NULL DEFAULT 0",
 	],
 
@@ -115,7 +114,6 @@ my $db_def = {
 		"ts_source       TEXT NOT NULL",
 		"source          TEXT",
 		"collection_uuid TEXT NOT NULL",
-		"visible         INTEGER NOT NULL DEFAULT 0",
 		"db_version      INTEGER NOT NULL DEFAULT 1",
 		"e80_version     INTEGER",
 		"kml_version     INTEGER",
@@ -128,7 +126,6 @@ my $db_def = {
 		"comment         TEXT DEFAULT ''",
 		"color           TEXT DEFAULT NULL",
 		"collection_uuid TEXT NOT NULL",
-		"visible         INTEGER NOT NULL DEFAULT 0",
 		"db_version      INTEGER NOT NULL DEFAULT 1",
 		"e80_version     INTEGER",
 		"kml_version     INTEGER",
@@ -151,7 +148,6 @@ my $db_def = {
 		"ts_source       TEXT NOT NULL",
 		"point_count     INTEGER",
 		"collection_uuid TEXT NOT NULL",
-		"visible         INTEGER NOT NULL DEFAULT 0",
 		"db_version      INTEGER NOT NULL DEFAULT 1",
 		"e80_version     INTEGER",
 		"kml_version     INTEGER",
@@ -167,23 +163,6 @@ my $db_def = {
 		"temp_k     INTEGER",
 		"ts         INTEGER",
 		"PRIMARY KEY (track_uuid, position)",
-	],
-
-	working_sets => [
-		"uuid       TEXT PRIMARY KEY",
-		"name       TEXT NOT NULL",
-		"comment    TEXT DEFAULT ''",
-		"bbox_north REAL",
-		"bbox_south REAL",
-		"bbox_east  REAL",
-		"bbox_west  REAL",
-	],
-
-	working_set_members => [
-		"ws_uuid     TEXT NOT NULL",
-		"object_uuid TEXT NOT NULL",
-		"object_type TEXT NOT NULL",
-		"PRIMARY KEY (ws_uuid, object_uuid)",
 	],
 
 };
@@ -270,6 +249,25 @@ sub openDB
 		display(0,0,"navDB::openDB migration to 10.0 complete");
 	}
 
+	if ($stored eq '10.0')
+	{
+		display(0,0,"navDB::openDB migrating schema 10.0 -> 11.0");
+		$dbh->do("DROP TABLE IF EXISTS working_set_members", []);
+		$dbh->do("DROP TABLE IF EXISTS working_sets", []);
+		# drops 'visible' column from all four WRT tables
+		for my $table (qw(collections waypoints routes tracks))
+		{
+			if (!$dbh->dropUnusedTableColumns($table))
+			{
+				$dbh->disconnect();
+				return 0;
+			}
+		}
+		$dbh->do("UPDATE key_values SET value='11.0' WHERE key='schema_version'", []);
+		$stored = '11.0';
+		display(0,0,"navDB::openDB migration to 11.0 complete");
+	}
+
 	my ($stored_major)   = split(/\./, $stored);
 	my ($expected_major) = split(/\./, $SCHEMA_VERSION);
 
@@ -347,7 +345,7 @@ sub _createTables
 	my ($dbh) = @_;
 	for my $table (qw(
 		key_values collections waypoints routes route_waypoints
-		tracks track_points working_sets working_set_members))
+		tracks track_points))
 	{
 		next if $dbh->tableExists($table);
 		$dbh->createTable($table)
@@ -732,17 +730,17 @@ sub getCollectionObjects
 	my ($dbh, $coll_uuid) = @_;
 	my @objects;
 	my $wps = $dbh->get_records(
-		"SELECT uuid, name, 'waypoint' AS obj_type, lat, lon, wp_type, color, visible
+		"SELECT uuid, name, 'waypoint' AS obj_type, lat, lon, wp_type, color
 		 FROM waypoints WHERE collection_uuid=? ORDER BY position",
 		[$coll_uuid]);
 	push @objects, @$wps;
 	my $routes = $dbh->get_records(
-		"SELECT uuid, name, color, 'route' AS obj_type, visible
+		"SELECT uuid, name, color, 'route' AS obj_type
 		 FROM routes WHERE collection_uuid=? ORDER BY position",
 		[$coll_uuid]);
 	push @objects, @$routes;
 	my $tracks = $dbh->get_records(
-		"SELECT uuid, name, color, 'track' AS obj_type, ts_start, ts_end, ts_source, point_count, visible
+		"SELECT uuid, name, color, 'track' AS obj_type, ts_start, ts_end, ts_source, point_count
 		 FROM tracks WHERE collection_uuid=? ORDER BY position",
 		[$coll_uuid]);
 	push @objects, @$tracks;
@@ -772,7 +770,7 @@ sub getCollection
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, parent_uuid, node_type, comment, visible, position FROM collections WHERE uuid=?",
+		"SELECT uuid, name, parent_uuid, node_type, comment, position FROM collections WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -785,7 +783,7 @@ sub getTrack
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, collection_uuid, visible, position FROM tracks WHERE uuid=?",
+		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, collection_uuid, position FROM tracks WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -798,7 +796,7 @@ sub getWaypoint
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm, created_ts, ts_source, source, collection_uuid, visible, position FROM waypoints WHERE uuid=?",
+		"SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm, created_ts, ts_source, source, collection_uuid, position FROM waypoints WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -811,7 +809,7 @@ sub getRoute
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, comment, color, collection_uuid, visible, position FROM routes WHERE uuid=?",
+		"SELECT uuid, name, comment, color, collection_uuid, position FROM routes WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -848,7 +846,7 @@ sub getCollectionWRGTs
 	};
 	my $wps = $dbh->get_records(
 		$cte . "SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm,
-		        created_ts, ts_source, source, collection_uuid, visible
+		        created_ts, ts_source, source, collection_uuid
 		        FROM waypoints WHERE collection_uuid IN (SELECT uuid FROM tree)",
 		[$uuid]);
 	my $routes = $dbh->get_records(

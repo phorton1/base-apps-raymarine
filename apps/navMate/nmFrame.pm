@@ -411,7 +411,7 @@ sub _doExportDB
 		if ($dbh)
 		{
 			display(0,0,"nmFrame: exporting database to $filename");
-			my $progress = Pub::WX::ProgressDialog->new($this, 'Exporting Database...', 0, 9);
+			my $progress = Pub::WX::ProgressDialog->new($this, 'Exporting Database...', 0, 7);
 			$dbh->exportDatabaseText($filename, $progress);
 			$progress->Destroy();
 			navDB::disconnectDB($dbh);
@@ -443,7 +443,7 @@ sub _doImportDB
 		my $dbh = navDB::connectDB();
 		if ($dbh)
 		{
-			my $progress = Pub::WX::ProgressDialog->new($this, 'Importing Database...', 0, 9);
+			my $progress = Pub::WX::ProgressDialog->new($this, 'Importing Database...', 0, 7);
 			$dbh->importDatabase($filename, $progress);
 			$progress->Destroy();
 			navDB::disconnectDB($dbh);
