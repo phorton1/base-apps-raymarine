@@ -47,7 +47,7 @@ use n_defs;
 use n_utils;
 use navPrefs;
 use nmResources;
-use base qw(Wx::SplitterWindow Pub::WX::Window);
+use base 'winTreeBase';
 
 my $dbg_wfsh = 0;
 
@@ -62,9 +62,9 @@ sub new
 		wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxTR_MULTIPLE);
 
 	my $state_imgs = Wx::ImageList->new(13, 13);
-	$state_imgs->Add(_makeCheckBitmap(0));
-	$state_imgs->Add(_makeCheckBitmap(1));
-	$state_imgs->Add(_makeCheckBitmap(2));
+	$state_imgs->Add(winTreeBase::_makeCheckBitmap(0));
+	$state_imgs->Add(winTreeBase::_makeCheckBitmap(1));
+	$state_imgs->Add(winTreeBase::_makeCheckBitmap(2));
 	$this->{tree}->SetStateImageList($state_imgs);
 	$this->{_state_imgs} = $state_imgs;
 
@@ -183,7 +183,7 @@ sub new
 		$this->{ed_comment}->SetSize($ctrl_w, $this->{_ed_ctrl_h});
 	});
 
-	_clearEditor($this);
+	$this->_clearEditor();
 
 	my $detail_panel = Wx::Panel->new($right_split, -1);
 	$this->{detail_panel} = $detail_panel;
@@ -204,19 +204,19 @@ sub new
 	$this->SetSashGravity(0);
 
 	EVT_TREE_SEL_CHANGED($this, $this->{tree}, \&onTreeSelect);
-	EVT_LEFT_DOWN($this->{tree}, sub { _onTreeLeftDown($this, @_) });
-	EVT_TEXT($this,         $this->{ed_name},         \&_onFieldChanged);
-	EVT_TEXT($this,         $this->{ed_comment},       \&_onFieldChanged);
-	EVT_TEXT($this,         $this->{ed_lat},           \&_onLatEdit);
-	EVT_TEXT($this,         $this->{ed_lon},           \&_onLonEdit);
-	EVT_CHOICE($this,       $this->{ed_sym},           \&_onFieldChanged);
-	EVT_CHOICE($this,       $this->{ed_color_choice},  \&_onFieldChanged);
-	EVT_TEXT($this,         $this->{ed_depth},         \&_onFieldChanged);
-	EVT_TEXT($this,         $this->{ed_temp},          \&_onFieldChanged);
-	EVT_TEXT($this,         $this->{ed_time},          \&_onFieldChanged);
-	EVT_DATE_CHANGED($this, $this->{ed_date},          \&_onFieldChanged);
+	EVT_LEFT_DOWN($this->{tree}, sub { $this->_onTreeLeftDown(@_) });
+	EVT_TEXT($this,         $this->{ed_name},         $this->can('_onFieldChanged'));
+	EVT_TEXT($this,         $this->{ed_comment},       $this->can('_onFieldChanged'));
+	EVT_TEXT($this,         $this->{ed_lat},           $this->can('_onLatEdit'));
+	EVT_TEXT($this,         $this->{ed_lon},           $this->can('_onLonEdit'));
+	EVT_CHOICE($this,       $this->{ed_sym},           $this->can('_onFieldChanged'));
+	EVT_CHOICE($this,       $this->{ed_color_choice},  $this->can('_onFieldChanged'));
+	EVT_TEXT($this,         $this->{ed_depth},         $this->can('_onFieldChanged'));
+	EVT_TEXT($this,         $this->{ed_temp},          $this->can('_onFieldChanged'));
+	EVT_TEXT($this,         $this->{ed_time},          $this->can('_onFieldChanged'));
+	EVT_DATE_CHANGED($this, $this->{ed_date},          $this->can('_onFieldChanged'));
 	EVT_BUTTON($this,       $this->{ed_save},          \&_onSave);
-	EVT_CHECKBOX($this,     $this->{ed_visible},       \&_onEdVisibleChanged);
+	EVT_CHECKBOX($this,     $this->{ed_visible},       $this->can('_onEdVisibleChanged'));
 
 	$this->{_loaded}        = 0;
 	$this->{_expanded_keys} = ($data && $data->{expanded})
@@ -236,7 +236,7 @@ sub new
 sub getDataForIniFile
 {
 	my ($this) = @_;
-	_captureExpandedInto($this) if $this->{_loaded} && $this->{tree}->GetCount() > 0;
+	$this->_captureExpandedInto() if $this->{_loaded} && $this->{tree}->GetCount() > 0;
 	return {
 		sash       => $this->GetSashPosition(),
 		right_sash => $this->{right_split} ? $this->{right_split}->GetSashPosition() : 0,
@@ -252,398 +252,10 @@ sub refresh
 	display($dbg_wfsh,0,"winFSH::refresh");
 	if ($this->{tree}->GetCount() > 0)
 	{
-		_captureExpandedInto($this);
-		_captureSelectedInto($this);
+		$this->_captureExpandedInto();
+		$this->_captureSelectedInto();
 	}
 	_buildAndRestore($this);
-}
-
-
-sub onClearMap
-{
-	my ($this) = @_;
-	clearAllFSHVisible();
-	my $tree = $this->{tree};
-	my $root = $tree->GetRootItem();
-	_walkSetSubtreeState($tree, $root, 0) if $root && $root->IsOk();
-	$this->{ed_visible}->Set3StateValue(wxCHK_UNCHECKED)
-		if $this->{ed_visible} && $this->{ed_visible}->IsShown();
-}
-
-
-#---------------------------------
-# editor panel
-#---------------------------------
-
-sub _ed_show_row
-{
-	my ($label, $ctrl, $show) = @_;
-	$label->Show($show ? 1 : 0);
-	$ctrl->Show($show ? 1 : 0);
-}
-
-
-sub _clearEditor
-{
-	my ($this) = @_;
-	$this->{_edit_uuid}    = undef;
-	$this->{_edit_type}    = undef;
-	$this->{_edit_item}    = undef;
-	$this->{_editor_dirty} = 0;
-	$this->{ed_title}->SetLabel('');
-	$this->{ed_visible}->Show(0);
-	_ed_show_row($this->{ed_lbl_name},    $this->{ed_name},         0);
-	_ed_show_row($this->{ed_lbl_lat},     $this->{ed_lat},          0);
-	$this->{ed_lat_ddm}->Show(0);
-	_ed_show_row($this->{ed_lbl_lon},     $this->{ed_lon},          0);
-	$this->{ed_lon_ddm}->Show(0);
-	_ed_show_row($this->{ed_lbl_sym},     $this->{ed_sym},          0);
-	_ed_show_row($this->{ed_lbl_color},   $this->{ed_color_choice}, 0);
-	_ed_show_row($this->{ed_lbl_comment}, $this->{ed_comment},      0);
-	_ed_show_row($this->{ed_lbl_depth},   $this->{ed_depth},        0);
-	$this->{ed_depth_unit}->Show(0);
-	_ed_show_row($this->{ed_lbl_temp},    $this->{ed_temp},         0);
-	$this->{ed_temp_unit}->Show(0);
-	_ed_show_row($this->{ed_lbl_date},    $this->{ed_date},         0);
-	_ed_show_row($this->{ed_lbl_time},    $this->{ed_time},         0);
-	$this->{right_split}->SetSashPosition($this->{_ed_sash_other}) if $this->{right_split};
-	$this->{ed_save}->Enable(0);
-}
-
-
-sub _loadEditor
-{
-	my ($this, $node) = @_;
-	my $type = $node->{type} // '';
-	my $uuid = $node->{uuid};
-	my $data = $node->{data} // {};
-
-	my $show_name    = ($type eq 'waypoint' || $type eq 'group'
-	                || $type eq 'route'    || $type eq 'track');
-	my $show_latlon  = ($type eq 'waypoint');
-	my $show_sym     = ($type eq 'waypoint');
-	my $show_color   = ($type eq 'route');
-	my $show_comment = ($type eq 'waypoint' || $type eq 'route');
-	my $show_wp      = ($type eq 'waypoint');
-
-	$this->{_edit_uuid}    = $uuid;
-	$this->{_edit_type}    = $type;
-	$this->{_editor_dirty} = 0;
-
-	my $title = $type eq 'waypoint' ? 'Waypoint'
-	          : $type eq 'group'    ? 'Group'
-	          : $type eq 'route'    ? 'Route'
-	          : $type eq 'track'    ? 'Track'
-	          :                       '';
-	$this->{ed_title}->SetLabel($title);
-
-	_ed_show_row($this->{ed_lbl_name},    $this->{ed_name},         $show_name);
-	_ed_show_row($this->{ed_lbl_lat},     $this->{ed_lat},          $show_latlon);
-	$this->{ed_lat_ddm}->Show($show_latlon ? 1 : 0);
-	_ed_show_row($this->{ed_lbl_lon},     $this->{ed_lon},          $show_latlon);
-	$this->{ed_lon_ddm}->Show($show_latlon ? 1 : 0);
-	_ed_show_row($this->{ed_lbl_sym},     $this->{ed_sym},          $show_sym);
-	_ed_show_row($this->{ed_lbl_color},   $this->{ed_color_choice}, $show_color);
-	_ed_show_row($this->{ed_lbl_comment}, $this->{ed_comment},      $show_comment);
-	_ed_show_row($this->{ed_lbl_depth},   $this->{ed_depth},        $show_wp);
-	$this->{ed_depth_unit}->Show($show_wp ? 1 : 0);
-	_ed_show_row($this->{ed_lbl_temp},    $this->{ed_temp},         $show_wp);
-	$this->{ed_temp_unit}->Show($show_wp ? 1 : 0);
-	_ed_show_row($this->{ed_lbl_date},    $this->{ed_date},         $show_wp);
-	_ed_show_row($this->{ed_lbl_time},    $this->{ed_time},         $show_wp);
-
-	$this->{_loading_editor} = 1;
-
-	$this->{ed_name}->SetValue($data->{name}       // '') if $show_name;
-	$this->{ed_comment}->SetValue($data->{comment} // '') if $show_comment;
-
-	if ($show_latlon)
-	{
-		my $lat = ($data->{lat} // 0) + 0;
-		my $lon = ($data->{lon} // 0) + 0;
-		$this->{ed_lat}->SetValue(sprintf('%.6f', $lat));
-		$this->{ed_lon}->SetValue(sprintf('%.6f', $lon));
-		_updateLatDDM($this);
-		_updateLonDDM($this);
-	}
-
-	$this->{ed_sym}->SetSelection(($data->{sym}   // 0) + 0) if $show_sym;
-	$this->{ed_color_choice}->SetSelection(($data->{color} // 0) + 0) if $show_color;
-
-	if ($show_wp)
-	{
-		my $use_feet = getPref($PREF_DEPTH_DISPLAY);
-		my $use_fahr = getPref($PREF_FAHRENHEIT);
-
-		my $depth_cm   = ($data->{depth} // 0) + 0;
-		my $depth_disp = $use_feet ? $depth_cm * 0.0328084 : $depth_cm / 100;
-		$this->{ed_depth}->SetValue(sprintf('%.1f', $depth_disp));
-		$this->{ed_depth_unit}->SetLabel($use_feet ? 'ft' : 'm');
-
-		my $temp_k100  = ($data->{temp}  // 0) + 0;
-		my $temp_c     = $temp_k100 / 100 - 273.15;
-		my $temp_disp  = $use_fahr ? $temp_c * 9 / 5 + 32 : $temp_c;
-		$this->{ed_temp}->SetValue(sprintf('%.1f', $temp_disp));
-		$this->{ed_temp_unit}->SetLabel($use_fahr ? 'F' : 'C');
-
-		my $date_val              = ($data->{date} // 0) + 0;
-		my ($d_mday, $d_mon, $d_yr) = (gmtime($date_val * 86400))[3, 4, 5];
-		$this->{ed_date}->SetValue(Wx::DateTime->newFromDMY($d_mday, $d_mon, $d_yr + 1900));
-
-		my $time_sec = ($data->{time} // 0) + 0;
-		$this->{ed_time}->SetValue(sprintf('%02d:%02d:%02d',
-			int($time_sec / 3600),
-			int(($time_sec % 3600) / 60),
-			$time_sec % 60));
-	}
-
-	$this->{ed_visible}->Show(1);
-	if ($type eq 'group')
-	{
-		my @member_uuids = map  { $_->{uuid} }
-		                   grep { $_->{uuid} } @{$data->{wpts} // []};
-		my $total   = scalar @member_uuids;
-		my $visible = scalar grep { getFSHVisible($_) } @member_uuids;
-		my $vs = ($total && $visible == $total) ? 1 : ($visible > 0) ? 2 : 0;
-		$this->{ed_visible}->Set3StateValue(
-			$vs == 1 ? wxCHK_CHECKED :
-			$vs == 2 ? wxCHK_UNDETERMINED :
-			           wxCHK_UNCHECKED);
-	}
-	else
-	{
-		$this->{ed_visible}->Set3StateValue(
-			getFSHVisible($uuid // '') ? wxCHK_CHECKED : wxCHK_UNCHECKED);
-	}
-
-	$this->{_loading_editor} = 0;
-	$this->{right_split}->SetSashPosition(
-		$show_wp ? $this->{_ed_sash_wp} : $this->{_ed_sash_other});
-	$this->{ed_save}->Enable(0);
-}
-
-
-sub _onFieldChanged
-{
-	my ($this, $event) = @_;
-	return if $this->{_loading_editor};
-	$this->{_editor_dirty} = 1;
-	$this->{ed_save}->Enable(1);
-}
-
-
-sub _onLatEdit
-{
-	my ($this, $event) = @_;
-	return if $this->{_loading_editor};
-	$this->{_editor_dirty} = 1;
-	$this->{ed_save}->Enable(1);
-	_updateLatDDM($this);
-}
-
-
-sub _onLonEdit
-{
-	my ($this, $event) = @_;
-	return if $this->{_loading_editor};
-	$this->{_editor_dirty} = 1;
-	$this->{ed_save}->Enable(1);
-	_updateLonDDM($this);
-}
-
-
-sub _updateLatDDM
-{
-	my ($this) = @_;
-	my $dd = parseLatLon($this->{ed_lat}->GetValue());
-	$this->{ed_lat_ddm}->SetLabel(defined $dd ? _ddm_label($dd, 1) : '');
-}
-
-
-sub _updateLonDDM
-{
-	my ($this) = @_;
-	my $dd = parseLatLon($this->{ed_lon}->GetValue());
-	$this->{ed_lon_ddm}->SetLabel(defined $dd ? _ddm_label($dd, 0) : '');
-}
-
-
-sub _ddm_label
-{
-	my ($dd, $is_lat) = @_;
-	my $abs = abs($dd);
-	my $dir = $is_lat ? ($dd >= 0 ? 'N' : 'S') : ($dd >= 0 ? 'E' : 'W');
-	my $deg = int($abs);
-	my $min = ($abs - $deg) * 60;
-	return sprintf("%d\x{00b0}%06.3f' %s", $deg, $min, $dir);
-}
-
-
-sub _onSave
-{
-	my ($this, $event) = @_;
-	my $uuid = $this->{_edit_uuid};
-	my $type = $this->{_edit_type} // '';
-	return if !$uuid;
-
-	my $db = $navFSH::fsh_db;
-	return if !$db;
-
-	if ($type eq 'waypoint')
-	{
-		my $lat = parseLatLon($this->{ed_lat}->GetValue());
-		my $lon = parseLatLon($this->{ed_lon}->GetValue());
-		if (!defined $lat || !defined $lon)
-		{
-			warning(0, 0, "winFSH: invalid lat/lon - save aborted");
-			return;
-		}
-		my $use_feet  = getPref($PREF_DEPTH_DISPLAY);
-		my $use_fahr  = getPref($PREF_FAHRENHEIT);
-
-		my $depth_disp = $this->{ed_depth}->GetValue() + 0;
-		my $depth_cm   = int($use_feet ? $depth_disp / 0.0328084 : $depth_disp * 100);
-
-		my $temp_disp  = $this->{ed_temp}->GetValue() + 0;
-		my $temp_c     = $use_fahr ? ($temp_disp - 32) * 5 / 9 : $temp_disp;
-		my $temp_k100  = int(($temp_c + 273.15) * 100);
-		$temp_k100     = 0 if $temp_k100 < 0;
-
-		my $wx_dt    = $this->{ed_date}->GetValue();
-		my $date_val = int(timegm(0, 0, 12,
-			$wx_dt->GetDay(), $wx_dt->GetMonth(), $wx_dt->GetYear() - 1900) / 86400);
-
-		my $time_str = $this->{ed_time}->GetValue();
-		$time_str =~ /^(\d+):(\d+):(\d+)$/;
-		my $time_sec = ($1 // 0) * 3600 + ($2 // 0) * 60 + ($3 // 0);
-
-		my $name    = $this->{ed_name}->GetValue();
-		my $comment = $this->{ed_comment}->GetValue();
-		my $sym     = $this->{ed_sym}->GetSelection();
-
-		my $nd       = $this->{tree}->GetItemData($this->{_edit_item});
-		my $n        = ($nd && $nd->GetData()) ? $nd->GetData() : {};
-		my $grp_uuid = $n->{group_uuid};
-
-		my $wp_rec;
-		if ($grp_uuid && $db->{groups}{$grp_uuid})
-		{
-			for my $wp (@{$db->{groups}{$grp_uuid}{wpts} // []})
-			{
-				if ($wp->{uuid} && $wp->{uuid} eq $uuid)
-				{
-					$wp_rec = $wp;
-					last;
-				}
-			}
-		}
-		else
-		{
-			$wp_rec = $db->{waypoints}{$uuid};
-		}
-
-		if ($wp_rec)
-		{
-			$wp_rec->{name}    = $name;
-			$wp_rec->{comment} = $comment;
-			$wp_rec->{lat}     = $lat;
-			$wp_rec->{lon}     = $lon;
-			$wp_rec->{sym}     = $sym;
-			$wp_rec->{depth}   = $depth_cm;
-			$wp_rec->{temp}    = $temp_k100;
-			$wp_rec->{date}    = $date_val;
-			$wp_rec->{time}    = $time_sec;
-		}
-
-		$this->{tree}->SetItemText($this->{_edit_item}, $name) if $this->{_edit_item};
-		if (getFSHVisible($uuid))
-		{
-			removeRenderFeatures([$uuid]);
-			addRenderFeatures([_buildWpFeature($uuid, $wp_rec)]) if $wp_rec;
-		}
-	}
-	elsif ($type eq 'group')
-	{
-		my $name    = $this->{ed_name}->GetValue();
-		my $grp_rec = $db->{groups}{$uuid};
-		if ($grp_rec) { $grp_rec->{name} = $name }
-		my $n = scalar @{$grp_rec ? ($grp_rec->{wpts} // []) : []};
-		$this->{tree}->SetItemText($this->{_edit_item}, "$name ($n wps)") if $this->{_edit_item};
-	}
-	elsif ($type eq 'route')
-	{
-		my $name    = $this->{ed_name}->GetValue();
-		my $comment = $this->{ed_comment}->GetValue();
-		my $color   = $this->{ed_color_choice}->GetSelection();
-		my $r_rec   = $db->{routes}{$uuid};
-		if ($r_rec)
-		{
-			$r_rec->{name}    = $name;
-			$r_rec->{comment} = $comment;
-			$r_rec->{color}   = $color;
-		}
-		my $n = scalar @{$r_rec ? ($r_rec->{wpts} // []) : []};
-		$this->{tree}->SetItemText($this->{_edit_item}, "$name ($n pts)") if $this->{_edit_item};
-		if (getFSHVisible($uuid) && $r_rec)
-		{
-			removeRenderFeatures([$uuid]);
-			my $feat = _buildRouteFeature($uuid, $r_rec);
-			addRenderFeatures([$feat]) if $feat;
-		}
-	}
-	elsif ($type eq 'track')
-	{
-		my $name  = $this->{ed_name}->GetValue();
-		my $t_rec = $db->{tracks}{$uuid};
-		if ($t_rec) { $t_rec->{name} = $name }
-		my $pts = $t_rec
-			? ($t_rec->{cnt} // (ref $t_rec->{points} eq 'ARRAY' ? scalar @{$t_rec->{points}} : 0))
-			: 0;
-		$this->{tree}->SetItemText($this->{_edit_item}, "$name ($pts pts)") if $this->{_edit_item};
-		if (getFSHVisible($uuid) && $t_rec)
-		{
-			removeRenderFeatures([$uuid]);
-			my $feat = _buildTrackFeature($uuid, $t_rec);
-			addRenderFeatures([$feat]) if $feat;
-		}
-	}
-	else
-	{
-		warning(0, 0, "winFSH save: unknown type($type)");
-		return;
-	}
-
-	$this->{ed_save}->Enable(0);
-	$this->{_editor_dirty} = 0;
-}
-
-
-sub _onEdVisibleChanged
-{
-	my ($this, $event) = @_;
-	return if $this->{_loading_editor};
-	my $uuid = $this->{_edit_uuid};
-	return if !$uuid;
-
-	my $cb = $this->{ed_visible}->Get3StateValue();
-	return if $cb == wxCHK_UNDETERMINED;
-	my $new_visible = ($cb == wxCHK_CHECKED) ? 1 : 0;
-
-	my $item = $this->{_edit_item};
-	if ($item && $item->IsOk())
-	{
-		my $d = $this->{tree}->GetItemData($item);
-		if ($d)
-		{
-			my $node = $d->GetData();
-			if (ref $node eq 'HASH')
-			{
-				_applyNodeVisibility($this, $item, $node, $new_visible);
-				_refreshAncestorStates($this, $item);
-			}
-		}
-	}
-	openMapBrowser() if $new_visible && !isBrowserConnected();
 }
 
 
@@ -688,19 +300,11 @@ sub _buildAndRestore
 	_buildTracks($this, $tree, $root, $db);
 
 	$this->{_loaded} = 1;
-	_walkRestoreStateImages($tree, $root);
-	_syncLeafletAfterRebuild();
+	winTreeBase::_walkRestoreStateImages($this, $tree, $root);
+	$this->_syncLeafletAfterRebuild();
 	$tree->Expand($root);
-	_walkRestoreExpanded($tree, $root, $this->{_expanded_keys});
-	_walkRestoreSelected($tree, $root, $this->{_selected_keys});
-}
-
-
-sub _name_sort_key
-{
-	my ($name) = @_;
-	my $lc = lc($name // '');
-	return $lc =~ /^(.*?)(\d+)$/ ? $1 . sprintf('%020d', $2) : $lc;
+	winTreeBase::_walkRestoreExpanded($tree, $root, $this->{_expanded_keys});
+	winTreeBase::_walkRestoreSelected($tree, $root, $this->{_selected_keys});
 }
 
 
@@ -713,8 +317,8 @@ sub _buildGroups
 	my $hdr = $tree->AppendItem($root, 'Groups', -1, -1,
 		Wx::TreeItemData->new({ type => 'header', kind => 'groups' }));
 
-	# BLK_WPT standalone waypoints → My Waypoints
-	my @wpt_uuids = sort { _name_sort_key($wps->{$a}{name}) cmp _name_sort_key($wps->{$b}{name}) }
+	# BLK_WPT standalone waypoints -> My Waypoints
+	my @wpt_uuids = sort { winTreeBase::_name_sort_key($wps->{$a}{name}) cmp winTreeBase::_name_sort_key($wps->{$b}{name}) }
 	                keys %$wps;
 	if (@wpt_uuids)
 	{
@@ -730,7 +334,7 @@ sub _buildGroups
 	}
 
 	# BLK_GRP named groups
-	for my $uuid (sort { _name_sort_key($groups->{$a}{name}) cmp _name_sort_key($groups->{$b}{name}) }
+	for my $uuid (sort { winTreeBase::_name_sort_key($groups->{$a}{name}) cmp winTreeBase::_name_sort_key($groups->{$b}{name}) }
 	              keys %$groups)
 	{
 		my $grp  = $groups->{$uuid};
@@ -739,7 +343,7 @@ sub _buildGroups
 		my $grp_item = $tree->AppendItem($hdr, "$grp->{name} ($n wps)", -1, -1,
 			Wx::TreeItemData->new({ type => 'group', uuid => $uuid, data => $grp }));
 
-		my @sorted = sort { _name_sort_key($a->{name}) cmp _name_sort_key($b->{name}) } @$wpts;
+		my @sorted = sort { winTreeBase::_name_sort_key($a->{name}) cmp winTreeBase::_name_sort_key($b->{name}) } @$wpts;
 		for my $wp (@sorted)
 		{
 			$tree->AppendItem($grp_item, $wp->{name} // $wp->{uuid} // '?', -1, -1,
@@ -760,7 +364,7 @@ sub _buildRoutes
 	my $hdr = $tree->AppendItem($root, 'Routes', -1, -1,
 		Wx::TreeItemData->new({ type => 'header', kind => 'routes' }));
 
-	for my $uuid (sort { _name_sort_key($routes->{$a}{name}) cmp _name_sort_key($routes->{$b}{name}) }
+	for my $uuid (sort { winTreeBase::_name_sort_key($routes->{$a}{name}) cmp winTreeBase::_name_sort_key($routes->{$b}{name}) }
 	              keys %$routes)
 	{
 		my $r    = $routes->{$uuid};
@@ -795,7 +399,7 @@ sub _buildTracks
 	my $hdr    = $tree->AppendItem($root, $label, -1, -1,
 		Wx::TreeItemData->new({ type => 'header', kind => 'tracks' }));
 
-	for my $uuid (sort { _name_sort_key($tracks->{$a}{name}) cmp _name_sort_key($tracks->{$b}{name}) }
+	for my $uuid (sort { winTreeBase::_name_sort_key($tracks->{$a}{name}) cmp winTreeBase::_name_sort_key($tracks->{$b}{name}) }
 	              keys %$tracks)
 	{
 		my $track = $tracks->{$uuid};
@@ -827,34 +431,34 @@ sub onTreeSelect
 
 	if ($type eq 'root')
 	{
-		_clearEditor($this);
+		$this->_clearEditor();
 		$text = "FSH file: $navFSH::fsh_filename\n";
 	}
 	elsif ($type eq 'header')
 	{
-		_clearEditor($this);
+		$this->_clearEditor();
 		$text = "($node->{kind})";
 	}
 	elsif ($type eq 'my_waypoints')
 	{
-		_clearEditor($this);
+		$this->_clearEditor();
 		$text = "Standalone waypoints (BLK_WPT) not assigned to any named group.";
 	}
 	elsif ($type eq 'route_point' && $node->{data})
 	{
-		_clearEditor($this);
+		$this->_clearEditor();
 		$text = _fshWaypointText($node);
 	}
 	elsif ($type eq 'waypoint' && $node->{data})
 	{
 		$this->{_edit_item} = $item;
-		_loadEditor($this, $node);
+		$this->_loadEditor($node);
 		$text = _fshWaypointText($node);
 	}
 	elsif ($type eq 'group' && $node->{data})
 	{
 		$this->{_edit_item} = $item;
-		_loadEditor($this, $node);
+		$this->_loadEditor($node);
 		my $grp  = $node->{data};
 		my $wpts = $grp->{wpts} // [];
 		$text  = "Group: $grp->{name}\n";
@@ -864,13 +468,13 @@ sub onTreeSelect
 	elsif ($type eq 'route' && $node->{data})
 	{
 		$this->{_edit_item} = $item;
-		_loadEditor($this, $node);
+		$this->_loadEditor($node);
 		$text = _fshRouteText($node);
 	}
 	elsif ($type eq 'track' && $node->{data})
 	{
 		$this->{_edit_item} = $item;
-		_loadEditor($this, $node);
+		$this->_loadEditor($node);
 		$text = _fshTrackText($node);
 	}
 
@@ -960,580 +564,225 @@ sub _fshTrackText
 
 
 #---------------------------------
-# tree state - expand / select
+# save
 #---------------------------------
 
-sub _nodeKey
+sub _onSave
 {
-	my ($node) = @_;
-	return undef if ref $node ne 'HASH';
-	my $t = $node->{type} // '';
-	return "header:$node->{kind}"                    if $t eq 'header';
-	return 'my_waypoints'                            if $t eq 'my_waypoints';
-	return "rp:$node->{route_uuid}:$node->{uuid}"   if $t eq 'route_point';
-	return $node->{uuid};
-}
-
-
-sub _captureExpandedInto
-{
-	my ($this) = @_;
-	my %keys;
-	my $tree = $this->{tree};
-	my $root = $tree->GetRootItem();
-	if ($root && $root->IsOk())
-	{
-		my ($child, $cookie) = $tree->GetFirstChild($root);
-		while ($child && $child->IsOk())
-		{
-			_walkExpCapture($tree, $child, \%keys);
-			($child, $cookie) = $tree->GetNextChild($root, $cookie);
-		}
-	}
-	$this->{_expanded_keys} = \%keys;
-}
-
-
-sub _walkExpCapture
-{
-	my ($tree, $item, $result) = @_;
-	return if !$item->IsOk();
-	if ($tree->IsExpanded($item))
-	{
-		my $d = $tree->GetItemData($item);
-		if ($d)
-		{
-			my $node = $d->GetData();
-			if (ref $node eq 'HASH')
-			{
-				my $key = _nodeKey($node);
-				$result->{$key} = 1 if $key;
-			}
-		}
-	}
-	my ($child, $cookie) = $tree->GetFirstChild($item);
-	while ($child && $child->IsOk())
-	{
-		_walkExpCapture($tree, $child, $result);
-		($child, $cookie) = $tree->GetNextChild($item, $cookie);
-	}
-}
-
-
-sub _captureSelectedInto
-{
-	my ($this) = @_;
-	my %keys;
-	for my $item ($this->{tree}->GetSelections())
-	{
-		my $d = $this->{tree}->GetItemData($item);
-		next if !$d;
-		my $node = $d->GetData();
-		next if ref $node ne 'HASH';
-		my $key = _nodeKey($node);
-		$keys{$key} = 1 if $key;
-	}
-	$this->{_selected_keys} = \%keys;
-}
-
-
-sub _walkRestoreExpanded
-{
-	my ($tree, $item, $expanded) = @_;
-	return if !($item && $item->IsOk());
-	my $d = $tree->GetItemData($item);
-	if ($d)
-	{
-		my $node = $d->GetData();
-		if (ref $node eq 'HASH')
-		{
-			my $key = _nodeKey($node);
-			$tree->Expand($item) if $key && $expanded->{$key};
-		}
-	}
-	my ($child, $cookie) = $tree->GetFirstChild($item);
-	while ($child && $child->IsOk())
-	{
-		_walkRestoreExpanded($tree, $child, $expanded);
-		($child, $cookie) = $tree->GetNextChild($item, $cookie);
-	}
-}
-
-
-sub _walkRestoreSelected
-{
-	my ($tree, $item, $selected) = @_;
-	return if !($item && $item->IsOk());
-	my $d = $tree->GetItemData($item);
-	if ($d)
-	{
-		my $node = $d->GetData();
-		if (ref $node eq 'HASH')
-		{
-			my $key = _nodeKey($node);
-			$tree->SelectItem($item) if $key && $selected->{$key};
-		}
-	}
-	my ($child, $cookie) = $tree->GetFirstChild($item);
-	while ($child && $child->IsOk())
-	{
-		_walkRestoreSelected($tree, $child, $selected);
-		($child, $cookie) = $tree->GetNextChild($item, $cookie);
-	}
-}
-
-
-#---------------------------------
-# checkbox state bitmaps
-#---------------------------------
-
-sub _makeCheckBitmap
-{
-	my ($state) = @_;
-	my $bmp = Wx::Bitmap->new(13, 13);
-	my $dc  = Wx::MemoryDC->new();
-	$dc->SelectObject($bmp);
-	$dc->SetBackground(Wx::Brush->new(Wx::Colour->new(255,255,255), wxSOLID));
-	$dc->Clear();
-	$dc->SetPen(Wx::Pen->new(Wx::Colour->new(100,100,100), 1, wxSOLID));
-	$dc->SetBrush(Wx::Brush->new(Wx::Colour->new(255,255,255), wxSOLID));
-	$dc->DrawRectangle(1, 1, 11, 11);
-	if ($state == 1)
-	{
-		$dc->SetPen(Wx::Pen->new(Wx::Colour->new(0,0,180), 2, wxSOLID));
-		$dc->DrawLine(2, 6, 5, 10);
-		$dc->DrawLine(5, 10, 11, 2);
-	}
-	elsif ($state == 2)
-	{
-		$dc->SetPen(Wx::Pen->new(Wx::Colour->new(0,0,180), 1, wxSOLID));
-		$dc->SetBrush(Wx::Brush->new(Wx::Colour->new(0,0,180), wxSOLID));
-		$dc->DrawRectangle(3, 3, 7, 7);
-	}
-	$dc->SelectObject(wxNullBitmap);
-	return $bmp;
-}
-
-
-#---------------------------------
-# GeoJSON feature builders
-#---------------------------------
-
-sub _buildWpFeature
-{
-	my ($uuid, $wp) = @_;
-	return {
-		type       => 'Feature',
-		properties => {
-			uuid        => $uuid,
-			name        => $wp->{name}  // '',
-			obj_type    => 'waypoint',
-			data_source => 'fsh',
-			wp_type     => 'nav',
-			color       => 'FF888888',
-			lat         => ($wp->{lat}  // 0) + 0,
-			lon         => ($wp->{lon}  // 0) + 0,
-		},
-		geometry   => { type => 'Point',
-			coordinates => [($wp->{lon}//0)+0, ($wp->{lat}//0)+0] },
-	};
-}
-
-
-sub _buildRouteFeature
-{
-	my ($uuid, $r) = @_;
-	my $wpts = $r->{wpts} // [];
-	return undef if !@$wpts;
-	my $cidx     = defined($r->{color}) ? ($r->{color} + 0) : 0;
-	my $color    = $E80_ROUTE_COLOR_ABGR[$cidx] // 'FF888888';
-	my @rp_names = map { $_->{name} // '' } @$wpts;
-	return {
-		type       => 'Feature',
-		properties => {
-			uuid        => $uuid,
-			name        => $r->{name}  // '',
-			obj_type    => 'route',
-			data_source => 'fsh',
-			color       => $color,
-			wp_count    => scalar(@$wpts) + 0,
-			rp_names    => \@rp_names,
-		},
-		geometry   => { type => 'LineString',
-			coordinates => [map { [($_->{lon}//0)+0, ($_->{lat}//0)+0] } @$wpts] },
-	};
-}
-
-
-sub _buildTrackFeature
-{
-	my ($uuid, $track) = @_;
-	my $pts = ref $track->{points} eq 'ARRAY' ? $track->{points} : [];
-	return undef if !@$pts;
-	my $cidx  = defined($track->{color}) ? ($track->{color} + 0) : 0;
-	my $color = $E80_ROUTE_COLOR_ABGR[$cidx] // 'FF888888';
-	return {
-		type       => 'Feature',
-		properties => {
-			uuid        => $uuid,
-			name        => $track->{name}  // '',
-			obj_type    => 'track',
-			data_source => 'fsh',
-			color       => $color,
-			point_count => scalar(@$pts) + 0,
-		},
-		geometry   => { type => 'LineString',
-			coordinates => [map { [($_->{lon}//0)+0, ($_->{lat}//0)+0] } @$pts] },
-	};
-}
-
-
-#---------------------------------
-# visibility apply
-#---------------------------------
-
-sub _applyWpVisibility
-{
-	my ($uuid, $wp, $new_visible) = @_;
+	my ($this, $event) = @_;
+	my $uuid = $this->{_edit_uuid};
+	my $type = $this->{_edit_type} // '';
 	return if !$uuid;
-	if ($new_visible)
-	{
-		return if !$wp;
-		setFSHVisible($uuid, 1);
-		addRenderFeatures([_buildWpFeature($uuid, $wp)]);
-	}
-	else
-	{
-		setFSHVisible($uuid, 0);
-		removeRenderFeatures([$uuid]);
-	}
-}
 
-
-sub _applyRouteVisibility
-{
-	my ($uuid, $r, $new_visible) = @_;
-	return if !$uuid;
-	if ($new_visible)
-	{
-		return if !$r;
-		my $feature = _buildRouteFeature($uuid, $r);
-		return if !$feature;
-		setFSHVisible($uuid, 1);
-		addRenderFeatures([$feature]);
-	}
-	else
-	{
-		setFSHVisible($uuid, 0);
-		removeRenderFeatures([$uuid]);
-	}
-}
-
-
-sub _applyTrackVisibility
-{
-	my ($uuid, $track, $new_visible) = @_;
-	return if !$uuid;
-	if ($new_visible)
-	{
-		return if !$track;
-		my $feature = _buildTrackFeature($uuid, $track);
-		return if !$feature;
-		setFSHVisible($uuid, 1);
-		addRenderFeatures([$feature]);
-	}
-	else
-	{
-		setFSHVisible($uuid, 0);
-		removeRenderFeatures([$uuid]);
-	}
-}
-
-
-sub _applyNodeVisibility
-{
-	my ($this, $item, $node, $new_visible) = @_;
-	my $type = $node->{type} // '';
-	my $tree = $this->{tree};
-	my $db   = $navFSH::fsh_db;
-
-	return if $type eq 'root' || $type eq 'route_point';
+	my $db = $navFSH::fsh_db;
+	return if !$db;
 
 	if ($type eq 'waypoint')
 	{
-		_applyWpVisibility($node->{uuid}, $node->{data}, $new_visible);
-		$tree->SetItemState($item, $new_visible ? 1 : 0);
-	}
-	elsif ($type eq 'route')
-	{
-		_applyRouteVisibility($node->{uuid}, $node->{data}, $new_visible);
-		$tree->SetItemState($item, $new_visible ? 1 : 0);
-	}
-	elsif ($type eq 'track')
-	{
-		_applyTrackVisibility($node->{uuid}, $node->{data}, $new_visible);
-		$tree->SetItemState($item, $new_visible ? 1 : 0);
+		my $lat = parseLatLon($this->{ed_lat}->GetValue());
+		my $lon = parseLatLon($this->{ed_lon}->GetValue());
+		if (!defined($lat) || !defined($lon))
+		{
+			warning(0, 0, "winFSH: invalid lat/lon - save aborted");
+			return;
+		}
+		my $use_feet  = getPref($PREF_DEPTH_DISPLAY);
+		my $use_fahr  = getPref($PREF_FAHRENHEIT);
+
+		my $depth_disp = $this->{ed_depth}->GetValue() + 0;
+		my $depth_cm   = int($use_feet ? $depth_disp / 0.0328084 : $depth_disp * 100);
+
+		my $temp_disp  = $this->{ed_temp}->GetValue() + 0;
+		my $temp_c     = $use_fahr ? ($temp_disp - 32) * 5 / 9 : $temp_disp;
+		my $temp_k100  = int(($temp_c + 273.15) * 100);
+		$temp_k100     = 0 if $temp_k100 < 0;
+
+		my $wx_dt    = $this->{ed_date}->GetValue();
+		my $date_val = int(timegm(0, 0, 12,
+			$wx_dt->GetDay(), $wx_dt->GetMonth(), $wx_dt->GetYear() - 1900) / 86400);
+
+		my $time_str = $this->{ed_time}->GetValue();
+		$time_str =~ /^(\d+):(\d+):(\d+)$/;
+		my $time_sec = ($1 // 0) * 3600 + ($2 // 0) * 60 + ($3 // 0);
+
+		my $name    = $this->{ed_name}->GetValue();
+		my $comment = $this->{ed_comment}->GetValue();
+		my $sym     = $this->{ed_sym}->GetSelection();
+
+		my $nd       = $this->{tree}->GetItemData($this->{_edit_item});
+		my $n        = ($nd && $nd->GetData()) ? $nd->GetData() : {};
+		my $grp_uuid = $n->{group_uuid};
+
+		my $wp_rec;
+		if ($grp_uuid && $db->{groups}{$grp_uuid})
+		{
+			for my $wp (@{$db->{groups}{$grp_uuid}{wpts} // []})
+			{
+				if ($wp->{uuid} && $wp->{uuid} eq $uuid)
+				{
+					$wp_rec = $wp;
+					last;
+				}
+			}
+		}
+		else
+		{
+			$wp_rec = $db->{waypoints}{$uuid};
+		}
+
+		if ($wp_rec)
+		{
+			$wp_rec->{name}    = $name;
+			$wp_rec->{comment} = $comment;
+			$wp_rec->{lat}     = $lat;
+			$wp_rec->{lon}     = $lon;
+			$wp_rec->{sym}     = $sym;
+			$wp_rec->{depth}   = $depth_cm;
+			$wp_rec->{temp}    = $temp_k100;
+			$wp_rec->{date}    = $date_val;
+			$wp_rec->{time}    = $time_sec;
+		}
+
+		$this->{tree}->SetItemText($this->{_edit_item}, $name) if $this->{_edit_item};
+		if (getFSHVisible($uuid))
+		{
+			removeRenderFeatures([$uuid]);
+			addRenderFeatures([$this->_buildWpFeature($uuid, $wp_rec)]) if $wp_rec;
+		}
 	}
 	elsif ($type eq 'group')
 	{
-		for my $wp (@{$node->{data}{wpts} // []})
-		{
-			_applyWpVisibility($wp->{uuid}, $wp, $new_visible) if $wp->{uuid};
-		}
-		$tree->SetItemState($item, $new_visible ? 1 : 0);
-		_walkSetSubtreeState($tree, $item, $new_visible);
+		my $name    = $this->{ed_name}->GetValue();
+		my $grp_rec = $db->{groups}{$uuid};
+		if ($grp_rec) { $grp_rec->{name} = $name }
+		my $n = scalar @{$grp_rec ? ($grp_rec->{wpts} // []) : []};
+		$this->{tree}->SetItemText($this->{_edit_item}, "$name ($n wps)") if $this->{_edit_item};
 	}
-	elsif ($type eq 'my_waypoints')
+	elsif ($type eq 'route')
 	{
-		my $wps = $db ? ($db->{waypoints} // {}) : {};
-		for my $uuid (keys %$wps)
+		my $name    = $this->{ed_name}->GetValue();
+		my $comment = $this->{ed_comment}->GetValue();
+		my $color   = $this->{ed_color_choice}->GetSelection();
+		my $r_rec   = $db->{routes}{$uuid};
+		if ($r_rec)
 		{
-			_applyWpVisibility($uuid, $wps->{$uuid}, $new_visible);
+			$r_rec->{name}    = $name;
+			$r_rec->{comment} = $comment;
+			$r_rec->{color}   = $color;
 		}
-		$tree->SetItemState($item, $new_visible ? 1 : 0);
-		_walkSetSubtreeState($tree, $item, $new_visible);
+		my $n = scalar @{$r_rec ? ($r_rec->{wpts} // []) : []};
+		$this->{tree}->SetItemText($this->{_edit_item}, "$name ($n pts)") if $this->{_edit_item};
+		if (getFSHVisible($uuid) && $r_rec)
+		{
+			removeRenderFeatures([$uuid]);
+			my $feat = $this->_buildRouteFeature($uuid, $r_rec);
+			addRenderFeatures([$feat]) if $feat;
+		}
 	}
-	elsif ($type eq 'header')
+	elsif ($type eq 'track')
 	{
-		my $kind = $node->{kind} // '';
-		if ($kind eq 'groups')
+		my $name  = $this->{ed_name}->GetValue();
+		my $t_rec = $db->{tracks}{$uuid};
+		if ($t_rec) { $t_rec->{name} = $name }
+		my $pts = $t_rec
+			? ($t_rec->{cnt} // (ref $t_rec->{points} eq 'ARRAY' ? scalar @{$t_rec->{points}} : 0))
+			: 0;
+		$this->{tree}->SetItemText($this->{_edit_item}, "$name ($pts pts)") if $this->{_edit_item};
+		if (getFSHVisible($uuid) && $t_rec)
 		{
-			my $wps    = $db ? ($db->{waypoints} // {}) : {};
-			my $groups = $db ? ($db->{groups}    // {}) : {};
-			for my $uuid (keys %$wps)
-			{
-				_applyWpVisibility($uuid, $wps->{$uuid}, $new_visible);
-			}
-			for my $grp (values %$groups)
-			{
-				for my $wp (@{$grp->{wpts} // []})
-				{
-					_applyWpVisibility($wp->{uuid}, $wp, $new_visible) if $wp->{uuid};
-				}
-			}
+			removeRenderFeatures([$uuid]);
+			my $feat = $this->_buildTrackFeature($uuid, $t_rec);
+			addRenderFeatures([$feat]) if $feat;
 		}
-		elsif ($kind eq 'routes')
-		{
-			my $routes = $db ? ($db->{routes} // {}) : {};
-			for my $uuid (keys %$routes)
-			{
-				_applyRouteVisibility($uuid, $routes->{$uuid}, $new_visible);
-			}
-		}
-		elsif ($kind eq 'tracks')
-		{
-			my $tracks = $db ? ($db->{tracks} // {}) : {};
-			for my $uuid (keys %$tracks)
-			{
-				_applyTrackVisibility($uuid, $tracks->{$uuid}, $new_visible);
-			}
-		}
-		$tree->SetItemState($item, $new_visible ? 1 : 0);
-		_walkSetSubtreeState($tree, $item, $new_visible);
 	}
-}
-
-
-#---------------------------------
-# checkbox toggle
-#---------------------------------
-
-sub _onTreeLeftDown
-{
-	my ($this, $tree, $event) = @_;
-	my ($item, $flags) = $tree->HitTest($event->GetPosition());
-	if ($item && $item->IsOk() && ($flags & wxTREE_HITTEST_ONITEMSTATEICON))
+	else
 	{
-		_onCheckboxClick($this, $item);
+		warning(0, 0, "winFSH save: unknown type($type)");
 		return;
 	}
-	$event->Skip();
-}
 
-
-sub _onCheckboxClick
-{
-	my ($this, $item) = @_;
-	my $item_data = $this->{tree}->GetItemData($item);
-	return if !$item_data;
-	my $node = $item_data->GetData();
-	return if ref $node ne 'HASH';
-	my $type = $node->{type} // '';
-	return if $type eq 'root' || $type eq 'route_point';
-
-	my $cur_state   = $this->{tree}->GetItemState($item);
-	my $new_visible = ($cur_state == 1) ? 0 : 1;
-
-	_applyNodeVisibility($this, $item, $node, $new_visible);
-	_refreshAncestorStates($this, $item);
-	openMapBrowser() if $new_visible && !isBrowserConnected();
+	$this->{ed_save}->Enable(0);
+	$this->{_editor_dirty} = 0;
 }
 
 
 #---------------------------------
-# tree state - checkbox images
+# winTreeBase abstract overrides
 #---------------------------------
 
-sub _walkRestoreStateImages
+sub _wpDataSource    { 'fsh' }
+sub _groupHasComment { 0 }
+
+sub _wpLatLon
 {
-	my ($tree, $item) = @_;
-	return if !$item || !$item->IsOk();
-	my $d = $tree->GetItemData($item);
-	if ($d)
-	{
-		my $node = $d->GetData();
-		if (ref $node eq 'HASH')
-		{
-			my $type = $node->{type} // '';
-			if ($type eq 'waypoint' || $type eq 'route' || $type eq 'track')
-			{
-				$tree->SetItemState($item, getFSHVisible($node->{uuid} // '') ? 1 : 0);
-				if ($type eq 'route')
-				{
-					my ($child, $cookie) = $tree->GetFirstChild($item);
-					while ($child && $child->IsOk())
-					{
-						$tree->SetItemState($child, 0);
-						($child, $cookie) = $tree->GetNextChild($item, $cookie);
-					}
-				}
-				return;
-			}
-			elsif ($type eq 'route_point')
-			{
-				$tree->SetItemState($item, 0);
-				return;
-			}
-			elsif ($type eq 'header' || $type eq 'my_waypoints' || $type eq 'group')
-			{
-				my ($child, $cookie) = $tree->GetFirstChild($item);
-				while ($child && $child->IsOk())
-				{
-					_walkRestoreStateImages($tree, $child);
-					($child, $cookie) = $tree->GetNextChild($item, $cookie);
-				}
-				$tree->SetItemState($item, _computeContainerState($tree, $item));
-				return;
-			}
-		}
-	}
-	my ($child, $cookie) = $tree->GetFirstChild($item);
-	while ($child && $child->IsOk())
-	{
-		_walkRestoreStateImages($tree, $child);
-		($child, $cookie) = $tree->GetNextChild($item, $cookie);
-	}
+	my ($this, $wp) = @_;
+	return (($wp->{lat}//0)+0, ($wp->{lon}//0)+0);
 }
 
+sub _wpColor { 'FF888888' }
 
-sub _walkSetSubtreeState
+sub _trackColorABGR
 {
-	my ($tree, $item, $visible) = @_;
-	my ($child, $cookie) = $tree->GetFirstChild($item);
-	while ($child && $child->IsOk())
-	{
-		my $d    = $tree->GetItemData($child);
-		my $type = '';
-		if ($d) { my $n = $d->GetData(); $type = (ref $n eq 'HASH') ? ($n->{type} // '') : ''; }
-		$tree->SetItemState($child, $visible ? 1 : 0) if $type ne 'route_point';
-		_walkSetSubtreeState($tree, $child, $visible);
-		($child, $cookie) = $tree->GetNextChild($item, $cookie);
-	}
+	my ($this, $track) = @_;
+	my $cidx = defined($track->{color}) ? ($track->{color} + 0) : 0;
+	return $E80_ROUTE_COLOR_ABGR[$cidx] // 'FF888888';
 }
 
+sub _getVisible         { getFSHVisible($_[1]) }
+sub _setVisible         { setFSHVisible($_[1], $_[2]) }
+sub _clearAllVisible    { clearAllFSHVisible() }
+sub _getAllVisibleUUIDs  { getAllFSHVisibleUUIDs() }
+sub _batchRemoveVisible { batchRemoveFSHVisible($_[1]) }
 
-sub _computeContainerState
+sub _routeWpts
 {
-	my ($tree, $item) = @_;
-	my ($total, $visible) = (0, 0);
-	my ($child, $cookie) = $tree->GetFirstChild($item);
-	while ($child && $child->IsOk())
-	{
-		my $d = $tree->GetItemData($child);
-		if ($d)
-		{
-			my $node = $d->GetData();
-			if (ref $node eq 'HASH' && ($node->{type} // '') ne 'route_point')
-			{
-				$total++;
-				$visible++ if $tree->GetItemState($child) == 1;
-			}
-		}
-		($child, $cookie) = $tree->GetNextChild($item, $cookie);
-	}
-	return 0 if !$total;
-	return $visible == $total ? 1 : $visible == 0 ? 0 : 2;
+	my ($this, $r) = @_;
+	return map { { lat => ($_->{lat}//0)+0, lon => ($_->{lon}//0)+0, name => $_->{name} // '' } }
+	       @{$r->{wpts} // []};
 }
 
-
-sub _refreshAncestorStates
+sub _groupMemberWpts
 {
-	my ($this, $item) = @_;
-	my $tree   = $this->{tree};
-	my $parent = $tree->GetItemParent($item);
-	while ($parent && $parent->IsOk())
-	{
-		my $d = $tree->GetItemData($parent);
-		last if !$d;
-		my $node = $d->GetData();
-		last if ref $node ne 'HASH';
-		last if ($node->{type} // '') eq 'root';
-		$tree->SetItemState($parent, _computeContainerState($tree, $parent));
-		$parent = $tree->GetItemParent($parent);
-	}
+	my ($this, $data) = @_;
+	return map { [$_->{uuid}, $_] }
+	       grep { $_->{uuid} } @{$data->{wpts} // []};
 }
 
-
-#---------------------------------
-# leaflet sync after FSH reload
-#---------------------------------
-
-sub _syncLeafletAfterRebuild
+sub _myWaypoints
 {
+	my ($this) = @_;
 	my $db = $navFSH::fsh_db;
-	return if !$db;
-	my @all_visible = getAllFSHVisibleUUIDs();
-	return if !@all_visible;
+	return $db ? ($db->{waypoints} // {}) : {};
+}
 
-	my %all_wpts;
-	for my $uuid (keys %{$db->{waypoints} // {}})
-	{
-		$all_wpts{$uuid} = $db->{waypoints}{$uuid};
-	}
+sub _allWaypoints
+{
+	my ($this) = @_;
+	my $db = $navFSH::fsh_db;
+	return {} if !$db;
+	my %all = %{$db->{waypoints} // {}};
 	for my $grp (values %{$db->{groups} // {}})
 	{
 		for my $wp (@{$grp->{wpts} // []})
 		{
-			$all_wpts{$wp->{uuid}} = $wp if $wp->{uuid};
+			$all{$wp->{uuid}} = $wp if $wp->{uuid};
 		}
 	}
+	return \%all;
+}
 
-	my (@stale, @to_remove, @features);
-	for my $uuid (@all_visible)
-	{
-		if (my $wp = $all_wpts{$uuid})
-		{
-			push @features, _buildWpFeature($uuid, $wp);
-		}
-		elsif (my $r = $db->{routes}{$uuid})
-		{
-			my $f = _buildRouteFeature($uuid, $r);
-			push @features, $f if $f;
-		}
-		elsif (my $t = $db->{tracks}{$uuid})
-		{
-			my $f = _buildTrackFeature($uuid, $t);
-			push @features, $f if $f;
-		}
-		else
-		{
-			push @stale,     $uuid;
-			push @to_remove, $uuid;
-		}
-	}
-	batchRemoveFSHVisible(\@stale)    if @stale;
-	removeRenderFeatures(\@to_remove) if @to_remove;
-	addRenderFeatures(\@features)     if @features;
+sub _allRoutes
+{
+	my ($this) = @_;
+	my $db = $navFSH::fsh_db;
+	return $db ? ($db->{routes} // {}) : {};
+}
+
+sub _allTracks
+{
+	my ($this) = @_;
+	my $db = $navFSH::fsh_db;
+	return $db ? ($db->{tracks} // {}) : {};
 }
 
 
