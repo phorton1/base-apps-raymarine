@@ -118,6 +118,70 @@ sub kml_header
 			<hotSpot x="10" y="2" xunits="pixels" yunits="pixels"/>
 		</IconStyle>
 	</Style>
+	<Style id='s_track_del'>
+		<LineStyle>
+		  <color>#ff808080</color>
+		  <width>1</width>
+		</LineStyle>
+		<LabelStyle>
+			<scale>0.8</scale>
+			<color>#ff808080</color>
+		</LabelStyle>
+		<IconStyle>
+			<scale>0.8</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href>
+			</Icon>
+			<color>#ff808080</color>
+			<hotSpot x="10" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id='s_route_del'>
+		<LineStyle>
+		  <color>#ff808080</color>
+		  <width>10</width>
+		</LineStyle>
+		<LabelStyle>
+			<scale>0.8</scale>
+			<color>#ff808080</color>
+		</LabelStyle>
+		<IconStyle>
+			<scale>0.8</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href>
+			</Icon>
+			<color>#ff808080</color>
+			<hotSpot x="10" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id='s_waypoint_del'>
+		<LabelStyle>
+			<scale>0.8</scale>
+			<color>#ff808080</color>
+		</LabelStyle>
+		<IconStyle>
+			<scale>0.8</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href>
+			</Icon>
+			<color>#ff808080</color>
+			<hotSpot x="10" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id='s_group_del'>
+		<LabelStyle>
+			<scale>0.8</scale>
+			<color>#ff808080</color>
+		</LabelStyle>
+		<IconStyle>
+			<scale>0.8</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href>
+			</Icon>
+			<color>#ff808080</color>
+			<hotSpot x="10" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
 EOKMLHEADER
 }
 
@@ -163,15 +227,35 @@ sub genWaypoints
 {
 	my ($fsh_file) = @_;
 	my $wpts = $fsh_file->getWaypoints();
-	display(0,0,"generating ".scalar(@$wpts)." waypoints");
-	if (@$wpts)
+	my (@active, @deleted);
+	for my $wpt (@$wpts)
+	{
+		if ($wpt->{active})
+			{ push @active, $wpt; }
+		else
+			{ push @deleted, $wpt; }
+	}
+	display(0,0,"generating ".scalar(@$wpts)." waypoints (".scalar(@active)." active, ".scalar(@deleted)." deleted)");
+	if (@active || @deleted)
 	{
 		addLine(0,"<Folder>");
 		addLine(1,"<name>Waypoints</name>");
 		inc_level();
-		for my $wpt (@$wpts)
+		for my $wpt (@active)
 		{
 			genPlacemark($wpt->{name},$wpt,'s_waypoint');
+		}
+		if (@deleted)
+		{
+			addLine(0,"<Folder>");
+			addLine(1,"<name>Deleted</name>");
+			inc_level();
+			for my $wpt (@deleted)
+			{
+				genPlacemark($wpt->{name},$wpt,'s_waypoint_del');
+			}
+			dec_level();
+			addLine(0,"</Folder>");
 		}
 		dec_level();
 		addLine(0,"</Folder>");
@@ -182,11 +266,11 @@ sub genWaypoints
 
 sub trackHeader
 {
-	my ($name,$pt) = @_;
-	genPlacemark($name,$pt,'s_track');
+	my ($name,$pt,$style) = @_;
+	genPlacemark($name,$pt,$style);
 	addLine(0,"<Placemark>");
 	addLine(1,"<name>$name</name>");;
-	addLine(1,"<styleUrl>s_track</styleUrl>");
+	addLine(1,"<styleUrl>$style</styleUrl>");
 	addLine(1,"<LineString>");
 	addLine(2,"<gx:altitudeOffset>0</gx:altitudeOffset>");
 	addLine(2,"<extrude>0</extrude>");
@@ -208,7 +292,8 @@ sub trackFooter
 sub genTrack
 	# from BLK_MTA's combined with BLK_TRK's
 {
-	my ($track) = @_;
+	my ($track,$style) = @_;
+	$style //= 's_track';
 	my $name = $track->{name};
 	my $points = $track->{points};
 
@@ -241,10 +326,10 @@ sub genTrack
 	display(0,1,"found ".scalar(@$segs)." segments") if @$segs>1;
 
 	# Now output a 'track' per segment
-	
+
 	for my $seg (@$segs)
 	{
-		trackHeader($seg->{name},$seg->{points}->[0]);
+		trackHeader($seg->{name},$seg->{points}->[0],$style);
 		for my $point (@{$seg->{points}})
 		{
 			addLine(3,"$point->{lon},$point->{lat},0");
@@ -258,15 +343,35 @@ sub genTracks
 {
 	my ($fsh_file) = @_;
 	my $tracks = $fsh_file->getTracks();
-	display(0,0,"generating ".scalar(@$tracks)." tracks");
-	if (@$tracks)
+	my (@active, @deleted);
+	for my $track (@$tracks)
+	{
+		if ($track->{active})
+			{ push @active, $track; }
+		else
+			{ push @deleted, $track; }
+	}
+	display(0,0,"generating ".scalar(@$tracks)." tracks (".scalar(@active)." active, ".scalar(@deleted)." deleted)");
+	if (@active || @deleted)
 	{
 		addLine(0,"<Folder>");
 		addLine(1,"<name>Tracks</name>");
 		inc_level();
-		for my $track (@$tracks)
+		for my $track (@active)
 		{
-			genTrack($track);
+			genTrack($track,'s_track');
+		}
+		if (@deleted)
+		{
+			addLine(0,"<Folder>");
+			addLine(1,"<name>Deleted</name>");
+			inc_level();
+			for my $track (@deleted)
+			{
+				genTrack($track,'s_track_del');
+			}
+			dec_level();
+			addLine(0,"</Folder>");
 		}
 		dec_level();
 		addLine(0,"</Folder>");
@@ -278,7 +383,7 @@ sub genTracks
 
 sub genRoute
 {
-	my ($route) = @_;
+	my ($route,$style) = @_;
 	my $wpts = $route->{wpts};
 	display(0,0,"generating route($route->{name}) with ".scalar(@$wpts)." waypoints");
 
@@ -291,7 +396,7 @@ sub genRoute
 	addLine(0,"<Placemark>");
 	addLine(1,"<name>Route</name>");
 	addLine(1,"<description>$route->{comment}</description>") if $route->{comment};
-	addLine(1,"<styleUrl>s_route</styleUrl>");
+	addLine(1,"<styleUrl>$style</styleUrl>");
 
 	addLine(1,"<LineString>");
 	addLine(2,"<gx:altitudeOffset>0</gx:altitudeOffset>");
@@ -312,7 +417,7 @@ sub genRoute
 
 	for my $wpt (@$wpts)
 	{
-		genPlacemark($wpt->{name},$wpt,'s_route');
+		genPlacemark($wpt->{name},$wpt,$style);
 	}
 	dec_level();
 
@@ -323,15 +428,35 @@ sub genRoutes
 {
 	my ($fsh_file) = @_;
 	my $routes = $fsh_file->getRoutes();
-	display(0,0,"generating ".scalar(@$routes)." routes");
-	if (@$routes)
+	my (@active, @deleted);
+	for my $route (@$routes)
+	{
+		if ($route->{active})
+			{ push @active, $route; }
+		else
+			{ push @deleted, $route; }
+	}
+	display(0,0,"generating ".scalar(@$routes)." routes (".scalar(@active)." active, ".scalar(@deleted)." deleted)");
+	if (@active || @deleted)
 	{
 		addLine(0,"<Folder>");
 		addLine(1,"<name>Routes</name>");
 		inc_level();
-		for my $route (@$routes)
+		for my $route (@active)
 		{
-			genRoute($route);
+			genRoute($route,'s_route');
+		}
+		if (@deleted)
+		{
+			addLine(0,"<Folder>");
+			addLine(1,"<name>Deleted</name>");
+			inc_level();
+			for my $route (@deleted)
+			{
+				genRoute($route,'s_route_del');
+			}
+			dec_level();
+			addLine(0,"</Folder>");
 		}
 		dec_level();
 		addLine(0,"</Folder>");
@@ -344,7 +469,7 @@ sub genGroup
 	# GPX does not have an explicit GROUP mechanism, so, for now,
 	# i'm just going to create a route with a name of GROUP-{name}
 {
-	my ($group) = @_;
+	my ($group,$style) = @_;
 	my $wpts = $group->{wpts};
 	display(0,0,"generating group($group->{name}) with ".scalar(@$wpts)." waypoints");
 
@@ -353,7 +478,7 @@ sub genGroup
 	inc_level();
 	for my $wpt (@$wpts)
 	{
-		genPlacemark($wpt->{name},$wpt,'s_group');
+		genPlacemark($wpt->{name},$wpt,$style);
 	}
 	dec_level();
 
@@ -364,16 +489,36 @@ sub genGroups
 {
 	my ($fsh_file) = @_;
 	my $groups = $fsh_file->getGroups();
-	display(0,0,"generating ".scalar(@$groups)." groups");
-	if (@$groups)
+	my (@active, @deleted);
+	for my $group (@$groups)
+	{
+		if ($group->{active})
+			{ push @active, $group; }
+		else
+			{ push @deleted, $group; }
+	}
+	display(0,0,"generating ".scalar(@$groups)." groups (".scalar(@active)." active, ".scalar(@deleted)." deleted)");
+	if (@active || @deleted)
 	{
 		addLine(0,"<Folder>");
 		addLine(1,"<name>Groups</name>");
 		inc_level();
-		for my $group (@$groups)
+		for my $group (@active)
 		{
 			next if $group->{name} =~ /^test/;  # DEBUGGING
-			genGroup($group,'group_point');
+			genGroup($group,'s_group');
+		}
+		if (@deleted)
+		{
+			addLine(0,"<Folder>");
+			addLine(1,"<name>Deleted</name>");
+			inc_level();
+			for my $group (@deleted)
+			{
+				genGroup($group,'s_group_del');
+			}
+			dec_level();
+			addLine(0,"</Folder>");
 		}
 		dec_level();
 		addLine(0,"</Folder>");

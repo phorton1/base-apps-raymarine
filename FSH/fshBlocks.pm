@@ -21,12 +21,13 @@
 # and then allow for the MTAs to reference possible multiple BLK_TRACKS
 # by uuid as the data structure implies.
 
-# GRUMBLE - The E80 appears to use the archive to keep a history
-# of things INSIDE the ARCHIVE.FSH file.  As I save the SAME route
-# I get multiple copies in the FSH, I guess with the idea that I will
-# parse it into a hash by UUID, and the LAST one will win.
+# The E80 uses the archive to keep a full revision history of all
+# WGRTs inside the ARCHIVE.FSH file.  Each save appends new blocks
+# and marks the previous versions deleted via the active field
+# (0x4000 = active, 0x0000 = deleted).  Parsing into a hash by UUID
+# keeping only the last ACTIVE block gives the current state.
 #
-# The E80 somehow KNOWS that records are deleted.
+# The active field is how the E80 knows records are deleted.
 # There are a number of changes from the 'sole' version that
 # exists in memory in shark's WPMGR gotten Route, specifically
 #
@@ -42,6 +43,37 @@
 # the ARCHIVE.FSH on the E80, the E80 KNOWS, on a fresh boot that it's 'EMPTY'.
 # Jeez. 
 
+#--------------------------------------
+# WRITING FSH FILES
+#--------------------------------------
+# fshFile.pm::writeBlock() honors the active flag on every block:
+#   $block->{active} ? $FLOB_ACTIVE : 0
+# So a client has full control over which blocks are written as
+# active and which are written as deleted (revision markers).
+#
+# Two write modes are available depending on ACTIVE_BLOCKS_ONLY
+# in fshFile.pm:
+#
+# COMPACT REWRITE (ACTIVE_BLOCKS_ONLY = 1, current default):
+#   Read only active blocks into $this->{blocks}.
+#   Encode new/modified records (createBlock appends them as active).
+#   write() produces a clean file with no deleted blocks.
+#   This is what kmlToFSH does.
+#
+# HISTORY-PRESERVING REWRITE (ACTIVE_BLOCKS_ONLY = 0):
+#   Read ALL blocks (active and deleted) into $this->{blocks}.
+#   To modify a record: find the existing block by UUID+type,
+#     set $block->{active} = 0, then encode the replacement
+#     (createBlock appends it as active).
+#   write() produces a valid FSH with the old block written as
+#   deleted and the new block appended after it -- correct
+#   Raymarine archive semantics with full history preserved.
+#
+# Missing helper: a findBlock($uuid_str, $type) sub that searches
+# $this->{blocks} for a specific UUID+type and returns it.
+# Everything else needed for history-preserving read-modify-write
+# is already in place.
+
 package apps::raymarine::FSH::fshFile;		# continued
 use strict;
 use warnings;
@@ -53,7 +85,7 @@ use apps::raymarine::FSH::fshUtils;
 
 
 my $dbg_block = 0;
-my $dbg_trk = -1;
+my $dbg_trk = 0;
 my $dbg_mta = -1;
 my $dbg_wpt = 0;
 my $dbg_rte = 1;
@@ -170,6 +202,15 @@ sub decodeTRK     # parse into array of points in track_points
 			# 	int16_t c;           // unknown, always 0
         my $coords = northEastToLatLon($north,$east);
 
+		if ($dbg_trk < 0)
+		{
+			my $d_ft = sprintf('%.1fft', $depth / 30.48);
+			my $t_f  = sprintf('%.1fF', ($temp / 100 - 273) * 9 / 5 + 32);
+			display($dbg_trk+1,2,sprintf("  %2d  %9.6f  %10.6f  %7s  %s",
+				$i + 1, $coords->{lat}, $coords->{lon}, $d_ft, $t_f));
+		}
+
+		
         my $point = {
             north   => $north,
             east    => $east,
@@ -269,7 +310,7 @@ sub decodeMTA
     return error("MTA$dbg_str has $rec->{uuid_cnt} track uuid's!")
         if $rec->{uuid_cnt} != 1;
 
-	$rec->{mta_uuid} = $uuid;
+	$rec->{mta_uuid} = uuidToStr($uuid);
 
 	my $offset = $MTA_HEADER_SIZE;
     my $track_uuid = unpack('A8',substr($bytes,$offset,$UUID_SIZE));
@@ -285,6 +326,7 @@ sub decodeMTA
 	# decodeMTA actually creates the entire fshFile->{track}
 
     $rec->{points} = $points;
+    $rec->{active} = $block->{active} ? 1 : 0;
     push @{$this->{tracks}},$rec;
     return 1;
 
@@ -486,6 +528,7 @@ sub decodeWPT
 	my $bytes = $block->{bytes};
 	display_bytes($dbg_wpt+2,1,"bytes",$bytes);
 	my $wpt = decodeCommonWaypoint($dbg_wpt,$bytes,0,$uuid);
+    $wpt->{active} = $block->{active} ? 1 : 0;
     push @{$this->{waypoints}},$wpt;
     return 1;
 
@@ -534,7 +577,7 @@ my $RTE_HDR2_SPECS = [
 # This whole structure is PRH NEWLY DISCOVERED
 
 my $RTE_PT_SPECS = [
-	bearing		=> 'v',			# 0	 int16_t bearing;			// radians × 10,000 - bearing from previous waypoint; converted to degrees
+	bearing		=> 'v',			# 0	 int16_t bearing;			// radians ï¿½ 10,000 - bearing from previous waypoint; converted to degrees
 	legLength	=> 'V',			# 2	 uint32_t leg_length;        // meters - from previous waypoint;
 	totLength	=> 'V',			# 4	 uint32_t tot_length;        // meters - cumulative for route;
 ];
@@ -648,10 +691,13 @@ sub decodeRTE
 		my $wpt_uuid = substr($bytes,$offset,$UUID_SIZE);
 		$offset += $UUID_SIZE;
 		my $wpt = decodeCommonWaypoint($dbg_rte,$bytes,$offset,$wpt_uuid);
+		$wpt->{active} = $block->{active} ? 1 : 0;
 		$offset += $WPT_HEADER_SIZE + $wpt->{name_len} + $wpt->{cmt_len};
 		push @{$hdr1->{wpts}},$wpt;
 	}
 
+	$hdr1->{uuid} = uuidToStr($uuid);
+	$hdr1->{active} = $block->{active} ? 1 : 0;
 	push @{$this->{routes}},$hdr1;
 	display_hash($dbg_rte,1,"Route Record",$hdr1);
 	
@@ -692,6 +738,7 @@ sub decodeGRP
 	display($dbg_grp,1,"GRP_NAME=$name");
 
 	my $grp = {
+		uuid => uuidToStr($uuid),
 		name => $name,
 		wpts => [] };
 
@@ -707,10 +754,12 @@ sub decodeGRP
 	for (my $i=0; $i<$uuid_cnt; $i++)
 	{
 		my $wpt = decodeCommonWaypoint($dbg_grp,$bytes,$offset,$wp_uuids[$i]);
+		$wpt->{active} = $block->{active} ? 1 : 0;
 		$offset += $WPT_HEADER_SIZE + $wpt->{name_len} + $wpt->{cmt_len};
 		push @{$grp->{wpts}},$wpt;
 	}
 
+	$grp->{active} = $block->{active} ? 1 : 0;
 	push @{$this->{groups}},$grp;
 
 }	# decodeGRP()
