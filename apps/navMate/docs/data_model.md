@@ -53,6 +53,14 @@ with E80-native UUIDs (byte 1 = `0xB2`) or RNS-created UUIDs (byte 1 = `0x82`).
 Bytes 4-5 hold a persistent counter from navMate's SQLite store; bytes 6-7 provide
 intra-tick uniqueness. The full UUID structure is documented in [WPMGR.md](../../../NET/docs/WPMGR.md).
 
+**UUID collision risk after E80 factory reset.** When navMate imports objects from an
+E80 it preserves the original E80-native UUIDs (byte 1 = `0xB2`). If that E80 is
+subsequently factory-reset, its internal UUID counter restarts and may regenerate UUIDs
+that overlap the ones already stored in navMate. Pushing those navMate objects back to
+the reset E80 could collide with newly-generated E80 UUIDs. This risk exists whenever
+E80-native UUIDs are round-tripped through navMate and is not currently mitigated;
+it is noted here for future sync-layer design.
+
 ## Schema
 
 navMate uses SQLite as its authoritative data store. The schema version is tracked

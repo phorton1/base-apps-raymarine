@@ -85,6 +85,14 @@ const OverlayControl = L.Control.extend({
         div.appendChild(makeRow('wpnames',  'WP names',  false));
         div.appendChild(makeRow('rpnames',  'RP names',  false));
         div.appendChild(makeRow('soundings','Soundings', true));
+
+        const hr = document.createElement('hr');
+        hr.style.margin = '4px 0';
+        div.appendChild(hr);
+        div.appendChild(makeRow('src_db',  'DATABASE', true));
+        div.appendChild(makeRow('src_e80', 'E80',      true));
+        div.appendChild(makeRow('src_fsh', 'FSH',      true));
+
         L.DomEvent.disableClickPropagation(div);
         L.DomEvent.disableScrollPropagation(div);
         return div;
@@ -109,7 +117,8 @@ function fmtVal(k, v) {
 function showInfo(props, context) {
     const div = document.getElementById('nm-info');
     if (!div) return;
-    const src = props.data_source === 'e80' ? '--- E80 ---' : '--- DATABASE ---';
+    const srcLabels = { db: '--- DATABASE ---', e80: '--- E80 ---', fsh: '--- FSH ---' };
+    const src = srcLabels[props.data_source] || '--- DATABASE ---';
     const abbrev = TYPE_ABBREV[props.obj_type] || props.obj_type || '';
     let html = '<div class="nm-info-source">' + src + '</div>'
              + '<div class="nm-info-header">'
@@ -185,6 +194,9 @@ function isWPs()       { const cb = document.getElementById('wps');       return
 function isWpNames()   { const cb = document.getElementById('wpnames');   return cb ? cb.checked : false; }
 function isRpNames()   { const cb = document.getElementById('rpnames');   return cb ? cb.checked : false; }
 function isSoundings() { const cb = document.getElementById('soundings'); return cb ? cb.checked : true;  }
+function isDbVisible()  { const cb = document.getElementById('src_db');  return cb ? cb.checked : true; }
+function isE80Visible() { const cb = document.getElementById('src_e80'); return cb ? cb.checked : true; }
+function isFshVisible() { const cb = document.getElementById('src_fsh'); return cb ? cb.checked : true; }
 
 function renderAll(geojson) {
     renderLayer.clearLayers();
@@ -207,6 +219,11 @@ function renderAll(geojson) {
 
         const isNew = !prevRenderedUuids.has(props.uuid);
         if (props.uuid) currentUuids.add(props.uuid);
+
+        const dsrc = props.data_source;
+        if (dsrc === 'db'  && !isDbVisible())  return;
+        if (dsrc === 'e80' && !isE80Visible()) return;
+        if (dsrc === 'fsh' && !isFshVisible()) return;
 
         if (geom.type === 'Point') {
             const [lon, lat] = geom.coordinates;

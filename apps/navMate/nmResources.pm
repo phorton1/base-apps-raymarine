@@ -40,6 +40,9 @@ BEGIN
 		$COMMAND_RESTORE_SELECTION
 		$COMMAND_REVERT_DB
 		$COMMAND_COMMIT_DB
+
+		$WIN_FSH
+		$COMMAND_OPEN_FSH_FILE
 	);
 }
 
@@ -49,6 +52,7 @@ our $appName = "navMate";
 our $WIN_DATABASE				= 10011;
 our $WIN_E80					= 10012;
 our $WIN_MONITOR				= 10013;
+our $WIN_FSH					= 10014;
 
 our $COMMAND_OPEN_MAP			= 10021;
 our $COMMAND_CLEAR_MAP			= 10022;
@@ -68,11 +72,14 @@ our $COMMAND_RESTORE_SELECTION	= 10074;
 our $COMMAND_REVERT_DB			= 10091;
 our $COMMAND_COMMIT_DB			= 10092;
 
+our $COMMAND_OPEN_FSH_FILE		= 10081;
+
 
 my $pane_data = {
 	$WIN_DATABASE	=> ['Unused String1', 'content'],
 	$WIN_E80		=> ['Unused String2', 'content'],
 	$WIN_MONITOR	=> ['Unused String3', 'content'],
+	$WIN_FSH		=> ['Unused String4', 'content'],
 };
 
 my $command_data = {
@@ -80,6 +87,8 @@ my $command_data = {
 	$WIN_DATABASE				=> ['Database',				'navMate database browser'],
 	$WIN_E80					=> ['E80',					'Live E80 contents'],
 	$WIN_MONITOR				=> ['Monitor',				'Monitor and control service monitoring bits'],
+	$WIN_FSH					=> ['FSH',					'FSH file browser'],
+	$COMMAND_OPEN_FSH_FILE		=> ['Open FSH File...',		'Load an FSH archive file into the FSH browser'],
 	$COMMAND_OPEN_MAP			=> ['Open Map',				'Open the Leaflet map in a browser'],
 	$COMMAND_CLEAR_MAP			=> ['Clear Map',			'Set all visible=0 and clear the Leaflet map'],
 	$COMMAND_IMPORT_KML_NM		=> ['Import KML',			'Additive re-import from a navMate KML file'],
@@ -112,6 +121,7 @@ my $view_menu = [
 	$WIN_DATABASE,
 	$WIN_E80,
 	$WIN_MONITOR,
+	$WIN_FSH,
 	$ID_SEPARATOR,
 	$COMMAND_OPEN_MAP,
 	$COMMAND_CLEAR_MAP,
@@ -136,6 +146,8 @@ my $e80_menu = [
 ];
 
 my $utils_menu = [
+	$COMMAND_OPEN_FSH_FILE,
+	$ID_SEPARATOR,
 	$COMMAND_IMPORT_KML,
 	$ID_SEPARATOR,
 	$COMMAND_REVERT_DB,

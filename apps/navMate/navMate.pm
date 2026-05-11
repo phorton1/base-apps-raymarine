@@ -30,6 +30,7 @@ use n_defs;
 use n_utils;
 use navPrefs;
 use navDB;
+use navFSH;
 use navVisibility;
 use navOutline;
 use navSelection;

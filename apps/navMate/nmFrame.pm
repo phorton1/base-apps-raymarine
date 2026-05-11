@@ -25,8 +25,10 @@ use nmResources;
 use nmDialogs;
 use navServer;
 use navTest;
+use navFSH;
 use winDatabase;
 use winE80;
+use winFSH;
 use winMonitor;
 use navOneTimeImport;
 use navKML;
@@ -45,6 +47,8 @@ sub new
 	EVT_MENU($this, $WIN_DATABASE,				\&onCommand);
 	EVT_MENU($this, $WIN_E80,					\&onCommand);
 	EVT_MENU($this, $WIN_MONITOR,				\&onCommand);
+	EVT_MENU($this, $WIN_FSH,					\&onCommand);
+	EVT_MENU($this, $COMMAND_OPEN_FSH_FILE,		\&onCommand);
 	EVT_MENU($this, $COMMAND_OPEN_MAP,			\&onCommand);
 	EVT_MENU($this, $COMMAND_IMPORT_KML,		\&onCommand);
 	EVT_MENU($this, $COMMAND_REFRESH_WIN_E80,	\&onCommand);
@@ -135,6 +139,8 @@ sub onIdle
 		$database->onClearMap() if $database;
 		my $e80 = $this->findPane($WIN_E80);
 		$e80->onClearMap() if $e80;
+		my $fsh = $this->findPane($WIN_FSH);
+		$fsh->onClearMap() if $fsh;
 	}
 
 	my $wpmgr_on = ($raydp && $raydp->findImplementedService('WPMGR', 1)) ? 1 : 0;
@@ -230,6 +236,7 @@ sub createPane
 	return winDatabase->new($this, $book, $id, $data)  if $id == $WIN_DATABASE;
 	return winE80->new($this, $book, $id, $data)       if $id == $WIN_E80;
 	return winMonitor->new($this, $book, $id, $data)   if $id == $WIN_MONITOR;
+	return winFSH->new($this, $book, $id, $data)       if $id == $WIN_FSH;
 	return $this->SUPER::createPane($id, $book, $data);
 }
 
@@ -238,7 +245,7 @@ sub onCommand
 {
 	my ($this, $event) = @_;
 	my $id = $event->GetId();
-	if ($id == $WIN_DATABASE || $id == $WIN_E80 || $id == $WIN_MONITOR)
+	if ($id == $WIN_DATABASE || $id == $WIN_E80 || $id == $WIN_MONITOR || $id == $WIN_FSH)
 	{
 		my $pane = $this->findPane($id);
 		if (!$pane)
@@ -258,6 +265,10 @@ sub onCommand
 	elsif ($id == $COMMAND_IMPORT_KML)
 	{
 		_doImportKML($this);
+	}
+	elsif ($id == $COMMAND_OPEN_FSH_FILE)
+	{
+		_doOpenFSH($this);
 	}
 	elsif ($id == $COMMAND_REFRESH_WIN_E80)
 	{
@@ -299,6 +310,8 @@ sub onCommand
 		$database->onClearMap() if $database;
 		my $e80 = $this->findPane($WIN_E80);
 		$e80->onClearMap() if $e80;
+		my $fsh = $this->findPane($WIN_FSH);
+		$fsh->onClearMap() if $fsh;
 	}
 	elsif ($id == $COMMAND_REVERT_DB)
 	{
@@ -543,6 +556,32 @@ sub _doImportKML
 	my $database = $this->findPane($WIN_DATABASE);
 	$database->refresh() if $database;
 	display(0,0,"nmFrame: ImportKML done");
+}
+
+
+sub _doOpenFSH
+{
+	my ($this) = @_;
+	my $default_dir = readConfig('fsh_dir') || '';
+	my $dialog = Wx::FileDialog->new(
+		$this, 'Open FSH File',
+		$default_dir, '',
+		'FSH files (*.fsh)|*.fsh|All files (*.*)|*.*',
+		wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+	if ($dialog->ShowModal() == wxID_OK)
+	{
+		my $filename = $dialog->GetPath();
+		writeConfig('fsh_dir', $dialog->GetDirectory());
+		if (navFSH::loadFSH($filename))
+		{
+			my $fsh = $this->findPane($WIN_FSH);
+			if ($fsh)
+				{ $fsh->refresh(); }
+			else
+				{ $this->createPane($WIN_FSH); }
+		}
+	}
+	$dialog->Destroy();
 }
 
 

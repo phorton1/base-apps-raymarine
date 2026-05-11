@@ -30,12 +30,18 @@ BEGIN
 		clearAllE80Visible
 		getAllE80VisibleUUIDs
 		batchRemoveE80Visible
+		getFSHVisible
+		setFSHVisible
+		clearAllFSHVisible
+		getAllFSHVisibleUUIDs
+		batchRemoveFSHVisible
 	);
 }
 
 
 my %db_vis;
 my %e80_vis;
+my %fsh_vis;
 
 
 sub _stateFile { return "$temp_dir/navMate.json" }
@@ -62,7 +68,10 @@ sub loadViewState
 	my $e80 = $state{e80_visibility};
 	%e80_vis = ($e80 && ref $e80 eq 'HASH') ? %$e80 : ();
 
-	display(0, 0, 'navVisibility: loaded ' . scalar(keys %db_vis) . ' db + ' . scalar(keys %e80_vis) . ' e80 visible objects');
+	my $fsh = $state{fsh_visibility};
+	%fsh_vis = ($fsh && ref $fsh eq 'HASH') ? %$fsh : ();
+
+	display(0, 0, 'navVisibility: loaded ' . scalar(keys %db_vis) . ' db + ' . scalar(keys %e80_vis) . ' e80 + ' . scalar(keys %fsh_vis) . ' fsh visible objects');
 }
 
 
@@ -72,6 +81,7 @@ sub saveViewState
 	my $state = {
 		db_visibility  => \%db_vis,
 		e80_visibility => \%e80_vis,
+		fsh_visibility => \%fsh_vis,
 	};
 	my $json = encode_json($state);
 	open(my $fh, '>:raw', $file) or do { error("navVisibility: cannot write $file: $!"); return; };
@@ -157,6 +167,40 @@ sub batchRemoveE80Visible
 	my ($uuids_ref) = @_;
 	return if !@$uuids_ref;
 	delete $e80_vis{$_} for @$uuids_ref;
+}
+
+
+#----------------------------------
+# FSH visibility
+#----------------------------------
+
+sub getFSHVisible
+{
+	my ($uuid) = @_;
+	return ($uuid && $fsh_vis{$uuid}) ? 1 : 0;
+}
+
+
+sub setFSHVisible
+{
+	my ($uuid, $val) = @_;
+	return if !$uuid;
+	if ($val) { $fsh_vis{$uuid} = 1    }
+	else      { delete $fsh_vis{$uuid} }
+}
+
+
+sub clearAllFSHVisible { %fsh_vis = () }
+
+
+sub getAllFSHVisibleUUIDs { return keys %fsh_vis }
+
+
+sub batchRemoveFSHVisible
+{
+	my ($uuids_ref) = @_;
+	return if !@$uuids_ref;
+	delete $fsh_vis{$_} for @$uuids_ref;
 }
 
 
