@@ -1,9 +1,9 @@
 # Raymarine Reverse Engineering - SeatalkHS, FSH, and CSV
 
-**Home** --
-**[NET Protocols](../NET/docs/readme.md)** --
-**[FSH Format](../FSH/docs/readme.md)** --
-**[CSV Tool](../CSV/docs/readme.md)** --
+**Raymarine** --
+**[NET](../NET/docs/readme.md)** --
+**[FSH](../FSH/docs/readme.md)** --
+**[CSV](../CSV/docs/readme.md)** --
 **[shark](../apps/shark/docs/shark.md)** --
 **[navMate](../apps/navMate/docs/readme.md)**
 

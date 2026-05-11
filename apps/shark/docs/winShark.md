@@ -1,14 +1,18 @@
 # winShark - Protocol Monitoring Control
 
-**[Home](../../../docs/readme.md)** --
-**[NET](../../../NET/docs/readme.md)** --
 **[shark](shark.md)** --
 **[winRAYDP](winRAYDP.md)** --
 **[winSniffer](winSniffer.md)** --
 **winShark** --
 **[winFILESYS](winFILESYS.md)** --
-**[winDBNAV](winDBNAV.md)** --
-**[Cables](../../../NET/docs/ethernet_cables.md)**
+**[winDBNAV](winDBNAV.md)**
+
+Folders: **[Raymarine](../../../docs/readme.md)** --
+**[NET](../../../NET/docs/readme.md)** --
+**[FSH](../../../FSH/docs/readme.md)** --
+**[CSV](../../../CSV/docs/readme.md)** --
+**shark** --
+**[navMate](../../../apps/navMate/docs/readme.md)**
 
 **winShark** is the control panel for shark's active protocol monitoring - the
 traffic that shark's own [RAYNET](../../../NET/docs/RAYNET.md) service connections send and receive. It has no

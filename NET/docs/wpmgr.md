@@ -1,6 +1,5 @@
 # WPMGR - Waypoint, Route, and Group Management
 
-**[Home](../../docs/readme.md)** --
 **[NET](readme.md)** --
 **[RAYNET](RAYNET.md)** --
 **[RAYDP](RAYDP.md)** --
@@ -8,9 +7,14 @@
 **[TRACK](TRACK.md)** --
 **[FILESYS](FILESYS.md)** --
 **[DBNAV](DBNAV.md)** --
-**[shark](../../apps/shark/docs/shark.md)** --
-**[navMate](../../apps/navMate/docs/readme.md)** --
 **[Cables](ethernet_cables.md)**
+
+Folders: **[Raymarine](../../docs/readme.md)** --
+**NET** --
+**[FSH](../../FSH/docs/readme.md)** --
+**[CSV](../../CSV/docs/readme.md)** --
+**[shark](../../apps/shark/docs/shark.md)** --
+**[navMate](../../apps/navMate/docs/readme.md)**
 
 **WPMGR** is the Waypoint Manager service - the protocol for reading and writing
 Waypoints, Routes, and Groups on the E80. It is the most fully reverse-engineered

@@ -1,14 +1,18 @@
 # winFILESYS - CF Card File Browser
 
-**[Home](../../../docs/readme.md)** --
-**[NET](../../../NET/docs/readme.md)** --
 **[shark](shark.md)** --
 **[winRAYDP](winRAYDP.md)** --
 **[winSniffer](winSniffer.md)** --
 **[winShark](winShark.md)** --
 **winFILESYS** --
-**[winDBNAV](winDBNAV.md)** --
-**[Cables](../../../NET/docs/ethernet_cables.md)**
+**[winDBNAV](winDBNAV.md)**
+
+Folders: **[Raymarine](../../../docs/readme.md)** --
+**[NET](../../../NET/docs/readme.md)** --
+**[FSH](../../../FSH/docs/readme.md)** --
+**[CSV](../../../CSV/docs/readme.md)** --
+**shark** --
+**[navMate](../../../apps/navMate/docs/readme.md)**
 
 **winFILESYS** is a read-only file browser for the CompactFlash card in the E80,
 accessed via the [FILESYS](../../../NET/docs/FILESYS.md) protocol (port 2049). It supports directory navigation

@@ -51,17 +51,6 @@ use base qw(Wx::SplitterWindow Pub::WX::Window);
 
 my $dbg_wfsh = 0;
 
-# E80/FSH route+track color index 0-5 to ABGR hex.
-# Duplicate of winE80's private copy -- move to shared location when winTreeBase is created.
-my @E80_ROUTE_COLOR_ABGR = qw(
-	FF0000FF
-	FF00FFFF
-	FF00FF00
-	FFFF0000
-	FFFF00FF
-	FF000000
-);
-
 
 sub new
 {

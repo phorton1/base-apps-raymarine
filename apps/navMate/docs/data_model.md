@@ -1,6 +1,5 @@
 # navMate - Data Model
 
-**[Raymarine](../../../docs/readme.md)** --
 **[Home](readme.md)** --
 **[Architecture](architecture.md)** --
 **Data Model** --
@@ -9,6 +8,13 @@
 **[navOperations](navOperations.md)** --
 **[KML Specification](kml_specification.md)** --
 **[GE Notes](ge_notes.md)**
+
+Folders: **[Raymarine](../../../docs/readme.md)** --
+**[NET](../../../NET/docs/readme.md)** --
+**[FSH](../../../FSH/docs/readme.md)** --
+**[CSV](../../../CSV/docs/readme.md)** --
+**[shark](../../../apps/shark/docs/shark.md)** --
+**navMate**
 
 ## Core Objects - WRT
 
@@ -319,3 +325,5 @@ practical editing path alongside the application. `navKML.pm` handles all ongoin
 KML import/export operations.
 
 ---
+
+**Next:** [UI Model](ui_model.md)

@@ -1,6 +1,5 @@
 # navMate - Google Earth Notes
 
-**[Raymarine](../../../docs/readme.md)** --
 **[Home](readme.md)** --
 **[Architecture](architecture.md)** --
 **[Data Model](data_model.md)** --
@@ -9,6 +8,13 @@
 **[navOperations](navOperations.md)** --
 **[KML Specification](kml_specification.md)** --
 **GE Notes**
+
+Folders: **[Raymarine](../../../docs/readme.md)** --
+**[NET](../../../NET/docs/readme.md)** --
+**[FSH](../../../FSH/docs/readme.md)** --
+**[CSV](../../../CSV/docs/readme.md)** --
+**[shark](../../../apps/shark/docs/shark.md)** --
+**navMate**
 
 ## Role of Google Earth
 
@@ -84,4 +90,4 @@ feature and will be implemented in the navMate UI, not through GE.
 
 ---
 
-**Back:** [KML Specification](kml_specification.md)
+**Next:** [Home](readme.md)

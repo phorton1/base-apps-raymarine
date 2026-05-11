@@ -1,6 +1,5 @@
 # navMate - Lifelong Navigation Knowledge Management
 
-**[Raymarine](../../../docs/readme.md)** --
 **Home** --
 **[Architecture](architecture.md)** --
 **[Data Model](data_model.md)** --
@@ -9,6 +8,13 @@
 **[navOperations](navOperations.md)** --
 **[KML Specification](kml_specification.md)** --
 **[GE Notes](ge_notes.md)**
+
+Folders: **[Raymarine](../../../docs/readme.md)** --
+**[NET](../../../NET/docs/readme.md)** --
+**[FSH](../../../FSH/docs/readme.md)** --
+**[CSV](../../../CSV/docs/readme.md)** --
+**[shark](../../../apps/shark/docs/shark.md)** --
+**navMate**
 
 **navMate** is a desktop application for managing a mariner's complete navigation
 data - waypoints, groups, routes, and tracks - across a lifetime of voyaging, across

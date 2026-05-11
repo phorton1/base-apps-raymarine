@@ -20,6 +20,9 @@ BEGIN
 		makeUUID
 		parseLatLon
 		formatLatLon
+		@E80_ROUTE_COLOR_ABGR
+		abgrToE80Index
+		isExactE80Color
 	);
 }
 
@@ -122,6 +125,53 @@ sub formatLatLon
 	my $deg_sym = chr(176);
 	return sprintf("%.6f %s  (%d%s%06.3f' %s)", $abs, $dir, $deg, $deg_sym, $min, $dir);
 }
+
+
+#---------------------------------
+# E80 route/track line colors
+#---------------------------------
+# Index 0-5 maps to $ROUTE_COLOR_XXX constants in NET::a_defs.pm.
+# Index 5 ($ROUTE_COLOR_BLACK) displays as white on the Leaflet map.
+
+our @E80_ROUTE_COLOR_ABGR = qw(
+	ff0000ff
+	ff00ffff
+	ff00ff00
+	ffff0000
+	ffff00ff
+	ffffffff
+);
+
+
+sub abgrToE80Index
+{
+	my ($abgr) = @_;
+	return 0 if !($abgr && length($abgr) >= 8);
+	my $rr = hex(substr($abgr, 6, 2));
+	my $gg = hex(substr($abgr, 4, 2));
+	my $bb = hex(substr($abgr, 2, 2));
+	my @targets = (
+		[255,   0,   0],   # 0 RED
+		[255, 255,   0],   # 1 YELLOW
+		[  0, 255,   0],   # 2 GREEN
+		[  0,   0, 255],   # 3 BLUE
+		[255,   0, 255],   # 4 PURPLE
+		[255, 255, 255],   # 5 WHITE (protocol name: BLACK)
+	);
+	my ($best_idx, $best_dist) = (0, 9e99);
+	for my $i (0 .. $#targets)
+	{
+		my $d = ($rr - $targets[$i][0])**2
+		      + ($gg - $targets[$i][1])**2
+		      + ($bb - $targets[$i][2])**2;
+		$best_idx = $i if $d < $best_dist and do { $best_dist = $d; 1 };
+	}
+	return $best_idx;
+}
+
+
+my %_e80_exact_color = map { $_ => 1 } @E80_ROUTE_COLOR_ABGR;
+sub isExactE80Color { $_e80_exact_color{lc($_[0] // '')} ? 1 : 0 }
 
 
 1;

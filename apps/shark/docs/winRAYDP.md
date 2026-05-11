@@ -1,14 +1,18 @@
 # winRAYDP - Live Service Discovery
 
-**[Home](../../../docs/readme.md)** --
-**[NET](../../../NET/docs/readme.md)** --
 **[shark](shark.md)** --
 **winRAYDP** --
 **[winSniffer](winSniffer.md)** --
 **[winShark](winShark.md)** --
 **[winFILESYS](winFILESYS.md)** --
-**[winDBNAV](winDBNAV.md)** --
-**[Cables](../../../NET/docs/ethernet_cables.md)**
+**[winDBNAV](winDBNAV.md)**
+
+Folders: **[Raymarine](../../../docs/readme.md)** --
+**[NET](../../../NET/docs/readme.md)** --
+**[FSH](../../../FSH/docs/readme.md)** --
+**[CSV](../../../CSV/docs/readme.md)** --
+**shark** --
+**[navMate](../../../apps/navMate/docs/readme.md)**
 
 **winRAYDP** is a live view of every [RAYNET](../../../NET/docs/RAYNET.md) service currently being advertised on
 the network by the [RAYDP](../../../NET/docs/RAYDP.md) discovery protocol. Rows appear and disappear dynamically

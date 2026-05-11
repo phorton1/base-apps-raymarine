@@ -1,14 +1,18 @@
 # winDBNAV - Live Navigation Data
 
-**[Home](../../../docs/readme.md)** --
-**[NET](../../../NET/docs/readme.md)** --
 **[shark](shark.md)** --
 **[winRAYDP](winRAYDP.md)** --
 **[winSniffer](winSniffer.md)** --
 **[winShark](winShark.md)** --
 **[winFILESYS](winFILESYS.md)** --
-**winDBNAV** --
-**[Cables](../../../NET/docs/ethernet_cables.md)**
+**winDBNAV**
+
+Folders: **[Raymarine](../../../docs/readme.md)** --
+**[NET](../../../NET/docs/readme.md)** --
+**[FSH](../../../FSH/docs/readme.md)** --
+**[CSV](../../../CSV/docs/readme.md)** --
+**shark** --
+**[navMate](../../../apps/navMate/docs/readme.md)**
 
 **winDBNAV** is a live read-only view of navigation field values broadcast by the
 E80 over the [DBNAV](../../../NET/docs/DBNAV.md) multicast service (port 2562). The tab title is **DBNAV(n)**

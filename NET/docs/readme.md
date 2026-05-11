@@ -1,6 +1,5 @@
 # SeatalkHS - NET Protocol Documentation
 
-**[Home](../../docs/readme.md)** --
 **NET** --
 **[RAYNET](RAYNET.md)** --
 **[RAYDP](RAYDP.md)** --
@@ -8,9 +7,14 @@
 **[TRACK](TRACK.md)** --
 **[FILESYS](FILESYS.md)** --
 **[DBNAV](DBNAV.md)** --
-**[shark](../../apps/shark/docs/shark.md)** --
-**[navMate](../../apps/navMate/docs/readme.md)** --
 **[Cables](ethernet_cables.md)**
+
+Folders: **[Raymarine](../../docs/readme.md)** --
+**NET** --
+**[FSH](../../FSH/docs/readme.md)** --
+**[CSV](../../CSV/docs/readme.md)** --
+**[shark](../../apps/shark/docs/shark.md)** --
+**[navMate](../../apps/navMate/docs/readme.md)**
 
 The NET folder contains Perl implementations of the Raymarine **SeatalkHS**
 ethernet protocols, along with the tools built on them - **[shark](../../apps/shark/docs/shark.md)** (the

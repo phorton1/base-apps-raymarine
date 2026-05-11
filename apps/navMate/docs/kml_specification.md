@@ -1,6 +1,5 @@
 # navMate - KML Specification
 
-**[Raymarine](../../../docs/readme.md)** --
 **[Home](readme.md)** --
 **[Architecture](architecture.md)** --
 **[Data Model](data_model.md)** --
@@ -9,6 +8,13 @@
 **[navOperations](navOperations.md)** --
 **KML Specification** --
 **[GE Notes](ge_notes.md)**
+
+Folders: **[Raymarine](../../../docs/readme.md)** --
+**[NET](../../../NET/docs/readme.md)** --
+**[FSH](../../../FSH/docs/readme.md)** --
+**[CSV](../../../CSV/docs/readme.md)** --
+**[shark](../../../apps/shark/docs/shark.md)** --
+**navMate**
 
 ## Overview
 

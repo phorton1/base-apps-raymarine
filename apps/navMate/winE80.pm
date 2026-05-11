@@ -57,16 +57,6 @@ use base qw(Wx::SplitterWindow Pub::WX::Window);
 our $dbg_wine80 = 0;
 my $CUT_COLOR;
 
-# E80 route color index 0-5 to ABGR hex (FFBBGGRR, converted to #RRGGBB by abgrToCSS)
-my @E80_ROUTE_COLOR_ABGR = qw(
-	FF0000FF
-	FF00FFFF
-	FF00FF00
-	FFFF0000
-	FFFF00FF
-	FF000000
-);
-
 my $CTX_CMD_SHOW_MAP = 10560;
 my $CTX_CMD_HIDE_MAP = 10561;
 

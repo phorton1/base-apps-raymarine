@@ -1,6 +1,5 @@
 # navMate -- navOperations
 
-**[Raymarine](../../../docs/readme.md)** --
 **[Home](readme.md)** --
 **[Architecture](architecture.md)** --
 **[Data Model](data_model.md)** --
@@ -9,6 +8,13 @@
 **navOperations** --
 **[KML Specification](kml_specification.md)** --
 **[GE Notes](ge_notes.md)**
+
+Folders: **[Raymarine](../../../docs/readme.md)** --
+**[NET](../../../NET/docs/readme.md)** --
+**[FSH](../../../FSH/docs/readme.md)** --
+**[CSV](../../../CSV/docs/readme.md)** --
+**[shark](../../../apps/shark/docs/shark.md)** --
+**navMate**
 
 ## Overview
 
@@ -1298,4 +1304,4 @@ if ($i -gt 20) {
 
 ---
 
-**Back:** [Implementation](implementation.md)
+**Next:** [KML Specification](kml_specification.md)

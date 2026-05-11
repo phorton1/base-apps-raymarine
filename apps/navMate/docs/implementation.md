@@ -1,6 +1,5 @@
 # navMate - Implementation Reference
 
-**[Raymarine](../../../docs/readme.md)** --
 **[Home](readme.md)** --
 **[Architecture](architecture.md)** --
 **[Data Model](data_model.md)** --
@@ -9,6 +8,13 @@
 **[navOperations](navOperations.md)** --
 **[KML Specification](kml_specification.md)** --
 **[GE Notes](ge_notes.md)**
+
+Folders: **[Raymarine](../../../docs/readme.md)** --
+**[NET](../../../NET/docs/readme.md)** --
+**[FSH](../../../FSH/docs/readme.md)** --
+**[CSV](../../../CSV/docs/readme.md)** --
+**[shark](../../../apps/shark/docs/shark.md)** --
+**navMate**
 
 navMate is built bottom-up: each layer is exercisable before the layers above it exist. The console window (inherited from the [shark](../../shark/docs/shark.md) pattern) provides a callable interface to lower layers before any wx panel or Leaflet canvas is present. Modules use a four-tier lexical prefix convention: `n_` (foundational), `nav` (portable logic), `nm` (wx components), `win` (wx panes). No module may import from a higher layer.
 
@@ -46,4 +52,4 @@ These modules implement the context menu feature spanning both panels.
 
 ---
 
-**Back:** [UI Model](ui_model.md)
+**Next:** [navOperations](navOperations.md)

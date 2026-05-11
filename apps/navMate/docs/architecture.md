@@ -1,6 +1,5 @@
 # navMate - Architecture
 
-**[Raymarine](../../../docs/readme.md)** --
 **[Home](readme.md)** --
 **Architecture** --
 **[Data Model](data_model.md)** --
@@ -9,6 +8,13 @@
 **[navOperations](navOperations.md)** --
 **[KML Specification](kml_specification.md)** --
 **[GE Notes](ge_notes.md)**
+
+Folders: **[Raymarine](../../../docs/readme.md)** --
+**[NET](../../../NET/docs/readme.md)** --
+**[FSH](../../../FSH/docs/readme.md)** --
+**[CSV](../../../CSV/docs/readme.md)** --
+**[shark](../../../apps/shark/docs/shark.md)** --
+**navMate**
 
 ## Primary Statement
 
@@ -225,4 +231,4 @@ layer and functional boundary.
 
 ---
 
-**Next:** [Data Model](data_model.md) - [UI Model](ui_model.md) - [Implementation](implementation.md) - [KML Specification](kml_specification.md) - [GE Notes](ge_notes.md)
+**Next:** [Data Model](data_model.md)

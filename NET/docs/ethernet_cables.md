@@ -1,6 +1,5 @@
 # SeatalkHS - E80/E120 Ethernet Cables
 
-**[Home](../../docs/readme.md)** --
 **[NET](readme.md)** --
 **[RAYNET](RAYNET.md)** --
 **[RAYDP](RAYDP.md)** --
@@ -8,9 +7,14 @@
 **[TRACK](TRACK.md)** --
 **[FILESYS](FILESYS.md)** --
 **[DBNAV](DBNAV.md)** --
-**[shark](../../apps/shark/docs/shark.md)** --
-**[navMate](../../apps/navMate/docs/readme.md)** --
 **Cables**
+
+Folders: **[Raymarine](../../docs/readme.md)** --
+**NET** --
+**[FSH](../../FSH/docs/readme.md)** --
+**[CSV](../../CSV/docs/readme.md)** --
+**[shark](../../apps/shark/docs/shark.md)** --
+**[navMate](../../apps/navMate/docs/readme.md)**
 
 ### The Raymarine E80 and E120 Chartplotter and the DSM300 Sonar module can use STANDARD ETHERNET CABLES.  Period.
 
@@ -201,4 +205,6 @@ folder within this repo to allow you to customize for your particular cable or c
 
 ![E80_connector_real.jpg](images/E80_connector_real.jpg)
 
+---
 
+**Next:** [Home](../../docs/readme.md)

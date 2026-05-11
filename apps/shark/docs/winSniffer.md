@@ -1,14 +1,18 @@
 # winSniffer - Packet Sniffer Control
 
-**[Home](../../../docs/readme.md)** --
-**[NET](../../../NET/docs/readme.md)** --
 **[shark](shark.md)** --
 **[winRAYDP](winRAYDP.md)** --
 **winSniffer** --
 **[winShark](winShark.md)** --
 **[winFILESYS](winFILESYS.md)** --
-**[winDBNAV](winDBNAV.md)** --
-**[Cables](../../../NET/docs/ethernet_cables.md)**
+**[winDBNAV](winDBNAV.md)**
+
+Folders: **[Raymarine](../../../docs/readme.md)** --
+**[NET](../../../NET/docs/readme.md)** --
+**[FSH](../../../FSH/docs/readme.md)** --
+**[CSV](../../../CSV/docs/readme.md)** --
+**shark** --
+**[navMate](../../../apps/navMate/docs/readme.md)**
 
 **winSniffer** is the control panel for shark's tshark-based packet sniffer. The
 sniffer monitors raw ethernet traffic between the E80 and other devices (such as

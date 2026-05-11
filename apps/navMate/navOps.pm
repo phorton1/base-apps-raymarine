@@ -19,6 +19,7 @@ use apps::raymarine::NET::a_defs qw($SCALE_LATLON $E80_MAX_NAME $E80_MAX_COMMENT
 use apps::raymarine::NET::c_RAYDP;
 use navDB;
 use n_defs;
+use n_utils;
 use nmResources;
 use navClipboard;
 use nmDialogs;
@@ -1041,37 +1042,7 @@ sub _doNew
 # Color conversion helpers
 #----------------------------------------------------
 
-sub abgrToE80Index
-{
-	my ($abgr) = @_;
-	return 0 if !($abgr && length($abgr) >= 8);
-	my $rr = hex(substr($abgr, 6, 2));
-	my $gg = hex(substr($abgr, 4, 2));
-	my $bb = hex(substr($abgr, 2, 2));
-	my @targets = (
-		[255,   0,   0],   # 0 RED
-		[255, 255,   0],   # 1 YELLOW
-		[  0, 255,   0],   # 2 GREEN
-		[  0,   0, 255],   # 3 BLUE
-		[255,   0, 255],   # 4 PURPLE
-		[255, 255, 255],   # 5 WHITE
-	);
-	my ($best_idx, $best_dist) = (0, 9e99);
-	for my $i (0 .. $#targets)
-	{
-		my $d = ($rr - $targets[$i][0])**2
-		      + ($gg - $targets[$i][1])**2
-		      + ($bb - $targets[$i][2])**2;
-		$best_idx = $i if $d < $best_dist and do { $best_dist = $d; 1 };
-	}
-	return $best_idx;
-}
-
-my @E80_COLOR_INDEX_TO_ABGR = qw(ff0000ff ff00ffff ff00ff00 ffff0000 ffff00ff ffffffff);
-my %E80_EXACT_COLOR = map { $_ => 1 } @E80_COLOR_INDEX_TO_ABGR;
-
-sub e80ColorIndexToAbgr { $E80_COLOR_INDEX_TO_ABGR[$_[0] // 0] // $E80_COLOR_INDEX_TO_ABGR[0] }
-sub isExactE80Color     { $E80_EXACT_COLOR{lc($_[0] // '')} ? 1 : 0 }
+sub e80ColorIndexToAbgr { $E80_ROUTE_COLOR_ABGR[$_[0] // 0] // $E80_ROUTE_COLOR_ABGR[0] }
 
 
 #----------------------------------------------------

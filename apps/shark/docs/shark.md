@@ -1,14 +1,18 @@
 # shark - The SeatalkHS Engineering Tool
 
-**[Home](../../../docs/readme.md)** --
-**[NET](../../../NET/docs/readme.md)** --
 **shark** --
 **[winRAYDP](winRAYDP.md)** --
 **[winSniffer](winSniffer.md)** --
 **[winShark](winShark.md)** --
 **[winFILESYS](winFILESYS.md)** --
-**[winDBNAV](winDBNAV.md)** --
-**[Cables](../../../NET/docs/ethernet_cables.md)**
+**[winDBNAV](winDBNAV.md)**
+
+Folders: **[Raymarine](../../../docs/readme.md)** --
+**[NET](../../../NET/docs/readme.md)** --
+**[FSH](../../../FSH/docs/readme.md)** --
+**[CSV](../../../CSV/docs/readme.md)** --
+**shark** --
+**[navMate](../../../apps/navMate/docs/readme.md)**
 
 **shark** (`apps/shark/shark.pm`) is the engineering application for probing and
 operating the SeatalkHS protocols. It is a **wxPerl** GUI application that uses the
@@ -163,4 +167,4 @@ See [LICENSE.TXT](../LICENSE.TXT) or <https://www.gnu.org/licenses/> for details
 
 ---
 
-**Next:** [Cables](ethernet_cables.md)
+**Next:** [winRAYDP](winRAYDP.md)
