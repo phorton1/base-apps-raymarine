@@ -14,6 +14,7 @@
 #   op=suppress&val=0|1       set suppress_confirm without any tree or fire action
 #   op=suppress&val=1&outcome=reject   also set suppress_outcome for two-outcome dialogs
 #   op=refresh                reload navMate.db from disk
+#   op=clear_e80              delete all E80 routes, groups, waypoints, and tracks
 #
 # NOTE: NEW_* commands (10230-10233) open name-input dialogs and will block the
 # test machinery. Do not issue them via this endpoint.
@@ -69,6 +70,11 @@ sub dispatchTestCommand
 		if (!$pane) { warning(0,0,"navTest: refresh - panel '$pname' not open"); return; }
 		$pane->refresh();
 		display(0,0,"navTest: refresh done panel=$pname");
+		return;
+	}
+	if ($op eq 'clear_e80')
+	{
+		navOps::doClearE80DB($main_win);
 		return;
 	}
 

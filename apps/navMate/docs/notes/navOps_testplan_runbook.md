@@ -296,10 +296,20 @@ UUIDs verified 2026-05-08 from live /api/nmdb (schema 10, git-baseline navMate.d
 
 ## Section 1 Reset to Known State
 
-Run ALL before any test. Record wall-clock start time.
+Run ALL before any test. **Write start time to file immediately -- this is the only fact
+that survives context compaction.** The start time is needed for last_testrun.md; if it
+is only in context it will be lost before the run ends.
 
+```powershell
+# Record start time to file BEFORE anything else -- survives context compaction
+$start = (Get-Date -Format "yyyy-MM-dd HH:mm")
+$start | Out-File -Encoding utf8 "C:\base_data\temp\raymarine\testrun_start.txt"
+"Start time written: $start"
 ```
-perl -e "use POSIX qw(strftime); print strftime('%Y-%m-%d %H:%M', localtime), qq(\n)"
+
+To recover after a compact:
+```powershell
+Get-Content "C:\base_data\temp\raymarine\testrun_start.txt"
 ```
 
 ```
@@ -312,13 +322,9 @@ curl -s "http://localhost:9883/api/test?op=refresh"
 # 3. Enable suppress BEFORE any E80 operation (dialogs block if not set first)
 curl -s "http://localhost:9883/api/test?op=suppress&val=1"
 
-# 4. Clear E80 (suppress must already be on):
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10223"
-# wait for ProgressDialog FINISHED, then:
-curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10222"
-# wait for ProgressDialog FINISHED; if ungrouped WPs remain:
-# KEY: key is 'my_waypoints' -- 'header:my_waypoints' fails (selects 0 nodes)
-curl -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10222"
+# 4. Clear E80 (suppress must already be on; auto-accepts confirmDialog; no-op if already empty)
+curl -s "http://localhost:9883/api/test?op=clear_e80"
+# wait for ProgressDialog FINISHED
 
 # 5. Mark log; note the seq as MARK_SEQ
 curl -s "http://localhost:9883/api/command?cmd=mark"
@@ -932,10 +938,17 @@ Expected: new route on E80 with fresh UUID (byte 1=0x82); member WPs (from Test 
 
 ### Test 3.17 Multi-select WPs -> Paste to E80 (homogeneous flat set)
 
-**WARNING:** After Test 3.14, BOCAS2 (name "BOCAS2") is on E80 with a FRESH UUID (3a4eb590d40403ae),
-different from [IsolatedWP2] (af4e23246d01bfa8). Pasting [IsolatedWP2] triggers Step 7 name
-collision (same name, different UUID). Use [IsolatedWP1] + a different WP that is NOT already
-on E80, OR delete BOCAS2 from E80 first before running Test 3.17. Do not reuse [IsolatedWP1]+[IsolatedWP2].
+**PRE-CLEANUP REQUIRED:** Tests 3.14 and 3.14c leave two fresh-UUID WPs on E80 with names that
+collide with [IsolatedWP1] and [IsolatedWP2]. Both must be deleted before running Test 3.17:
+- [E80_FRESH_WP2] -- named "BOCAS1" (fresh UUID from Test 3.14c); collides with [IsolatedWP1]
+- [E80_FRESH_WP] -- named "BOCAS2" (fresh UUID from Test 3.14); collides with [IsolatedWP2]
+
+Delete both from E80 before proceeding (select each by its fresh UUID and fire DELETE_WAYPOINT):
+```
+curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_FRESH_WP2]&right_click=[E80_FRESH_WP2]&cmd=10220"
+curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_FRESH_WP]&right_click=[E80_FRESH_WP]&cmd=10220"
+```
+Wait for ProgressDialog FINISHED after each. Verify /api/db shows neither UUID remaining.
 
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1],[IsolatedWP2]&cmd=10200"
@@ -955,10 +968,11 @@ Route point keys: `rp:[E80_RT]:[E80_RP_UUID]`
 copy-splice: Popa0 (314e56cc09005332) appears twice. Copying Popa0 grabs 2 clipboard items
 and triggers the intra-clipboard name-collision abort. Do NOT use Popa0 as source.
 
-Derive [E80_RP1/2/3] from /api/db sorted by position as follows:
-- [E80_RP1] = Popa2 (454e11a80b002884) -- confirmed unique in the post-Section 2.14 route
-- [E80_RP2] = first route_waypoint after Popa2 by position (sort /api/db and find it)
-- [E80_RP3] = second route_waypoint after Popa2 by position
+Use these fixed UUIDs -- all three are unique in the post-Test-2.14a route (Popa0 appears twice
+and must not be used; these three each appear exactly once):
+- [E80_RP1] = Popa2 (454e11a80b002884) -- pos=1 in the 12-WP fresh route
+- [E80_RP2] = Popa1 (8d4e68fa0a0073ee) -- pos=2
+- [E80_RP3] = Popa3 (384e30760c00e63e) -- pos=4 (pos=3 is the duplicate Popa0; skip it)
 
 **PowerShell variable syntax -- CRITICAL:** When storing the fresh-UUID route's UUID in a variable
 (e.g., `$E80_RT_FRESH`) and referencing it in a string followed by `:`, PowerShell parses
@@ -1020,13 +1034,13 @@ curl.exe -s "http://localhost:9881/api/log?since=$seq" | ConvertFrom-Json |
 $MARK_SEQ = (curl.exe -s "http://localhost:9883/api/command?cmd=mark" | ConvertFrom-Json).seq
 curl.exe -s "http://localhost:9883/api/command?cmd=t+start"
 
-# Step 4 -- drive legs (3-leg triangle, ~300s total)
+# Step 4 -- drive legs (3-leg triangle, ~30s total at 50 knots)
 # Run in background; do NOT sleep before first echo
 ```
 
 Background leg script (run with run_in_background):
 ```
-echo "L1-start" && Start-Sleep 97 && curl.exe -s "http://localhost:9881/api/command?cmd=H%3D210" | Out-Null && echo "L2-start" && Start-Sleep 97 && curl.exe -s "http://localhost:9881/api/command?cmd=H%3D330" | Out-Null && echo "L3-start" && Start-Sleep 97 && echo "ALL_LEGS_DONE"
+echo "L1-start" && Start-Sleep 10 && curl.exe -s "http://localhost:9881/api/command?cmd=H%3D210" | Out-Null && echo "L2-start" && Start-Sleep 10 && curl.exe -s "http://localhost:9881/api/command?cmd=H%3D330" | Out-Null && echo "L3-start" && Start-Sleep 10 && echo "ALL_LEGS_DONE"
 ```
 
 After ALL_LEGS_DONE notification:
@@ -1092,7 +1106,7 @@ Wait for ProgressDialog FINISHED. Expected: track in DB with E80 UUID preserved 
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestTrack]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_click=header%3Atracks&cmd=10210"
 ```
-Expected: paste rejected per SS10.8; E80 unchanged.
+Expected: `ERROR - Cannot paste to E80 tracks header -- tracks are read-only`; E80 unchanged.
 
 ---
 
@@ -1190,7 +1204,7 @@ name collision guard fires before SS10.8 and the test does NOT verify SS10.8.
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_click=header%3Atracks&cmd=10210"
 ```
-Expected: rejected with SS10.8 IMPLEMENTATION ERROR in log ("tracks destination reached paste handler"). E80 unchanged.
+Expected: `ERROR - Cannot paste to E80 tracks header -- tracks are read-only`; E80 unchanged.
 
 ---
 
@@ -1211,17 +1225,38 @@ Test 3.15 left Timiteo group and possibly other content on E80. Clear all routes
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10223"
 ```
-Wait for ProgressDialog FINISHED.
+Wait for ProgressDialog FINISHED. **HARD STOP: do NOT proceed to Test 5.6b until FINISHED is
+confirmed in the log.** 5.6b queues behind a hung dialog and runs unexpectedly late, leaving
+E80 non-empty. This failure mode has occurred in cycles 13 and 14.
+
+**If no FINISHED after flat sleep:**
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=dialog_state" | Out-Null
+Start-Sleep 2
+$r = curl.exe -s "http://localhost:9883/api/log?since=$MARK_SEQ" | ConvertFrom-Json
+$MARK_SEQ = if ($r.lines.Count -gt 0) { $r.lines[-1].seq } else { $MARK_SEQ }
+$isActive = $r.lines | Where-Object { $_.text -match "dialog_state: active" }
+if ($isActive) {
+    curl.exe -s "http://localhost:9883/api/command?cmd=close_dialog" | Out-Null
+    Start-Sleep 3
+    # Re-read log to confirm FINISHED now appears
+    $r2 = curl.exe -s "http://localhost:9883/api/log?since=$MARK_SEQ" | ConvertFrom-Json
+    $MARK_SEQ = if ($r2.lines.Count -gt 0) { $r2.lines[-1].seq } else { $MARK_SEQ }
+    $r2.lines | Where-Object { $_.text -match "ProgressDialog.*FINISHED|dialog_state" } | ForEach-Object { "$($_.seq)  $($_.text)" }
+}
+```
+Do not fire Test 5.6b until the dialog is confirmed idle (either FINISHED in log or dialog_state: idle).
 Expected: /api/db routes empty.
 
 ---
 
 ### Test 5.6b Delete all E80 groups+WPs
 
+Prerequisite: Test 5.6a ProgressDialog is confirmed FINISHED. Do not fire until confirmed.
 ```
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10222"
 ```
-Wait for ProgressDialog FINISHED.
+Wait for ProgressDialog FINISHED. Apply same close_dialog remedy as Test 5.6a if FINISHED is not seen.
 Expected: /api/db groups empty; all member WPs deleted.
 
 ---
@@ -1243,7 +1278,7 @@ Prerequisite: Tests 5.6a-5.6c have cleared E80 completely. Verify /api/db empty 
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10210"
 ```
-Expected: WARNING listing missing WP UUIDs (11 Popa WPs); E80 routes unchanged.
+Expected: `ERROR - Route 'Popa': member waypoint(s) not on E80 and not in clipboard: [UUIDs]`; E80 routes unchanged.
 Note: E80 is empty entering Test 5.7; Test 5.7 pastes Timiteo fresh from this clean state.
 
 ---
@@ -1329,8 +1364,10 @@ Mark NOT_RUN until db_version increment wiring is complete (see todo.md).
 
 ### Test 5.14a Menu shape -- PASTE at DB WP object node blocked
 
+Use [IsolatedWP2] in the clipboard and [IsolatedWP1] as the destination -- different UUIDs so the
+descendant guard does not fire first and the destination-type guard (IMPLEMENTATION ERROR) is reached.
 ```
-curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10200"
+curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP2]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&right_click=[IsolatedWP1]&cmd=10210"
 ```
 Expected: IMPLEMENTATION ERROR in log; DB unchanged.
@@ -1339,6 +1376,7 @@ Expected: IMPLEMENTATION ERROR in log; DB unchanged.
 
 ### Test 5.14b Menu shape -- PASTE_NEW at DB WP object node blocked
 
+Clipboard retains [IsolatedWP2] from Test 5.14a -- no new COPY needed.
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&right_click=[IsolatedWP1]&cmd=10211"
 ```

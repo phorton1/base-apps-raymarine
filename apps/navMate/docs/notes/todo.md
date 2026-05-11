@@ -67,10 +67,41 @@ similar but subtly different to the degree that any uuids showing up
 on the E80 should probably be considered "new" items, colored appropriately
 and downloaded to the database on a synch operation.
 
+Claudes comments:
+
+The GE step may drop the extended data. Google Earth doesn't faithfully round-trip custom <ExtendedData> per track point when
+you export back out. If you add depth/temp as <gx:SimpleArrayData> inside a <gx:Track>, GE probably silently discards it on
+re-export. You might be better skipping GE entirely — go directly from fshConvert output to a navMate-readable format, bypassing   the navMate.kml/GE path.
+
+The deduplication problem is the real work. The ARCHIVE.FSH tracks likely already exist in navMate (imported earlier without
+depth/temp). After a re-import you'd need to match new-with-depth vs old-without-depth by position sequence (not name, since
+names may differ), transfer the depth/temp column values, and then delete the duplicates. That matching logic isn't trivial —
+track points need to align geometrically within some tolerance.
+
+The data might be sparse. Depth and temp are only non-zero in the FSH points where the E80 actually had a sensor reading at that
+ moment, which (as you just confirmed) depends on the heading-change timing. Many points may still come out as zero even after
+recovery.
+
+The shortcut worth considering: since you have the ARCHIVE.FSH and the FSH reader (fshBlocks.pm) already confirmed working, you
+could write a direct FSH→navMate track_points injector that reads the FSH points, matches them to existing navMate tracks by
+lat/lon proximity, and just updates the depth_cm/temp_k columns — no KML, no GE, no re-import.
+
+Worth doing? Almost certainly yes if those tracks span 2008–2016 with actual sonar running. Want to start with a read of what's
+actually in ARCHIVE.FSH track points depth/temp wise before committing to the pipeline?
 
 
 
 ## Soon
+
+### [fish out available track depth and temperature info]
+In fshConvert -> kml, which I used to get many of my tracks, I did not export <ExtendedData> elements (at all, and still do not)
+for track depths and temps.  They might have existed in my many years of tracks unbeknownst to me.
+I have the ability to recover some of them from the E80 tracks in my sole remaining ARCHIVE.FSH if
+I modify the genKML.pm in fshConvert, re-export the ARCHIVE to GE via fshConvert, and then
+export it from GE to navMate.kml, modify oneTimeImport.pm accordingly, do another oneTimeImport,
+and then dig those duplicated tracks out of oldE80 and place them where possible in the rest of
+the navMate database.
+
 
 ### [sort database collecton context menu command]
 I would like the ability to sort the immediate children of at least a single selected

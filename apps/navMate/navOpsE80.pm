@@ -1687,7 +1687,7 @@ sub _clearE80_DB
 
     if (!@route_uuids && !@group_uuids && !@all_wp_uuids && !@track_uuids)
     {
-        okDialog($parent, "E80 is already empty.", "Clear E80 DB");
+        okDialog($parent, "E80 is already empty.", "Clear E80 DB") if !$nmDialogs::suppress_confirm;
         return;
     }
 
