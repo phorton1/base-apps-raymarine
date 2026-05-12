@@ -93,6 +93,13 @@ actually in ARCHIVE.FSH track points depth/temp wise before committing to the pi
 
 ## Soon
 
+### [add created_ts and source to all object tables]
+Collections, groups, routes, and tracks should have `created_ts` and `source` columns,
+the same as waypoints.  The data is always available at creation time regardless of how
+the object arrives (explicit user action, paste-new, import, etc.) -- it was simply
+never stored.  Treat all c_db objects uniformly.
+
+
 ### [fish out available track depth and temperature info]
 In fshConvert -> kml, which I used to get many of my tracks, I did not export <ExtendedData> elements (at all, and still do not)
 for track depths and temps.  They might have existed in my many years of tracks unbeknownst to me.

@@ -35,6 +35,8 @@ use navOneTimeImport;
 use navKML;
 use base qw(Pub::WX::Frame);
 
+my $next_db_instance = 0;
+
 
 sub new
 {
@@ -143,13 +145,11 @@ sub onIdle
 
 	if (pollBrowserConnectEvent())
 	{
-		my $database = $this->findPane($WIN_DATABASE);
-		$database->onBrowserConnect() if $database;
+		$_->onBrowserConnect() for $this->_findDatabasePanes();
 	}
 	if (pollClearMapPending())
 	{
-		my $database = $this->findPane($WIN_DATABASE);
-		$database->onClearMap() if $database;
+		$_->onClearMap() for $this->_findDatabasePanes();
 		my $e80 = $this->findPane($WIN_E80);
 		$e80->onClearMap() if $e80;
 		my $fsh = $this->findPane($WIN_FSH);
@@ -246,7 +246,7 @@ sub createPane
 	return error("No id in createPane()") if !$id;
 	$book ||= $this->{book};
 	display(0, 0, "nmFrame::createPane($id) book=" . _def($book) . "  data=" . _def($data));
-	return winDatabase->new($this, $book, $id, $data)  if $id == $WIN_DATABASE;
+	return winDatabase->new($this, $book, $id, $data, ++$next_db_instance)  if $id == $WIN_DATABASE;
 	return winE80->new($this, $book, $id, $data)       if $id == $WIN_E80;
 	return winMonitor->new($this, $book, $id, $data)   if $id == $WIN_MONITOR;
 	return winFSH->new($this, $book, $id, $data)       if $id == $WIN_FSH;
@@ -254,11 +254,32 @@ sub createPane
 }
 
 
+sub _findDatabasePanes
+{
+	my ($this) = @_;
+	return grep { $_->{id} == $WIN_DATABASE } @{$this->{panes}};
+}
+
+
+sub _findCurrentDatabasePane
+{
+	my ($this) = @_;
+	my $cur = $this->{current_pane};
+	return $cur if $cur && $cur->{id} == $WIN_DATABASE;
+	my ($first) = $this->_findDatabasePanes();
+	return $first;
+}
+
+
 sub onCommand
 {
 	my ($this, $event) = @_;
 	my $id = $event->GetId();
-	if ($id == $WIN_DATABASE || $id == $WIN_E80 || $id == $WIN_MONITOR || $id == $WIN_FSH)
+	if ($id == $WIN_DATABASE)
+	{
+		$this->createPane($id);
+	}
+	elsif ($id == $WIN_E80 || $id == $WIN_MONITOR || $id == $WIN_FSH)
 	{
 		my $pane = $this->findPane($id);
 		if (!$pane)
@@ -316,8 +337,7 @@ sub onCommand
 	}
 	elsif ($id == $COMMAND_REFRESH_DB)
 	{
-		my $database = $this->findPane($WIN_DATABASE);
-		$database->refresh() if $database;
+		$_->refresh() for $this->_findDatabasePanes();
 	}
 	elsif ($id == $COMMAND_EXPORT_DB_TEXT)
 	{
@@ -337,8 +357,7 @@ sub onCommand
 	}
 	elsif ($id == $COMMAND_CLEAR_MAP)
 	{
-		my $database = $this->findPane($WIN_DATABASE);
-		$database->onClearMap() if $database;
+		$_->onClearMap() for $this->_findDatabasePanes();
 		my $e80 = $this->findPane($WIN_E80);
 		$e80->onClearMap() if $e80;
 		my $fsh = $this->findPane($WIN_FSH);
@@ -354,17 +373,16 @@ sub onCommand
 	}
 	elsif ($id == $COMMAND_SAVE_OUTLINE)
 	{
-		my $database = $this->findPane($WIN_DATABASE);
+		my $database = $this->_findCurrentDatabasePane();
 		$database->doSaveOutline() if $database;
 	}
 	elsif ($id == $COMMAND_RESTORE_OUTLINE)
 	{
-		my $database = $this->findPane($WIN_DATABASE);
-		$database->doRestoreOutline() if $database;
+		$_->doRestoreOutline() for $this->_findDatabasePanes();
 	}
 	elsif ($id == $COMMAND_SAVE_SELECTION)
 	{
-		my $database = $this->findPane($WIN_DATABASE);
+		my $database = $this->_findCurrentDatabasePane();
 		if ($database)
 		{
 			my $dialog = Wx::TextEntryDialog->new(
@@ -379,7 +397,7 @@ sub onCommand
 	}
 	elsif ($id == $COMMAND_RESTORE_SELECTION)
 	{
-		my $database = $this->findPane($WIN_DATABASE);
+		my $database = $this->_findCurrentDatabasePane();
 		if ($database)
 		{
 			my @names = navSelection::getSelectionSetNames();
@@ -406,7 +424,7 @@ sub onCommand
 sub onCloseFrame
 {
 	my ($this, $event) = @_;
-	my $database = $this->findPane($WIN_DATABASE);
+	my ($database) = $this->_findDatabasePanes();
 	$database->doSaveOutline() if $database;
 	my $fsh = $this->findPane($WIN_FSH);
 	$fsh->doSaveFSHOutline() if $fsh;
@@ -522,8 +540,7 @@ sub _doImportDB
 			$dbh->importDatabase($filename, $progress);
 			$progress->Destroy();
 			navDB::disconnectDB($dbh);
-			my $database = $this->findPane($WIN_DATABASE);
-			$database->refresh() if $database;
+			$_->refresh() for $this->_findDatabasePanes();
 			display(0,0,"nmFrame: import complete");
 		}
 	}
@@ -571,8 +588,7 @@ sub _doImportKMLNM
 		}
 		else
 		{
-			my $database = $this->findPane($WIN_DATABASE);
-			$database->refresh() if $database;
+			$_->refresh() for $this->_findDatabasePanes();
 		}
 	}
 	$dialog->Destroy();
@@ -593,8 +609,7 @@ sub _doImportKML
 		return;
 	}
 	navOneTimeImport::run();
-	my $database = $this->findPane($WIN_DATABASE);
-	$database->refresh() if $database;
+	$_->refresh() for $this->_findDatabasePanes();
 	display(0,0,"nmFrame: ImportKML done");
 }
 
@@ -707,12 +722,9 @@ sub _doRevertDB
 		navDB::pruneDbVisibility();
 		saveViewState();
 	}
-	my $database = $this->findPane($WIN_DATABASE);
-	if ($database)
-	{
-		$database->refresh();
-		$database->onBrowserConnect();
-	}
+	my @dbs = $this->_findDatabasePanes();
+	$_->refresh() for @dbs;
+	$_->onBrowserConnect() for @dbs;
 }
 
 

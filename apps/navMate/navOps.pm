@@ -70,8 +70,8 @@ sub _e80WpClipData
 sub _refreshDatabase
 {
 	my $frame = getAppFrame();
-	my $pane  = $frame ? $frame->findPane($WIN_DATABASE) : undef;
-	$pane->refresh() if $pane;
+	return if !$frame;
+	$_->refresh() for $frame->_findDatabasePanes();
 }
 
 sub _newNavUUID
@@ -627,11 +627,15 @@ sub _doPaste
 	}
 
 	# Step 3: Recursive paste check (SS1.5) -- walk full ancestor chain.
-	# route_points are positional markers (uuid = wp uuid), not containers;
-	# skip the check so paste-before/after a pivot that shares a clipboard UUID is allowed.
+	# For PASTE_BEFORE/AFTER the right_click_node is the anchor, not the destination;
+	# skip the self-uuid check so a node can be pasted before/after its own clipboard copy.
+	# Ancestor walk still runs to block truly circular pastes (e.g. branch copied, then
+	# pasted before/after one of its own descendants).
 	my %clip_uuids = map { ($_->{uuid} // '') => 1 } grep { $_->{uuid} } @resolved;
+	my $skip_self  = ($cmd_id == $CTX_CMD_PASTE_BEFORE    || $cmd_id == $CTX_CMD_PASTE_AFTER ||
+	                  $cmd_id == $CTX_CMD_PASTE_NEW_BEFORE || $cmd_id == $CTX_CMD_PASTE_NEW_AFTER) ? 1 : 0;
 	if (($right_click_node->{type} // '') ne 'route_point'
-	 && _destIsDescendantOfClipboard($right_click_node, $panel, \%clip_uuids))
+	 && _destIsDescendantOfClipboard($right_click_node, $panel, \%clip_uuids, $skip_self))
 	{
 		error("Cannot paste: destination is a descendant of an item in the clipboard");
 		return;
@@ -913,12 +917,12 @@ sub _doPush
 
 sub _destIsDescendantOfClipboard
 {
-	my ($node, $panel, $clip_uuids) = @_;
+	my ($node, $panel, $clip_uuids, $skip_self) = @_;
 	return 0 if !$node;
 
 	# Collection tree nodes store uuid only in data->{uuid}, not at top level.
 	my $node_uuid = $node->{uuid} // ($node->{data} // {})->{uuid} // '';
-	return 1 if $clip_uuids->{$node_uuid};
+	return 1 if !$skip_self && $clip_uuids->{$node_uuid};
 
 	if ($panel eq 'database')
 	{

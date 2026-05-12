@@ -67,9 +67,10 @@ my $CUT_COLOR;
 
 sub new
 {
-	my ($class, $frame, $book, $id, $data) = @_;
+	my ($class, $frame, $book, $id, $data, $instance) = @_;
+	$instance ||= 1;
 	my $this = $class->SUPER::new($book, $id);
-	$this->MyWindow($frame, $book, $id, 'Database', $data);
+	$this->MyWindow($frame, $book, $id, "Database $instance", $data, $instance);
 
 	$this->{tree} = Wx::TreeCtrl->new($this, -1, wxDefaultPosition, wxDefaultSize,
 		wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxTR_MULTIPLE);

@@ -58,7 +58,6 @@ MyPlaces.kmz contains much more than just nautical history and navigation inform
 ## oldE80 Resolutions
 
 - [ ] Route and Group Timiteo are historical and need to be placed into GE-MiscBocas
-- [ ] SAN BLAS 3-004 and SAN BLAS-005 go into Michelle-MichellToKuna between 2011-07-20-DinghyExploration and 2011-07-23-ToPorvenirAndChichime
 
 - [ ] BOCAS1-005 and 006 contain a michelle-andys island-ken and vaughn (tierra oscuro) round trip
 - [ ] BOCAS1-019 .. 021 appear to be missing start of MiscBocas zap-thru-agua-cut/crawl key that was actual a Michelle trip from the marina, crawl key, zaps, agua to michelles
