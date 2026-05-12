@@ -479,6 +479,18 @@ sub write
 		my $block_size = $FSH_BLOCK_HEADER_SIZE + $len;
 		if ($flob_num<0 || $flob_offset + $block_size + $FSH_BLOCK_HEADER_SIZE > $FLOB_SIZE)
 		{
+			if ($flob_num >= 0)
+			{
+				my $pad = $FLOB_SIZE - $flob_offset;
+				display($dbg_write,1,"padding flob($flob_num) with $pad bytes before new flob");
+				if (!$fh->write(chr(0xff) x $pad))
+				{
+					close $fh;
+					error("Could not pad flob($flob_num) with $pad bytes: $!");
+					return 0;
+				}
+				$this->{file_offset} += $pad;
+			}
 			$flob_num++;
 			if (!$this->writeFlobHeader($fh,$flob_num))
 			{

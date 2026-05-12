@@ -85,18 +85,18 @@ use apps::raymarine::FSH::fshUtils;
 
 
 my $dbg_block = 0;
-my $dbg_trk = 0;
-my $dbg_mta = -1;
-my $dbg_wpt = 0;
+my $dbg_trk = 1;
+my $dbg_mta = 1;
+my $dbg_wpt = 1;
 my $dbg_rte = 1;
 my $dbg_grp = 1;
 
 my $dbg_wblock = -1;
-my $dbg_wtrk = -1;
-my $dbg_wmta = -1;
-my $dbg_wwpt = -1;
-my $dbg_wrte = -1;
-my $dbg_wgrp = -1;
+my $dbg_wtrk = 1;
+my $dbg_wmta = 1;
+my $dbg_wwpt = 1;
+my $dbg_wrte = 1;
+my $dbg_wgrp = 1;
 
 
 
@@ -307,21 +307,27 @@ sub decodeMTA
     # uuid_cnt is always exactly 1 for E80 ARCHIVE.FSH's
     
 	my $rec = unpackRecord($dbg_mta+1,$MTA_FIELD_SPECS,$bytes);
-    return error("MTA$dbg_str has $rec->{uuid_cnt} track uuid's!")
-        if $rec->{uuid_cnt} != 1;
+    if ($rec->{uuid_cnt} != 1)
+    {
+        error("MTA$dbg_str has $rec->{uuid_cnt} track uuid's!");
+        return 0;
+    }
 
 	$rec->{mta_uuid} = uuidToStr($uuid);
 
 	my $offset = $MTA_HEADER_SIZE;
-    my $track_uuid = unpack('A8',substr($bytes,$offset,$UUID_SIZE));
+    my $track_uuid = unpack('a8',substr($bytes,$offset,$UUID_SIZE));
     my $track_uuid_str = uuidToStr($track_uuid);
 
     display($dbg_mta,1,"track name($rec->{name}) uuid = $track_uuid_str");
 	$rec->{trk_uuid} =$track_uuid_str;
 
     my $points = $this->{track_points}->{$track_uuid};
-    return error("Could not find track_points($track_uuid_str) on MTA$dbg_str")
-        if !$points;
+    if (!$points)
+    {
+        error("Could not find track_points($track_uuid_str) on MTA$dbg_str");
+        return 0;
+    }
 
 	# decodeMTA actually creates the entire fshFile->{track}
 
@@ -700,7 +706,7 @@ sub decodeRTE
 	$hdr1->{active} = $block->{active} ? 1 : 0;
 	push @{$this->{routes}},$hdr1;
 	display_hash($dbg_rte,1,"Route Record",$hdr1);
-	
+
 }	# decodeRTE()
 
 
@@ -765,6 +771,154 @@ sub decodeGRP
 }	# decodeGRP()
 
 
+
+
+
+#--------------------------------------------
+# encodeCommonWaypoint (private helper)
+#--------------------------------------------
+
+sub _encodeCommonWaypoint
+{
+	my ($wpt) = @_;
+	my $name    = $wpt->{name}    // '';
+	my $comment = $wpt->{comment} // '';
+	my $rec = {
+		lat      => int($wpt->{lat} * $LL_SCALE_FACTOR),
+		lon      => int($wpt->{lon} * $LL_SCALE_FACTOR),
+		north    => $wpt->{north}  // 0,
+		east     => $wpt->{east}   // 0,
+		k1_0x12  => chr(0) x 12,
+		sym      => $wpt->{sym}    // 0,
+		temp     => $wpt->{temp}   // 0,
+		depth    => $wpt->{depth}  // 0,
+		time     => $wpt->{time}   // 0,
+		date     => $wpt->{date}   // 0,
+		k2_0     => 0,
+		name_len => length($name),
+		cmt_len  => length($comment),
+		k3_0     => 0,
+	};
+	return packRecord($dbg_wwpt+1, $WPT_FIELD_SPECS, $rec) . $name . $comment;
+}
+
+
+#--------------------------------------------
+# encodeWPT
+#--------------------------------------------
+
+sub encodeWPT
+{
+	my ($this, $wpt) = @_;
+	display($dbg_wwpt, 0, "encodeWPT(".($wpt->{uuid}//'?').") name=".($wpt->{name}//''));
+	my $bytes = _encodeCommonWaypoint($wpt);
+	$this->createBlock($wpt->{uuid}, $FSH_BLK_WPT, $bytes);
+	return 1;
+}
+
+
+#--------------------------------------------
+# encodeGRP
+#--------------------------------------------
+
+sub encodeGRP
+{
+	my ($this, $grp) = @_;
+	my $name     = $grp->{name} // '';
+	my $wpts     = $grp->{wpts} // [];
+	my $uuid_cnt = scalar @$wpts;
+	display($dbg_wgrp, 0, "encodeGRP($name) uuid_cnt=$uuid_cnt");
+
+	my $bytes = pack('SS', length($name), $uuid_cnt) . $name;
+
+	for my $wpt (@$wpts)
+	{
+		$bytes .= strToUuid($wpt->{uuid});
+	}
+	for my $wpt (@$wpts)
+	{
+		$bytes .= _encodeCommonWaypoint($wpt);
+	}
+
+	$this->createBlock($grp->{uuid}, $FSH_BLK_GRP, $bytes);
+	return 1;
+}
+
+
+#--------------------------------------------
+# encodeRTE
+#--------------------------------------------
+
+sub encodeRTE
+{
+	my ($this, $rec) = @_;
+	my $name    = $rec->{name}    // '';
+	my $comment = $rec->{comment} // '';
+	my $wpts    = $rec->{wpts}    // [];
+	my $pts     = $rec->{pts}     // [];
+	my $uuid_cnt = scalar @$wpts;
+	display($dbg_wrte, 0, "encodeRTE($name) uuid_cnt=$uuid_cnt");
+
+	# HDR1
+	my $hdr1_rec = {
+		u1_0     => $rec->{u1_0}  // '0000',
+		name_len => length($name),
+		cmt_len  => length($comment),
+		uuid_cnt => $uuid_cnt,
+		bits     => $rec->{bits}  // '00',
+		color    => $rec->{color} // 0,
+	};
+	my $bytes = packRecord($dbg_wrte+1, $RTE_HDR1_SPECS, $hdr1_rec);
+	$bytes .= $name . $comment;
+
+	# uuid list (same uuids as the per-waypoint uuids in section 8)
+	for my $wpt (@$wpts)
+	{
+		$bytes .= strToUuid($wpt->{uuid});
+	}
+
+	# HDR2 (lat/lon fields re-scaled to int32)
+	my $hdr2_rec = {
+		lat_start => int(($rec->{lat_start} // 0) * $LL_SCALE_FACTOR),
+		lon_start => int(($rec->{lon_start} // 0) * $LL_SCALE_FACTOR),
+		lat_end   => int(($rec->{lat_end}   // 0) * $LL_SCALE_FACTOR),
+		lon_end   => int(($rec->{lon_end}   // 0) * $LL_SCALE_FACTOR),
+		distance  => $rec->{distance} // 0,
+		u2_0200   => $rec->{u2_0200}  // '00000000',
+		u3        => $rec->{u3}       // '00000000',
+		u4_self   => $rec->{u4_self}  // ('0' x 16),
+		u5_self   => $rec->{u5_self}  // ('0' x 16),
+		u6        => $rec->{u6}       // '2100',
+	};
+	$bytes .= packRecord($dbg_wrte+1, $RTE_HDR2_SPECS, $hdr2_rec);
+
+	# RTE_PT records (bearing pre-calculation is lossy; write 0 for bearing,
+	# preserve leg and total distances as stored integers)
+	for (my $i = 0; $i < $uuid_cnt; $i++)
+	{
+		my $pt  = $pts->[$i];
+		my $leg = $pt ? ($pt->{legLength} // 0) : 0;
+		my $tot = $pt ? ($pt->{totLength} // 0) : 0;
+		$bytes .= pack('vVV', 0, $leg, $tot);
+	}
+
+	# HDR3
+	my $hdr3_rec = {
+		wpt_cnt => $uuid_cnt,
+		k3_0    => 0,
+	};
+	$bytes .= packRecord($dbg_wrte+1, $RTE_HR3_SPECS, $hdr3_rec);
+
+	# common waypoints, each preceded by its uuid
+	for my $wpt (@$wpts)
+	{
+		$bytes .= strToUuid($wpt->{uuid});
+		$bytes .= _encodeCommonWaypoint($wpt);
+	}
+
+	$this->createBlock($rec->{uuid}, $FSH_BLK_RTE, $bytes);
+	return 1;
+}
 
 
 1;  #end of fshBlocks.pm
