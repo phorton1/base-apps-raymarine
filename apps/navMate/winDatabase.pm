@@ -48,6 +48,7 @@ use navPrefs;
 use navServer;
 use navOps qw(buildContextMenu onContextMenuCommand);
 use nmResources;
+use gpsImport qw(import_gps_file find_gpsbabel);
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
 my $DUMMY = '__dummy__';
@@ -57,6 +58,7 @@ my $CTX_CMD_HIDE_MAP   = 10561;
 my $CTX_CMD_DELETE     = 10562;
 my $CTX_CMD_NEW_BRANCH = 10563;
 my $CTX_CMD_NEW_GROUP  = 10564;
+my $CTX_CMD_IMPORT_GPS = 10565;
 
 my %rendered_uuids;
 my $last_clear_version = 0;
@@ -226,6 +228,7 @@ sub new
 	EVT_MENU($this, $CTX_CMD_NEW_GROUP,  \&_onNewGroup);
 	EVT_MENU($this, $CTX_CMD_SHOW_MAP,   \&_onShowMap);
 	EVT_MENU($this, $CTX_CMD_HIDE_MAP,   \&_onHideMap);
+	EVT_MENU($this, $CTX_CMD_IMPORT_GPS, \&_onImportGPS);
 	EVT_MENU_RANGE($this, 10200, 10299,  \&_onNmOpsCmd);
 	EVT_TEXT($this,   $this->{ed_name},    \&_onFieldChanged);
 	EVT_TEXT($this,   $this->{ed_comment}, \&_onFieldChanged);
@@ -542,8 +545,9 @@ sub _showObject
 				my $pt   = $pts->[$i];
 				my $d_ft = ($pt->{depth_cm} // 0) ? sprintf('%.1fft', $pt->{depth_cm} / 30.48) : '-';
 				my $t_f  = ($pt->{temp_k}   // 0) ? sprintf('%.1fF', ($pt->{temp_k} / 100 - 273) * 9 / 5 + 32) : '-';
-				$text .= sprintf("  %2d  %9.6f  %10.6f  %7s  %s\n",
-					$i + 1, $pt->{lat} // 0, $pt->{lon} // 0, $d_ft, $t_f);
+				my $ts_s = ($pt->{ts} // 0) ? strftime("%Y-%m-%d %H:%M:%S UTC", gmtime($pt->{ts})) : '-';
+				$text .= sprintf("  %2d  %9.6f  %10.6f  %7s  %6s  %s\n",
+					$i + 1, $pt->{lat} // 0, $pt->{lon} // 0, $d_ft, $t_f, $ts_s);
 			}
 		}
 	}
@@ -1758,6 +1762,14 @@ sub _buildContextMenu
 		$menu->Append($CTX_CMD_HIDE_MAP, 'Hide on Map');
 	}
 
+	if ($node_type eq 'collection')
+	{
+		$menu->AppendSeparator();
+		my $gbs     = find_gpsbabel();
+		my $gps_label = $gbs ? 'Import GPS file (.gpx, .gdb)...' : 'Import GPS file (.gpx)...';
+		$menu->Append($CTX_CMD_IMPORT_GPS, $gps_label);
+	}
+
 	return $menu;
 }
 
@@ -1928,6 +1940,46 @@ sub _onDelete
 
 	disconnectDB($dbh);
 	$this->onObjectsDeleted(@obj_uuids) if @obj_uuids;
+	$this->refresh();
+}
+
+
+sub _onImportGPS
+{
+	my ($this, $event) = @_;
+	my $coll_uuid = ($this->{_right_click_node}{data} // {})->{uuid};
+	return unless $coll_uuid;
+
+	my $gbs     = find_gpsbabel();
+	my $wildcard = $gbs
+		? 'GPS files (*.gpx;*.gdb)|*.gpx;*.gdb|GPX files (*.gpx)|*.gpx|All files (*.*)|*.*'
+		: 'GPX files (*.gpx)|*.gpx|All files (*.*)|*.*';
+
+	my $dlg = Wx::FileDialog->new($this, 'Import GPS file', '', '', $wildcard, wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+	if ($dlg->ShowModal() != wxID_OK)
+	{
+		$dlg->Destroy();
+		return;
+	}
+	my $path = $dlg->GetPath();
+	$dlg->Destroy();
+	return unless $path;
+
+	my $dbh    = connectDB();
+	my $result = import_gps_file($dbh, $path, $coll_uuid);
+	disconnectDB($dbh);
+
+	if ($result->{error})
+	{
+		Wx::MessageBox($result->{error}, 'Import failed', wxOK | wxICON_ERROR, $this);
+		return;
+	}
+
+	my $msg = "Imported from " . (split /[\/\\]/, $path)[-1] . ":\n"
+		. "  Tracks:    $result->{tracks}\n"
+		. "  Waypoints: $result->{waypoints}\n"
+		. "  Routes:    $result->{routes}";
+	Wx::MessageBox($msg, 'Import complete', wxOK | wxICON_INFORMATION, $this);
 	$this->refresh();
 }
 

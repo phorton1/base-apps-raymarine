@@ -87,3 +87,26 @@ Simple (non-group) waypoint deletes are clean - no bug there.
   triggering command was 'mod_item' and E80 returns "not found", log WARNING
   instead of ERROR. This keeps the create path intact.
 
+---
+
+### [navops 5.6 dangling ProgressDialog]
+
+**Symptom:** Test 5.6a (DELETE_ROUTE via E80 routes header) sometimes leaves a
+ProgressDialog that does not reach FINISHED within the expected window. If 5.6b
+fires before it completes, 5.6b queues behind it and the E80 is not cleared.
+All Section 5 tests from 5.6c onward become NOT_RUN.
+
+**Occurred:** Cycles 13 and 14.
+
+**Open questions:**
+1. Is the dialog genuinely stuck (dialog_state: active), or does it finish fast
+   and FINISHED was simply missed between the sleep and the log read?
+2. Does navMate queue or reject E80 commands dispatched while a dialog is active?
+3. Does close_dialog rescue a slow (not hung) dialog, or only a truly frozen one?
+
+**How to handle in test cycle:** Before running 5.6b, check dialog_state explicitly
+and use `close_dialog` command if active. Hard stop if close_dialog does not resolve.
+
+**Root cause:** Unknown. May be race between dialog completion and log poll timing,
+or a navMate bug in the route-delete path for header-node case.
+

@@ -49,12 +49,12 @@ our $dbg_e80_ops = 0;
 
 sub _wpmgr
 {
-	return $raydp ? $raydp->findImplementedService('WPMGR') : undef;
+	return $raydp ? $raydp->findImplementedService('WPMGR', 1) : undef;
 }
 
 sub _track
 {
-	return $raydp ? $raydp->findImplementedService('TRACK') : undef;
+	return $raydp ? $raydp->findImplementedService('TRACK', 1) : undef;
 }
 
 sub _e80WpClipData
