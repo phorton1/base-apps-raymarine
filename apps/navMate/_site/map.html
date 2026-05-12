@@ -3,14 +3,16 @@
 <head>
     <meta charset="utf-8">
     <title>navMate  -  Map</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="leaflet-1.9.4.css" />
     <&$this->includeCSS('map.css')>
+    <&$this->includeCSS('nmEdit.css')>
 </head>
 <body>
     <div id="map"></div>
     <div id="nm-coords"></div>
     <div id="nm-info" style="display:none"></div>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="leaflet-1.9.4.js"></script>
     <&$this->includeJS('map.js')>
+    <&$this->includeJS('nmEdit.js')>
 </body>
 </html>

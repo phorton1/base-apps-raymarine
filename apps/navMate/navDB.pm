@@ -23,6 +23,7 @@ BEGIN
 		connectDB
 		disconnectDB
 		newUUID
+		newFSHUUID
 		insertCollection
 		findCollection
 		insertWaypoint
@@ -365,6 +366,7 @@ sub _initKeyValues
 	$dbh->do("INSERT OR IGNORE INTO key_values (key, value) VALUES ('schema_version', ?)",
 		[$SCHEMA_VERSION]);
 	$dbh->do("INSERT OR IGNORE INTO key_values (key, value) VALUES ('uuid_counter', '0')");
+	$dbh->do("INSERT OR IGNORE INTO key_values (key, value) VALUES ('fsh_uuid_counter', '0')");
 }
 
 
@@ -392,6 +394,32 @@ sub newUUID
 		return undef;
 	}
 	return makeUUID($counter);
+}
+
+
+#---------------------------------
+# newFSHUUID
+#---------------------------------
+
+sub newFSHUUID
+{
+	my ($dbh) = @_;
+	my $counter;
+	eval
+	{
+		$dbh->{dbh}->begin_work();
+		my $rec = $dbh->get_record("SELECT value FROM key_values WHERE key='fsh_uuid_counter'");
+		$counter = ($rec ? $rec->{value} : 0) + 1;
+		$dbh->do("UPDATE key_values SET value=? WHERE key='fsh_uuid_counter'", [$counter]);
+		$dbh->commit();
+	};
+	if ($@)
+	{
+		eval { $dbh->rollback() };
+		error("navDB::newFSHUUID failed: $@");
+		return undef;
+	}
+	return makeFSHUUID($counter);
 }
 
 

@@ -52,6 +52,10 @@ map.on('mouseout', () => { coordsDiv.textContent = ''; });
 
 const renderLayer = L.layerGroup().addTo(map);
 
+// ---- Feature selection state ----
+
+let editSubject = null;  // { layer, props, origCoords, type }  type='track'|'route'
+
 // ---- Overlay control (top-left, below zoom buttons) ----
 
 const OverlayControl = L.Control.extend({
@@ -99,6 +103,7 @@ const OverlayControl = L.Control.extend({
     }
 });
 new OverlayControl().addTo(map);
+
 
 const TS_FIELDS = new Set(['created_ts', 'ts_start', 'ts_end']);
 const SKIP_FIELDS = new Set(['obj_type', 'name', 'rp_names', 'data_source']);
@@ -199,6 +204,9 @@ function isE80Visible() { const cb = document.getElementById('src_e80'); return 
 function isFshVisible() { const cb = document.getElementById('src_fsh'); return cb ? cb.checked : true; }
 
 function renderAll(geojson) {
+    if (editMode || joinMode) return;
+    clearHandles();
+    if (editSubject) { editSubject = null; hideCtxMenu(); }
     renderLayer.clearLayers();
     lastGeojson = geojson;
     const features = geojson.features || [];
@@ -286,18 +294,54 @@ function renderAll(geojson) {
             if (!geom.coordinates.length) return;
             const coords = geom.coordinates.map(([lon, lat]) => [lat, lon]);
             const color  = abgrToCSS(props.color);
+            const isEditable = props.obj_type === 'track' && (dsrc === 'db' || dsrc === 'fsh');
             const line   = L.polyline(coords, { color: color, weight: 2 });
             if (props.obj_type === 'track') {
                 const total = coords.length;
-                line.on('mouseover', () => line.setStyle({ color: '#ffffff' }));
+                line.on('mouseover', () => {
+                    if (editSubject && editSubject.layer === line) return;
+                    line.setStyle({ color: '#ffffff' });
+                });
                 line.on('mousemove', e => {
+                    if (editMode) return;
                     const idx = nearestPointIdx(coords, e.latlng);
                     showInfo(props, 'point ' + (idx + 1) + ' / ' + total);
                 });
-                line.on('mouseout', () => { line.setStyle({ color: color }); hideInfo(); });
+                line.on('mouseout', () => {
+                    if (editSubject && editSubject.layer === line) return;
+                    line.setStyle({ color: color });
+                    hideInfo();
+                });
+                if (isEditable) {
+                    line.on('click', function(e) {
+                        L.DomEvent.stopPropagation(e);
+                        hideCtxMenu();
+                        if (splitMode && editSubject && editSubject.layer === line) {
+                            doSplitAtIdx(nearestPointIdx(coords, e.latlng));
+                            return;
+                        }
+                        if (!editSubject || editSubject.layer !== line) selectFeature(line, props, coords, 'track');
+                    });
+                    line.on('contextmenu', function(e) {
+                        L.DomEvent.stopPropagation(e);
+                        if (!editSubject || editSubject.layer !== line) selectFeature(line, props, coords, 'track');
+                        if (!editMode && !joinMode) showCtxMenu(e.originalEvent.clientX, e.originalEvent.clientY, 'feature');
+                    });
+                }
             } else {
                 line.on('mouseover', () => { line.setStyle({ color: '#ffffff' }); showInfo(props, coords.length + ' route points'); });
                 line.on('mouseout',  () => { line.setStyle({ color: color }); hideInfo(); });
+                if (props.obj_type === 'route' && dsrc === 'db') {
+                    line.on('contextmenu', function(e) {
+                        L.DomEvent.stopPropagation(e);
+                        if (editMode || joinMode) return;
+                        const origCoords = coords.map(function(c, i) {
+                            return { uuid: (props.rp_uuids && props.rp_uuids[i]) || null, lat: c[0], lon: c[1] };
+                        });
+                        if (!editSubject || editSubject.layer !== line) selectFeature(line, props, origCoords, 'route');
+                        showCtxMenu(e.originalEvent.clientX, e.originalEvent.clientY, 'feature');
+                    });
+                }
             }
             line.addTo(renderLayer);
             if (isNew) newLatLngs.push(...coords);
@@ -345,6 +389,25 @@ function renderAll(geojson) {
             map.fitBounds(L.latLngBounds(newLatLngs), { padding: [30, 30], maxZoom: 17 });
         }
     }
+}
+
+// ---- Feature selection ----
+
+function selectFeature(layer, props, origCoords, type) {
+    if (joinMode && joinPhase === 'pickTrackB' && type === 'track') {
+        handleJoinTrackBPick({ layer: layer, props: props, origCoords: origCoords.slice() });
+        return;
+    }
+    deselectFeature();
+    editSubject = { layer: layer, props: props, origCoords: origCoords.slice(), type: type };
+    layer.setStyle({ color: '#ffff00', weight: 4 });
+}
+
+function deselectFeature() {
+    if (!editSubject) return;
+    editSubject.layer.setStyle({ color: abgrToCSS(editSubject.props.color), weight: 2 });
+    editSubject = null;
+    hideCtxMenu();
 }
 
 // ---- Polling ----

@@ -18,9 +18,11 @@ BEGIN
 	our @EXPORT = qw(
 		$appName
 		makeUUID
+		makeFSHUUID
 		parseLatLon
 		formatLatLon
 		@E80_ROUTE_COLOR_ABGR
+		@E80_ROUTE_COLOR_NAMES
 		abgrToE80Index
 		isExactE80Color
 	);
@@ -48,6 +50,16 @@ sub makeUUID
 		int(rand(65536)));
 }
 
+
+sub makeFSHUUID
+{
+	my ($counter) = @_;
+	return sprintf("%02x46%04x%s%04x",
+		int(rand(256)),
+		int(rand(65536)),
+		unpack('H*', pack('v', $counter)),
+		int(rand(65536)));
+}
 
 
 #---------------------------------
@@ -141,6 +153,9 @@ our @E80_ROUTE_COLOR_ABGR = qw(
 	ffff00ff
 	ffffffff
 );
+
+# Index 5 is called BLACK in the E80 protocol but its ABGR is ffffffff (white on Leaflet).
+our @E80_ROUTE_COLOR_NAMES = ('Red', 'Yellow', 'Green', 'Blue', 'Purple', 'Black (White on Map)');
 
 
 sub abgrToE80Index

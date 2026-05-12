@@ -69,6 +69,9 @@ base, data model, and UI are the product. Everything else is a boundary adapter.
 - **[Leaflet](https://leafletjs.com/)** (v1.9.4) - open-source JavaScript library
   for the interactive map canvas (BSD 2-Clause license). Tile imagery sourced
   separately from Google Maps and Esri.
+- **[Leaflet-Geoman](https://geoman.io/leaflet-geoman)** (v2.16.0) - open-source
+  Leaflet plugin for geometry editing: vertex drag, insert, delete, and custom
+  track editing operations (MIT license).
 - **[Google Maps](https://developers.google.com/maps)** - satellite tile imagery
   via the Maps JavaScript API (`lyrs=s`). Requires a Google Maps Platform API key;
   usage subject to Google Maps Platform Terms of Service.

@@ -43,6 +43,7 @@ use apps::raymarine::NET::a_utils;
 use navFSH;
 use navServer qw(addRenderFeatures removeRenderFeatures openMapBrowser isBrowserConnected);
 use navVisibility qw(getFSHVisible setFSHVisible clearAllFSHVisible getAllFSHVisibleUUIDs batchRemoveFSHVisible);
+use navOutline;
 use n_defs;
 use n_utils;
 use navPrefs;
@@ -146,7 +147,7 @@ sub new
 		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
 	$this->{ed_color_choice} = Wx::Choice->new($editor_panel, -1,
 		[$ED_CTRL_X, $ey->(5)], [-1, $ED_CTRL_H],
-		['Red', 'Yellow', 'Green', 'Blue', 'Purple', 'Black']);
+		[@E80_ROUTE_COLOR_NAMES]);
 
 	$this->{ed_lbl_depth} = Wx::StaticText->new($editor_panel, -1, 'Depth',
 		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
@@ -219,10 +220,18 @@ sub new
 	EVT_CHECKBOX($this,     $this->{ed_visible},       $this->can('_onEdVisibleChanged'));
 
 	$this->{_loaded}        = 0;
-	$this->{_expanded_keys} = ($data && $data->{expanded})
-		? { map { $_ => 1 } split(/,/, $data->{expanded}) }
-		: {};
+	my @outline_keys = navOutline::getExpanded('fsh');
+	$this->{_expanded_keys} = @outline_keys
+		? { map { $_ => 1 } @outline_keys }
+		: ($data && $data->{expanded})
+			? { map { $_ => 1 } split(/,/, $data->{expanded}) }
+			: {};
 	$this->{_selected_keys} = {};
+
+	if (!defined($navFSH::fsh_db) && $data && $data->{fsh_filename} && -f $data->{fsh_filename})
+	{
+		navFSH::loadFSH($data->{fsh_filename});
+	}
 
 	if (defined $navFSH::fsh_db)
 	{
@@ -238,10 +247,36 @@ sub getDataForIniFile
 	my ($this) = @_;
 	$this->_captureExpandedInto() if $this->{_loaded} && $this->{tree}->GetCount() > 0;
 	return {
-		sash       => $this->GetSashPosition(),
-		right_sash => $this->{right_split} ? $this->{right_split}->GetSashPosition() : 0,
-		expanded   => join(',', sort keys %{$this->{_expanded_keys}}),
+		sash         => $this->GetSashPosition(),
+		right_sash   => $this->{right_split} ? $this->{right_split}->GetSashPosition() : 0,
+		fsh_filename => $navFSH::fsh_filename // '',
 	};
+}
+
+
+sub onFilenameChanged
+{
+	my ($this) = @_;
+	_buildAndRestore($this);
+}
+
+
+sub doSaveFSHOutline
+{
+	my ($this) = @_;
+	$this->_captureExpandedInto() if $this->{_loaded} && $this->{tree}->GetCount() > 0;
+	navOutline::setExpanded('fsh', [ sort keys %{$this->{_expanded_keys}} ]);
+	navOutline::saveOutline('fsh');
+}
+
+
+sub doRestoreFSHOutline
+{
+	my ($this) = @_;
+	navOutline::loadOutline('fsh');
+	my @keys = navOutline::getExpanded('fsh');
+	$this->{_expanded_keys} = { map { $_ => 1 } @keys };
+	_buildAndRestore($this) if $this->{_loaded};
 }
 
 
@@ -783,6 +818,68 @@ sub _allTracks
 	my ($this) = @_;
 	my $db = $navFSH::fsh_db;
 	return $db ? ($db->{tracks} // {}) : {};
+}
+
+
+sub onLeafletTrackEdit
+{
+	my ($this, $edit) = @_;
+	my $op   = $edit->{op}   // '';
+	my $uuid = $edit->{uuid} // '';
+	return if !$uuid;
+	my $db = $navFSH::fsh_db;
+	return if !$db;
+	my $tracks = $db->{tracks};
+	return if !$tracks;
+	display(0,0,"winFSH::onLeafletTrackEdit op=$op uuid=$uuid");
+
+	if ($op eq 'update')
+	{
+		my $rec = $tracks->{$uuid};
+		return if !$rec;
+		my $coords = $edit->{coords} // [];
+		return if !@$coords;
+		my @new_pts = map { shared_clone({ lat => $_->[0]+0, lon => $_->[1]+0 }) } @$coords;
+		$rec->{points} = shared_clone(\@new_pts);
+		$rec->{cnt}    = scalar @new_pts;
+		removeRenderFeatures([$uuid]);
+		my $feat = $this->_buildTrackFeature($uuid, $rec);
+		addRenderFeatures([$feat]) if $feat;
+	}
+	elsif ($op eq 'split')
+	{
+		my $split_idx = $edit->{split_idx} // -1;
+		my $new_name  = $edit->{new_name}  // '';
+		my $rec = $tracks->{$uuid};
+		return if !$rec;
+		my @all_pts = @{$rec->{points} // []};
+		if ($split_idx <= 0 || $split_idx >= $#all_pts)
+		{
+			warning(0,0,"winFSH::onLeafletTrackEdit split precondition failed uuid=$uuid idx=$split_idx");
+			return;
+		}
+		my @pts_a = @all_pts[0 .. $split_idx];
+		my @pts_b = @all_pts[$split_idx+1 .. $#all_pts];
+		$rec->{points} = shared_clone(\@pts_a);
+		$rec->{cnt}    = scalar @pts_a;
+		my $new_uuid = $uuid . '-' . time();
+		$tracks->{$new_uuid} = shared_clone({
+			%$rec,
+			name   => $new_name,
+			points => shared_clone(\@pts_b),
+			cnt    => scalar @pts_b,
+		});
+		removeRenderFeatures([$uuid]);
+		my $feat_a = $this->_buildTrackFeature($uuid,     $rec);
+		my $feat_b = $this->_buildTrackFeature($new_uuid, $tracks->{$new_uuid});
+		addRenderFeatures([$feat_a]) if $feat_a;
+		addRenderFeatures([$feat_b]) if $feat_b;
+		$this->refresh();
+	}
+	else
+	{
+		warning(0,0,"winFSH::onLeafletTrackEdit unknown op '$op' for uuid=$uuid");
+	}
 }
 
 

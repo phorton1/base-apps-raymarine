@@ -25,6 +25,7 @@ use nmResources;
 use nmDialogs;
 use navServer;
 use navTest;
+use navLeaflet;
 use navFSH;
 use winDatabase;
 use winE80;
@@ -49,6 +50,10 @@ sub new
 	EVT_MENU($this, $WIN_MONITOR,				\&onCommand);
 	EVT_MENU($this, $WIN_FSH,					\&onCommand);
 	EVT_MENU($this, $COMMAND_OPEN_FSH_FILE,		\&onCommand);
+	EVT_MENU($this, $COMMAND_SAVE_FSH_FILE,		\&onCommand);
+	EVT_MENU($this, $COMMAND_SAVE_FSH_FILE_AS,	\&onCommand);
+	EVT_MENU($this, $COMMAND_SAVE_FSH_OUTLINE,	\&onCommand);
+	EVT_MENU($this, $COMMAND_RESTORE_FSH_OUTLINE, \&onCommand);
 	EVT_MENU($this, $COMMAND_OPEN_MAP,			\&onCommand);
 	EVT_MENU($this, $COMMAND_IMPORT_KML,		\&onCommand);
 	EVT_MENU($this, $COMMAND_REFRESH_WIN_E80,	\&onCommand);
@@ -66,11 +71,15 @@ sub new
 	EVT_MENU($this, $COMMAND_RESTORE_OUTLINE,	\&onCommand);
 	EVT_MENU($this, $COMMAND_SAVE_SELECTION,	\&onCommand);
 	EVT_MENU($this, $COMMAND_RESTORE_SELECTION,	\&onCommand);
-	EVT_UPDATE_UI($this, $COMMAND_REFRESH_WIN_E80,	\&onCommandEnable);
-	EVT_UPDATE_UI($this, $COMMAND_REFRESH_E80_DB,	\&onCommandEnable);
-	EVT_UPDATE_UI($this, $COMMAND_CLEAR_E80_DB,		\&onCommandEnable);
-	EVT_UPDATE_UI($this, $COMMAND_REVERT_DB,		\&onCommandEnable);
-	EVT_UPDATE_UI($this, $COMMAND_COMMIT_DB,		\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_REFRESH_WIN_E80,		\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_REFRESH_E80_DB,		\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_CLEAR_E80_DB,			\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_REVERT_DB,			\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_COMMIT_DB,			\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_SAVE_FSH_FILE,		\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_SAVE_FSH_FILE_AS,		\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_SAVE_FSH_OUTLINE,		\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_RESTORE_FSH_OUTLINE,	\&onCommandEnable);
 	EVT_IDLE($this, \&onIdle);
 
 	my $sb = Wx::StatusBar->new($this, -1);
@@ -126,6 +135,10 @@ sub onIdle
 	{
 		my $test_cmd = pollTestCommand();
 		dispatchTestCommand($this, $test_cmd) if $test_cmd;
+		my $track_edit = pollTrackEditPending();
+		dispatchTrackEdit($this, $track_edit) if $track_edit;
+		my $route_edit = pollRouteEditPending();
+		dispatchRouteEdit($this, $route_edit) if $route_edit;
 	}
 
 	if (pollBrowserConnectEvent())
@@ -270,6 +283,24 @@ sub onCommand
 	{
 		_doOpenFSH($this);
 	}
+	elsif ($id == $COMMAND_SAVE_FSH_FILE)
+	{
+		_doSaveFSH($this);
+	}
+	elsif ($id == $COMMAND_SAVE_FSH_FILE_AS)
+	{
+		_doSaveFSHAs($this);
+	}
+	elsif ($id == $COMMAND_SAVE_FSH_OUTLINE)
+	{
+		my $fsh = $this->findPane($WIN_FSH);
+		$fsh->doSaveFSHOutline() if $fsh;
+	}
+	elsif ($id == $COMMAND_RESTORE_FSH_OUTLINE)
+	{
+		my $fsh = $this->findPane($WIN_FSH);
+		$fsh->doRestoreFSHOutline() if $fsh;
+	}
 	elsif ($id == $COMMAND_REFRESH_WIN_E80)
 	{
 		my $e80 = $this->findPane($WIN_E80);
@@ -377,6 +408,8 @@ sub onCloseFrame
 	my ($this, $event) = @_;
 	my $database = $this->findPane($WIN_DATABASE);
 	$database->doSaveOutline() if $database;
+	my $fsh = $this->findPane($WIN_FSH);
+	$fsh->doSaveFSHOutline() if $fsh;
 	navDB::pruneDbVisibility();
 	saveViewState();
 	$this->SUPER::onCloseFrame($event);
@@ -423,6 +456,13 @@ sub onCommandEnable
 			$this->{_db_dirty} = ($out =~ /\S/) ? 1 : 0;
 		}
 		$enable = 0 if !$this->{_db_dirty};
+	}
+	elsif ($id == $COMMAND_SAVE_FSH_FILE
+	    || $id == $COMMAND_SAVE_FSH_FILE_AS
+	    || $id == $COMMAND_SAVE_FSH_OUTLINE
+	    || $id == $COMMAND_RESTORE_FSH_OUTLINE)
+	{
+		$enable = 0 if !$navFSH::fsh_db;
 	}
 
 	$event->Enable($enable);
@@ -579,6 +619,43 @@ sub _doOpenFSH
 				{ $fsh->refresh(); }
 			else
 				{ $this->createPane($WIN_FSH); }
+		}
+	}
+	$dialog->Destroy();
+}
+
+
+sub _doSaveFSH
+{
+	my ($this) = @_;
+	my $filename = $navFSH::fsh_filename;
+	if (!$filename)
+	{
+		error("nmFrame: _doSaveFSH called with no current filename");
+		return;
+	}
+	navFSH::saveFSH($filename);
+}
+
+
+sub _doSaveFSHAs
+{
+	my ($this) = @_;
+	my $default_dir = readConfig('fsh_dir') || '';
+	my $dialog = Wx::FileDialog->new(
+		$this, 'Save FSH File As',
+		$default_dir, '',
+		'FSH files (*.fsh)|*.fsh|All files (*.*)|*.*',
+		wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+	if ($dialog->ShowModal() == wxID_OK)
+	{
+		my $filename = $dialog->GetPath();
+		writeConfig('fsh_dir', $dialog->GetDirectory());
+		if (navFSH::saveFSH($filename))
+		{
+			$navFSH::fsh_filename = $filename;
+			my $fsh = $this->findPane($WIN_FSH);
+			$fsh->onFilenameChanged() if $fsh;
 		}
 	}
 	$dialog->Destroy();

@@ -1,0 +1,96 @@
+/* nmEdit.css - navMate track editing styles */
+
+/* Vertex drag handles */
+.nm-vtx {
+    background: #3388ff;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    cursor: grab;
+    box-sizing: border-box;
+}
+.nm-vtx:active { cursor: grabbing; }
+
+.nm-vtx-start { background: #22aa22; }
+.nm-vtx-end   { background: #cc2222; }
+
+/* Midpoint insert handles */
+.nm-mid {
+    background: rgba(255, 255, 255, 0.5);
+    border: 2px solid #3388ff;
+    border-radius: 50%;
+    cursor: grab;
+    box-sizing: border-box;
+}
+.nm-mid:hover  { background: #fff; }
+.nm-mid:active { cursor: grabbing; }
+
+/* Track context menu */
+#nm-ctx-menu {
+    position: fixed;
+    z-index: 2000;
+    background: #fff;
+    border: 1px solid #999;
+    border-radius: 3px;
+    box-shadow: 2px 2px 6px rgba(0,0,0,0.35);
+    padding: 2px 0;
+    min-width: 120px;
+}
+#nm-ctx-menu button {
+    display: block;
+    width: 100%;
+    padding: 6px 14px;
+    border: none;
+    background: none;
+    text-align: left;
+    font-size: 13px;
+    cursor: pointer;
+}
+#nm-ctx-menu button:hover { background: #dde8ff; }
+
+/* Edit / join mode bars - fixed at bottom center */
+#nm-edit-bar, #nm-join-bar {
+    position: fixed;
+    bottom: 54px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    background: rgba(18, 18, 18, 0.90);
+    border: 1px solid #555;
+    border-radius: 5px;
+    padding: 6px 12px;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #ccc;
+    white-space: nowrap;
+}
+#nm-edit-bar button, #nm-join-bar button {
+    padding: 4px 11px;
+    border: 1px solid #666;
+    border-radius: 3px;
+    background: #2a2a2a;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 12px;
+}
+#nm-edit-bar button:hover, #nm-join-bar button:hover { background: #3a3a3a; }
+#nm-edit-bar .nm-btn-confirm, #nm-join-bar .nm-btn-confirm { background: #1a4d1a; border-color: #2a7a2a; color: #afa; }
+#nm-edit-bar .nm-btn-confirm:hover, #nm-join-bar .nm-btn-confirm:hover { background: #205520; }
+#nm-edit-bar .nm-btn-cancel, #nm-join-bar .nm-btn-cancel   { background: #4d1a1a; border-color: #7a2a2a; color: #faa; }
+#nm-edit-bar .nm-btn-cancel:hover, #nm-join-bar .nm-btn-cancel:hover  { background: #552020; }
+#nm-edit-bar .nm-split-hint {
+    font-size: 11px;
+    color: #ff0;
+    margin-left: 6px;
+}
+#nm-edit-bar button.nm-btn-active {
+    background: #1a3d5a;
+    border-color: #2a6a9a;
+    color: #adf;
+}
+#nm-edit-bar button.nm-btn-active:hover { background: #204870; }
+#nm-join-bar .nm-join-hint {
+    font-size: 11px;
+    color: #ff0;
+    margin-left: 6px;
+}

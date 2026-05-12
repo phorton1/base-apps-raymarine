@@ -43,6 +43,10 @@ BEGIN
 
 		$WIN_FSH
 		$COMMAND_OPEN_FSH_FILE
+		$COMMAND_SAVE_FSH_FILE
+		$COMMAND_SAVE_FSH_FILE_AS
+		$COMMAND_SAVE_FSH_OUTLINE
+		$COMMAND_RESTORE_FSH_OUTLINE
 	);
 }
 
@@ -73,6 +77,10 @@ our $COMMAND_REVERT_DB			= 10091;
 our $COMMAND_COMMIT_DB			= 10092;
 
 our $COMMAND_OPEN_FSH_FILE		= 10081;
+our $COMMAND_SAVE_FSH_FILE		= 10082;
+our $COMMAND_SAVE_FSH_FILE_AS	= 10083;
+our $COMMAND_SAVE_FSH_OUTLINE	= 10084;
+our $COMMAND_RESTORE_FSH_OUTLINE = 10085;
 
 
 my $pane_data = {
@@ -88,7 +96,11 @@ my $command_data = {
 	$WIN_E80					=> ['E80',					'Live E80 contents'],
 	$WIN_MONITOR				=> ['Monitor',				'Monitor and control service monitoring bits'],
 	$WIN_FSH					=> ['FSH',					'FSH file browser'],
-	$COMMAND_OPEN_FSH_FILE		=> ['Open FSH File...',		'Load an FSH archive file into the FSH browser'],
+	$COMMAND_OPEN_FSH_FILE		=> ['Open File...',			'Load an FSH archive file into the FSH browser'],
+	$COMMAND_SAVE_FSH_FILE		=> ['Save File',			'Save FSH data back to the current file (round-trip rewrite)'],
+	$COMMAND_SAVE_FSH_FILE_AS	=> ['Save As...',			'Save FSH data to a new file and switch to that filename'],
+	$COMMAND_SAVE_FSH_OUTLINE	=> ['Save Outline',			'Save FSH tree expansion state to nmFSHOutline.json'],
+	$COMMAND_RESTORE_FSH_OUTLINE => ['Restore Outline',		'Restore FSH tree expansion state from nmFSHOutline.json'],
 	$COMMAND_OPEN_MAP			=> ['Open Map',				'Open the Leaflet map in a browser'],
 	$COMMAND_CLEAR_MAP			=> ['Clear Map',			'Set all visible=0 and clear the Leaflet map'],
 	$COMMAND_IMPORT_KML_NM		=> ['Import KML',			'Additive re-import from a navMate KML file'],
@@ -96,16 +108,16 @@ my $command_data = {
 	$COMMAND_EXPORT_KML			=> ['Export KML',			'Export navMate database to a KML file for Google Earth'],
 	$COMMAND_REFRESH_DB			=> ['Refresh Window',		'Reload database window from current navMate.db'],
 	$COMMAND_REFRESH_E80_DB		=> ['Refresh E80-DB',		'Re-query all waypoints, routes, groups, and tracks from E80'],
-	$COMMAND_CLEAR_E80_DB		=> ['Clear E80 DB',			'Delete all waypoints, routes, groups, and tracks from E80'],
-	$COMMAND_REFRESH_WIN_E80	=> ['Refresh winE80',		'Reload E80 window from in-memory data'],
-	$COMMAND_IMPORT_DB_TEXT		=> ['ImportFromText',		'Replace navMate database from a text backup file'],
-	$COMMAND_EXPORT_DB_TEXT		=> ['ExportToText',			'Export navMate database to a text backup file'],
-	$COMMAND_SAVE_OUTLINE		=> ['Save Outline',			'Save tree expansion state to navMateOutline.json'],
-	$COMMAND_RESTORE_OUTLINE	=> ['Restore Outline',		'Restore tree expansion state from navMateOutline.json'],
+	$COMMAND_CLEAR_E80_DB		=> ['Clear',				'Delete all waypoints, routes, groups, and tracks from E80'],
+	$COMMAND_REFRESH_WIN_E80	=> ['Refresh Window',		'Reload E80 window from in-memory data'],
+	$COMMAND_IMPORT_DB_TEXT		=> ['Import from Text',		'Replace navMate database from a text backup file'],
+	$COMMAND_EXPORT_DB_TEXT		=> ['Export to Text',		'Export navMate database to a text backup file'],
+	$COMMAND_SAVE_OUTLINE		=> ['Save Outline',			'Save database tree expansion state to nmDBOutline.json'],
+	$COMMAND_RESTORE_OUTLINE	=> ['Restore Outline',		'Restore database tree expansion state from nmDBOutline.json'],
 	$COMMAND_SAVE_SELECTION		=> ['Save Selection...',	'Save current tree selection to a named set'],
 	$COMMAND_RESTORE_SELECTION	=> ['Restore Selection',	'Restore a named selection set in the tree'],
-	$COMMAND_REVERT_DB			=> ['Revert DB',			'Revert navMate.db to last git-committed version'],
-	$COMMAND_COMMIT_DB			=> ['Commit DB',			'Commit navMate.db to git with a message'],
+	$COMMAND_REVERT_DB			=> ['Revert',				'Revert navMate.db to last git-committed version'],
+	$COMMAND_COMMIT_DB			=> ['Commit',				'Commit navMate.db to git with a message'],
 };
 
 
@@ -114,6 +126,7 @@ my $main_menu = [
 	'view_menu,&View',
 	'database_menu,&Database',
 	'e80_menu,&E80',
+	'fsh_menu,&FSH',
 	'utils_menu,&Utils',
 ];
 
@@ -132,11 +145,20 @@ my $view_menu = [
 my $database_menu = [
 	$COMMAND_REFRESH_DB,
 	$ID_SEPARATOR,
-	$COMMAND_EXPORT_DB_TEXT,
-	$COMMAND_IMPORT_DB_TEXT,
+	$COMMAND_COMMIT_DB,
+	$COMMAND_REVERT_DB,
 	$ID_SEPARATOR,
-	$COMMAND_EXPORT_KML,
+	$COMMAND_SAVE_OUTLINE,
+	$COMMAND_RESTORE_OUTLINE,
+	$ID_SEPARATOR,
+	$COMMAND_SAVE_SELECTION,
+	$COMMAND_RESTORE_SELECTION,
+	$ID_SEPARATOR,
+	$COMMAND_IMPORT_DB_TEXT,
+	$COMMAND_EXPORT_DB_TEXT,
+	$ID_SEPARATOR,
 	$COMMAND_IMPORT_KML_NM,
+	$COMMAND_EXPORT_KML,
 ];
 
 my $e80_menu = [
@@ -145,19 +167,17 @@ my $e80_menu = [
 	$COMMAND_CLEAR_E80_DB,
 ];
 
-my $utils_menu = [
+my $fsh_menu = [
 	$COMMAND_OPEN_FSH_FILE,
+	$COMMAND_SAVE_FSH_FILE,
+	$COMMAND_SAVE_FSH_FILE_AS,
 	$ID_SEPARATOR,
+	$COMMAND_SAVE_FSH_OUTLINE,
+	$COMMAND_RESTORE_FSH_OUTLINE,
+];
+
+my $utils_menu = [
 	$COMMAND_IMPORT_KML,
-	$ID_SEPARATOR,
-	$COMMAND_REVERT_DB,
-	$COMMAND_COMMIT_DB,
-	$ID_SEPARATOR,
-	$COMMAND_SAVE_OUTLINE,
-	$COMMAND_RESTORE_OUTLINE,
-	$ID_SEPARATOR,
-	$COMMAND_SAVE_SELECTION,
-	$COMMAND_RESTORE_SELECTION,
 ];
 
 
@@ -169,6 +189,7 @@ $resources = { %$resources,
 	view_menu                => $view_menu,
 	database_menu            => $database_menu,
 	e80_menu                 => $e80_menu,
+	fsh_menu                 => $fsh_menu,
 	utils_menu               => $utils_menu,
 };
 

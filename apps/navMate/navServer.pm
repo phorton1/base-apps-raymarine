@@ -44,6 +44,8 @@ my $clear_version         :shared = 0;
 my $test_pending          :shared = '';
 my $browser_connect_event :shared = 0;
 my $clear_map_pending     :shared = 0;
+my $track_edit_pending    :shared = '';
+my $route_edit_pending    :shared = '';
 
 
 BEGIN
@@ -61,6 +63,8 @@ BEGIN
 		pollTestCommand
 		pollBrowserConnectEvent
 		pollClearMapPending
+		pollTrackEditPending
+		pollRouteEditPending
 	);
 }
 
@@ -161,6 +165,26 @@ sub pollClearMapPending
 }
 
 
+sub pollTrackEditPending
+{
+	lock($track_edit_pending);
+	return '' if !$track_edit_pending;
+	my $edit = $track_edit_pending;
+	$track_edit_pending = '';
+	return $edit;
+}
+
+
+sub pollRouteEditPending
+{
+	lock($route_edit_pending);
+	return '' if !$route_edit_pending;
+	my $edit = $route_edit_pending;
+	$route_edit_pending = '';
+	return $edit;
+}
+
+
 #---------------------------------
 # HTTP server
 #---------------------------------
@@ -257,6 +281,20 @@ sub handle_request
 	{
 		my $params = $request->{params} // {};
 		{ lock($test_pending); $test_pending = encode_json($params); }
+		return json_response($request, { ok => 1, queued => 1 });
+	}
+	elsif ($uri eq '/track/edit')
+	{
+		my $h = $request->getPostJSON();
+		return json_response($request,{ error => 'missing or invalid JSON body' }) if !$h;
+		{ lock($track_edit_pending); $track_edit_pending = encode_json($h); }
+		return json_response($request, { ok => 1, queued => 1 });
+	}
+	elsif ($uri eq '/route/edit')
+	{
+		my $h = $request->getPostJSON();
+		return json_response($request, { error => 'missing or invalid JSON body' }) if !$h;
+		{ lock($route_edit_pending); $route_edit_pending = encode_json($h); }
 		return json_response($request, { ok => 1, queued => 1 });
 	}
 

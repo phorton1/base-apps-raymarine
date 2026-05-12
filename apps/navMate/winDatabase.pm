@@ -39,7 +39,7 @@ use Pub::Utils qw(display warning error);
 use Pub::WX::Window;
 use Pub::WX::Menu;
 use navDB;
-use navVisibility qw(getDbVisible);
+use navVisibility qw(getDbVisible setDbVisible);
 use navOutline;
 use navSelection;
 use n_defs;
@@ -159,13 +159,16 @@ sub new
 		[$ED_CTRL_X, $ey->(4)], [-1, $ED_CTRL_H],
 		[$WP_TYPE_NAV, $WP_TYPE_LABEL, $WP_TYPE_SOUNDING]);
 
-	# color row (row 5): swatch + Pick button
+	# color row (row 5): swatch + optional E80 named-color choice + Pick button
 	$this->{ed_lbl_color} = Wx::StaticText->new($editor_panel, -1, 'Color',
 		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
 	$this->{ed_color_swatch} = Wx::Panel->new($editor_panel, -1,
 		[$ED_CTRL_X, $ey->(5) + 1], [28, 20], wxSIMPLE_BORDER);
+	$this->{ed_e80_color} = Wx::Choice->new($editor_panel, -1,
+		[$ED_CTRL_X + 34, $ey->(5)], [160, $ED_CTRL_H],
+		[@E80_ROUTE_COLOR_NAMES, 'Custom']);
 	$this->{ed_pick_btn} = Wx::Button->new($editor_panel, -1, 'Pick...',
-		[$ED_CTRL_X + 28 + 6, $ey->(5)], [-1, $ED_CTRL_H]);
+		[$ED_CTRL_X + 34 + 160 + 6, $ey->(5)], [-1, $ED_CTRL_H]);
 
 	# depth row (row 6): TextCtrl + unit label
 	$this->{ed_lbl_depth} = Wx::StaticText->new($editor_panel, -1, 'Depth',
@@ -206,7 +209,7 @@ sub new
 	$this->SplitVertically($this->{tree}, $right_split, $sash);
 	$this->SetSashGravity(0);
 
-	my @outline_uuids = navOutline::getExpandedUUIDs();
+	my @outline_uuids = navOutline::getExpanded('db');
 	$this->{_expanded_uuids} = { map { $_ => 1 } @outline_uuids };
 	$this->{_selected_uuids} = {};
 
@@ -229,7 +232,8 @@ sub new
 	EVT_TEXT($this,   $this->{ed_lat},     \&_onLatEdit);
 	EVT_TEXT($this,   $this->{ed_lon},     \&_onLonEdit);
 	EVT_TEXT($this,   $this->{ed_depth},   \&_onFieldChanged);
-	EVT_CHOICE($this, $this->{ed_wp_type}, \&_onFieldChanged);
+	EVT_CHOICE($this, $this->{ed_wp_type},   \&_onFieldChanged);
+	EVT_CHOICE($this, $this->{ed_e80_color}, \&_onE80ColorChoice);
 	EVT_BUTTON($this,   $this->{ed_save},    \&_onSave);
 	EVT_BUTTON($this,   $this->{ed_pick_btn}, \&_onColorPick);
 	EVT_CHECKBOX($this, $this->{ed_visible},  \&_onEdVisibleChanged);
@@ -846,6 +850,7 @@ sub _pushObjToLeaflet
 		return if !$r || !@$pts;
 		$rendered_uuids{$uuid} = 1;
 		my @rp_names = map { $_->{name} // '' } @$pts;
+		my @rp_uuids = map { $_->{uuid} // '' } @$pts;
 		push @features, {
 			type       => 'Feature',
 			properties => {
@@ -856,6 +861,7 @@ sub _pushObjToLeaflet
 				color           => $r->{color},
 				wp_count        => scalar(@$pts) + 0,
 				rp_names        => \@rp_names,
+				rp_uuids        => \@rp_uuids,
 				comment         => $r->{comment} // '',
 				collection_uuid => $r->{collection_uuid} // '',
 			},
@@ -875,6 +881,285 @@ sub _pullFromLeaflet
 	my @remove   = ($uuid, @children);
 	delete $rendered_uuids{$_} for @remove;
 	removeRenderFeatures(\@remove);
+}
+
+
+sub onLeafletTrackEdit
+{
+	my ($this, $edit) = @_;
+	my $op   = $edit->{op}   // '';
+	my $uuid = $edit->{uuid} // '';
+	return if !$uuid;
+	display(0,0,"winDatabase::onLeafletTrackEdit op=$op uuid=$uuid");
+	my $dbh = connectDB();
+	return if !$dbh;
+
+	if ($op eq 'update')
+	{
+		my $coords = $edit->{coords} // [];
+		if (!@$coords) { disconnectDB($dbh); return; }
+		$dbh->do("DELETE FROM track_points WHERE track_uuid=?", [$uuid]);
+		my @points = map { { lat => $_->[0], lon => $_->[1] } } @$coords;
+		insertTrackPoints($dbh, $uuid, \@points);
+		my $n = scalar @points;
+		$dbh->do("UPDATE tracks SET db_version=db_version+1, point_count=? WHERE uuid=?",
+			[$n, $uuid]);
+		$this->_pullFromLeaflet($uuid);
+		_pushObjToLeaflet($dbh, $this, { uuid => $uuid, obj_type => 'track' }, undef);
+	}
+	elsif ($op eq 'split')
+	{
+		my $split_idx = $edit->{split_idx} // -1;
+		my $new_name  = $edit->{new_name}  // '';
+		my $pts   = getTrackPoints($dbh, $uuid);
+		my $track = getTrack($dbh, $uuid);
+		if (!$track || !$pts || @$pts < 2 || $split_idx <= 0 || $split_idx >= $#$pts)
+		{
+			warning(0,0,"winDatabase::onLeafletTrackEdit split precondition failed uuid=$uuid idx=$split_idx");
+			disconnectDB($dbh);
+			return;
+		}
+		my @pts_a = @{$pts}[0 .. $split_idx];
+		my @pts_b = @{$pts}[$split_idx .. $#$pts];
+		$dbh->do("DELETE FROM track_points WHERE track_uuid=?", [$uuid]);
+		insertTrackPoints($dbh, $uuid, \@pts_a);
+		$dbh->do("UPDATE tracks SET db_version=db_version+1, point_count=? WHERE uuid=?",
+			[scalar @pts_a, $uuid]);
+		my $orig_pos  = $track->{position} // 0;
+		my $next = $dbh->get_record(
+			"SELECT position FROM tracks WHERE collection_uuid=? AND position > ? ORDER BY position ASC LIMIT 1",
+			[$track->{collection_uuid}, $orig_pos]);
+		my $new_pos = $next ? ($orig_pos + $next->{position}) / 2 : $orig_pos + 1;
+		my $new_uuid = insertTrack($dbh,
+			name            => $new_name,
+			color           => $track->{color}     // 0,
+			ts_source       => $track->{ts_source} // '',
+			ts_start        => $track->{ts_start}  // 0,
+			ts_end          => $track->{ts_end},
+			collection_uuid => $track->{collection_uuid},
+			point_count     => scalar @pts_b,
+		);
+		$dbh->do("UPDATE tracks SET position=? WHERE uuid=?", [$new_pos, $new_uuid]);
+		setDbVisible($new_uuid, getDbVisible($uuid));
+		insertTrackPoints($dbh, $new_uuid, \@pts_b);
+		$this->_pullFromLeaflet($uuid);
+		_pushObjToLeaflet($dbh, $this, { uuid => $uuid,     obj_type => 'track' }, undef);
+		_pushObjToLeaflet($dbh, $this, { uuid => $new_uuid, obj_type => 'track' }, undef);
+		$this->refresh();
+	}
+	elsif ($op eq 'join')
+	{
+		my $idx_a  = $edit->{idx_a}  // -1;
+		my $uuid_b = $edit->{uuid_b} // '';
+		my $idx_b  = $edit->{idx_b}  // -1;
+		my $pts_a  = getTrackPoints($dbh, $uuid);
+		my $pts_b  = getTrackPoints($dbh, $uuid_b);
+		if (!$pts_a || !$pts_b || !$uuid_b
+			|| $idx_a < 0 || $idx_a > $#$pts_a
+			|| $idx_b < 0 || $idx_b > $#$pts_b)
+		{
+			warning(0,0,"winDatabase::onLeafletTrackEdit join precondition failed uuid=$uuid idx_a=$idx_a uuid_b=$uuid_b idx_b=$idx_b");
+			disconnectDB($dbh);
+			return;
+		}
+		my @merged = (@{$pts_a}[0 .. $idx_a], @{$pts_b}[$idx_b .. $#$pts_b]);
+		$dbh->do("DELETE FROM track_points WHERE track_uuid=?", [$uuid]);
+		insertTrackPoints($dbh, $uuid, \@merged);
+		$dbh->do("UPDATE tracks SET db_version=db_version+1, point_count=? WHERE uuid=?",
+			[scalar @merged, $uuid]);
+		deleteTrack($dbh, $uuid_b);
+		$this->_pullFromLeaflet($uuid);
+		$this->_pullFromLeaflet($uuid_b);
+		_pushObjToLeaflet($dbh, $this, { uuid => $uuid, obj_type => 'track' }, undef);
+		$this->refresh();
+	}
+	else
+	{
+		warning(0,0,"winDatabase::onLeafletTrackEdit unknown op '$op' for uuid=$uuid");
+	}
+	disconnectDB($dbh);
+}
+
+
+sub onLeafletRouteEdit
+{
+	my ($this, $edit) = @_;
+	my $op   = $edit->{op}   // '';
+	my $uuid = $edit->{uuid} // '';
+	display(0,0,"winDatabase::onLeafletRouteEdit op=$op uuid=$uuid");
+	my $dbh = connectDB();
+	return if !$dbh;
+
+	if ($op eq 'full_update')
+	{
+		my $waypoints = $edit->{waypoints} // [];
+		if (!@$waypoints || !$uuid)
+		{
+			warning(0,0,"winDatabase::onLeafletRouteEdit full_update: empty waypoints or uuid");
+			disconnectDB($dbh);
+			return;
+		}
+		my $route = getRoute($dbh, $uuid);
+		if (!$route)
+		{
+			warning(0,0,"winDatabase::onLeafletRouteEdit full_update: route not found uuid=$uuid");
+			disconnectDB($dbh);
+			return;
+		}
+		my $coll_uuid = $route->{collection_uuid};
+		my $route_pos = $route->{position} + 0;
+		my $new_idx   = 0;
+
+		clearRouteWaypoints($dbh, $uuid);
+		for my $i (0 .. $#$waypoints)
+		{
+			my $wp   = $waypoints->[$i];
+			my $wp_uuid = $wp->{uuid};
+			if (!$wp_uuid)
+			{
+				$new_idx++;
+				my $wp_pos = $route_pos + $new_idx * 0.001;
+				$wp_uuid   = newUUID($dbh);
+				my $wp_name = "RNP-" . uc(substr($wp_uuid, 0, 6));
+				insertWaypoint($dbh,
+					uuid            => $wp_uuid,
+					name            => $wp_name,
+					lat             => $wp->{lat} + 0,
+					lon             => $wp->{lon} + 0,
+					wp_type         => $WP_TYPE_NAV,
+					color           => 0,
+					depth_cm        => 0,
+					created_ts      => time(),
+					ts_source       => 'nav',
+					source          => 'navMate',
+					collection_uuid => $coll_uuid);
+				$dbh->do("UPDATE waypoints SET position=? WHERE uuid=?", [$wp_pos, $wp_uuid]);
+			}
+			else
+			{
+				$dbh->do("UPDATE waypoints SET lat=?, lon=? WHERE uuid=?",
+					[$wp->{lat} + 0, $wp->{lon} + 0, $wp_uuid]);
+			}
+			appendRouteWaypoint($dbh, $uuid, $wp_uuid, $i + 1);
+		}
+		$dbh->do("UPDATE routes SET db_version=db_version+1 WHERE uuid=?", [$uuid]);
+		$this->_pullFromLeaflet($uuid);
+		_pushObjToLeaflet($dbh, $this, { uuid => $uuid, obj_type => 'route' }, undef);
+		$this->refresh();
+	}
+	elsif ($op eq 'split')
+	{
+		my $split_idx = $edit->{split_idx} // -1;
+		my $new_name  = $edit->{new_name}  // '';
+		my $route     = getRoute($dbh, $uuid);
+		my $wps       = getRouteWaypoints($dbh, $uuid);
+		if (!$route || !$wps || @$wps < 2 || $split_idx <= 0 || $split_idx >= $#$wps)
+		{
+			warning(0,0,"winDatabase::onLeafletRouteEdit split precondition failed uuid=$uuid idx=$split_idx");
+			disconnectDB($dbh);
+			return;
+		}
+		my @wps_a = @{$wps}[0 .. $split_idx];
+		my @wps_b = @{$wps}[$split_idx .. $#$wps];
+		my $orig_pos = $route->{position} + 0;
+		my $next_pos = _nextCollItemPos($dbh, $route->{collection_uuid}, $orig_pos);
+		my $new_pos  = ($next_pos && $next_pos > $orig_pos) ? ($orig_pos + $next_pos) / 2 : $orig_pos + 1;
+		clearRouteWaypoints($dbh, $uuid);
+		for my $i (0 .. $#wps_a)
+		{
+			appendRouteWaypoint($dbh, $uuid, $wps_a[$i]{uuid}, $i + 1);
+		}
+		$dbh->do("UPDATE routes SET db_version=db_version+1 WHERE uuid=?", [$uuid]);
+		my $new_uuid = insertRoute($dbh, $new_name, $route->{color} // 0, $route->{comment} // '',
+			$route->{collection_uuid});
+		$dbh->do("UPDATE routes SET position=? WHERE uuid=?", [$new_pos, $new_uuid]);
+		setDbVisible($new_uuid, getDbVisible($uuid));
+		for my $i (0 .. $#wps_b)
+		{
+			appendRouteWaypoint($dbh, $new_uuid, $wps_b[$i]{uuid}, $i + 1);
+		}
+		$this->_pullFromLeaflet($uuid);
+		_pushObjToLeaflet($dbh, $this, { uuid => $uuid,     obj_type => 'route' }, undef);
+		_pushObjToLeaflet($dbh, $this, { uuid => $new_uuid, obj_type => 'route' }, undef);
+		$this->refresh();
+	}
+	elsif ($op eq 'create')
+	{
+		my $name      = $edit->{name}            // 'New Route';
+		my $coll_uuid = $edit->{collection_uuid} // '';
+		my $waypoints = $edit->{waypoints}       // [];
+		if (!$coll_uuid || @$waypoints < 2)
+		{
+			warning(0,0,"winDatabase::onLeafletRouteEdit create: bad payload coll=$coll_uuid wps=" . scalar(@$waypoints));
+			disconnectDB($dbh);
+			return;
+		}
+		my $max_pos = _maxCollItemPos($dbh, $coll_uuid);
+		my $route_pos = ($max_pos // 0) + 1;
+		my $new_uuid = insertRoute($dbh, $name, 0, '', $coll_uuid);
+		$dbh->do("UPDATE routes SET position=? WHERE uuid=?", [$route_pos, $new_uuid]);
+		my $n = scalar @$waypoints;
+		for my $i (0 .. $#$waypoints)
+		{
+			my $wp      = $waypoints->[$i];
+			my $wp_pos  = $route_pos + ($i + 1) * 0.001;
+			my $wp_uuid = newUUID($dbh);
+			my $wp_name = "RNP-" . uc(substr($wp_uuid, 0, 6));
+			insertWaypoint($dbh,
+				uuid            => $wp_uuid,
+				name            => $wp_name,
+				lat             => $wp->{lat} + 0,
+				lon             => $wp->{lon} + 0,
+				wp_type         => $WP_TYPE_NAV,
+				color           => 0,
+				depth_cm        => 0,
+				created_ts      => time(),
+				ts_source       => 'nav',
+				source          => 'navMate',
+				collection_uuid => $coll_uuid);
+			$dbh->do("UPDATE waypoints SET position=? WHERE uuid=?", [$wp_pos, $wp_uuid]);
+			appendRouteWaypoint($dbh, $new_uuid, $wp_uuid, $i + 1);
+		}
+		_pushObjToLeaflet($dbh, $this, { uuid => $new_uuid, obj_type => 'route' }, undef);
+		$this->refresh();
+	}
+	else
+	{
+		warning(0,0,"winDatabase::onLeafletRouteEdit unknown op '$op' uuid=$uuid");
+	}
+	disconnectDB($dbh);
+}
+
+
+sub _nextCollItemPos
+{
+	my ($dbh, $collection_uuid, $after_pos) = @_;
+	my $rec = $dbh->get_record(qq{
+		SELECT MIN(next_p) AS p FROM (
+			SELECT position AS next_p FROM waypoints WHERE collection_uuid=? AND position > ?
+			UNION ALL
+			SELECT position AS next_p FROM routes    WHERE collection_uuid=? AND position > ?
+			UNION ALL
+			SELECT position AS next_p FROM tracks    WHERE collection_uuid=? AND position > ?
+		) t},
+		[$collection_uuid, $after_pos, $collection_uuid, $after_pos, $collection_uuid, $after_pos]);
+	return $rec ? $rec->{p} : undef;
+}
+
+
+sub _maxCollItemPos
+{
+	my ($dbh, $collection_uuid) = @_;
+	my $rec = $dbh->get_record(qq{
+		SELECT MAX(max_p) AS p FROM (
+			SELECT MAX(position) AS max_p FROM waypoints WHERE collection_uuid=?
+			UNION ALL
+			SELECT MAX(position) AS max_p FROM routes    WHERE collection_uuid=?
+			UNION ALL
+			SELECT MAX(position) AS max_p FROM tracks    WHERE collection_uuid=?
+		) t},
+		[$collection_uuid, $collection_uuid, $collection_uuid]);
+	return $rec ? $rec->{p} : undef;
 }
 
 
@@ -1093,6 +1378,7 @@ sub _clearEditor
 	$this->{ed_lon_ddm}->Show(0);
 	_ed_show_row($this->{ed_lbl_wp_type}, $this->{ed_wp_type},     0);
 	_ed_show_row($this->{ed_lbl_color},   $this->{ed_color_swatch},0);
+	$this->{ed_e80_color}->Show(0);
 	$this->{ed_pick_btn}->Show(0);
 	_ed_show_row($this->{ed_lbl_depth},   $this->{ed_depth},       0);
 	$this->{ed_depth_unit}->Show(0);
@@ -1112,9 +1398,10 @@ sub _loadEditor
 		|| $obj_type eq 'waypoint' || $obj_type eq 'route');
 	my $show_latlon  = ($obj_type eq 'waypoint');
 	my $show_wptype  = ($obj_type eq 'waypoint');
-	my $show_color   = ($obj_type eq 'waypoint'
+	my $show_color    = ($obj_type eq 'waypoint'
 		|| $obj_type eq 'route' || $obj_type eq 'track');
-	my $show_depth   = ($obj_type eq 'waypoint');
+	my $show_e80_color = ($obj_type eq 'route' || $obj_type eq 'track');
+	my $show_depth    = ($obj_type eq 'waypoint');
 
 	my $data;
 	if    ($type eq 'collection')             { $data = getCollection($dbh, $uuid); }
@@ -1142,6 +1429,7 @@ sub _loadEditor
 	$this->{ed_lon_ddm}->Show($show_latlon ? 1 : 0);
 	_ed_show_row($this->{ed_lbl_wp_type}, $this->{ed_wp_type},      $show_wptype);
 	_ed_show_row($this->{ed_lbl_color},   $this->{ed_color_swatch}, $show_color);
+	$this->{ed_e80_color}->Show($show_e80_color ? 1 : 0);
 	$this->{ed_pick_btn}->Show($show_color ? 1 : 0);
 	_ed_show_row($this->{ed_lbl_depth},   $this->{ed_depth},        $show_depth);
 	$this->{ed_depth_unit}->Show($show_depth ? 1 : 0);
@@ -1276,6 +1564,13 @@ sub _setColorSwatch
 		$this->{ed_color_swatch}->SetBackgroundColour(Wx::Colour->new(192, 192, 192));
 	}
 	$this->{ed_color_swatch}->Refresh();
+	if ($this->{ed_e80_color}->IsShown())
+	{
+		my $sel = (defined $color && isExactE80Color($color))
+			? abgrToE80Index($color)
+			: scalar(@E80_ROUTE_COLOR_NAMES);  # Custom
+		$this->{ed_e80_color}->SetSelection($sel);
+	}
 }
 
 
@@ -1302,6 +1597,18 @@ sub _onColorPick
 		$this->{ed_save}->Enable(1);
 	}
 	$dlg->Destroy();
+}
+
+
+sub _onE80ColorChoice
+{
+	my ($this, $event) = @_;
+	return if $this->{_loading_editor};
+	my $sel = $this->{ed_e80_color}->GetSelection();
+	return if $sel >= scalar(@E80_ROUTE_COLOR_NAMES);  # Custom
+	_setColorSwatch($this, $E80_ROUTE_COLOR_ABGR[$sel]);
+	$this->{_editor_dirty} = 1;
+	$this->{ed_save}->Enable(1);
 }
 
 
@@ -1970,15 +2277,15 @@ sub doSaveOutline
 	my ($this) = @_;
 	_captureExpandedInto($this);
 	my @uuids = sort keys %{$this->{_expanded_uuids}};
-	navOutline::setExpandedUUIDs(\@uuids);
-	navOutline::saveOutlineState();
+	navOutline::setExpanded('db', \@uuids);
+	navOutline::saveOutline('db');
 }
 
 
 sub doRestoreOutline
 {
 	my ($this) = @_;
-	my @uuids = navOutline::getExpandedUUIDs();
+	my @uuids = navOutline::getExpanded('db');
 	$this->{_expanded_uuids} = { map { $_ => 1 } @uuids };
 	_clearEditor($this);
 	$this->{detail}->SetValue('');

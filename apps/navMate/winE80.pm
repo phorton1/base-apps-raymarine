@@ -158,7 +158,7 @@ sub new
 		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
 	$this->{ed_color_choice} = Wx::Choice->new($editor_panel, -1,
 		[$ED_CTRL_X, $ey->(5)], [-1, $ED_CTRL_H],
-		['Red', 'Yellow', 'Green', 'Blue', 'Purple', 'Black']);
+		[@E80_ROUTE_COLOR_NAMES]);
 
 	# depth row (row 5, same as color - mutually exclusive) - waypoint only; wire value is cm (int32)
 	$this->{ed_lbl_depth} = Wx::StaticText->new($editor_panel, -1, 'Depth',

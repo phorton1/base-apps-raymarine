@@ -60,7 +60,8 @@ sub _handleSerialCommand
 
 my $serial = apps::raymarine::NET::s_serial->new(\&_handleSerialCommand);
 
-loadOutlineState();
+loadOutline('db');
+loadOutline('fsh');
 loadSelectionSets();
 my $db_rc = navDB::openDB();
 if ($db_rc == -1)

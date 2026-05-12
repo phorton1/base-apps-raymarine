@@ -2,10 +2,9 @@
 #------------------------------------------
 # navOutline.pm
 #------------------------------------------
-# Persists the winDatabase tree expansion state.
-# File: $temp_dir/navMateOutline.json  (JSON array of expanded collection UUIDs)
-# Written at clean exit and by explicit Utils->Save Outline command.
-# Loaded at program startup; applied to tree during winDatabase construction.
+# Persists tree expansion state for named panels.
+# Labels: 'db' => nmDBOutline.json, 'fsh' => nmFSHOutline.json
+# Call loadOutline($label) at startup, saveOutline($label) on exit.
 
 package navOutline;
 use strict;
@@ -18,51 +17,72 @@ BEGIN
 {
 	use Exporter qw(import);
 	our @EXPORT = qw(
-		loadOutlineState
-		saveOutlineState
-		getExpandedUUIDs
-		setExpandedUUIDs
+		loadOutline
+		saveOutline
+		getExpanded
+		setExpanded
 	);
 }
 
 
-my @expanded_uuids;
+my %_expanded;
 
 
-sub _stateFile { return "$temp_dir/navMateOutline.json" }
-
-
-sub loadOutlineState
+sub _file
 {
-	my $file = _stateFile();
-	@expanded_uuids = ();
+	my ($label) = @_;
+	if ($label eq 'db')
+	{
+		my $new = "$temp_dir/nmDBOutline.json";
+		my $old = "$temp_dir/navMateOutline.json";
+		return (-f $new || !-f $old) ? $new : $old;
+	}
+	if ($label eq 'fsh')
+	{
+		return "$temp_dir/nmFSHOutline.json";
+	}
+	return "$temp_dir/nmOutline_$label.json";
+}
+
+
+sub loadOutline
+{
+	my ($label) = @_;
+	my $file = _file($label);
+	$_expanded{$label} = [];
 	if (-f $file)
 	{
 		my $raw = do { local $/; open(my $fh, '<:raw', $file) or die $!; <$fh> };
 		my $arr = eval { decode_json($raw) };
-		@expanded_uuids = ($arr && ref $arr eq 'ARRAY') ? @$arr : ();
+		$_expanded{$label} = ($arr && ref $arr eq 'ARRAY') ? $arr : [];
 	}
-	display(0, 0, 'navOutline: loaded ' . scalar(@expanded_uuids) . ' expanded nodes');
+	display(0, 0, "navOutline($label): loaded " . scalar(@{$_expanded{$label}}) . ' expanded nodes');
 }
 
 
-sub saveOutlineState
+sub saveOutline
 {
-	my $file = _stateFile();
-	my $json = encode_json(\@expanded_uuids);
+	my ($label) = @_;
+	my $file = _file($label);
+	my $json = encode_json($_expanded{$label} // []);
 	open(my $fh, '>:raw', $file) or do { error("navOutline: cannot write $file: $!"); return; };
 	print $fh $json;
 	close $fh;
-	display(0, 0, 'navOutline: saved ' . scalar(@expanded_uuids) . ' expanded nodes');
+	display(0, 0, "navOutline($label): saved " . scalar(@{$_expanded{$label}}) . ' expanded nodes');
 }
 
 
-sub getExpandedUUIDs { return @expanded_uuids }
-
-sub setExpandedUUIDs
+sub getExpanded
 {
-	my ($ref) = @_;
-	@expanded_uuids = (ref $ref eq 'ARRAY') ? @$ref : ();
+	my ($label) = @_;
+	return @{$_expanded{$label} // []};
+}
+
+
+sub setExpanded
+{
+	my ($label, $ref) = @_;
+	$_expanded{$label} = (ref $ref eq 'ARRAY') ? $ref : [];
 }
 
 
