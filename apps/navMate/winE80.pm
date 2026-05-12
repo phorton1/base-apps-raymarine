@@ -547,7 +547,7 @@ sub onTreeSelect
 			{
 				my $pt   = $point_list->[$i];
 				my $d_ft = ($pt->{depth} // 0) ? sprintf('%.1fft', $pt->{depth} / 30.48) : '-';
-				my $t_f  = ($pt->{tempr} // 0) ? sprintf('%.1fF', ($pt->{tempr} / 100 - 273) * 9 / 5 + 32) : '-';
+				my $t_f  = ($pt->{temp_k} // 0) ? sprintf('%.1fF', ($pt->{temp_k} / 100 - 273) * 9 / 5 + 32) : '-';
 				$text .= sprintf("  %2d  %9.6f  %10.6f  %7s  %s\n",
 					$i + 1, ($pt->{lat} // 0) + 0, ($pt->{lon} // 0) + 0, $d_ft, $t_f);
 			}
@@ -612,7 +612,7 @@ sub _onSave
 			sym     => $this->{ed_sym}->GetSelection(),
 			comment => $this->{ed_comment}->GetValue(),
 			depth   => $depth_cm,
-			temp    => $temp_k100,
+			temp_k  => $temp_k100,
 			date    => $date_val,
 			time    => $time_sec,
 		});

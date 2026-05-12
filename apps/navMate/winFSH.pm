@@ -533,10 +533,10 @@ sub _fshWaypointText
 		my $d_ft = sprintf('%.1f ft', $wp->{depth} / 30.48);
 		$text .= sprintf("  %-12s = %d cm  (%s)\n", 'depth', $wp->{depth}, $d_ft);
 	}
-	if ($wp->{temp})
+	if ($wp->{temp_k})
 	{
-		my $t_f = sprintf('%.1f F', ($wp->{temp} / 100 - 273) * 9 / 5 + 32);
-		$text .= sprintf("  %-12s = %d  (%s)\n", 'temp', $wp->{temp}, $t_f);
+		my $t_f = sprintf('%.1f F', ($wp->{temp_k} / 100 - 273) * 9 / 5 + 32);
+		$text .= sprintf("  %-12s = %d  (%s)\n", 'temp_k', $wp->{temp_k}, $t_f);
 	}
 	if ($wp->{date} || $wp->{time})
 	{
@@ -590,7 +590,7 @@ sub _fshTrackText
 		{
 			my $pt   = $points->[$i];
 			my $d_ft = ($pt->{depth} // 0) ? sprintf('%.1fft', $pt->{depth} / 30.48) : '-';
-			my $t_f  = ($pt->{temp}  // 0) ? sprintf('%.1fF',  ($pt->{temp}  / 100 - 273) * 9 / 5 + 32) : '-';
+			my $t_f  = ($pt->{temp_k}  // 0) ? sprintf('%.1fF',  ($pt->{temp_k}  / 100 - 273) * 9 / 5 + 32) : '-';
 			$text .= sprintf("  %2d  %9.6f  %10.6f  %7s  %s\n",
 				$i + 1, ($pt->{lat} // 0) + 0, ($pt->{lon} // 0) + 0, $d_ft, $t_f);
 		}
@@ -674,7 +674,7 @@ sub _onSave
 			$wp_rec->{lon}     = $lon;
 			$wp_rec->{sym}     = $sym;
 			$wp_rec->{depth}   = $depth_cm;
-			$wp_rec->{temp}    = $temp_k100;
+			$wp_rec->{temp_k}    = $temp_k100;
 			$wp_rec->{date}    = $date_val;
 			$wp_rec->{time}    = $time_sec;
 		}

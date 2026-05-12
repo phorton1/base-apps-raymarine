@@ -709,7 +709,7 @@ sub _pasteItemsToCollection
 						lat      => $_->{lat},
 						lon      => $_->{lon},
 						depth_cm => $_->{depth_cm} // $_->{depth},
-						temp_k   => $_->{temp_k}   // $_->{tempr},
+						temp_k   => $_->{temp_k},
 						ts       => $_->{ts},
 					}} @$pts;
 					insertTrackPoints($dbh, $track_uuid, \@db_pts);
@@ -985,7 +985,7 @@ sub _pasteDB
 								lat      => $_->{lat},
 								lon      => $_->{lon},
 								depth_cm => $_->{depth_cm} // $_->{depth},
-								temp_k   => $_->{temp_k}   // $_->{tempr},
+								temp_k   => $_->{temp_k},
 								ts       => $_->{ts},
 							}} @$pts;
 							insertTrackPoints($dbh, $new_uuid, \@db_pts);

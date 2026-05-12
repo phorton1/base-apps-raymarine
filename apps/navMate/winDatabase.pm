@@ -561,6 +561,8 @@ sub _showObject
 		$text .= _fmt('wp_type',         $w->{wp_type});
 		$text .= _fmt('color',           $w->{color});
 		$text .= _fmt('depth_cm',        $w->{depth_cm});
+		$text .= _fmt('temp_k', sprintf('%d  (%.1f F)', $w->{temp_k}, ($w->{temp_k} / 100 - 273) * 9 / 5 + 32))
+			if $w->{temp_k};
 		$text .= _fmt('created_ts',      $ts);
 		$text .= _fmt('ts_source',       $w->{ts_source});
 		$text .= _fmt('source',          $w->{source});

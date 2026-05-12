@@ -104,6 +104,7 @@ sub createWaypoint
 	my $ts      = $hash->{ts}      // timegm(localtime());
 	my $comment  = $hash->{comment}  // '';
 	my $depth    = $hash->{depth}    // 0;
+	my $temp_k   = $hash->{temp_k}   // 0;
 	my $progress = $hash->{progress};
 	return error("createWaypoint: name exceeds E80 limit of $E80_MAX_NAME chars: '$name'")
 		if length($name) > $E80_MAX_NAME;
@@ -120,6 +121,7 @@ sub createWaypoint
 		east    => $alt_coords->{east},
 		sym     => $sym,
 		depth   => $depth,
+		temp_k  => $temp_k,
 		date    => int($ts / $SECS_PER_DAY),
 		time    => int($ts % $SECS_PER_DAY),
 	},$MONITOR_API_BUILDS,$TEMP_COLOR);

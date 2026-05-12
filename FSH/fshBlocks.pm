@@ -201,7 +201,7 @@ sub decodeTRK     # parse into array of points in track_points
 	{
 		my $point_str = substr($bytes,$offset,$TRACK_POINT_SIZE);
 		$offset += $TRACK_POINT_SIZE;
-		my ($north,$east,$temp,$depth,$c) = unpack('llSss',$point_str);
+		my ($north,$east,$temp_k,$depth,$c) = unpack('llSss',$point_str);
 			# 	int32_t north, east; // prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
 			# 	uint16_t tempr;      // temperature in Kelvin * 100
 			# 	int16_t depth;       // depth in cm
@@ -211,16 +211,16 @@ sub decodeTRK     # parse into array of points in track_points
 		if ($dbg_trk < 0)
 		{
 			my $d_ft = sprintf('%.1fft', $depth / 30.48);
-			my $t_f  = sprintf('%.1fF', ($temp / 100 - 273) * 9 / 5 + 32);
+			my $t_f  = sprintf('%.1fF', ($temp_k / 100 - 273) * 9 / 5 + 32);
 			display($dbg_trk+1,2,sprintf("  %2d  %9.6f  %10.6f  %7s  %s",
 				$i + 1, $coords->{lat}, $coords->{lon}, $d_ft, $t_f));
 		}
 
-		
+
         my $point = {
             north   => $north,
             east    => $east,
-            temp    => $temp,
+            temp_k  => $temp_k,
             depth   => $depth,
             lat     => $coords->{lat},
             lon     => $coords->{lon}, };
@@ -282,11 +282,11 @@ my $MTA_FIELD_SPECS = [             # typedef struct fsh_track_meta     // total
 	length       => 'l',        #   7     int32_t length;           // approx. track length in m
 	north_start  => 'l',        #   11    int32_t north_start;      // Northing of first track point
 	east_start   => 'l',        #   15    int32_t east_start;       // Easting of first track point
-	temp_start   => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
+	temp_k_start => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
 	depth_start  => 'l',        #   21    int32_t depth_start;      // depth of first track point
 	north_end    => 'l',        #   25    int32_t north_end;        // Northing of last track point
 	east_end     => 'l',        #   29    int32_t east_end;         // Easting of last track point
-	temp_end     => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
+	temp_k_end   => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
 	depth_end    => 'l',        #   35    int32_t depth_end;        // depth of last track point
 	color        => 'c',        #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
 	name         => 'Z16',      #   40    char name[16];            // name of track, string not terminated
@@ -428,11 +428,11 @@ sub encodeMTA  # create an MTA
 		length       => 10000,	# test value	$rec->{length},	# => 'l',        #   7     int32_t length;           // approx. track length in m
 		north_start  => $north_start,	# => 'l',        #   11    int32_t north_start;      // Northing of first track point
 		east_start   => $east_start,	# => 'l',        #   15    int32_t east_start;       // Easting of first track point
-		temp_start   => 0,				# => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
+		temp_k_start => 0,				# => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
 		depth_start  => $depth_start,	# => 'l',        #   21    int32_t depth_start;      // depth of first track point
 		north_end    => $north_end,		# => 'l',        #   25    int32_t north_end;        // Northing of last track point
 		east_end     => $east_end,		# => 'l',        #   29    int32_t east_end;         // Easting of last track point
-		temp_end     => 0,				# => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
+		temp_k_end   => 0,				# => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
 		depth_end    => $depth_end,		# => 'l',        #   35    int32_t depth_end;        // depth of last track point
 		color        => $rec->{color},	# => 'c',        #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
 		name         => $name,			# => 'Z16',      #   40    char name[16];            // name of track, string not terminated
@@ -466,7 +466,7 @@ my $WPT_FIELD_SPECS = [             # typedef struct fsh_wpt_data; total length 
 	east   		=> 'l',         #   12   int32_t east; 				// prescaled ellipsoid Mercator northing and easting
 	k1_0x12     => 'A12',       #   16   char d[12];         		// 12x \0
 	sym         => 'C',         #   28  char sym;           		// probably symbol
-	temp        => 'S',         #   29  uint16_t tempr;     		// temperature in Kelvin * 100
+	temp_k      => 'S',         #   29  uint16_t tempr;     		// temperature in Kelvin * 100
 	depth       => 'l',         #   31  int32_t depth;      		// depth in cm
 	time        => 'L',         #   35  uint32_t timeofday;  		// time of day in seconds
 	date        => 'S',         #   39  uint16_t date;       		// days since 1.1.1970
@@ -796,7 +796,7 @@ sub _encodeCommonWaypoint
 		east     => $wpt->{east}   // 0,
 		k1_0x12  => chr(0) x 12,
 		sym      => $wpt->{sym}    // 0,
-		temp     => $wpt->{temp}   // 0,
+		temp_k   => $wpt->{temp_k} // 0,
 		depth    => $wpt->{depth}  // 0,
 		time     => $wpt->{time}   // 0,
 		date     => $wpt->{date}   // 0,

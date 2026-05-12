@@ -111,6 +111,7 @@ my $db_def = {
 		"wp_type         TEXT NOT NULL DEFAULT 'nav'",
 		"color           TEXT",
 		"depth_cm        INTEGER DEFAULT 0",
+		"temp_k          INTEGER DEFAULT NULL",
 		"created_ts      INTEGER NOT NULL",
 		"ts_source       TEXT NOT NULL",
 		"source          TEXT",
@@ -277,6 +278,15 @@ sub openDB
 		$dbh->do("UPDATE key_values SET value='11.1' WHERE key='schema_version'", []);
 		$stored = '11.1';
 		display(0,0,"navDB::openDB migration to 11.1 complete");
+	}
+
+	if ($stored eq '11.1')
+	{
+		warning(0,0,"navDB::openDB migrating schema 11.1 -> 11.2");
+		$dbh->do("ALTER TABLE waypoints ADD COLUMN temp_k INTEGER DEFAULT NULL", []);
+		$dbh->do("UPDATE key_values SET value='11.2' WHERE key='schema_version'", []);
+		$stored = '11.2';
+		warning(0,0,"navDB::openDB migration to 11.2 complete");
 	}
 
 	my ($stored_major)   = split(/\./, $stored);
@@ -512,9 +522,9 @@ sub insertWaypoint
 	my $uuid = $a{uuid} // newUUID($dbh);
 	$dbh->do(qq{
 		INSERT INTO waypoints
-			(uuid, name, comment, lat, lon, wp_type, color, depth_cm,
+			(uuid, name, comment, lat, lon, wp_type, color, depth_cm, temp_k,
 			 created_ts, ts_source, source, collection_uuid)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)},
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)},
 		[$uuid,
 		$a{name},
 		$a{comment}         // '',
@@ -523,6 +533,7 @@ sub insertWaypoint
 		$a{wp_type}         // $WP_TYPE_NAV,
 		$a{color},
 		$a{depth_cm}        // 0,
+		$a{temp_k}          || undef,
 		$a{created_ts},
 		$a{ts_source},
 		$a{source},
@@ -537,7 +548,7 @@ sub updateWaypoint
 	$dbh->do(qq{
 		UPDATE waypoints SET
 			name=?, comment=?, lat=?, lon=?, wp_type=?, color=?,
-			depth_cm=?, created_ts=?, ts_source=?, source=?
+			depth_cm=?, temp_k=?, created_ts=?, ts_source=?, source=?
 		WHERE uuid=?},
 		[$a{name},
 		$a{comment}  // '',
@@ -546,6 +557,7 @@ sub updateWaypoint
 		$a{wp_type}  // $WP_TYPE_NAV,
 		$a{color},
 		$a{depth_cm} // 0,
+		$a{temp_k}   || undef,
 		$a{created_ts},
 		$a{ts_source},
 		$a{source},
@@ -835,7 +847,7 @@ sub getWaypoint
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm, created_ts, ts_source, source, collection_uuid, position FROM waypoints WHERE uuid=?",
+		"SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm, temp_k, created_ts, ts_source, source, collection_uuid, position FROM waypoints WHERE uuid=?",
 		[$uuid]);
 }
 

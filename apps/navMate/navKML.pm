@@ -111,7 +111,10 @@ sub _exportWaypoint
 	my $s = "$pad<Placemark>\n";
 	$s .= "$pad  <name>" . _esc($wp->{name}) . "</name>\n";
 	$s .= "$pad  <styleUrl>#$sid</styleUrl>\n";
-	$s .= _extData("$pad  ", nm_uuid => $wp->{uuid}, nm_type => 'waypoint');
+	$s .= _extData("$pad  ",
+		nm_uuid => $wp->{uuid},
+		nm_type => 'waypoint',
+		($wp->{temp_k} ? (temp_k => $wp->{temp_k}) : ()));
 	$s .= "$pad  <Point>\n";
 	$s .= "$pad    <coordinates>$wp->{lon},$wp->{lat},0</coordinates>\n";
 	$s .= "$pad  </Point>\n";
@@ -456,6 +459,7 @@ sub _importWaypoint
 				wp_type    => $ex->{wp_type},
 				color      => $color // $ex->{color},
 				depth_cm   => $ex->{depth_cm},
+				temp_k     => $ext->{temp_k} || $ex->{temp_k},
 				created_ts => $ex->{created_ts},
 				ts_source  => $ex->{ts_source},
 				source     => $ex->{source});
@@ -472,6 +476,7 @@ sub _importWaypoint
 				lat             => $lat + 0,
 				lon             => $lon + 0,
 				color           => $color,
+				temp_k          => $ext->{temp_k} || undef,
 				created_ts      => time(),
 				ts_source       => $TS_SOURCE_IMPORT,
 				collection_uuid => $coll_uuid);

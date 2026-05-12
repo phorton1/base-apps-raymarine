@@ -532,7 +532,7 @@ sub _loadEditor
         $this->{ed_depth}->SetValue(sprintf('%.1f', $depth_disp));
         $this->{ed_depth_unit}->SetLabel($use_feet ? 'ft' : 'm');
 
-        my $temp_k100  = ($data->{temp}  // 0) + 0;
+        my $temp_k100  = ($data->{temp_k}  // 0) + 0;
         my $temp_c     = $temp_k100 / 100 - 273.15;
         my $temp_disp  = $use_fahr ? $temp_c * 9 / 5 + 32 : $temp_c;
         $this->{ed_temp}->SetValue(sprintf('%.1f', $temp_disp));
