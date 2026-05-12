@@ -183,7 +183,10 @@ sub _exportTrack
 	my $s = "$pad<Placemark>\n";
 	$s .= "$pad  <name>" . _esc($track->{name}) . "</name>\n";
 	$s .= "$pad  <styleUrl>#$sid</styleUrl>\n";
-	$s .= _extData("$pad  ", nm_uuid => $track->{uuid}, nm_type => 'track');
+	$s .= _extData("$pad  ",
+		nm_uuid        => $track->{uuid},
+		nm_type        => 'track',
+		($track->{companion_uuid} ? (companion_uuid => $track->{companion_uuid}) : ()));
 	$s .= "$pad  <LineString>\n";
 	$s .= "$pad    <tessellate>1</tessellate>\n";
 	$s .= "$pad    <coordinates>$coords</coordinates>\n";
@@ -517,8 +520,8 @@ sub _importTrack
 		my @pts = _parseCoords($pm->{LineString}{coordinates});
 		return if !@pts;
 		$dbh->do(
-			"INSERT INTO tracks (uuid,name,color,ts_start,ts_source,point_count,collection_uuid) VALUES (?,?,?,?,?,?,?)",
-			[$nm_uuid, $name, $color, time(), $TS_SOURCE_IMPORT, scalar @pts, $coll_uuid]);
+			"INSERT INTO tracks (uuid,name,color,ts_start,ts_source,point_count,collection_uuid,companion_uuid) VALUES (?,?,?,?,?,?,?,?)",
+			[$nm_uuid, $name, $color, time(), $TS_SOURCE_IMPORT, scalar @pts, $coll_uuid, $ext->{companion_uuid}]);
 		insertTrackPoints($dbh, $nm_uuid, \@pts);
 	}
 	else
@@ -531,7 +534,8 @@ sub _importTrack
 			ts_start        => time(),
 			ts_source       => $TS_SOURCE_IMPORT,
 			collection_uuid => $coll_uuid,
-			point_count     => scalar @pts);
+			point_count     => scalar @pts,
+			companion_uuid  => $ext->{companion_uuid});
 		insertTrackPoints($dbh, $uuid, \@pts);
 	}
 }

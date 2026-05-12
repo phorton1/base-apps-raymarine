@@ -153,6 +153,7 @@ my $db_def = {
 		"e80_version     INTEGER",
 		"kml_version     INTEGER",
 		"position        REAL    NOT NULL DEFAULT 0",
+		"companion_uuid  TEXT",
 	],
 
 	track_points => [
@@ -267,6 +268,15 @@ sub openDB
 		$dbh->do("UPDATE key_values SET value='11.0' WHERE key='schema_version'", []);
 		$stored = '11.0';
 		display(0,0,"navDB::openDB migration to 11.0 complete");
+	}
+
+	if ($stored eq '11.0')
+	{
+		display(0,0,"navDB::openDB migrating schema 11.0 -> 11.1");
+		$dbh->do("ALTER TABLE tracks ADD COLUMN companion_uuid TEXT", []);
+		$dbh->do("UPDATE key_values SET value='11.1' WHERE key='schema_version'", []);
+		$stored = '11.1';
+		display(0,0,"navDB::openDB migration to 11.1 complete");
 	}
 
 	my ($stored_major)   = split(/\./, $stored);
@@ -604,16 +614,17 @@ sub insertTrack
 	$dbh->do(qq{
 		INSERT INTO tracks
 			(uuid, name, color, ts_start, ts_end, ts_source,
-			 point_count, collection_uuid)
-		VALUES (?,?,?,?,?,?,?,?)},
+			 point_count, collection_uuid, companion_uuid)
+		VALUES (?,?,?,?,?,?,?,?,?)},
 		[$uuid,
 		$a{name},
-		$a{color}       // 0,
-		$a{ts_start}    // 0,
+		$a{color}          // 0,
+		$a{ts_start}       // 0,
 		$a{ts_end},
 		$a{ts_source},
-		$a{point_count} // 0,
-		$a{collection_uuid}]);
+		$a{point_count}    // 0,
+		$a{collection_uuid},
+		$a{companion_uuid}]);
 	return $uuid;
 }
 
@@ -811,7 +822,7 @@ sub getTrack
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, collection_uuid, position FROM tracks WHERE uuid=?",
+		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, collection_uuid, position, companion_uuid FROM tracks WHERE uuid=?",
 		[$uuid]);
 }
 

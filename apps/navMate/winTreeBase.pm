@@ -717,6 +717,7 @@ sub _buildTrackFeature
     my ($this, $uuid, $track) = @_;
     my $pts = ref $track->{points} eq 'ARRAY' ? $track->{points} : [];
     return undef if !@$pts;
+    my $comp = $track->{companion_uuid} // $track->{trk_uuid};
     return {
         type       => 'Feature',
         properties => {
@@ -726,6 +727,7 @@ sub _buildTrackFeature
             data_source => $this->_wpDataSource(),
             color       => $this->_trackColorABGR($track),
             point_count => scalar(@$pts) + 0,
+            ($comp ? (companion_uuid => $comp) : ()),
         },
         geometry   => { type => 'LineString',
             coordinates => [map { [($_->{lon}//0)+0, ($_->{lat}//0)+0] } @$pts] },

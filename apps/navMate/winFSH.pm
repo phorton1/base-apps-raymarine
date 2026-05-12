@@ -579,7 +579,8 @@ sub _fshTrackText
 	my $points = ref $track->{points} eq 'ARRAY' ? $track->{points} : [];
 	my $pts    = $track->{cnt} // scalar @$points;
 	my $text   = "Track:  $track->{name}\n";
-	$text .= "UUID:   $node->{uuid}\n" if $node->{uuid};
+	$text .= "UUID:     $track->{mta_uuid}  {mta_uuid}\n" if $track->{mta_uuid};
+	$text .= "trk_uuid: $track->{trk_uuid}\n" if $track->{trk_uuid};
 	$text .= "Points: $pts\n";
 	$text .= "Color:  $track->{color}\n" if defined $track->{color};
 	if (@$points)

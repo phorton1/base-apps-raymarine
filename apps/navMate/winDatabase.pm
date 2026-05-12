@@ -523,7 +523,8 @@ sub _showObject
 		my $ts_end = $t->{ts_end}
 			? strftime("%Y-%m-%d %H:%M UTC", gmtime($t->{ts_end}))
 			: '(none)';
-		$text .= _fmt('uuid',            $t->{uuid});
+		$text .= _fmt('uuid',            ($t->{uuid} // '') . '  {mta_uuid}');
+		$text .= _fmt('companion_uuid',  $t->{companion_uuid}) if $t->{companion_uuid};
 		$text .= _fmt('name',            $t->{name});
 		$text .= _fmt('color',           $t->{color});
 		$text .= _fmt('ts_start',        $ts_start);

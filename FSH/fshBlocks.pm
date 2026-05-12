@@ -17,6 +17,12 @@
 # an BLK_MTA block that follows, and references, each BLK_TRK,
 # so we are able to do this as a one time pass through the blocks.
 #
+# Because of this combination, the MTA becomes the {tracks} record
+# and the points from the TRK are merged into it's {points} member.
+# The {track} carries both the {mta_uuid} and the {trk_uuid} and
+# the MTA_UUID IS USED CONSISTENTLY THROUGHOUT THE SYSTEMS AS
+# THE IDENTITY UUID.
+#
 # A proper implementation would parse all the BLK_TRK blocks first,
 # and then allow for the MTAs to reference possible multiple BLK_TRACKS
 # by uuid as the data structure implies.

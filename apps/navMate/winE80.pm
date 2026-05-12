@@ -535,7 +535,8 @@ sub onTreeSelect
 		my $track = $node->{data};
 		my $pts   = $track->{cnt1} // (ref $track->{points} ? scalar @{$track->{points}} : 0);
 		$text  = "Track:  $track->{name}\n";
-		$text .= "UUID:   $node->{uuid}\n";
+		$text .= "UUID:     $node->{uuid}  {mta_uuid}\n";
+		$text .= "trk_uuid: $track->{trk_uuid}\n" if $track->{trk_uuid};
 		$text .= "Points: $pts\n";
 		$text .= "Color:  $track->{color}\n" if defined $track->{color};
 		my $point_list = ref $track->{points} eq 'ARRAY' ? $track->{points} : [];

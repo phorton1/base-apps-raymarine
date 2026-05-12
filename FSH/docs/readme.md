@@ -117,6 +117,12 @@ then the name string, then the comment string.
 Tracks are stored as a **BLK_TRK + BLK_MTA pair**. The MTA always follows its
 TRK in the file and references the TRK by UUID.
 
+The MTA's own UUID (`mta_uuid`) is the identity UUID for tracks throughout navMate.
+The TRK block UUID (`trk_uuid`) is preserved as `companion_uuid` in the navMate DB
+schema and KML ExtendedData. `companion_uuid` in the DB and KML maps directly to
+`trk_uuid` at the FSH/E80 boundary. Both UUIDs are permanent durable identities
+from the E80 and are never remapped.
+
 **BLK_MTA fields** (58 bytes + guid_cnt x 8 bytes):
 `k1_1(1) cnt(2) _cnt(2) k2_0(2) length(4) north_start(4) east_start(4)
 temp_start(2) depth_start(4) north_end(4) east_end(4) temp_end(2)

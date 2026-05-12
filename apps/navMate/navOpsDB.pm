@@ -701,6 +701,7 @@ sub _pasteItemsToCollection
 					ts_source       => $ts_source,
 					point_count     => scalar @$pts,
 					collection_uuid => $target_uuid,
+					companion_uuid  => ($source eq 'e80' ? $track->{trk_uuid} : undef),
 				);
 				if (@$pts)
 				{
@@ -975,6 +976,7 @@ sub _pasteDB
 							ts_source       => $ts_src,
 							point_count     => scalar @$pts,
 							collection_uuid => $coll_uuid,
+							companion_uuid  => ($source eq 'e80' ? $tr->{trk_uuid} : undef),
 						);
 						$dbh->do("UPDATE tracks SET position=? WHERE uuid=?", [$pos, $new_uuid]);
 						if (@$pts)

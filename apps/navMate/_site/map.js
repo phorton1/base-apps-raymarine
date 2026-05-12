@@ -292,10 +292,25 @@ function renderAll(geojson) {
         }
         else if (geom.type === 'LineString') {
             if (!geom.coordinates.length) return;
-            const coords = geom.coordinates.map(([lon, lat]) => [lat, lon]);
+            const isSentinel = ([lat, lon]) => Math.abs(lat) < 0.01 && Math.abs(lon) < 0.01;
+            const rawPts = geom.coordinates.map(([lon, lat]) => [lat, lon]);
+            const coords = rawPts.filter(pt => !isSentinel(pt));
+            let lineCoords = coords;
+            if (rawPts.length !== coords.length) {
+                lineCoords = [];
+                let seg = [];
+                for (const pt of rawPts) {
+                    if (isSentinel(pt)) {
+                        if (seg.length) { lineCoords.push(seg); seg = []; }
+                    } else {
+                        seg.push(pt);
+                    }
+                }
+                if (seg.length) lineCoords.push(seg);
+            }
             const color  = abgrToCSS(props.color);
             const isEditable = props.obj_type === 'track' && (dsrc === 'db' || dsrc === 'fsh');
-            const line   = L.polyline(coords, { color: color, weight: 2 });
+            const line   = L.polyline(lineCoords, { color: color, weight: 2 });
             if (props.obj_type === 'track') {
                 const total = coords.length;
                 line.on('mouseover', () => {

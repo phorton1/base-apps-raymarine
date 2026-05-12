@@ -124,6 +124,11 @@ info  BUFFER   <track points>
 The MTA (metadata) and track point structures are shared with the FSH file format -
 see `FSH/docs/readme.md` and `FSH/fshBlocks.pm` for field definitions.
 
+The `mta_uuid` is the identity UUID for tracks throughout navMate. The `trk_uuid`
+(second CONTEXT, context_bits=0x11) is preserved as `companion_uuid` in the DB schema
+and KML ExtendedData. The two UUIDs are permanently coupled and always travel together.
+`companion_uuid` in the DB and KML maps directly to `trk_uuid` at the FSH/E80 boundary.
+
 ## Important: GET_STATE Before GET_CUR2
 
 GET_STATE must be called before GET_CUR2. GET_STATE returns `stopable=1` if the

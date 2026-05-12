@@ -176,9 +176,14 @@ independently queryable and reusable across multiple routes. Route geometry
 
 ### tracks
 
+The `uuid` column is the identity UUID (equivalent to `mta_uuid` at the FSH/E80
+boundary). `companion_uuid` is the paired TRK block UUID from the TRACKS protocol or
+FSH file. `companion_uuid` in the DB and KML maps directly to `trk_uuid` at the
+FSH/E80 boundary. Existing rows imported before schema 11.1 have `companion_uuid = NULL`.
+
 ```sql
 tracks (
-  uuid              TEXT PRIMARY KEY,
+  uuid              TEXT PRIMARY KEY,    -- identity UUID (= mta_uuid at FSH/E80 boundary)
   name              TEXT NOT NULL,
   color             TEXT DEFAULT NULL,   -- aabbggrr hex (GE byte order)
   ts_start          INTEGER NOT NULL,    -- never NULL; may be import time if no source timestamp
@@ -190,7 +195,8 @@ tracks (
   db_version        INTEGER NOT NULL DEFAULT 1,
   e80_version       INTEGER,             -- NULL = never synced to E80
   kml_version       INTEGER,             -- NULL = never exported via versioned KML
-  position          REAL    NOT NULL DEFAULT 0  -- display order within collection (schema 10.0)
+  position          REAL    NOT NULL DEFAULT 0,  -- display order within collection (schema 10.0)
+  companion_uuid    TEXT                 -- paired TRK block UUID (= trk_uuid at FSH/E80 boundary; schema 11.1)
 )
 
 track_points (
@@ -225,7 +231,7 @@ Initial entries:
 
 | key | Purpose |
 |-----|---------|
-| `schema_version` | Current value `'11.0'`; `openDB` in `navDB.pm` migrates known prior versions in place |
+| `schema_version` | Current value `'11.1'`; `openDB` in `navDB.pm` migrates known prior versions in place |
 | `uuid_counter` | Integer; persistent counter for navMate UUID generation (bytes 4-5 of the UUID) |
 
 The `uuid_counter` entry is incremented atomically within the same transaction as

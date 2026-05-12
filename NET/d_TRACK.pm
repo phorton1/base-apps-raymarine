@@ -8,6 +8,11 @@
 #
 # Cannot create or modify Tracks otherwise.
 # Cannot even set the color of the 'Current Track'
+#
+# The in memory {tracks} hash is keyed by the mta_uuid.
+# and have both {mta_uuid} and {trk_uuid} members.
+# The MTA_UUID IS USED CONSISTENTLY THROUGHOUT THE SYSTEMS AS
+# THE IDENTITY UUID.
 
 package apps::raymarine::NET::d_TRACK;
 use strict;
@@ -521,6 +526,7 @@ sub get_tracks
 			{
 				my $mta_uuid = $reply->{mta_uuid};
 				my $item = $reply->{item};
+				$item->{trk_uuid} = $reply->{trk_uuid} if $reply->{trk_uuid};
 				my $tracks = $this->{tracks};
 				$tracks->{$mta_uuid} = $item;
 				$item->{version} = $this->incVersion();
@@ -622,6 +628,7 @@ sub get_track
 	# NOTE that we KNOW the uuid of the item we are getting
 
 	my $item = $reply->{item};
+	$item->{trk_uuid} = $reply->{trk_uuid} if $reply->{trk_uuid};
 	my $tracks = $this->{tracks};
 	$tracks->{$uuid} = $item;
 	$item->{version} = $this->incVersion();
@@ -792,10 +799,11 @@ sub do_general_name
 	{
 		my $mta_uuid = $reply->{mta_uuid};
 		my $item 	= $reply->{item};
+		$item->{trk_uuid} = $reply->{trk_uuid} if $reply->{trk_uuid};
 		my $tracks = $this->{tracks};
 
 		warning($dbg_got,0,"received Current Track($mta_uuid) = '$item->{name}'");
-	
+
 		$tracks->{$mta_uuid} = $item;
 		$item->{version} = $this->incVersion();
 		$this->{current_track_uuid} = $mta_uuid;
