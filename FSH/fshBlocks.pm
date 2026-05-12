@@ -253,7 +253,7 @@ sub encodeTRK
 	{
 		my $point = $$points[$i];
 		my $coords = latLonToNorthEast($point->{lat},$point->{lon});
-		$bytes .= pack('llSss',$coords->{north},$coords->{east},0,$point->{depth},0);
+		$bytes .= pack('llSss',$coords->{north},$coords->{east},$point->{temp_k}//0,$point->{depth},0);
 			# 	int32_t north, east; // prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
 			# 	uint16_t tempr;      // temperature in Kelvin * 100
 			# 	int16_t depth;       // depth in cm
