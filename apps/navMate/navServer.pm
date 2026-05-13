@@ -16,6 +16,7 @@
 #   /clear       - clear render map
 #   /api/query   - SELECT against navMate SQLite DB
 #   /api/nmdb    - structured snapshot: collections, waypoints, routes, route_waypoints, tracks
+#   /api/fsh     - navFSH in-memory state as JSON (waypoints, groups, routes, tracks)
 
 package navServer;
 use strict;
@@ -29,6 +30,7 @@ use Pub::Utils qw(display warning error);
 use Pub::HTTP::Response qw(json_response);
 use apps::raymarine::NET::h_server;
 use navDB;
+use navFSH;
 use base qw(apps::raymarine::NET::h_server);
 
 
@@ -274,6 +276,19 @@ sub handle_request
 			routes           => $routes,
 			route_waypoints  => $rtwps,
 			tracks           => $tracks,
+		});
+	}
+	elsif ($uri eq '/api/fsh')
+	{
+		my $fsh_db = navFSH::getFSHDb();
+		return json_response($request,{ error => 'no FSH database loaded' })
+			if !$fsh_db;
+		return json_response($request,{
+			filename  => navFSH::getFilename(),
+			waypoints => $fsh_db->{waypoints} // {},
+			groups    => $fsh_db->{groups}    // {},
+			routes    => $fsh_db->{routes}    // {},
+			tracks    => $fsh_db->{tracks}    // {},
 		});
 	}
 
