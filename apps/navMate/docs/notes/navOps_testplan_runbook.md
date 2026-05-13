@@ -1331,9 +1331,16 @@ curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_c
 curl -s "http://localhost:9883/api/test?op=suppress&val=1&outcome=accept"
 ```
 
-Expected: log shows the ancestor-wins absorption message; no `ProgressDialog 'Paste'`
-STARTED line (paste aborted at the ancestor-wins decision); /api/db shows no new items
-added by this step. If Timiteo was on E80 entering this step, its contents are unchanged.
+Expected: `PASTE NEW (e80) STARTED` and `PASTE NEW (e80) FINISHED` lines present and
+adjacent; **no `ProgressDialog 'Paste'` line** between them (the function returned at the
+ancestor-wins step before opening any dialog); **no `ERROR` / `IMPLEMENTATION` line**
+(it was not a name-collision or other guard abort); /api/db shows no new items added by
+this step.
+
+**Important:** the "absorbed by an ancestor" message text only appears in the log when a
+real `confirmDialog` UI fires. With `suppress_confirm` on, the dialog is bypassed and the
+message is never logged -- so do NOT grep for "absorbed" as a pass criterion. The
+PASTE-NEW-without-ProgressDialog-and-without-error signature IS the reject-path evidence.
 
 ---
 
