@@ -649,6 +649,9 @@ sub _doSaveFSH
 		error("nmFrame: _doSaveFSH called with no current filename");
 		return;
 	}
+	return if !yesNoDialog($this,
+		"This will OVERWRITE the FSH file:\n\n$filename\n\nAre you sure?",
+		'Save FSH File');
 	navFSH::saveFSH($filename);
 }
 

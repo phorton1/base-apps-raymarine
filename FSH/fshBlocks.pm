@@ -252,8 +252,19 @@ sub encodeTRK
 	for (my $i=0; $i<$num_points; $i++)
 	{
 		my $point = $$points[$i];
-		my $coords = latLonToNorthEast($point->{lat},$point->{lon});
-		$bytes .= pack('llSss',$coords->{north},$coords->{east},$point->{temp_k}//0,$point->{depth},0);
+		my ($north,$east);
+		if (defined($point->{north}) && defined($point->{east}))
+		{
+			$north = $point->{north};
+			$east  = $point->{east};
+		}
+		else
+		{
+			my $coords = latLonToNorthEast($point->{lat},$point->{lon});
+			$north = $coords->{north};
+			$east  = $coords->{east};
+		}
+		$bytes .= pack('llSss',$north,$east,$point->{temp_k}//0,$point->{depth},0);
 			# 	int32_t north, east; // prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
 			# 	uint16_t tempr;      // temperature in Kelvin * 100
 			# 	int16_t depth;       // depth in cm
@@ -389,24 +400,46 @@ sub encodeMTA  # create an MTA
 	# one point  = same start and end
 	# two+ points = different start and end
 
-	my $north_start = 0;
-	my $east_start 	= 0;
-	my $depth_start	= 0;
-	my $north_end  	= 0;
-	my $east_end   	= 0;
-	my $depth_end  	= 0;
+	my $north_start  = 0;
+	my $east_start   = 0;
+	my $depth_start  = 0;
+	my $temp_k_start = 0;
+	my $north_end    = 0;
+	my $east_end     = 0;
+	my $depth_end    = 0;
+	my $temp_k_end   = 0;
 	if ($num_points)
 	{
 		my $pt1 = $$points[0];
 		my $pt2 = $$points[$num_points-1];
-		my $coords = latLonToNorthEast($pt1->{lat},$pt1->{lon});
-		$north_start = $coords->{north};
-		$east_start = $coords->{east};
-		$depth_start = $pt1->{depth};
-		$coords = latLonToNorthEast($pt2->{lat},$pt2->{lon});
-		$north_end = $coords->{north};
-		$east_end = $coords->{east};
-		$depth_end = $pt1->{depth};
+
+		if (defined($pt1->{north}) && defined($pt1->{east}))
+		{
+			$north_start = $pt1->{north};
+			$east_start  = $pt1->{east};
+		}
+		else
+		{
+			my $coords = latLonToNorthEast($pt1->{lat},$pt1->{lon});
+			$north_start = $coords->{north};
+			$east_start  = $coords->{east};
+		}
+		$depth_start  = $pt1->{depth};
+		$temp_k_start = $pt1->{temp_k} // 0;
+
+		if (defined($pt2->{north}) && defined($pt2->{east}))
+		{
+			$north_end = $pt2->{north};
+			$east_end  = $pt2->{east};
+		}
+		else
+		{
+			my $coords = latLonToNorthEast($pt2->{lat},$pt2->{lon});
+			$north_end = $coords->{north};
+			$east_end  = $coords->{east};
+		}
+		$depth_end  = $pt2->{depth};
+		$temp_k_end = $pt2->{temp_k} // 0;
 	}
 
 	my $name = $rec->{name};
@@ -428,11 +461,11 @@ sub encodeMTA  # create an MTA
 		length       => 10000,	# test value	$rec->{length},	# => 'l',        #   7     int32_t length;           // approx. track length in m
 		north_start  => $north_start,	# => 'l',        #   11    int32_t north_start;      // Northing of first track point
 		east_start   => $east_start,	# => 'l',        #   15    int32_t east_start;       // Easting of first track point
-		temp_k_start => 0,				# => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
+		temp_k_start => $temp_k_start,	# => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
 		depth_start  => $depth_start,	# => 'l',        #   21    int32_t depth_start;      // depth of first track point
 		north_end    => $north_end,		# => 'l',        #   25    int32_t north_end;        // Northing of last track point
 		east_end     => $east_end,		# => 'l',        #   29    int32_t east_end;         // Easting of last track point
-		temp_k_end   => 0,				# => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
+		temp_k_end   => $temp_k_end,	# => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
 		depth_end    => $depth_end,		# => 'l',        #   35    int32_t depth_end;        // depth of last track point
 		color        => $rec->{color},	# => 'c',        #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
 		name         => $name,			# => 'Z16',      #   40    char name[16];            // name of track, string not terminated

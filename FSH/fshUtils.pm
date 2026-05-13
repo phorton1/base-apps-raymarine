@@ -6,13 +6,13 @@
 package apps::raymarine::FSH::fshUtils;
 use strict;
 use warnings;
-use POSIX qw(floor pow atan);
+use POSIX qw(floor pow atan tan);
 use Fcntl qw(:seek);
 use Time::Local;
 use Pub::Utils;
 
 
-our $DEGREE_CHAR = "°";
+our $DEGREE_CHAR = "ï¿½";
 
 our $FSH_BLK_WPT = 0x0001;
 our $FSH_BLK_TRK = 0x000d;
@@ -228,28 +228,26 @@ sub northEastToLatLon
 
 sub latLonToNorthEast
 	# DENORMALIZED IN SHARK
+	# Inverse of northEastToLatLon: WGS84 ellipsoidal Mercator forward,
+	# scaled by FSH_LAT_SCALE (northing) and LONG_SCALE (easting).
 {
     my ($latitude, $longitude) = @_;
 
-    my $FSH_LAT_SCALE = 107.1709342;
-    my $LONG_SCALE = 0x7fffffff;  # 2147483647
-		# WEIRD AND INCORRECT
+    my $M_PI = 3.14159265358979323846;
 
-    # Convert latitude to north
-    my $north = $latitude * 11901911; # 11891525;	#  $FSH_LAT_SCALE;
+    my $a = 6378137;     # WGS84 semi-major axis
+    my $e = 0.08181919;  # WGS84 eccentricity
 
-    # Convert longitude to east
-    my $east = ($longitude / 180.0) * $LONG_SCALE;
+    my $lat_rad = $latitude * $M_PI / 180.0;
+    my $esin = $e * sin($lat_rad);
+    my $N = $a * log(tan($M_PI / 4 + $lat_rad / 2) * pow((1 - $esin) / (1 + $esin), $e / 2));
 
-	my $n = sprintf("%.6f", $north);
-	my $e = sprintf("%.6f", $east);
-
-	display(1,0,"latLonToNorthEast($latitude,$longitude) = $n,$e");
+    my $north = int($N * $FSH_LAT_SCALE + 0.5);
+    my $east  = int(($longitude / 180.0) * $LONG_SCALE + 0.5);
 
     return {
-        north => $n,
-        east => $e
-    };
+        north => $north,
+        east  => $east };
 }
 
 
