@@ -418,7 +418,18 @@ sub _deleteE80Routes
 
     my $n         = scalar @$nodes;
     my $total_pts = 0;
-    $total_pts   += scalar @{($_->{data} // {})->{uuids} // []} for @$nodes;
+    # Dedup uuids per route when sizing the progress dialog.
+    # Each route delete generates one MODIFY event per UNIQUE member-WP UUID
+    # (E80 sends one update per WP, not one per route_waypoint entry), and each
+    # MODIFY -> GET_ITEM advances $progress->{done} once. Counting raw uuids[]
+    # entries here would inflate total above the achievable done when a route
+    # contains the same WP UUID more than once (legal after copy-splice route
+    # point operations), and the dialog would never reach done==total and hang.
+    for my $node (@$nodes)
+    {
+        my %seen;
+        $total_pts += scalar(grep { !$seen{$_}++ } @{($node->{data} // {})->{uuids} // []});
+    }
     my $msg;
     if ($n == 1)
     {
@@ -1703,8 +1714,16 @@ sub _clearE80_DB
         "Clear E80 DB");
 
     my $total_route_pts = 0;
-    $total_route_pts += scalar @{($wpmgr->{routes}{$_} // {})->{uuids} // []}
-        for @route_uuids;
+    # Dedup uuids per route -- see the matching comment in _deleteE80Routes.
+    # E80 emits one MODIFY per unique member-WP UUID per route deletion, so
+    # progress total must count unique UUIDs (not raw uuids[] entries) or the
+    # dialog will hang on routes that contain duplicate WP references.
+    for my $rt_uuid (@route_uuids)
+    {
+        my %seen;
+        $total_route_pts += scalar(grep { !$seen{$_}++ }
+            @{($wpmgr->{routes}{$rt_uuid} // {})->{uuids} // []});
+    }
 
     my $total_ops = ($total_route_pts + scalar @route_uuids)
                   + (scalar @group_uuids + scalar @named_wps)

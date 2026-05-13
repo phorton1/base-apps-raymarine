@@ -34,8 +34,8 @@ signature and return shape. Do not write a one-off improvised script.
 
 | Endpoint | Key params | Returns |
 |----------|-----------|---------|
-| `GET /api/log?since=SEQ` | `since=` seq | `{lines:[{seq,text},...], last_seq:N}` |
-| `GET /api/command?cmd=mark` | -- | marks log; `{seq:N}` of mark entry |
+| `GET /api/log?since=SEQ` | `since=` seq OR `since=mark` | `{lines:[{seq,color,text},...], overflow:N, seq:N}`. Field is `seq` (current ring seq), NOT `last_seq`. |
+| `GET /api/command?cmd=mark` | -- | snapshots ring seq server-side for `?since=mark`. Response is `{"ok":1,"cmd":"mark"}` -- NO seq returned. To find the mark entry seq in the log, read log and find the `------ MARK ------` line. **Preferred pattern: `/api/log?since=mark` reads all lines since the last mark, no client-side seq tracking needed.** |
 | `GET /api/command?cmd=dialog_state` | -- | logs "dialog_state: active" or "idle" |
 | `GET /api/command?cmd=close_dialog` | -- | force-closes any hung ProgressDialog |
 | `GET /api/test?op=suppress&val=1` | val=0 to disable | enables auto-suppress (no confirmation dialogs) |
@@ -117,11 +117,15 @@ avoids dialog_state entirely for normal operations.
 
 ### Standard log reader
 
-```
-curl -s "http://localhost:9883/api/log?since=SEQ" | perl -e "use JSON; my $d=decode_json(do{local$/;<STDIN>}); print $_->{seq},'  ',$_->{text},qq(\n) for @{$d->{lines}}"
+**Preferred pattern (PowerShell, uses since=mark - no seq tracking needed):**
+```powershell
+$r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
+$r.lines | ForEach-Object { "$($_.seq)  $($_.text)" }
 ```
 
 Scan every log read for: `ERROR`, `WARNING`, `IMPLEMENTATION ERROR`.
+
+**Note on seq tracking:** Each `/api/log` response has `seq` (current ring buffer position) and `overflow`. Use `since=mark` to get all lines since the last `cmd=mark`. Only fall back to explicit `since=N` if you need to read past the mark window without re-marking.
 
 ### ProgressDialog wait snippet (PowerShell)
 
@@ -129,16 +133,15 @@ Scan every log read for: `ERROR`, `WARNING`, `IMPLEMENTATION ERROR`.
 Do NOT check the dialog_state response body (it never contains "idle" -- see note above).
 
 ```powershell
+# Before the step: curl.exe -s "http://localhost:9883/api/command?cmd=mark" | Out-Null
 # After firing an E80 command:
 Start-Sleep 5   # flat wait -- adjust up for multi-WP pastes (11 WPs = 5s is enough)
-$r = curl.exe -s "http://localhost:9883/api/log?since=$MARK_SEQ" | ConvertFrom-Json
-$MARK_SEQ = if ($r.lines.Count -gt 0) { $r.lines[-1].seq } else { $MARK_SEQ }
+$r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
 $finished = $r.lines | Where-Object { $_.text -match "ProgressDialog.*FINISHED" }
 if (-not $finished) {
-    # Not finished yet -- fire dialog_state, then read log for "dialog_state: idle/active"
+    # Not finished yet -- fire dialog_state, then re-read since mark for "dialog_state: idle/active"
     curl.exe -s "http://localhost:9883/api/command?cmd=dialog_state" | Out-Null
-    $r2 = curl.exe -s "http://localhost:9883/api/log?since=$MARK_SEQ" | ConvertFrom-Json
-    $MARK_SEQ = if ($r2.lines.Count -gt 0) { $r2.lines[-1].seq } else { $MARK_SEQ }
+    $r2 = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
     $isIdle = $r2.lines | Where-Object { $_.text -match "dialog_state: idle" }
     if (-not $isIdle) {
         # Dialog genuinely still active -- genuine hang
@@ -147,8 +150,10 @@ if (-not $finished) {
     }
 }
 # Scan log for ERROR / WARNING / IMPLEMENTATION ERROR
-$r.lines | Where-Object { $_.text -match "IMPLEMENTATION ERROR|^ERROR" } | ForEach-Object { "$($_.seq)  $($_.text)" }
+$r.lines | Where-Object { $_.text -match "IMPLEMENTATION ERROR|^ERROR|WARNING" } | ForEach-Object { "$($_.seq)  $($_.text)" }
 ```
+
+**Note:** `since=mark` reads from the LAST `cmd=mark` call. If you re-mark mid-step, prior log lines become inaccessible. Mark once per test step, just before firing the operation.
 
 After waiting: missing FINISHED is NOT automatically a failure for fast/no-op operations.
 Only beep if dialog_state log entry confirms "active" after the full wait (genuine hang).
@@ -180,8 +185,13 @@ Only beep if dialog_state log entry confirms "active" after the full wait (genui
   5. Verify DB state via /api/nmdb as called out in the test
   6. Verify E80 state via /api/db as called out in the test
   7. Determine PASS / FAIL / PARTIAL / PASSED_BUT / NOT_RUN
-- If ProgressDialog hangs: try `close_dialog` first; if that fails it is catastrophic
-- If catastrophic: `[console]::beep(800,200)` and stop
+- **ProgressDialog auto-completion is a pass criterion.** Any E80 step that opens a
+  ProgressDialog has two pass criteria: (a) the data outcome (DB/E80 state matches
+  expected) AND (b) the dialog auto-FINISHED in the log on its own. Both must hold for PASS.
+- If ProgressDialog hangs: fire `close_dialog` to recover the cycle and continue, but the
+  step is **FAIL** -- criterion (b) was not met. PASSED_BUT is not appropriate here; a
+  violated pass criterion is FAIL even when the cycle was rescued.
+- If `close_dialog` itself fails: catastrophic. `[console]::beep(800,200)` and stop.
 - After each test, record status immediately -- do not batch
 - **Never infer a result from a different test.** Each step is evaluated solely on whether
   IT reached its intended code path and produced its expected outcome. If a different guard
@@ -326,7 +336,7 @@ curl -s "http://localhost:9883/api/test?op=suppress&val=1"
 curl -s "http://localhost:9883/api/test?op=clear_e80"
 # wait for ProgressDialog FINISHED
 
-# 5. Mark log; note the seq as MARK_SEQ
+# 5. Mark log (server-side snapshot for ?since=mark queries; response has no seq)
 curl -s "http://localhost:9883/api/command?cmd=mark"
 ```
 
@@ -1031,7 +1041,7 @@ curl.exe -s "http://localhost:9881/api/log?since=$seq" | ConvertFrom-Json |
     ForEach-Object { $_.text }
 
 # Step 3 -- mark navMate log and start recording
-$MARK_SEQ = (curl.exe -s "http://localhost:9883/api/command?cmd=mark" | ConvertFrom-Json).seq
+curl.exe -s "http://localhost:9883/api/command?cmd=mark" | Out-Null
 curl.exe -s "http://localhost:9883/api/command?cmd=t+start"
 
 # Step 4 -- drive legs (3-leg triangle, ~30s total at 50 knots)
@@ -1054,7 +1064,7 @@ curl.exe -s "http://localhost:9883/api/command?cmd=t+save"
 Start-Sleep 2
 
 # Verify save in log: look for 'got track(uuid)' line
-curl.exe -s "http://localhost:9883/api/log?since=$MARK_SEQ" | ConvertFrom-Json |
+curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json |
     Select-Object -Expand lines | Where-Object { $_.text -match "got track|ERROR|WARNING" } |
     ForEach-Object { $_.text }
 ```
@@ -1137,7 +1147,7 @@ This exercises the fourth SS8.2 header-node delete rule.
 ## Section 5 Pre-flight and Guard Tests
 
 All blocked operations produce WARNING or IMPLEMENTATION ERROR with no data change.
-Tests marked **PREREQUISITE: outcome=reject** require `$suppress_outcome` support; mark NOT_RUN until implemented.
+Any test header carrying `PREREQUISITE: <label>` is structurally non-runnable until the named infrastructure exists; record as `NOT_RUN (<label>)`.
 
 ---
 
@@ -1233,15 +1243,13 @@ E80 non-empty. This failure mode has occurred in cycles 13 and 14.
 ```powershell
 curl.exe -s "http://localhost:9883/api/command?cmd=dialog_state" | Out-Null
 Start-Sleep 2
-$r = curl.exe -s "http://localhost:9883/api/log?since=$MARK_SEQ" | ConvertFrom-Json
-$MARK_SEQ = if ($r.lines.Count -gt 0) { $r.lines[-1].seq } else { $MARK_SEQ }
+$r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
 $isActive = $r.lines | Where-Object { $_.text -match "dialog_state: active" }
 if ($isActive) {
     curl.exe -s "http://localhost:9883/api/command?cmd=close_dialog" | Out-Null
     Start-Sleep 3
     # Re-read log to confirm FINISHED now appears
-    $r2 = curl.exe -s "http://localhost:9883/api/log?since=$MARK_SEQ" | ConvertFrom-Json
-    $MARK_SEQ = if ($r2.lines.Count -gt 0) { $r2.lines[-1].seq } else { $MARK_SEQ }
+    $r2 = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
     $r2.lines | Where-Object { $_.text -match "ProgressDialog.*FINISHED|dialog_state" } | ForEach-Object { "$($_.seq)  $($_.text)" }
 }
 ```
@@ -1268,6 +1276,11 @@ curl -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_clic
 ```
 Wait for ProgressDialog FINISHED.
 Expected: /api/db returns empty E80 (no waypoints, groups, routes, or tracks).
+
+**Edge case (PASS, no-op):** when E80 has 0 ungrouped WPs, the `my_waypoints` tree node does not exist
+and the command logs `WARNING: navTest: fire cmd=10222 - no right_click_node set` instead of executing
+the delete. There is no ProgressDialog. This is the documented no-op path -- count PASS as long as
+/api/db is still empty.
 
 ---
 
@@ -1299,9 +1312,28 @@ Log: ancestor-wins resolution noted; confirmation dialog auto-accepted.
 
 ---
 
-### Test 5.8 Ancestor-wins -- abort path -- PREREQUISITE: outcome=reject
+### Test 5.8 Ancestor-wins -- abort path (SS6.2)
 
-Mark NOT_RUN until `$suppress_outcome` is implemented (see todo.md).
+[TestGroup] = Timiteo (1a4eaf5a8c00e922); [TestGroupMember] = t01 (d44e40468d000d96).
+Select the group AND one of its members; the ancestor-wins resolution absorbs t01 into
+the group and fires a confirmation dialog. With outcome=reject the dialog is auto-rejected
+and `_doPaste` returns before any E80 write -- no name-collision check or downstream guard
+runs. Works regardless of whether Timiteo is on E80 from Test 5.7.
+
+```
+# Switch suppress to reject mode for this test only
+curl -s "http://localhost:9883/api/test?op=suppress&val=1&outcome=reject"
+
+curl -s "http://localhost:9883/api/test?panel=database&select=[TestGroup],[TestGroupMember]&cmd=10200"
+curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211"
+
+# Restore default accept mode
+curl -s "http://localhost:9883/api/test?op=suppress&val=1&outcome=accept"
+```
+
+Expected: log shows the ancestor-wins absorption message; no `ProgressDialog 'Paste'`
+STARTED line (paste aborted at the ancestor-wins decision); /api/db shows no new items
+added by this step. If Timiteo was on E80 entering this step, its contents are unchanged.
 
 ---
 
@@ -1352,13 +1384,23 @@ Expected: hard-abort (WARNING: conflicting name); E80 unchanged (second WP not c
 
 ### Test 5.12 UUID conflict -- clean create path
 
-Covered by Test 3.14. Verify Test 3.14 log shows no conflict-resolution dialog. No separate command.
+Source UUID must not be on E80 at this point. Use [IsolatedWP2] (af4e23246d01bfa8):
+in DB at [DST] after Test 2.2; was on E80 briefly in Test 3.17 and deleted in Test 5.4b;
+not on E80 at Test 5.12 time. Name "BOCAS2" also not present on E80 (entering 5.12 the
+E80 has BOCAS1 + Timiteo group + 6 t01-t06 members from Tests 5.7/5.11a).
+
+```
+curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP2]&cmd=10200"
+curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210"
+```
+Wait for ProgressDialog FINISHED.
+Expected: [IsolatedWP2] appears on E80 with UUID preserved (af4e23246d01bfa8); no
+conflict-resolution dialog fires; only the standard Paste ProgressDialog appears in the
+log; PASTE STARTED/FINISHED clean.
 
 ---
 
-### Test 5.13 UUID conflict -- conflict dialog path -- PREREQUISITE: outcome=reject + versioning wired
-
-Mark NOT_RUN until db_version increment wiring is complete (see todo.md).
+### Test 5.13 UUID conflict -- conflict dialog path -- PREREQUISITE: db_versioning
 
 ---
 
@@ -1402,16 +1444,17 @@ Expected: IMPLEMENTATION ERROR; DB unchanged.
 
 ---
 
-### Test 5.15a Upload IsolatedWP1 to E80 (setup: E80 must have at least one WP)
+### Test 5.15a Upload IsolatedWP1 to E80 if absent (setup for Tests 5.15b-5.15c)
 
-If E80 is empty after Test 5.7:
+If [IsolatedWP1] is not on the E80:
 ```
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210"
 ```
-Wait for ProgressDialog FINISHED.
-Expected: [IsolatedWP1] present on E80; note UUID as [E80_WP].
-Skip (NOT_RUN) if E80 already has a WP.
+If the upload action was run, wait for ProgressDialog FINISHED.
+
+Expected: [IsolatedWP1] present on E80 (note UUID as [E80_WP]). If the upload action was
+run, ProgressDialog FINISHED appears in the log.
 
 ---
 
@@ -1498,11 +1541,16 @@ testplan prose. Copy the Test X.Y label from the runbook heading for each step y
 **Summary:** One line per Section with overall result.
 
 **Results table:** Every test step listed with Status column:
-- PASS -- completed as expected
-- FAIL -- blocked, data corrupted, or catastrophic
-- PARTIAL -- some sub-steps passed, others did not
-- PASSED_BUT -- passed with notable caveats (unexpected warning, workaround required)
-- NOT_RUN -- skipped (teensyBoat unavailable, prerequisite not met, etc.)
+- PASS -- all pass criteria met without intervention.
+- FAIL -- one or more pass criteria not met: blocked, data corrupted, ProgressDialog did
+  not auto-FINISH (even if `close_dialog` rescued the cycle), or catastrophic.
+- PARTIAL -- some sub-steps passed, others did not.
+- PASSED_BUT -- all of the step's own pass criteria were met but with notable non-fatal
+  caveats (unexpected log warning that does not violate a pass criterion, etc.). NOT for
+  cases where a primary criterion was violated and the cycle was rescued -- those are FAIL.
+- NOT_RUN -- structurally non-runnable. Either PREREQUISITE-blocked (record as
+  `NOT_RUN (<label>)` using the prereq label, e.g. `NOT_RUN (db_versioning)`) or
+  environment-blocked (e.g. `NOT_RUN (teensyBoat unavailable)`).
 
 **Issues section:** Always present; "none" on clean cycle. One prose subsection per
 FAIL, PARTIAL, or PASSED_BUT item from THIS cycle only. Include:

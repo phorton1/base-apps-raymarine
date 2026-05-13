@@ -80,11 +80,15 @@ that would otherwise block on user input.
 
 **Outcome control (two-outcome dialogs).** Some pre-flight paths produce dialogs with two
 meaningful outcomes -- ancestor-wins (proceed vs. abort), UUID conflict (skip+continue vs.
-abort), E80 DEL-WP with route-ref warning (proceed vs. abort). Testing the non-default
-path requires outcome=reject support. See [navOps testability prerequisites] in todo.md.
-Tests in Section 5 that require outcome=reject are flagged PREREQUISITE in their headers.
+abort), E80 DEL-WP with route-ref warning (proceed vs. abort). The non-default path is
+selected via `?op=suppress&val=1&outcome=reject` on the test API; the default is accept.
 
 For all other tests in this plan, suppress=1 with default accept behavior is assumed.
+
+**PREREQUISITE labels.** Any test header carrying `PREREQUISITE: <label>` depends on
+infrastructure (named by `<label>`) that is not yet in place. Such tests are implicitly
+non-runnable; the test runner records `NOT_RUN (<label>)` and moves on. When the named
+infrastructure ships, drop the label and the test becomes runnable.
 
 ### Progress dialog
 
@@ -586,8 +590,7 @@ COPY an isolated waypoint from the DB. In the E80 panel, right-click the Groups 
 PASTE_NEW. Wait for ProgressDialog FINISHED.
 
 Expected: a new WP appears on the E80 with a fresh navMate UUID (byte 1 = 0x82) different
-from the source WP's UUID. The name is preserved. No conflict-resolution dialog fires (this
-is the clean create path; Test 5.12 verifies this by checking the Test 3.14 log).
+from the source WP's UUID. The name is preserved. No conflict-resolution dialog fires.
 
 ---
 
@@ -767,9 +770,9 @@ unconditionally, bypassing menu-level guards -- verify results by reading the lo
 absence of menu items. All blocked operations should produce WARNING or IMPLEMENTATION
 ERROR in the log with no data change.
 
-Tests marked **PREREQUISITE: outcome=reject** require `$suppress_outcome` support; see
-[navOps testability prerequisites] in todo.md. Run the accept-path variant only until the
-prerequisite is implemented; mark the reject-path variant NOT_RUN.
+Any test header carrying `PREREQUISITE: <label>` is structurally non-runnable until the
+named infrastructure exists; record as `NOT_RUN (<label>)`. See the general PREREQUISITE
+note in the Pre-flight and suppress mechanism section above.
 
 ---
 
@@ -891,7 +894,7 @@ ancestor-wins resolution noted; confirmation dialog auto-accepted.
 
 ---
 
-### Test 5.8 Ancestor-wins -- abort path (SS6.2) -- PREREQUISITE: outcome=reject
+### Test 5.8 Ancestor-wins -- abort path (SS6.2)
 
 Set outcome=reject. Select a group and one of its member WPs. COPY. PASTE_NEW to the E80
 Groups header. Reset outcome to accept after the step.
@@ -945,20 +948,18 @@ conflicting name and type. E80 unchanged (second WP not created).
 ### Test 5.12 Pre-flight: UUID conflict -- clean create path (SS10.10)
 
 Paste a DB WP to the E80 whose UUID does not exist there. This is the normal upload path,
-verifying that the clean create branch runs without false conflict detection. Covered by
-Test 3.14 -- no separate operation needed. Verify the Test 3.14 log shows no conflict-resolution
-dialog.
+verifying that the clean create branch runs without false conflict detection.
+
+Expected: paste completes; new WP on E80 with the source UUID preserved; no
+conflict-resolution dialog fires; log shows a clean PASTE STARTED/FINISHED.
 
 ---
 
-### Test 5.13 Pre-flight: UUID conflict -- conflict dialog path (SS10.10) -- PREREQUISITE: outcome=reject
+### Test 5.13 Pre-flight: UUID conflict -- conflict dialog path (SS10.10) -- PREREQUISITE: db_versioning
 
 Upload a WP to the E80. Modify it in the DB so db_version exceeds the E80 version. Paste
 again. Pre-flight should detect the UUID conflict and present the conflict resolution dialog.
 With outcome=reject, the abort path is taken.
-
-Full setup deferred pending version increment wiring (see [db_version increment wiring] in
-todo.md). Mark NOT_RUN until versioning is wired.
 
 ---
 
@@ -998,10 +999,11 @@ Expected: IMPLEMENTATION ERROR in the log. DB unchanged.
 
 ### Test 5.15a Upload IsolatedWP1 to E80 if absent (setup for Tests 5.15b-5.15c)
 
-If E80 is empty after Test 5.7, upload [IsolatedWP1] to the E80 Groups header via PASTE.
-Wait for ProgressDialog FINISHED. Skip (NOT_RUN) if E80 already has a WP.
+If [IsolatedWP1] is not on the E80, then upload [IsolatedWP1] to the E80 Groups header
+via PASTE and wait for ProgressDialog FINISHED.
 
-Expected: at least one WP present on E80 (note UUID as [E80_WP]).
+Expected: [IsolatedWP1] present on E80 (note UUID as [E80_WP]). If the upload action was
+run, ProgressDialog FINISHED appears in the log.
 
 ---
 
