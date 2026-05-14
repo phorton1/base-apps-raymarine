@@ -14,6 +14,89 @@ test into Michelle/RonAzul and Michelle/MichellToKuna 2011-07/Tracks on
 2026-05-13.  Those manual copies are the worked example of the pattern being
 characterized for possible scaling.
 
+---
+
+## Status / Resume Point
+
+**Paused 2026-05-14.**  Returning to phorton.com revitalization in a
+parallel Claude session.  Resume the enrichment work here.
+
+### Gains captured so far (durable)
+
+- **Schema 11.3 committed**: `source` / `created_ts` / `modified_ts`
+  on all WGRT tables, with `_insert_ts` and `_update_ts` triggers
+  active.  Migration ran cleanly: 69 collections + 686 waypoints +
+  8 routes + 387 tracks = 1,150 records, all with
+  `source='onetimeImport'`, `created_ts=1777930784`, `modified_ts=created_ts`.
+  See project memory `schema_provenance_columns`.
+- **navMate display panels** updated (`winDatabase.pm`) to show the
+  three new fields on collection / track / waypoint / route detail
+  views.
+- **The 3 manual-copy tracks retroactively tagged**: source =
+  `'import_gdb:2010-09-16-RhapsodyWithMichelle.gdb'`, created_ts =
+  modified_ts = `1778673600` (2026-05-13 12:00:00 UTC).  Applied via
+  `C:/base_data/temp/raymarine/_tag_gdb_source.pl`.  Database
+  committed.
+- **Per-track action plan** for the full Rhapsody iteration in
+  `michelle_analysis.md` -- three tables (test / MiscBocas /
+  Michelle-flattened) with an `action` column populated per row.
+  The four AguaAndTobobe match+lat_shift cases are concrete worked
+  examples.
+- **Forward-looking design docs** captured: `reconciliation_ux_concept.md`,
+  `dedup_design.md`.
+
+### What's next when resuming (in order)
+
+1. **Fill in the `comment` column** in `michelle_analysis.md` for
+   the rows whose action is `**rename** to test name; comment = old
+   name`.  Human authoring task -- pick the comment text that
+   preserves the existing track's geographic detail.  Affected rows
+   include the 4 AguaAndTobobe tracks, the MiscBocas info-bearing
+   names (`to_south_anchorage`, `to basti`, `to south anchorage`),
+   and `Michelle/Misc/michelles-bahia_escondido`,
+   `Michelle/Misc/michelles_to_andys_island`.
+2. **Decide target sub-branches** for the `**add as new**` test
+   tracks (the orphans in the test table).  This is intertwined
+   with temporal reorganization of MiscBocas/Michelle into a
+   timeline-based destination tree.
+3. **Apply the actions** (rename existing, add as new, dedupe).
+   No tooling exists yet -- short-term path is a one-shot Perl
+   script (mirroring `_tag_gdb_source.pl`) or direct SQL.  Each
+   `**rename**` action: `UPDATE existing SET name=<test_name>,
+   comment=<authored_text>, modified_ts=...` (include modified_ts
+   in SET to suppress trigger overwrite if you want explicit value
+   control; otherwise let trigger touch it).  Each `**add as new**`:
+   INSERT new track with `source='import_gdb:2010-09-16-RhapsodyWithMichelle.gdb'`
+   and `created_ts` set to its real recording date if known.
+4. **Retire the test branch** after actions land.
+5. **Patch INSERT call sites** in app code to provide explicit
+   `source` values for future record creation -- the deferred
+   incremental code hygiene step from the schema work.
+
+### What's blocked or deferred
+
+- Temporal reorganization of MiscBocas/Michelle into a timeline-based
+  destination tree is a precondition to "add as new" placements.
+  This is human curation work.
+- Deeper `modified_ts` semantics, per-record event history, and
+  deeper `source` decomposition (operation / file / device / device_ts
+  into separate columns) -- all deferred behind navOperations work
+  (which is itself hands-off per `feedback_navops_hands_off`).
+
+### Companion artifacts
+
+- `michelle_analysis.md` -- per-track inventory + action column.
+- `reconciliation_ux_concept.md` -- speculative UI design.
+- `dedup_design.md` -- separate prior-pass design.
+- `C:/base_data/temp/raymarine/build_michelle_analysis.pl` --
+  rerunnable script that regenerates `michelle_analysis.md`.
+- `C:/base_data/temp/raymarine/_tag_gdb_source.pl` -- the backfill
+  script for the 3 manual-copy tracks (idempotent).
+- Project memory `schema_provenance_columns` -- committed schema state.
+- Project memory `michelle_iteration_paused` -- this pause marker.
+
+---
+
 
 ## 1. Scope
 

@@ -1,5 +1,11 @@
 # Michelle Analysis -- Per-Track Inventory
 
+**Status 2026-05-14: paused** mid-iteration.  See
+`michelle_fixups.md` "Status / Resume Point" for the resume context.
+The `action` column is populated; the `comment` column on the
+existing-side tables is awaiting human authoring for the
+`**rename** to test name; comment = old name` rows.
+
 Three tables, one per branch.  Companion to `michelle_fixups.md`.
 What's currently known about every track, with relation labels derived
 from exact-npts pairing plus the lat/lon match filter.
