@@ -24,11 +24,27 @@ this test cycle; treat every correction as a first-class commit.
 
 ## Toolbox
 
+### Rule: run tests inline, not via scripts
+
+Execute each test as direct inline tool calls (curl + log inspection), one
+step at a time. Do NOT write a temporary PowerShell/bash script under
+`C:\base_data\temp\...` to run a test "all at once" -- such scripts are
+opaque to Patrick, hide intermediate state, and are exactly the
+"ad-hoc scripting" failure mode called out in
+[feedback_test_run_discipline.md]. Embedded PowerShell snippets that
+already live IN this runbook (Test 2.0's loop, the
+`Wait-NavCmdFinished`/`Mark-Phase` helpers) are part of the runbook
+itself -- it is fine to paste those into a single PowerShell tool call
+because the code is visible here. What is NOT fine is dropping a fresh
+script in a temp folder for a step that the runbook expresses as
+separate curl lines.
+
 ### Rule: new tools
 
 If mid-run you discover you need a tool not listed here -- stop, build it properly:
-write it to `apps/navMate/` with a `_` prefix, add it to this toolbox with its call
-signature and return shape. Do not write a one-off improvised script.
+write it to `apps/navMate/` with a `_` prefix (git-tracked, reviewable), add
+it to this toolbox with its call signature and return shape. Do not write a
+one-off improvised script under `$temp_dir`.
 
 ### HTTP endpoints
 
@@ -1801,8 +1817,11 @@ Expected: same `ERROR - Cannot paste: destination is a descendant of an item in 
 ### Test 5.16a Mixed clipboard PASTE_BEFORE at route_point (SS6.4 accepted case)
 
 "Mixed" here = clipboard has both route_point AND waypoint items.
-Note: [RP1] is Popa0. Popa0 may appear more than once in [TestRoute] after Section 2 operations --
-check route point count before this test and use that as the baseline.
+Note: [RP1] is Popa0. After Section 2 (Test 2.14a), Popa0 appears twice in
+[TestRoute]. The rp:f34efdd6070022e8:Popa0 selection-key matches BOTH rows,
+so COPY reports 3 items (2 rp:Popa0 + 1 waypoint), not 2. Route count grows
+by 3 (= actual clipboard item count). Use the COPY log's
+"_doCopy: database N item(s)" as the authoritative expected delta.
 ```
 curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.16a"
 curl -s "http://localhost:9883/api/test?panel=database&select=rp:[TestRoute]:[RP1],[IsolatedWP1]&cmd=10200"

@@ -1,9 +1,9 @@
-# navOperations Test Run -- Cycle 16
+# navOperations Test Run -- Cycle 17
 
 **Date:** 2026-05-13
-**Start:** 13:24
-**End:** 13:49
-**Cycle:** 16
+**Start:** 21:17
+**End:** 21:56
+**Cycle:** 17
 
 ---
 
@@ -12,12 +12,12 @@
 | Section | Result |
 |---------|--------|
 | Section 1 Reset | PASS |
-| Section 2 Database Tests (2.1-2.18b) | PASS -- all 22 steps |
+| Section 2 Database Tests (2.0-2.18b) | PASS -- all 23 steps (including Test 2.0 32-iteration precision loop) |
 | Section 3 E80 Tests (3.1-3.18) | PASS -- all 22 steps |
 | Section 4 Track Tests (4.0-4.5) | PASS -- teensyBoat available; all 6 steps |
-| Section 5 Guard Tests | PASS -- including 5.6a (duplicate-UUID fix verified live) and 5.8 (newly runnable) |
+| Section 5 Guard Tests | PASS -- all runnable steps |
 
-**First all-PASS cycle.** Only NOT_RUN is the single structural blocker `5.13 NOT_RUN (db_versioning)`.
+**Second consecutive clean cycle.** Only NOT_RUN is the single structural blocker `5.13 NOT_RUN (db_versioning)`.
 
 ---
 
@@ -28,6 +28,7 @@
 | **Section 1** | |
 | Reset (revert DB, reload, suppress, clear E80) | PASS |
 | **Section 2** | |
+| 2.0 Position precision -- 32 bisections force auto-renumber | PASS (loop_inserts=32, total=34, distinct_positions=34, AutoCompact_seen=YES) |
 | 2.1 Copy WP -> Paste New | PASS |
 | 2.2 Cut WP -> Paste (move) | PASS |
 | 2.3 Delete WP (success) | PASS |
@@ -79,7 +80,7 @@
 | 3.18 Route point Paste Before/After on E80 | PASS |
 | **Section 4** | |
 | 4 Pre-Check teensyBoat availability | PASS (available) |
-| 4.0 Create test tracks on E80 | PASS |
+| 4.0 Create test tracks on E80 | PASS (Track1=81b266af40007847, Track2=81b266af40008647) |
 | 4.1 Copy E80 Track -> Paste to DB | PASS |
 | 4.2 Cut E80 Track -> Paste to DB (erase) | PASS |
 | 4.3 Guard -- Paste Track to E80 blocked | PASS |
@@ -93,27 +94,27 @@
 | 5.4b Delete BOCAS2 from E80 (setup) | PASS |
 | 5.4c Paste blocked -- any clipboard -> E80 tracks header | PASS |
 | 5.5 Paste blocked -- DB copy track -> DB paste | PASS |
-| 5.6a Delete all E80 routes | PASS (duplicate-UUID fix verified: total=12 for 13-WP route with 2 dups) |
+| 5.6a Delete all E80 routes | PASS |
 | 5.6b Delete all E80 groups+WPs | PASS |
 | 5.6c Delete all E80 ungrouped WPs | PASS (no-op as documented; E80 already empty) |
 | 5.6d Route dependency check (SS10.10) | PASS |
 | 5.7 Ancestor-wins -- accept path | PASS |
-| 5.8 Ancestor-wins -- abort path | PASS (newly runnable; reject-path signature confirmed) |
+| 5.8 Ancestor-wins -- abort path | PASS (reject-path signature confirmed: PASTE NEW STARTED/FINISHED adjacent, no ProgressDialog, no ERROR) |
 | 5.9 Recursive paste guard | PASS |
-| 5.10 Pre-flight: intra-clipboard name collision | PASS |
+| 5.10 Pre-flight: intra-clipboard name collision | PASS (used Popa2 duplicate pair) |
 | 5.11a Upload IsolatedWP1 to E80 (setup) | PASS |
 | 5.11b Pre-flight: E80-wide name collision | PASS |
-| 5.12 UUID conflict -- clean create path | PASS (direct verification via [IsolatedWP2], no longer inferred from 3.14) |
+| 5.12 UUID conflict -- clean create path | PASS (direct verification via [IsolatedWP2]) |
 | 5.13 UUID conflict -- conflict dialog path | NOT_RUN (db_versioning) |
 | 5.14a Menu shape -- PASTE at DB WP node blocked | PASS |
 | 5.14b Menu shape -- PASTE_NEW at DB WP node blocked | PASS |
 | 5.14c Menu shape -- PASTE at DB route node blocked | PASS |
 | 5.14d Menu shape -- PASTE at DB track node blocked | PASS |
-| 5.15a Upload IsolatedWP1 to E80 (setup) | PASS (postcondition met by direct verification; BOCAS1 already on E80 from 5.11a) |
+| 5.15a Upload IsolatedWP1 to E80 (setup) | PASS (postcondition already met from 5.11a) |
 | 5.15b Menu shape -- PASTE at E80 WP node blocked | PASS |
 | 5.15c Menu shape -- PASTE_NEW at E80 WP node blocked | PASS |
-| 5.16a Mixed clipboard PASTE_BEFORE at route_point | PASS |
-| 5.16b Mixed clipboard PASTE_NEW_BEFORE at route_point | PASS |
+| 5.16a Mixed clipboard PASTE_BEFORE at route_point | PASS (route count +3, matches actual clipboard items=3) |
+| 5.16b Mixed clipboard PASTE_NEW_BEFORE at route_point | PASS (route count +5, matches clipboard items=5) |
 
 ---
 
@@ -123,13 +124,12 @@ none
 
 ---
 
+## Runbook adjustments applied mid-cycle
+
+- **Run tests inline rule.** Added explicit "Rule: run tests inline, not via scripts" to the Toolbox after Patrick objected to writing a standalone PowerShell script in `$temp_dir` for Test 2.0. The rule clarifies that embedded PowerShell snippets in the runbook (Test 2.0's loop, Wait-NavCmdFinished helper) are acceptable as single-tool-call paste-ins, but fresh scripts in temp folders are not. Existing "Rule: new tools" was also tightened to reference `$temp_dir` explicitly.
+- **Test 5.16a clipboard-count expectation.** Updated the test's note to acknowledge that the rp:f34efdd6070022e8:Popa0 selection matches BOTH Popa0 instances in [TestRoute] (Popa0 appears twice after Test 2.14a), so COPY reports 3 items (not 2) and the route gains 3 entries. The "Route count increases by clipboard item count" rule still holds; the prior prose example understated the clipboard size.
+
 ## Notable confirmations this cycle
 
-- **Test 5.6a fix verified live.** The previously hung dialog (cycle 15 PASSED_BUT, cycle 14 FAIL) is fully resolved. Route had 13 `uuids[]` entries with 2 duplicates (Popa0 ×2 from Test 2.14a, Popa2 ×2 from Test 3.18). Post-fix `total=12` (1 route + 11 unique WPs) matched `done=12` exactly, dialog auto-FINISHED at first 8s wait.
-- **Test 5.8 first run ever.** outcome=reject was already wired in the codebase but the testplan still marked the test as PREREQUISITE-blocked. With the prereq label removed and a real command sequence in the runbook (set suppress to reject, attempt paste, restore accept), the reject path was successfully exercised. Confirmed reject-path signature: PASTE NEW STARTED/FINISHED adjacent in log with no intervening ProgressDialog 'Paste' line and no ERROR/IMPLEMENTATION line.
-- **Test 5.12 directly verified.** Previous cycles marked NOT_RUN-covered-by-3.14 (a directive violation). This cycle paste IsolatedWP2 (UUID not on E80, name not on E80) was fired as the explicit clean-create test; ProgressDialog 'Paste' FINISHED, no conflict-resolution dialog, no errors, UUID preserved on E80.
-- **Test 5.15a direct-verification disposition.** Per the cycle 15 runbook update, no upload action was required since BOCAS1 was already on E80 from 5.11a; postcondition checked directly and PASS recorded (not NOT_RUN-skipped).
-
-## Runbook adjustment applied mid-cycle
-
-Test 5.8 expected outcome had been written to require an "absorbed by an ancestor" log line. That message only appears when a real `confirmDialog` UI fires; with `suppress_confirm` on, the dialog is bypassed and the message is never logged. The runbook was corrected to specify the actual reject-path log signature (PASTE NEW STARTED/FINISHED adjacent, no `ProgressDialog 'Paste'`, no ERROR) as the pass criterion. Applied immediately so the change persists for cycle 17.
+- **Test 2.0 first full pass on a fresh cycle.** Previous testrun was the introduction of Test 2.0. Cycle 17 confirms loop_inserts=32, total=34, distinct_positions=34, AutoCompact warning fired -- all three pass criteria met.
+- **Two consecutive all-PASS cycles.** Cycle 16 and now Cycle 17 both clean, with the single structural NOT_RUN (`5.13 db_versioning`) being a known prerequisite gap, not a regression.
