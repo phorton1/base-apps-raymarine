@@ -35,12 +35,101 @@ signature and return shape. Do not write a one-off improvised script.
 | Endpoint | Key params | Returns |
 |----------|-----------|---------|
 | `GET /api/log?since=SEQ` | `since=` seq OR `since=mark` | `{lines:[{seq,color,text},...], overflow:N, seq:N}`. Field is `seq` (current ring seq), NOT `last_seq`. |
-| `GET /api/command?cmd=mark` | -- | snapshots ring seq server-side for `?since=mark`. Response is `{"ok":1,"cmd":"mark"}` -- NO seq returned. To find the mark entry seq in the log, read log and find the `------ MARK ------` line. **Preferred pattern: `/api/log?since=mark` reads all lines since the last mark, no client-side seq tracking needed.** |
+| `GET /api/command?cmd=mark` or `cmd=mark+<tag>` | -- | snapshots ring seq server-side for `?since=mark`. Response is `{"ok":1,"cmd":"mark"}` -- NO seq returned. Optional tag (anything after the first whitespace, URL-encode spaces as `+`) is included in the log as `------ MARK: <tag> ------`. Use tagged marks at phase boundaries inside a multi-phase test for human readability. **Preferred pattern: `/api/log?since=mark` reads all lines since the last mark, no client-side seq tracking needed.** |
 | `GET /api/command?cmd=dialog_state` | -- | logs "dialog_state: active" or "idle" |
 | `GET /api/command?cmd=close_dialog` | -- | force-closes any hung ProgressDialog |
 | `GET /api/test?op=suppress&val=1` | val=0 to disable | enables auto-suppress (no confirmation dialogs) |
 | `GET /api/test?op=suppress&val=1&outcome=reject` | -- | suppress with reject (non-default path) |
 | `GET /api/test?op=refresh` | -- | reloads navMate.db from disk |
+| `GET /api/test?op=clear_e80` | -- | deletes all E80 routes, groups, waypoints, and tracks |
+| `GET /api/test?op=create_branch&parent_uuid=PUUID&name=NAME` | `parent_uuid` omitted -> root-level branch | dialog-free NEW_BRANCH. Returns `{ok:1, queued:1}`; the new branch's uuid is not in the response -- look it up in `/api/nmdb` by name after a brief settle |
+
+**`/api/test` queue is single-slot:** the server stores at most one pending
+test command. A second `/api/test` call fired before the wx idle loop has
+picked up the first will overwrite the first. Any sequenced multi-step
+test (COPY then PASTE_NEW, looped pastes, etc.) **must** wait for each
+command to actually run before issuing the next. Use the
+`Wait-NavCmdFinished` helper below, which polls `/api/log?since=mark`
+until the expected `===== <CMD> ... FINISHED =====` line appears.
+Single-shot tests (just `?op=refresh`, `?op=suppress`, `?op=clear_e80`)
+do not need the helper -- they have nothing chained behind them.
+
+### Wait-NavCmdFinished -- log-polling sync helper
+
+Drop this near the top of any PowerShell test script that fires multiple
+`/api/test?cmd=N` calls. It eliminates the need for fixed sleeps; total
+test time tracks actual command processing time instead of the worst-case
+guess.
+
+```powershell
+# Count of FINISHED-line occurrences seen so far, keyed by command name.
+# Each call to Wait-NavCmdFinished bumps the expected count for that command,
+# then polls /api/log?since=mark until the count of matching FINISHED lines
+# in the log reaches the new expected count.
+$global:nav_cmd_seen = @{}
+
+function Wait-NavCmdFinished
+{
+    param(
+        [Parameter(Mandatory=$true)] [string]$cmdName,    # e.g. "COPY", "PASTE NEW", "PASTE NEW BEFORE", "DELETE BRANCH"
+        [Parameter(Mandatory=$true)] [string]$panel,      # "database" or "e80"
+        [int]$timeout_ms = 8000
+    )
+    $key = "$panel/$cmdName"
+    if (-not $global:nav_cmd_seen.ContainsKey($key)) { $global:nav_cmd_seen[$key] = 0 }
+    $global:nav_cmd_seen[$key]++
+    $expected = $global:nav_cmd_seen[$key]
+    $pattern  = "===== $cmdName ($panel) FINISHED ====="
+
+    # Initial wait: typical commands complete in well under 1s. Starting to
+    # poll immediately would flood /api/log with several requests before
+    # the command has even finished, polluting the ring buffer.
+    Start-Sleep -Milliseconds 1000
+
+    $deadline = (Get-Date).AddMilliseconds($timeout_ms)
+    while ((Get-Date) -lt $deadline)
+    {
+        $log   = curl.exe -s "http://localhost:9883/api/log?since=mark"
+        $count = ([regex]::Matches($log, [regex]::Escape($pattern))).Count
+        if ($count -ge $expected) { return $true }
+        Start-Sleep -Milliseconds 250
+    }
+    Write-Host "Wait-NavCmdFinished TIMEOUT: $pattern (seen $count of $expected after ${timeout_ms}ms)"
+    return $false
+}
+
+# Helper for tagging phase boundaries inside a multi-phase test.
+# `cmd=mark` server-side accepts text after the command name (splits on
+# first whitespace) and logs `------ MARK: <tag> ------`. Each Mark-Phase
+# call also resets the wait-helper counter so the next phase's commands
+# are counted from zero against the new since=mark window.
+
+function Mark-Phase
+{
+    param([Parameter(Mandatory=$true)] [string]$tag)
+    $encoded = [uri]::EscapeDataString($tag)
+    curl.exe -s "http://localhost:9883/api/command?cmd=mark+$encoded" | Out-Null
+    $global:nav_cmd_seen = @{}
+}
+
+# Typical use at the start of a test:
+#   Mark-Phase "Test 2.0 start"
+# At each phase boundary:
+#   Mark-Phase "Test 2.0 main loop"
+# After this, /api/log?since=mark scopes to the current phase.
+```
+
+Command-name strings to pass as `-cmdName` are the all-caps form that
+appears in the log's `===== <NAME> (<panel>) STARTED =====` line:
+`COPY`, `CUT`, `PASTE`, `PASTE NEW`, `PASTE BEFORE`, `PASTE AFTER`,
+`PASTE NEW BEFORE`, `PASTE NEW AFTER`, `DELETE WAYPOINT`, `DELETE BRANCH`,
+etc.
+
+For `/api/test?op=...` operations that do not produce a `===== ... =====`
+line (such as `op=create_branch`), poll for an op-specific log signature
+instead. The `create_branch` op logs
+`navTest: create_branch '<name>' uuid=<uuid>`; the runbook's Test 2.0 polls
+this string directly.
 | `GET /api/test?panel=P&select=K&cmd=N` | `right_click=K` optional | fires context-menu command N on panel P at node K |
 | `GET /api/nmdb` | -- | navMate DB: arrays -- waypoints, collections, routes, route_waypoints, tracks |
 | `GET /api/db` | -- | E80 live state: hashes keyed by UUID -- waypoints, groups, routes, tracks |
@@ -133,7 +222,7 @@ Scan every log read for: `ERROR`, `WARNING`, `IMPLEMENTATION ERROR`.
 Do NOT check the dialog_state response body (it never contains "idle" -- see note above).
 
 ```powershell
-# Before the step: curl.exe -s "http://localhost:9883/api/command?cmd=mark" | Out-Null
+# Before the step: curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+N.X" | Out-Null    # tag identifies which test owns the mark
 # After firing an E80 command:
 Start-Sleep 5   # flat wait -- adjust up for multi-WP pastes (11 WPs = 5s is enough)
 $r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
@@ -154,6 +243,16 @@ $r.lines | Where-Object { $_.text -match "IMPLEMENTATION ERROR|^ERROR|WARNING" }
 ```
 
 **Note:** `since=mark` reads from the LAST `cmd=mark` call. If you re-mark mid-step, prior log lines become inaccessible. Mark once per test step, just before firing the operation.
+
+**Mark tagging convention (required):** every `cmd=mark` call in this
+runbook MUST carry an identifier of the test/section that owns it, in the
+form `cmd=mark+<tag>` (URL-encode spaces as `+`). The tag is echoed in the
+log as `------ MARK: <tag> ------`. Tags allow human review of the log to
+match each mark to its source test. The minimum tag is the section or test
+number (`Section+1+reset`, `Test+2.7`); multi-phase tests append a phase
+sub-tag (`Test+2.0+anchors`, `Test+2.0+main+loop`). Inside PowerShell, use
+the `Mark-Phase` helper which URL-encodes for you and also resets the
+sync-helper counter.
 
 After waiting: missing FINISHED is NOT automatically a failure for fast/no-op operations.
 Only beep if dialog_state log entry confirms "active" after the full wait (genuine hang).
@@ -336,8 +435,8 @@ curl -s "http://localhost:9883/api/test?op=suppress&val=1"
 curl -s "http://localhost:9883/api/test?op=clear_e80"
 # wait for ProgressDialog FINISHED
 
-# 5. Mark log (server-side snapshot for ?since=mark queries; response has no seq)
-curl -s "http://localhost:9883/api/command?cmd=mark"
+# 5. Mark log with section tag (server-side snapshot for ?since=mark queries)
+curl -s "http://localhost:9883/api/command?cmd=mark+Section+1+reset"
 ```
 
 After reset: verify git shows navMate.db clean; /api/db returns empty E80.
@@ -355,7 +454,13 @@ curl -s "http://localhost:9883/api/nmdb" | perl "C:/temp/nm_verify_rps.pl"
 
 ## Section 2 Database Tests
 
-For each test: mark, fire, read log since mark, verify /api/nmdb. No E80 required.
+For each test: tag the mark with the test number (`cmd=mark+Test+2.X`),
+fire, read log since mark, verify /api/nmdb. No E80 required. See the
+"Mark tagging convention" rule in the Toolbox.
+
+**Test 2.0 runs first** and is self-contained (creates and destroys its own
+test branch). It can be invoked standalone -- a Section 1 reset is not
+required for it.
 
 **Test 2.4/Test 2.5 ordering note:** Both tests need a group with no route refs. Test 2.4 (dissolve)
 uses [GroupNoRoute_Dissolve] (Places/Part1, 4e4e405a08033af4) to preserve [GroupNoRoute]
@@ -363,9 +468,124 @@ uses [GroupNoRoute_Dissolve] (Places/Part1, 4e4e405a08033af4) to preserve [Group
 
 ---
 
+### Test 2.0 Position precision -- 32 bisections force auto-renumber
+
+Verifies the position allocator detects approaching float-precision
+underflow and automatically renumbers the destination container.
+
+Self-contained: creates a disposable branch, exercises the trigger, deletes
+the branch. UUIDs are resolved at runtime, not from the static UUID table.
+
+**Synchronization:** uses `Wait-NavCmdFinished` (see Toolbox) to gate each
+command on its log FINISHED line; `Mark-Phase` (also in Toolbox) tags
+phase boundaries in the log and resets the sync counter.
+
+**Clipboard:** COPY is issued exactly once. `PASTE_NEW` / `PASTE_NEW_BEFORE`
+preserve the clipboard (only CUT clears it via `navOpsDB.pm:803`), so the
+same source WP is reused for all 34 inserts -- no re-COPY needed.
+
+```powershell
+$WP      = "ce4e43181f01b3ae"   # [IsolatedWP1] -- single COPY source
+$URL_DB  = "http://localhost:9883/api/test?panel=database"
+
+# --- Phase 1: setup ---
+Mark-Phase "Test 2.0 start"
+curl.exe -s "http://localhost:9883/api/test?op=suppress&val=1" | Out-Null
+
+# Create the disposable branch at root; poll for its log line.
+curl.exe -s "http://localhost:9883/api/test?op=create_branch&name=PrecisionTestBranch" | Out-Null
+$deadline = (Get-Date).AddMilliseconds(5000)
+$branch = ""
+Start-Sleep -Milliseconds 1000
+while ((Get-Date) -lt $deadline -and -not $branch)
+{
+    $log = curl.exe -s "http://localhost:9883/api/log?since=mark"
+    if ($log -match "navTest: create_branch 'PrecisionTestBranch' uuid=([0-9a-f]+)")
+    {
+        $branch = $matches[1]
+        break
+    }
+    Start-Sleep -Milliseconds 250
+}
+if (-not $branch) { Write-Host "FAIL: create_branch did not appear in log"; return }
+
+# --- Phase 2: anchor setup (one COPY, two PASTE_NEW) ---
+Mark-Phase "Test 2.0 anchors"
+curl.exe -s "$URL_DB&select=$WP&cmd=10200" | Out-Null
+if (-not (Wait-NavCmdFinished -cmdName "COPY" -panel "database")) { return }
+curl.exe -s "$URL_DB&select=$branch&right_click=$branch&cmd=10211" | Out-Null
+if (-not (Wait-NavCmdFinished -cmdName "PASTE NEW" -panel "database")) { return }
+curl.exe -s "$URL_DB&select=$branch&right_click=$branch&cmd=10211" | Out-Null
+if (-not (Wait-NavCmdFinished -cmdName "PASTE NEW" -panel "database")) { return }
+
+$nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
+$wps  = $nmdb.waypoints | Where-Object { $_.collection_uuid -eq $branch } | Sort-Object position
+if ($wps.Count -ne 2) { Write-Host "FAIL: expected 2 anchor WPs, got $($wps.Count)"; return }
+$anchorB = $wps[-1].uuid   # higher position; push-down-stack places second paste above first
+
+# --- Phase 3: 32 PASTE_NEW_BEFORE iterations on the upper anchor ---
+Mark-Phase "Test 2.0 main loop"
+for ($i = 1; $i -le 32; $i++)
+{
+    curl.exe -s "$URL_DB&select=$anchorB&right_click=$anchorB&cmd=10214" | Out-Null
+    if (-not (Wait-NavCmdFinished -cmdName "PASTE NEW BEFORE" -panel "database")) { Write-Host "FAIL at iter $i"; return }
+}
+
+# --- Phase 4: verify ---
+Mark-Phase "Test 2.0 verify"
+$nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
+$wps  = $nmdb.waypoints | Where-Object { $_.collection_uuid -eq $branch }
+$n    = ($wps | Measure-Object).Count
+$pos_distinct = (($wps | Select-Object -ExpandProperty position | Sort-Object -Unique) | Measure-Object).Count
+
+# AutoCompact warning visibility spans phases, so widen the log read past
+# the most recent mark by reading the whole ring tail. Match the warning
+# anywhere -- it would have fired during Phase 3.
+$log = curl.exe -s "http://localhost:9883/api/log?tail=2000"
+$trig = if ($log -match "AutoCompact FLOAT positions") { 'YES' } else { 'NO' }
+$loop_inserts = $n - 2   # subtract the 2 anchors to get the loop-insert count
+Write-Host "Test 2.0: loop_inserts=$loop_inserts (REQUIRED 32), total_branch_count=$n, distinct_positions=$pos_distinct (expect $n), AutoCompact_seen=$trig (expect YES)"
+if ($loop_inserts -ne 32) { Write-Host "HARD FAIL: 32 PASTE_NEW_BEFORE operations did not produce 32 WPs in the branch (loop inserts dropped)." }
+
+# --- Phase 5: teardown ---
+Mark-Phase "Test 2.0 teardown"
+curl.exe -s "$URL_DB&select=$branch&right_click=$branch&cmd=10226" | Out-Null
+if (-not (Wait-NavCmdFinished -cmdName "DELETE BRANCH" -panel "database"))
+{
+    Write-Host "TEARDOWN FAIL: DELETE BRANCH did not complete; PrecisionTestBranch may remain in DB."
+}
+```
+
+Pass (all three required):
+- **The 32 main-loop PASTE_NEW_BEFORE operations produced exactly 32 new
+  waypoints in the branch** (loop_inserts == 32, equivalently branch
+  count == 34 with the two anchors). Load-bearing: any count below 32
+  loop inserts means a paste was silently dropped (test-driver queue
+  overwrite, guard rejection, or other) and the test FAILS regardless of
+  the other checks. Verify this first.
+- Log contains at least one warning-color line
+  `AutoCompact FLOAT positions for container <coll_uuid>`. Direct
+  evidence the precision trigger fired.
+- All 34 positions are distinct (no two WPs share a position value).
+
+Fail (any of):
+- loop_inserts != 32 (one or more loop pastes dropped, or duplicates
+  produced).
+- Log contains no `AutoCompact FLOAT positions` warning (the trigger
+  never fired -- either eps is mis-tuned, the allocator is not wiring
+  through, or the loop count is insufficient).
+- Two or more WPs share a position value.
+
+If the teardown DELETE BRANCH did not complete (the timeout message in
+the script above prints), the next Test 2.0 run will see an orphan
+`PrecisionTestBranch` instance and must clean it up before proceeding.
+
+---
+
 ### Test 2.1 Copy WP -> Paste New
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.1"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10211"
 ```
@@ -376,6 +596,7 @@ Expected: new WP (fresh UUID) in [DST] (AguaAndTobobe); [IsolatedWP1] (BOCAS1) u
 ### Test 2.2 Cut WP -> Paste (move)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.2"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP2]&cmd=10201"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10210"
 ```
@@ -386,6 +607,7 @@ Expected: [IsolatedWP2] (BOCAS2) UUID unchanged; collection_uuid now = [DST].
 ### Test 2.3 Delete WP (success)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.3"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP3]&right_click=[IsolatedWP3]&cmd=10220"
 ```
 Expected: [IsolatedWP3] (TOBOBE) absent from /api/nmdb waypoints.
@@ -396,6 +618,7 @@ Expected: [IsolatedWP3] (TOBOBE) absent from /api/nmdb waypoints.
 
 Uses [GroupNoRoute_Dissolve] (Places/Part1), NOT Bocas, to preserve Bocas for Section 2.5 and Section 5.7.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.4"
 curl -s "http://localhost:9883/api/test?panel=database&select=[GroupNoRoute_Dissolve]&right_click=[GroupNoRoute_Dissolve]&cmd=10221"
 ```
 Expected: group shell ([GroupNoRoute_Dissolve]) deleted; 3 member WPs reparented to Part 1 - Before Trip; WP UUIDs unchanged.
@@ -406,6 +629,7 @@ Expected: group shell ([GroupNoRoute_Dissolve]) deleted; 3 member WPs reparented
 
 Uses [GroupNoRoute] = Bocas (a74e90d60300a434), intact after Test 2.4.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.5"
 curl -s "http://localhost:9883/api/test?panel=database&select=[GroupNoRoute]&right_click=[GroupNoRoute]&cmd=10222"
 ```
 Expected: [GroupNoRoute] (Bocas) and both member WPs (StarfishBeach + Fishfarm) deleted.
@@ -416,6 +640,7 @@ Expected: [GroupNoRoute] (Bocas) and both member WPs (StarfishBeach + Fishfarm) 
 
 Uses [GroupInRoute] = Popa group (244e8e100800400a), all 11 WPs in Popa route.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.6"
 curl -s "http://localhost:9883/api/test?panel=database&select=[GroupInRoute]&right_click=[GroupInRoute]&cmd=10222"
 ```
 Expected: WARNING in log; group and members unchanged.
@@ -427,6 +652,7 @@ Note: "IMPLEMENTATION ERROR" sentinel is expected -- navTest bypasses menu guard
 
 Uses [SafeBranch] = Before Sumwood Channel (0a4e9820cc015cae).
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.7"
 curl -s "http://localhost:9883/api/test?panel=database&select=[SafeBranch]&right_click=[SafeBranch]&cmd=10226"
 ```
 Expected: branch and all descendants gone (Places group + 7 member WPs + Tracks sub-branch).
@@ -438,6 +664,7 @@ Log: DELETE_BRANCH STARTED/FINISHED, no errors.
 
 Uses [RouteBranch] = Navigation/Routes (ac4e2c500600b9aa) -- source unchanged by paste new.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.8"
 curl -s "http://localhost:9883/api/test?panel=database&select=[RouteBranch]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10211"
 ```
@@ -450,6 +677,7 @@ tracks silently skipped; [RouteBranch] unchanged.
 
 Uses [SomeBranch] = MichellToKuna 2011-07 (784e76f880029e1e).
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.9"
 curl -s "http://localhost:9883/api/test?panel=database&select=[SomeBranch]&cmd=10201"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10210"
 ```
@@ -464,6 +692,7 @@ Note: Test 2.17 says "in Michelle" -- stale after Test 2.9; UUID still valid, te
 
 Uses [TestRoute] = Popa route (f34efdd6070022e8).
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.10"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10211"
 ```
@@ -474,6 +703,7 @@ Expected: new route record in [DST] with fresh UUID; route_waypoints rebuilt ref
 ### Test 2.11 Cut Route -> Paste (move)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.11"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&cmd=10201"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10210"
 ```
@@ -486,6 +716,7 @@ route_waypoints sequence unchanged. (After this, [TestRoute] is in [DST] -- UUID
 
 Uses [TestTrack] = 2005-11-25-SanDiego2Oceanside (1a4eed924904ebbe).
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.12"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestTrack]&cmd=10201"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10210"
 ```
@@ -499,6 +730,7 @@ Uses [IsolatedWP1] (ce4e43181f01b3ae) as source; [IsolatedWP2] (af4e23246d01bfa8
 (now in [DST] after Test 2.2).
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.13a"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP2]&right_click=[IsolatedWP2]&cmd=10214"
 ```
@@ -509,6 +741,7 @@ Expected: fresh-UUID copy at position < [IsolatedWP2]'s position and > predecess
 ### Test 2.13b Paste New After -- collection member (positional insertion after sibling)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.13b"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP2]&right_click=[IsolatedWP2]&cmd=10215"
 ```
@@ -522,6 +755,7 @@ Expected: fresh-UUID copy at position > [IsolatedWP2]'s position.
 Route point keys: `rp:[TestRoute]:[RPn]`
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.14a"
 curl -s "http://localhost:9883/api/test?panel=database&select=rp:[TestRoute]:[RP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=rp:[TestRoute]:[RP3]&right_click=rp:[TestRoute]:[RP3]&cmd=10214"
 ```
@@ -532,6 +766,7 @@ Expected: Popa0's WP appears again in route_waypoints between Popa1 and Popa2; t
 ### Test 2.14b Cut-splice -- PASTE_BEFORE route point (reorder RP3 to before RP2)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.14b"
 curl -s "http://localhost:9883/api/test?panel=database&select=rp:[TestRoute]:[RP3]&cmd=10201"
 curl -s "http://localhost:9883/api/test?panel=database&select=rp:[TestRoute]:[RP2]&right_click=rp:[TestRoute]:[RP2]&cmd=10212"
 ```
@@ -544,6 +779,7 @@ Expected: Popa2 now before Popa1 in sequence; count unchanged.
 [TestRoute] = Popa route (f34efdd6070022e8, now in [DST] after Test 2.11). [IsolatedWP1] (ce4e43181f01b3ae) is still in its original location (oldE80/Tracks), untouched.
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.15a"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&right_click=[TestRoute]&cmd=10214"
 ```
@@ -555,6 +791,7 @@ Verify via /api/nmdb: waypoints where collection_uuid=[DST], check position orde
 ### Test 2.15b Paste New After -- route object as anchor
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.15b"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&right_click=[TestRoute]&cmd=10215"
 ```
@@ -567,6 +804,7 @@ Expected: another fresh WP at position > [TestRoute] position.
 [TestGroup] = Timiteo (1a4eaf5a8c00e922), in oldE80/Groups (b84e8c3c51009446). [IsolatedWP1] as clipboard source.
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.16"
 # PASTE_NEW_BEFORE (10214): fresh WP at position before Timiteo group in oldE80/Groups ordering
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestGroup]&right_click=[TestGroup]&cmd=10214"
@@ -581,6 +819,7 @@ Group membership and group shell unchanged. WP is a sibling of the group, not a 
 [SomeBranch] = MichellToKuna 2011-07 (784e76f880029e1e), in Michelle (034e6b8ccb01fffe). After Test 2.9 its contents were moved to [DST]; the branch shell still exists. [IsolatedWP1] as clipboard source.
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.17"
 # PASTE_NEW_BEFORE (10214): fresh WP at position before [SomeBranch] in Michelle's ordering
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[SomeBranch]&right_click=[SomeBranch]&cmd=10214"
@@ -595,6 +834,7 @@ Expected: fresh WP copy inserted at position < [SomeBranch] position in Michelle
 [IsolatedWP2] (af4e23246d01bfa8) is in [DST] after Test 2.2; it is the positional anchor.
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.18a"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP2]&right_click=[IsolatedWP2]&cmd=10214"
 ```
@@ -608,6 +848,7 @@ route_waypoints reference same WP UUIDs as source (SS1.6); no new WP records cre
 [TestGroup] = Timiteo (1a4eaf5a8c00e922); [IsolatedWP2] as anchor.
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.18b"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestGroup]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP2]&right_click=[IsolatedWP2]&cmd=10214"
 ```
@@ -620,6 +861,10 @@ Expected: new group (fresh UUID) + 6 fresh-UUID member WPs in [DST] at position 
 
 E80 must be connected and empty after Section 1 reset. Run these after Section 2 completes cleanly.
 
+Mark tagging follows the same rule as Section 2: tag each test's mark with
+its number, e.g. `cmd=mark+Test+3.4`. See the "Mark tagging convention"
+rule in the Toolbox.
+
 **State note entering Section 3:** [TestRoute] (f34efdd6070022e8) is now in [DST] after Test 2.11 -- select by UUID still works. [GroupWithRouteMembers] = Popa group (244e8e100800400a) is intact (Test 2.6 was blocked).
 
 **Test 3.1-Test 3.3 dual role:** Test 3.1, Test 3.2, and Test 3.3 each populate E80 with data that later Section 3 steps
@@ -631,6 +876,7 @@ UUID-preserving paste). All three must pass before proceeding.
 ### Test 3.1 Paste WP to E80 (UUID-preserving upload)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.1"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210"
 ```
@@ -644,6 +890,7 @@ Note [E80_WP] = ce4e43181f01b3ae from /api/db waypoints.
 
 [GroupWithRouteMembers] = Popa group (244e8e100800400a); 11 member WPs all in [TestRoute].
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.2"
 curl -s "http://localhost:9883/api/test?panel=database&select=[GroupWithRouteMembers]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210"
 ```
@@ -657,6 +904,7 @@ Note [E80_GR] = 244e8e100800400a from /api/db groups.
 
 Member WPs must already be on E80 -- Test 3.2 put them there; SS10.10 pre-flight verifies this.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.3"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10210"
 ```
@@ -672,6 +920,7 @@ Note [E80_RT] = f34efdd6070022e8 from /api/db routes.
 PUSH (10250) is offered at DB destination; PASTE is not.
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.4"
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_WP]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10250"
 ```
@@ -684,6 +933,7 @@ Clipboard cleared. Log: PUSH STARTED/FINISHED, no errors.
 ### Test 3.5 Copy E80 WP -> Paste New to DB (fresh UUID)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.5"
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_WP]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10211"
 ```
@@ -694,6 +944,7 @@ Expected: new WP with fresh navMate UUID (byte 1 = 0x82) != [E80_WP].
 ### Test 3.6 Delete E80 WP
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.6"
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_WP]&right_click=[E80_WP]&cmd=10220"
 ```
 Wait for ProgressDialog FINISHED. Expected: [E80_WP] absent from /api/db.
@@ -706,6 +957,7 @@ Prerequisite: Test 3.3 has run; [E80_GR] (Popa, 244e8e100800400a) and [E80_RT] (
 f34efdd6070022e8) are both present on E80. [E80_RT] references [E80_GR]'s members.
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.6b"
 curl -s "http://localhost:9883/api/test?panel=e80&select=244e8e100800400a&right_click=244e8e100800400a&cmd=10222"
 ```
 
@@ -727,6 +979,7 @@ Routes MUST be deleted before any group delete. While route_waypoints reference 
 members, DEL_GROUP_WPS will be blocked by the handler-level route-dependency check
 (Test 3.6b verified this). Deleting routes first clears the dependency.
 ```
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+3.7"
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10223"
 ```
 Wait for ProgressDialog FINISHED. Expected: E80 routes empty; member WPs preserved.
@@ -736,6 +989,7 @@ Wait for ProgressDialog FINISHED. Expected: E80 routes empty; member WPs preserv
 ### Test 3.8 Delete via E80 Groups header (all groups) -- SS8.2
 
 ```
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+3.8"
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10222"
 ```
 Wait for ProgressDialog FINISHED. Expected: E80 groups and all member WPs deleted.
@@ -745,6 +999,7 @@ Wait for ProgressDialog FINISHED. Expected: E80 groups and all member WPs delete
 ### Test 3.9a Re-upload Popa group to E80 (Test 3.8 deleted all groups)
 
 ```
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+3.9a"
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=244e8e100800400a&cmd=10200"
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210"
 ```
@@ -756,6 +1011,7 @@ Expected: Popa group (244e8e100800400a) present on E80 with all 11 member WPs.
 ### Test 3.9b Delete E80 Group + members via specific group node (DEL_GROUP_WPS)
 
 ```
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+3.9b"
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=[E80_GR]&right_click=[E80_GR]&cmd=10222"
 ```
 Wait for ProgressDialog FINISHED.
@@ -767,6 +1023,7 @@ Expected: [E80_GR] and all member WPs (11 Popa WPs) absent from /api/db.
 
 If [E80_WP] was deleted in Test 3.6, re-upload [IsolatedWP1] (ce4e43181f01b3ae):
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.10a"
 curl -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210"
 ```
@@ -779,6 +1036,7 @@ Skip (NOT_RUN) if [E80_WP] is still present from Test 3.1.
 ### Test 3.10b Delete via E80 My Waypoints (all ungrouped WPs) -- SS8.2
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.10b"
 curl -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10222"
 ```
 Wait for ProgressDialog FINISHED.
@@ -790,6 +1048,7 @@ Expected: all ungrouped WPs deleted; named groups unaffected.
 
 If [E80_GR] is absent after Test 3.9b:
 ```
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+3.11a"
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=244e8e100800400a&cmd=10200"
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210"
 ```
@@ -802,6 +1061,7 @@ Skip (NOT_RUN) if [E80_GR] is still present.
 ### Test 3.11b Copy E80 Group -> Push to DB (group push-classified)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.11b"
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_GR]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10250"
 ```
@@ -815,6 +1075,7 @@ Clipboard cleared. Log: PUSH STARTED/FINISHED, no errors.
 
 If [E80_RT] is absent after Test 3.7:
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.12a"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10210"
 ```
@@ -827,6 +1088,7 @@ Skip (NOT_RUN) if [E80_RT] is still present.
 ### Test 3.12b Copy E80 Route -> Push to DB (route push-classified)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.12b"
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_RT]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10250"
 ```
@@ -841,6 +1103,7 @@ Log: PUSH STARTED/FINISHED, no errors.
 After Test 3.11b and Test 3.12b, E80 has both [E80_GR] (Popa group + 11 WPs) and [E80_RT] (Popa route).
 Both UUIDs in DB -> clipboard_class='push'. Select both simultaneously (cmd=10250):
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.13"
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_GR],[E80_RT]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10250"
 ```
@@ -854,6 +1117,7 @@ needs no ordering guarantee.
 ### Test 3.14 Paste New WP to E80 (fresh UUID)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.14"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP2]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211"
 ```
@@ -868,6 +1132,7 @@ Determine that fresh UUID from /api/db (it is NOT ce4e43181f01b3ae = [IsolatedWP
 Call it [E80_FRESH_WP]. clipboard_class='paste' when it's copied (UUID absent from DB).
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.14b"
 # COPY the fresh-UUID WP from E80 (find its UUID in /api/db waypoints after Test 3.14)
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_FRESH_WP]&cmd=10200"
 # PASTE to DB (offered because paste-classified)
@@ -887,6 +1152,7 @@ and is NOT on E80. The test requires two E80 WPs: one push-classified and one pa
 **Setup -- create [E80_FRESH_WP2]:** PASTE_NEW [IsolatedWP1] from DB to E80 to generate a second
 fresh UUID that is NOT in DB (paste-classified). Call it [E80_FRESH_WP2]; derive UUID from /api/db.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.14c+setup"
 curl -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211"
 ```
@@ -897,12 +1163,14 @@ Now select both [E80_FRESH_WP] (push-classified: UUID in DB) and [E80_FRESH_WP2]
 (paste-classified: UUID not in DB) -> clipboard_class='mixed'.
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.14c"
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_FRESH_WP],[E80_FRESH_WP2]&cmd=10200"
 ```
 Verify status bar text in navMate UI: "[e80] copy (2) -- Paste/Push not available: ..."
 
 Execute PASTE_NEW (10211) -- the only collection option for mixed clipboard:
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.14c+paste"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10211"
 ```
 Expected: two WP records inserted in [DST] with fresh navMate UUIDs (PASTE_NEW always
@@ -915,6 +1183,7 @@ assigns fresh UUIDs). Name values preserved from E80. No IMPL ERROR. Log clean.
 [TestGroup] = Timiteo (1a4eaf5a8c00e922); 6 members (t01-t06), none in any route, under oldE80/Groups.
 Survives all Section 2 tests. Name "Timiteo" never conflicts with E80 state at Test 3.15 time (E80 has Popa from Test 3.11b/Test 3.12b).
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.15"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestGroup]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211"
 ```
@@ -927,6 +1196,7 @@ Note: leaves Timiteo group (and members) on E80; Tests 5.6a-5.6c clear all E80 c
 
 Check /api/db routes. If a same-named route exists on E80:
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.16a"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10223"
 ```
 Wait for ProgressDialog FINISHED.
@@ -938,6 +1208,7 @@ Skip (NOT_RUN) if E80 routes were already empty.
 ### Test 3.16b Paste New Route to E80 (fresh route UUID, WP refs preserved)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.16b"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10211"
 ```
@@ -955,12 +1226,14 @@ collide with [IsolatedWP1] and [IsolatedWP2]. Both must be deleted before runnin
 
 Delete both from E80 before proceeding (select each by its fresh UUID and fire DELETE_WAYPOINT):
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.17+pre-cleanup"
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_FRESH_WP2]&right_click=[E80_FRESH_WP2]&cmd=10220"
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_FRESH_WP]&right_click=[E80_FRESH_WP]&cmd=10220"
 ```
 Wait for ProgressDialog FINISHED after each. Verify /api/db shows neither UUID remaining.
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.17"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1],[IsolatedWP2]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210"
 ```
@@ -998,6 +1271,7 @@ $E80_RT_FRESH = ($db.routes.PSObject.Properties | Where-Object { $_.Value.name -
 ```
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+3.18"
 # Copy [E80_RP1] (Popa2 -- unique in route)
 curl -s "http://localhost:9883/api/test?panel=e80&select=rp:[E80_RT]:[E80_RP1]&cmd=10200"
 # Paste Before [E80_RP3]: inserts RP1's WP between RP2 and RP3
@@ -1008,6 +1282,10 @@ Wait for ProgressDialog FINISHED. Expected: [E80_RP1] WP between [E80_RP2] and [
 ---
 
 ## Section 4 Track Tests (requires teensyBoat on port 9881)
+
+Mark tagging follows the same rule as Section 2: tag each test's mark with
+its number, e.g. `cmd=mark+Test+4.1`. See the "Mark tagging convention"
+rule in the Toolbox.
 
 ### Test 4 Pre-Check: teensyBoat Availability (run first -- do not skip)
 
@@ -1041,7 +1319,7 @@ curl.exe -s "http://localhost:9881/api/log?since=$seq" | ConvertFrom-Json |
     ForEach-Object { $_.text }
 
 # Step 3 -- mark navMate log and start recording
-curl.exe -s "http://localhost:9883/api/command?cmd=mark" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+4.0+record" | Out-Null
 curl.exe -s "http://localhost:9883/api/command?cmd=t+start"
 
 # Step 4 -- drive legs (3-leg triangle, ~30s total at 50 knots)
@@ -1091,6 +1369,7 @@ Color conversion: E80 index -> aabbggrr: 0=ff0000ff, 1=ff00ffff, 2=ff00ff00, 3=f
 ### Test 4.1 Copy E80 Track -> Paste to DB (download, track remains on E80)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+4.1"
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_TK1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10210"
 ```
@@ -1102,6 +1381,7 @@ Verify: /api/nmdb tracks where uuid = [E80_TK1].
 ### Test 4.2 Cut E80 Track -> Paste to DB (download + E80 erase)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+4.2"
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_TK2]&cmd=10201"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10210"
 ```
@@ -1113,6 +1393,7 @@ Wait for ProgressDialog FINISHED. Expected: track in DB with E80 UUID preserved 
 
 [TestTrack] is now in [DST] after Test 2.12, UUID unchanged.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+4.3"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestTrack]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_click=header%3Atracks&cmd=10210"
 ```
@@ -1123,6 +1404,7 @@ Expected: `ERROR - Cannot paste to E80 tracks header -- tracks are read-only`; E
 ### Test 4.4 Paste New E80 Track to DB (download, fresh UUID)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+4.4"
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_TK1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10211"
 ```
@@ -1137,6 +1419,7 @@ Expected: PASTE_NEW succeeds. Track in DB with fresh navMate UUID; track_points 
 
 [E80_TK1] is still on E80 after Section 4.4 (COPY, not CUT). At least one track is present.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+4.5"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_click=header%3Atracks&cmd=10225"
 ```
 Wait for ProgressDialog FINISHED. Expected: all E80 tracks erased; /api/db tracks empty.
@@ -1149,12 +1432,17 @@ This exercises the fourth SS8.2 header-node delete rule.
 All blocked operations produce WARNING or IMPLEMENTATION ERROR with no data change.
 Any test header carrying `PREREQUISITE: <label>` is structurally non-runnable until the named infrastructure exists; record as `NOT_RUN (<label>)`.
 
+Mark tagging follows the same rule as Section 2: tag each test's mark with
+its number, e.g. `cmd=mark+Test+5.2`. See the "Mark tagging convention"
+rule in the Toolbox.
+
 ---
 
 ### Test 5.1 DEL_WAYPOINT blocked -- WP referenced in route
 
 [WPinRoute] = Popa0, in Popa route.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.1"
 curl -s "http://localhost:9883/api/test?panel=database&select=[WPinRoute]&right_click=[WPinRoute]&cmd=10220"
 ```
 Expected: WARNING in log; [WPinRoute] still in /api/nmdb.
@@ -1165,6 +1453,7 @@ Expected: WARNING in log; [WPinRoute] still in /api/nmdb.
 
 [UnsafeBranch] = oldE80/Groups; 62 WPs in routes outside this branch.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.2"
 curl -s "http://localhost:9883/api/test?panel=database&select=[UnsafeBranch]&right_click=[UnsafeBranch]&cmd=10226"
 ```
 Expected: ERROR in log ("Cannot delete ... waypoints are referenced by external routes"); branch unchanged.
@@ -1175,6 +1464,7 @@ Note: log says ERROR not WARNING; both indicate the guard fired correctly.
 ### Test 5.3 Paste blocked -- DB cut -> E80 destination (SS9, SS10.5)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.3"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10201"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210"
 ```
@@ -1186,6 +1476,7 @@ Expected: paste rejected; WARNING; E80 unchanged; [IsolatedWP1] still in DB (cut
 
 Check /api/db for UUID ce4e43181f01b3ae. If present:
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.4a"
 curl -s "http://localhost:9883/api/test?panel=e80&select=ce4e43181f01b3ae&right_click=ce4e43181f01b3ae&cmd=10220"
 ```
 Wait for ProgressDialog FINISHED.
@@ -1198,6 +1489,7 @@ Skip (NOT_RUN) if BOCAS1 not present on E80.
 
 BOCAS2 may have a fresh UUID from Test 3.14 PASTE_NEW. Find it via /api/db name match. If present:
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.4b"
 curl -s "http://localhost:9883/api/test?panel=e80&select=[BOCAS2_UUID]&right_click=[BOCAS2_UUID]&cmd=10220"
 ```
 Wait for ProgressDialog FINISHED.
@@ -1211,6 +1503,7 @@ Skip (NOT_RUN) if BOCAS2 not present on E80.
 Prerequisite: BOCAS1 and BOCAS2 absent from E80 (Tests 5.4a-5.4b). If either remains, the E80-wide
 name collision guard fires before SS10.8 and the test does NOT verify SS10.8.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.4c"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_click=header%3Atracks&cmd=10210"
 ```
@@ -1222,6 +1515,7 @@ Expected: `ERROR - Cannot paste to E80 tracks header -- tracks are read-only`; E
 
 [TestTrack] is in [DST] after Test 2.12, UUID unchanged.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.5"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestTrack]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[DST]&right_click=[DST]&cmd=10210"
 ```
@@ -1233,6 +1527,7 @@ Expected: WARNING or IMPLEMENTATION ERROR; DB unchanged.
 
 Test 3.15 left Timiteo group and possibly other content on E80. Clear all routes first.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.6a"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10223"
 ```
 Wait for ProgressDialog FINISHED. **HARD STOP: do NOT proceed to Test 5.6b until FINISHED is
@@ -1262,6 +1557,7 @@ Expected: /api/db routes empty.
 
 Prerequisite: Test 5.6a ProgressDialog is confirmed FINISHED. Do not fire until confirmed.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.6b"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10222"
 ```
 Wait for ProgressDialog FINISHED. Apply same close_dialog remedy as Test 5.6a if FINISHED is not seen.
@@ -1272,6 +1568,7 @@ Expected: /api/db groups empty; all member WPs deleted.
 ### Test 5.6c Delete all E80 ungrouped WPs (no-op if none)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.6c"
 curl -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10222"
 ```
 Wait for ProgressDialog FINISHED.
@@ -1288,6 +1585,7 @@ the delete. There is no ProgressDialog. This is the documented no-op path -- cou
 
 Prerequisite: Tests 5.6a-5.6c have cleared E80 completely. Verify /api/db empty before proceeding.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.6d"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10210"
 ```
@@ -1303,6 +1601,7 @@ Select the group AND one of its members; ancestor-wins logic should upload the g
 and suppress t01 as a separate ungrouped WP.
 Prerequisite: E80 is empty (Tests 5.6a-5.6c cleared it; the Timiteo group from Test 3.15 is gone).
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.7"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestGroup],[TestGroupMember]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211"
 ```
@@ -1321,6 +1620,7 @@ and `_doPaste` returns before any E80 write -- no name-collision check or downst
 runs. Works regardless of whether Timiteo is on E80 from Test 5.7.
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.8"
 # Switch suppress to reject mode for this test only
 curl -s "http://localhost:9883/api/test?op=suppress&val=1&outcome=reject"
 
@@ -1348,6 +1648,7 @@ PASTE-NEW-without-ProgressDialog-and-without-error signature IS the reject-path 
 
 [NestedBranch] = MandalaLogs; [ChildBranch] = MandalaLogs/Tracks.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.9"
 curl -s "http://localhost:9883/api/test?panel=database&select=[NestedBranch]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[ChildBranch]&right_click=[ChildBranch]&cmd=10211"
 ```
@@ -1360,6 +1661,7 @@ Expected: WARNING "recursive paste" or similar; DB unchanged.
 Need two WPs with same name, different UUIDs. Check /api/nmdb; create via UI if needed.
 oldE80/Tracks has many "BOCAS1-001" etc. -- check if any duplicates exist in DB first.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.10"
 curl -s "http://localhost:9883/api/test?panel=database&select=[WP_A],[WP_B]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211"
 ```
@@ -1371,6 +1673,7 @@ Expected: hard-abort (WARNING identifying colliding name); E80 unchanged.
 
 [SameNameWP] = a DB WP with name "BOCAS1" (same as [IsolatedWP1]); create via UI if needed.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.11a"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210"
 ```
@@ -1382,6 +1685,7 @@ Expected: [IsolatedWP1] (BOCAS1, ce4e43181f01b3ae) present on E80.
 ### Test 5.11b Pre-flight: E80-wide name collision (SS10.2 Step 7)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.11b"
 curl -s "http://localhost:9883/api/test?panel=database&select=[SameNameWP]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210"
 ```
@@ -1397,6 +1701,7 @@ not on E80 at Test 5.12 time. Name "BOCAS2" also not present on E80 (entering 5.
 E80 has BOCAS1 + Timiteo group + 6 t01-t06 members from Tests 5.7/5.11a).
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.12"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP2]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210"
 ```
@@ -1416,6 +1721,7 @@ log; PASTE STARTED/FINISHED clean.
 Use [IsolatedWP2] in the clipboard and [IsolatedWP1] as the destination -- different UUIDs so the
 descendant guard does not fire first and the destination-type guard (IMPLEMENTATION ERROR) is reached.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.14a"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP2]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&right_click=[IsolatedWP1]&cmd=10210"
 ```
@@ -1427,6 +1733,7 @@ Expected: IMPLEMENTATION ERROR in log; DB unchanged.
 
 Clipboard retains [IsolatedWP2] from Test 5.14a -- no new COPY needed.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.14b"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&right_click=[IsolatedWP1]&cmd=10211"
 ```
 Expected: IMPLEMENTATION ERROR in log; DB unchanged.
@@ -1436,6 +1743,7 @@ Expected: IMPLEMENTATION ERROR in log; DB unchanged.
 ### Test 5.14c Menu shape -- PASTE at DB route object node blocked
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.14c"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&right_click=[TestRoute]&cmd=10210"
 ```
 Expected: IMPLEMENTATION ERROR; DB unchanged.
@@ -1445,6 +1753,7 @@ Expected: IMPLEMENTATION ERROR; DB unchanged.
 ### Test 5.14d Menu shape -- PASTE at DB track object node blocked
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.14d"
 curl -s "http://localhost:9883/api/test?panel=database&select=[TestTrack]&right_click=[TestTrack]&cmd=10210"
 ```
 Expected: IMPLEMENTATION ERROR; DB unchanged.
@@ -1455,6 +1764,7 @@ Expected: IMPLEMENTATION ERROR; DB unchanged.
 
 If [IsolatedWP1] is not on the E80:
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.15a"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210"
 ```
@@ -1470,6 +1780,7 @@ run, ProgressDialog FINISHED appears in the log.
 Note: [E80_WP] UUID equals [IsolatedWP1] UUID in clipboard. The _doPaste Step 3 UUID-match guard
 fires first; do NOT look for "individual waypoint node destination" in the log here.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.15b"
 curl -s "http://localhost:9883/api/test?panel=database&select=[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_WP]&right_click=[E80_WP]&cmd=10210"
 ```
@@ -1480,6 +1791,7 @@ Expected: `ERROR - Cannot paste: destination is a descendant of an item in the c
 ### Test 5.15c Menu shape -- PASTE_NEW at E80 WP object node blocked
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.15c"
 curl -s "http://localhost:9883/api/test?panel=e80&select=[E80_WP]&right_click=[E80_WP]&cmd=10211"
 ```
 Expected: same `ERROR - Cannot paste: destination is a descendant of an item in the clipboard`. E80 unchanged.
@@ -1492,6 +1804,7 @@ Expected: same `ERROR - Cannot paste: destination is a descendant of an item in 
 Note: [RP1] is Popa0. Popa0 may appear more than once in [TestRoute] after Section 2 operations --
 check route point count before this test and use that as the baseline.
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.16a"
 curl -s "http://localhost:9883/api/test?panel=database&select=rp:[TestRoute]:[RP1],[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=rp:[TestRoute]:[RP2]&right_click=rp:[TestRoute]:[RP2]&cmd=10212"
 ```
@@ -1504,6 +1817,7 @@ Route count increases by clipboard item count.
 ### Test 5.16b Mixed clipboard PASTE_NEW_BEFORE at route_point (SS6.4 accepted case)
 
 ```
+curl -s "http://localhost:9883/api/command?cmd=mark+Test+5.16b"
 curl -s "http://localhost:9883/api/test?panel=database&select=rp:[TestRoute]:[RP1],[IsolatedWP1]&cmd=10200"
 curl -s "http://localhost:9883/api/test?panel=database&select=rp:[TestRoute]:[RP2]&right_click=rp:[TestRoute]:[RP2]&cmd=10214"
 ```

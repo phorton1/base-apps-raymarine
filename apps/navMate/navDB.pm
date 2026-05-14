@@ -78,6 +78,14 @@ BEGIN
 		clearAllVisible
 		getAllVisibleFeatures
 		pruneDbVisibility
+		getMinChildPosition
+		getMaxChildPosition
+		computePushDownPositions
+		computeFractionalBetween
+		getContainerChildren
+		getPositionByAnchor
+		compactContainer
+		compactAllContainers
 	);
 }
 
@@ -449,7 +457,7 @@ sub newFSHUUID
 
 sub insertCollection
 {
-	my ($dbh, $name, $parent_uuid, $node_type, $comment) = @_;
+	my ($dbh, $name, $parent_uuid, $node_type, $comment, $position) = @_;
 	if (defined $parent_uuid)
 	{
 		my $pr = $dbh->get_record(
@@ -460,17 +468,19 @@ sub insertCollection
 			return undef;
 		}
 	}
+	$position = _appendPositionFallback($dbh, $parent_uuid, 'insertCollection', $name)
+		if !defined $position;
 	my $uuid = newUUID($dbh);
 	$dbh->do(
-		"INSERT INTO collections (uuid, name, parent_uuid, node_type, comment) VALUES (?,?,?,?,?)",
-		[$uuid, $name, $parent_uuid, $node_type // $NODE_TYPE_BRANCH, $comment // '']);
+		"INSERT INTO collections (uuid, name, parent_uuid, node_type, comment, position) VALUES (?,?,?,?,?,?)",
+		[$uuid, $name, $parent_uuid, $node_type // $NODE_TYPE_BRANCH, $comment // '', $position]);
 	return $uuid;
 }
 
 
 sub insertCollectionUUID
 {
-	my ($dbh, $uuid, $name, $parent_uuid, $node_type, $comment) = @_;
+	my ($dbh, $uuid, $name, $parent_uuid, $node_type, $comment, $position) = @_;
 	if (defined $parent_uuid)
 	{
 		my $pr = $dbh->get_record(
@@ -481,9 +491,11 @@ sub insertCollectionUUID
 			return undef;
 		}
 	}
+	$position = _appendPositionFallback($dbh, $parent_uuid, 'insertCollectionUUID', $name)
+		if !defined $position;
 	$dbh->do(
-		"INSERT INTO collections (uuid, name, parent_uuid, node_type, comment) VALUES (?,?,?,?,?)",
-		[$uuid, $name, $parent_uuid, $node_type // $NODE_TYPE_BRANCH, $comment // '']);
+		"INSERT INTO collections (uuid, name, parent_uuid, node_type, comment, position) VALUES (?,?,?,?,?,?)",
+		[$uuid, $name, $parent_uuid, $node_type // $NODE_TYPE_BRANCH, $comment // '', $position]);
 	return $uuid;
 }
 
@@ -520,11 +532,14 @@ sub insertWaypoint
 {
 	my ($dbh, %a) = @_;
 	my $uuid = $a{uuid} // newUUID($dbh);
+	my $position = $a{position};
+	$position = _appendPositionFallback($dbh, $a{collection_uuid}, 'insertWaypoint', $a{name})
+		if !defined $position;
 	$dbh->do(qq{
 		INSERT INTO waypoints
 			(uuid, name, comment, lat, lon, wp_type, color, depth_cm, temp_k,
-			 created_ts, ts_source, source, collection_uuid)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)},
+			 created_ts, ts_source, source, collection_uuid, position)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)},
 		[$uuid,
 		$a{name},
 		$a{comment}         // '',
@@ -537,7 +552,8 @@ sub insertWaypoint
 		$a{created_ts},
 		$a{ts_source},
 		$a{source},
-		$a{collection_uuid}]);
+		$a{collection_uuid},
+		$position]);
 	return $uuid;
 }
 
@@ -572,21 +588,25 @@ sub updateWaypoint
 
 sub insertRoute
 {
-	my ($dbh, $name, $color, $comment, $collection_uuid) = @_;
+	my ($dbh, $name, $color, $comment, $collection_uuid, $position) = @_;
+	$position = _appendPositionFallback($dbh, $collection_uuid, 'insertRoute', $name)
+		if !defined $position;
 	my $uuid = newUUID($dbh);
 	$dbh->do(
-		"INSERT INTO routes (uuid, name, color, comment, collection_uuid) VALUES (?,?,?,?,?)",
-		[$uuid, $name, $color // 0, $comment // '', $collection_uuid]);
+		"INSERT INTO routes (uuid, name, color, comment, collection_uuid, position) VALUES (?,?,?,?,?,?)",
+		[$uuid, $name, $color // 0, $comment // '', $collection_uuid, $position]);
 	return $uuid;
 }
 
 
 sub insertRouteUUID
 {
-	my ($dbh, $uuid, $name, $color, $comment, $collection_uuid) = @_;
+	my ($dbh, $uuid, $name, $color, $comment, $collection_uuid, $position) = @_;
+	$position = _appendPositionFallback($dbh, $collection_uuid, 'insertRouteUUID', $name)
+		if !defined $position;
 	$dbh->do(
-		"INSERT INTO routes (uuid, name, color, comment, collection_uuid) VALUES (?,?,?,?,?)",
-		[$uuid, $name, $color // 0, $comment // '', $collection_uuid]);
+		"INSERT INTO routes (uuid, name, color, comment, collection_uuid, position) VALUES (?,?,?,?,?,?)",
+		[$uuid, $name, $color // 0, $comment // '', $collection_uuid, $position]);
 	return $uuid;
 }
 
@@ -623,11 +643,14 @@ sub insertTrack
 {
 	my ($dbh, %a) = @_;
 	my $uuid = $a{uuid} // newUUID($dbh);
+	my $position = $a{position};
+	$position = _appendPositionFallback($dbh, $a{collection_uuid}, 'insertTrack', $a{name})
+		if !defined $position;
 	$dbh->do(qq{
 		INSERT INTO tracks
 			(uuid, name, color, ts_start, ts_end, ts_source,
-			 point_count, collection_uuid, companion_uuid)
-		VALUES (?,?,?,?,?,?,?,?,?)},
+			 point_count, collection_uuid, companion_uuid, position)
+		VALUES (?,?,?,?,?,?,?,?,?,?)},
 		[$uuid,
 		$a{name},
 		$a{color}          // 0,
@@ -636,7 +659,8 @@ sub insertTrack
 		$a{ts_source},
 		$a{point_count}    // 0,
 		$a{collection_uuid},
-		$a{companion_uuid}]);
+		$a{companion_uuid},
+		$position]);
 	return $uuid;
 }
 
@@ -1172,15 +1196,18 @@ sub clearRouteWaypoints
 
 sub moveWaypoint
 {
-	my ($dbh, $uuid, $new_coll_uuid) = @_;
-	$dbh->do("UPDATE waypoints SET collection_uuid=? WHERE uuid=?", [$new_coll_uuid, $uuid]);
+	my ($dbh, $uuid, $new_coll_uuid, $position) = @_;
+	$position = _appendPositionFallback($dbh, $new_coll_uuid, 'moveWaypoint', $uuid)
+		if !defined $position;
+	$dbh->do("UPDATE waypoints SET collection_uuid=?, position=? WHERE uuid=?",
+		[$new_coll_uuid, $position, $uuid]);
 	return 1;
 }
 
 
 sub moveCollection
 {
-	my ($dbh, $uuid, $new_parent_uuid) = @_;
+	my ($dbh, $uuid, $new_parent_uuid, $position) = @_;
 	if (defined $new_parent_uuid)
 	{
 		my $pr = $dbh->get_record(
@@ -1191,23 +1218,32 @@ sub moveCollection
 			return undef;
 		}
 	}
-	$dbh->do("UPDATE collections SET parent_uuid=? WHERE uuid=?", [$new_parent_uuid, $uuid]);
+	$position = _appendPositionFallback($dbh, $new_parent_uuid, 'moveCollection', $uuid)
+		if !defined $position;
+	$dbh->do("UPDATE collections SET parent_uuid=?, position=? WHERE uuid=?",
+		[$new_parent_uuid, $position, $uuid]);
 	return 1;
 }
 
 
 sub moveRoute
 {
-	my ($dbh, $uuid, $new_coll_uuid) = @_;
-	$dbh->do("UPDATE routes SET collection_uuid=? WHERE uuid=?", [$new_coll_uuid, $uuid]);
+	my ($dbh, $uuid, $new_coll_uuid, $position) = @_;
+	$position = _appendPositionFallback($dbh, $new_coll_uuid, 'moveRoute', $uuid)
+		if !defined $position;
+	$dbh->do("UPDATE routes SET collection_uuid=?, position=? WHERE uuid=?",
+		[$new_coll_uuid, $position, $uuid]);
 	return 1;
 }
 
 
 sub moveTrack
 {
-	my ($dbh, $uuid, $new_coll_uuid) = @_;
-	$dbh->do("UPDATE tracks SET collection_uuid=? WHERE uuid=?", [$new_coll_uuid, $uuid]);
+	my ($dbh, $uuid, $new_coll_uuid, $position) = @_;
+	$position = _appendPositionFallback($dbh, $new_coll_uuid, 'moveTrack', $uuid)
+		if !defined $position;
+	$dbh->do("UPDATE tracks SET collection_uuid=?, position=? WHERE uuid=?",
+		[$new_coll_uuid, $position, $uuid]);
 	return 1;
 }
 
@@ -1498,6 +1534,380 @@ sub rawQuery
 	my $rows = eval { $dbh->get_records($sql) };
 	return (undef, $@) if $@;
 	return ($rows // []);
+}
+
+
+#---------------------------------------------
+# _appendPositionFallback
+#---------------------------------------------
+# Internal: callers SHOULD pass an explicit position to every insert/move
+# primitive. If they do not, fall back to "append at end" (MAX(position)+1
+# of the destination container) and log a warning so the forgotten caller
+# is visible. End-state: no warnings logged.
+
+sub _appendPositionFallback
+{
+	my ($dbh, $container_uuid, $fn, $what) = @_;
+	my $max = getMaxChildPosition($dbh, $container_uuid);
+	my $pos = defined($max) ? ($max + 1) : 1.0;
+	warning(0, 0, "navDB::$fn: position not specified for '" . ($what // '') .
+		"' -- appending at $pos (caller should pass position explicitly)");
+	return $pos;
+}
+
+
+#---------------------------------------------
+# Position-computing helpers
+#---------------------------------------------
+# Siblings within a container span four tables (sub-collections by
+# parent_uuid; waypoints, routes, tracks by collection_uuid). These
+# helpers walk all four as a unified position space.
+# Root container (container_uuid = undef) holds only sub-collections.
+
+# Precision threshold for the auto-renumber trigger. If a per-slot gap
+# falls below this, the helper calls compactContainer() on the destination
+# before placing items. 1e-9 allows ~30 hot-spot bisections from an
+# integer-gap starting point; well clear of 2^-52 (~2.2e-16) underflow.
+my $POSITION_EPS = 1e-9;
+
+
+# Internal: build a UNION ALL sub-query over the four sibling tables
+# for $container_uuid, optionally with "AND position $cmp ?" filter.
+# Returns ($sql_fragment, \@bind_params). The fragment is parenthesized
+# and ready for "SELECT MIN/MAX(p) FROM <fragment>" wrapping.
+
+sub _siblingPositionsSql
+{
+	my ($container_uuid, $cmp, $val) = @_;
+	my $extra = defined($cmp) ? " AND position $cmp ?" : "";
+	my @parts;
+	my @params;
+	if (defined $container_uuid)
+	{
+		for my $info (
+			['waypoints',   'collection_uuid'],
+			['routes',      'collection_uuid'],
+			['tracks',      'collection_uuid'],
+			['collections', 'parent_uuid'])
+		{
+			my ($tbl, $col) = @$info;
+			push @parts, "SELECT position AS p FROM $tbl WHERE $col=?$extra";
+			push @params, $container_uuid;
+			push @params, $val if defined $cmp;
+		}
+	}
+	else
+	{
+		push @parts, "SELECT position AS p FROM collections WHERE parent_uuid IS NULL$extra";
+		push @params, $val if defined $cmp;
+	}
+	return ("(" . join(" UNION ALL ", @parts) . ")", \@params);
+}
+
+
+# Internal: if the per-slot gap is below eps, renumber the container and
+# return 1; else return 0. Renumber is the existing compactContainer; it
+# preserves order and does not bump db_version.
+
+sub _precisionRenumberIfNeeded
+{
+	my ($dbh, $container_uuid, $gap_per_slot) = @_;
+	return 0 if !defined $gap_per_slot;
+	return 0 if $gap_per_slot >= $POSITION_EPS;
+	warning(0, 0, "AutoCompact FLOAT positions for container " . ($container_uuid // 'ROOT'));
+	compactContainer($dbh, $container_uuid);
+	return 1;
+}
+
+
+sub getMinChildPosition
+{
+	my ($dbh, $container_uuid) = @_;
+	my ($sub, $params) = _siblingPositionsSql($container_uuid);
+	my $rec = $dbh->get_record("SELECT MIN(p) AS position FROM $sub", $params);
+	return (defined $rec && defined $rec->{position}) ? $rec->{position} : undef;
+}
+
+
+sub getMaxChildPosition
+{
+	my ($dbh, $container_uuid) = @_;
+	my ($sub, $params) = _siblingPositionsSql($container_uuid);
+	my $rec = $dbh->get_record("SELECT MAX(p) AS position FROM $sub", $params);
+	return (defined $rec && defined $rec->{position}) ? $rec->{position} : undef;
+}
+
+
+# Look up a node's position by uuid + table. Used by computeFractionalBetween
+# to refetch an anchor's position after a precision-triggered renumber.
+# $anchor_table is one of 'waypoints', 'routes', 'tracks', 'collections'.
+
+sub getPositionByAnchor
+{
+	my ($dbh, $anchor_uuid, $anchor_table) = @_;
+	return undef if !$anchor_uuid || !$anchor_table;
+	my $rec = $dbh->get_record(
+		"SELECT position FROM $anchor_table WHERE uuid=?",
+		[$anchor_uuid]);
+	return (defined $rec && defined $rec->{position}) ? $rec->{position} : undef;
+}
+
+
+# Push-down-stack positions for N new items at the top of the container.
+# pos_i = upper * (i+1) / (N+1)  where upper = MIN(positions) or N+1 if empty.
+# devolves to 1..N for empty containers.
+#
+# Precision-aware: if the per-slot gap upper/(N+1) falls below POSITION_EPS,
+# triggers compactContainer on the destination first, then recomputes upper.
+
+sub computePushDownPositions
+{
+	my ($dbh, $container_uuid, $n) = @_;
+	return () if $n < 1;
+	my $min       = getMinChildPosition($dbh, $container_uuid);
+	my $upper     = defined($min) ? $min : ($n + 1);
+	my $gap_slot  = $upper / ($n + 1);
+	if (_precisionRenumberIfNeeded($dbh, $container_uuid, $gap_slot))
+	{
+		$min   = getMinChildPosition($dbh, $container_uuid);
+		$upper = defined($min) ? $min : ($n + 1);
+	}
+	my @positions;
+	for my $i (0 .. $n - 1)
+	{
+		push @positions, $upper * ($i + 1) / ($n + 1);
+	}
+	return @positions;
+}
+
+
+# Unified fractional allocator. Returns N positions placed strictly between
+# the anchor and its nearest neighbor in the chosen direction. Replaces the
+# old computeFractionalBefore / computeFractionalAfter helpers AND the
+# inline cross-table neighbor query + N-item bisection that previously lived
+# in navOpsDB.pm's PASTE_BEFORE/AFTER block.
+#
+#   $anchor_uuid, $anchor_table identify the right-clicked node so its
+#     position can be refetched if a precision renumber fires.
+#   $is_before = 1 -> place items below the anchor (smaller positions);
+#                0 -> place items above the anchor (larger positions).
+#   $n         -> count of items to place.
+#
+# Returns an empty list on lookup failure.
+
+sub computeFractionalBetween
+{
+	my ($dbh, $container_uuid, $anchor_uuid, $anchor_table, $is_before, $n) = @_;
+	return () if $n < 1;
+
+	# Two-pass: if a renumber fires inside _precisionRenumberIfNeeded the
+	# anchor's position is now stale; reload neighbors and recompute once.
+	for my $pass (1, 2)
+	{
+		my $anchor_pos = getPositionByAnchor($dbh, $anchor_uuid, $anchor_table);
+		return () if !defined $anchor_pos;
+
+		my $cmp     = $is_before ? '<' : '>';
+		my $agg     = $is_before ? 'MAX' : 'MIN';
+		my ($sub, $params) = _siblingPositionsSql($container_uuid, $cmp, $anchor_pos);
+		my $rec     = $dbh->get_record("SELECT $agg(p) AS position FROM $sub", $params);
+		my $nbr     = (defined $rec && defined $rec->{position})
+			? $rec->{position}
+			: ($is_before ? 0 : $anchor_pos + 1);
+
+		my ($low, $high) = $is_before ? ($nbr, $anchor_pos) : ($anchor_pos, $nbr);
+		my $gap_slot     = ($high - $low) / ($n + 1);
+
+		if ($pass == 1 && _precisionRenumberIfNeeded($dbh, $container_uuid, $gap_slot))
+		{
+			next;  # retry once with refreshed anchor + neighbors
+		}
+
+		my @positions;
+		for my $i (0 .. $n - 1)
+		{
+			push @positions, $low + ($high - $low) * ($i + 1) / ($n + 1);
+		}
+		return @positions;
+	}
+	return ();
+}
+
+
+# Merged sorted list of all immediate children of $container_uuid.
+# Returns arrayref; each row carries kind=>'collection' or kind=>'object',
+# the row's own position, and the fields the renderer needs to construct
+# tree items. Replacement for separate getCollectionChildren +
+# getCollectionObjects calls in the renderer.
+
+sub getContainerChildren
+{
+	my ($dbh, $container_uuid) = @_;
+	my @rows;
+
+	my $colls;
+	if (defined $container_uuid)
+	{
+		$colls = $dbh->get_records(
+			"SELECT uuid, name, node_type, comment, position
+			 FROM collections WHERE parent_uuid=?",
+			[$container_uuid]);
+	}
+	else
+	{
+		$colls = $dbh->get_records(
+			"SELECT uuid, name, node_type, comment, position
+			 FROM collections WHERE parent_uuid IS NULL");
+	}
+	for my $row (@$colls)
+	{
+		$row->{kind} = 'collection';
+		push @rows, $row;
+	}
+
+	if (defined $container_uuid)
+	{
+		my $wps = $dbh->get_records(
+			"SELECT uuid, name, 'waypoint' AS obj_type, lat, lon, wp_type, color, position
+			 FROM waypoints WHERE collection_uuid=?",
+			[$container_uuid]);
+		for my $row (@$wps)
+		{
+			$row->{kind} = 'object';
+			push @rows, $row;
+		}
+
+		my $routes = $dbh->get_records(
+			"SELECT uuid, name, color, 'route' AS obj_type, position
+			 FROM routes WHERE collection_uuid=?",
+			[$container_uuid]);
+		for my $row (@$routes)
+		{
+			$row->{kind} = 'object';
+			push @rows, $row;
+		}
+
+		my $tracks = $dbh->get_records(
+			"SELECT uuid, name, color, 'track' AS obj_type, ts_start, ts_end, ts_source, point_count, position
+			 FROM tracks WHERE collection_uuid=?",
+			[$container_uuid]);
+		for my $row (@$tracks)
+		{
+			$row->{kind} = 'object';
+			push @rows, $row;
+		}
+	}
+
+	@rows = sort { $a->{position} <=> $b->{position} } @rows;
+	return \@rows;
+}
+
+
+#---------------------------------------------
+# Compact -- renumber sibling positions
+#---------------------------------------------
+# compactContainer assigns 1.0, 2.0, 3.0, ... to every direct child of
+# $container_uuid in current sorted order, breaking duplicate-position
+# ties by rowid. compactAllContainers iterates every collection plus
+# the root (NULL parent).
+#
+# Compact is the canonical normalization for legacy zero-positions and
+# the precision-wall reclamation tool. It is idempotent on an already-
+# compacted container.
+#
+# compactContainer returns the count of rows whose position was actually
+# CHANGED (rows already at the correct integer position are skipped). A
+# return of 0 means the container was already compact.
+
+
+sub compactContainer
+{
+	my ($dbh, $container_uuid) = @_;
+	my @rows;
+
+	# Each row: ($table, $uuid, $position, $rowid)
+	my $colls_sql;
+	my $colls_params;
+	if (defined $container_uuid)
+	{
+		$colls_sql = "SELECT uuid, position, rowid FROM collections WHERE parent_uuid=?";
+		$colls_params = [$container_uuid];
+	}
+	else
+	{
+		$colls_sql = "SELECT uuid, position, rowid FROM collections WHERE parent_uuid IS NULL";
+		$colls_params = [];
+	}
+	my $colls = $dbh->get_records($colls_sql, $colls_params);
+	for my $r (@$colls)
+	{
+		push @rows, ['collections', $r->{uuid}, $r->{position} // 0, $r->{rowid} // 0];
+	}
+
+	if (defined $container_uuid)
+	{
+		for my $tbl ('waypoints', 'routes', 'tracks')
+		{
+			my $rs = $dbh->get_records(
+				"SELECT uuid, position, rowid FROM $tbl WHERE collection_uuid=?",
+				[$container_uuid]);
+			for my $r (@$rs)
+			{
+				push @rows, [$tbl, $r->{uuid}, $r->{position} // 0, $r->{rowid} // 0];
+			}
+		}
+	}
+
+	# Sort by (position, rowid) -- preserves any existing meaningful
+	# ordering and breaks duplicate-zero ties by insertion order.
+	@rows = sort {
+		$a->[2] <=> $b->[2]
+			|| $a->[3] <=> $b->[3]
+	} @rows;
+
+	my $i        = 0;
+	my $n_changed = 0;
+	for my $row (@rows)
+	{
+		$i++;
+		my ($tbl, $uuid, $cur_pos, undef) = @$row;
+		my $new_pos = $i + 0.0;
+		next if defined($cur_pos) && $cur_pos == $new_pos;
+		$dbh->do("UPDATE $tbl SET position=? WHERE uuid=?", [$new_pos, $uuid]);
+		$n_changed++;
+	}
+	return $n_changed;
+}
+
+
+sub compactAllContainers
+{
+	my ($dbh) = @_;
+	my $total_rows  = 0;
+	my $total_conts = 0;
+
+	# Root first
+	my $n = compactContainer($dbh, undef);
+	if ($n > 0)
+	{
+		$total_rows  += $n;
+		$total_conts++;
+	}
+
+	# Then every collection in the DB
+	my $all = $dbh->get_records("SELECT uuid FROM collections");
+	for my $row (@$all)
+	{
+		my $m = compactContainer($dbh, $row->{uuid});
+		if ($m > 0)
+		{
+			$total_rows  += $m;
+			$total_conts++;
+		}
+	}
+
+	display(0,0,"compactAllContainers: renumbered $total_rows row(s) across $total_conts container(s)");
+	return ($total_conts, $total_rows);
 }
 
 

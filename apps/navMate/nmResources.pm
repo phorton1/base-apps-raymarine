@@ -40,6 +40,7 @@ BEGIN
 		$COMMAND_RESTORE_SELECTION
 		$COMMAND_REVERT_DB
 		$COMMAND_COMMIT_DB
+		$COMMAND_COMPACT_DB_POSITIONS
 
 		$WIN_FSH
 		$COMMAND_OPEN_FSH_FILE
@@ -75,6 +76,7 @@ our $COMMAND_SAVE_SELECTION		= 10073;
 our $COMMAND_RESTORE_SELECTION	= 10074;
 our $COMMAND_REVERT_DB			= 10091;
 our $COMMAND_COMMIT_DB			= 10092;
+our $COMMAND_COMPACT_DB_POSITIONS = 10093;
 
 our $COMMAND_OPEN_FSH_FILE		= 10081;
 our $COMMAND_SAVE_FSH_FILE		= 10082;
@@ -118,6 +120,7 @@ my $command_data = {
 	$COMMAND_RESTORE_SELECTION	=> ['Restore Selection',	'Restore a named selection set in the tree'],
 	$COMMAND_REVERT_DB			=> ['Revert',				'Revert navMate.db to last git-committed version'],
 	$COMMAND_COMMIT_DB			=> ['Commit',				'Commit navMate.db to git with a message'],
+	$COMMAND_COMPACT_DB_POSITIONS => ['Compact Positions',	'Renumber every container\'s child positions to 1.0, 2.0, 3.0...'],
 };
 
 
@@ -159,6 +162,8 @@ my $database_menu = [
 	$ID_SEPARATOR,
 	$COMMAND_IMPORT_KML_NM,
 	$COMMAND_EXPORT_KML,
+	$ID_SEPARATOR,
+	$COMMAND_COMPACT_DB_POSITIONS,
 ];
 
 my $e80_menu = [

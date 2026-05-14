@@ -15,9 +15,13 @@
 #   op=suppress&val=1&outcome=reject   also set suppress_outcome for two-outcome dialogs
 #   op=refresh                reload navMate.db from disk
 #   op=clear_e80              delete all E80 routes, groups, waypoints, and tracks
+#   op=create_branch&parent_uuid=X&name=Y    create a branch without the name-input dialog
+#                              (parent_uuid omitted -> root-level branch).
+#                              Use /api/nmdb after to look up the new branch's uuid by name.
 #
 # NOTE: NEW_* commands (10230-10233) open name-input dialogs and will block the
-# test machinery. Do not issue them via this endpoint.
+# test machinery. Do not issue them via this endpoint -- use op=create_branch
+# (and equivalent ops as they are added) instead.
 
 package navTest;
 use strict;
@@ -25,6 +29,8 @@ use warnings;
 use JSON::PP qw(decode_json);
 use Pub::Utils qw(display warning);
 use navOps qw(onContextMenuCommand);
+use navDB qw(connectDB disconnectDB insertCollection computePushDownPositions);
+use n_defs qw($NODE_TYPE_BRANCH);
 use nmDialogs qw($suppress_confirm);
 use nmResources qw($WIN_DATABASE $WIN_E80);
 
@@ -77,6 +83,11 @@ sub dispatchTestCommand
 		navOps::doClearE80DB($main_win);
 		return;
 	}
+	if ($op eq 'create_branch')
+	{
+		_doCreateBranch($main_win, $cmd);
+		return;
+	}
 
 	# Apply suppress flag if present on a fire command
 	if (exists $cmd->{suppress})
@@ -100,18 +111,30 @@ sub dispatchTestCommand
 	# to reach target nodes. _doFire collapses them again after the command runs.
 	my @auto_expanded;
 
-	# Select nodes if requested
 	my $select_str = $cmd->{select} // '';
-	if ($select_str)
-	{
-		my @keys   = split(/,/, $select_str);
-		my $rc_key = $cmd->{right_click} // $keys[0];
-		_doSelect($panel, \@keys, $rc_key, \@auto_expanded);
-	}
+	my $cmd_id     = ($cmd->{cmd} // 0) + 0;
 
-	# Fire command if requested
-	my $cmd_id = ($cmd->{cmd} // 0) + 0;
-	_doFire($panel, $panel_name, $cmd_id, \@auto_expanded) if $cmd_id;
+	# Freeze the panel's tree across the entire test-command-side activity:
+	# _doSelect (UnselectAll + walk + Expand + SelectItem) -> the command's
+	# handler (which calls panel->refresh() internally; that nests harmlessly
+	# under this outer Freeze since wx Freeze/Thaw is refcounted) -> _doFire's
+	# _walkCollapse to undo the auto-expansions. Without this, the user sees
+	# the tree scroll/blank/repaint three times per test command. With it,
+	# the entire command produces a single repaint at this Thaw.
+	my $tree = $panel->{tree};
+	$tree->Freeze();
+	eval {
+		if ($select_str)
+		{
+			my @keys   = split(/,/, $select_str);
+			my $rc_key = $cmd->{right_click} // $keys[0];
+			_doSelect($panel, \@keys, $rc_key, \@auto_expanded);
+		}
+		_doFire($panel, $panel_name, $cmd_id, \@auto_expanded) if $cmd_id;
+	};
+	my $err = $@;
+	$tree->Thaw();
+	warning(0, 0, "navTest: dispatch error: $err") if $err;
 }
 
 
@@ -248,6 +271,48 @@ sub _walkCollapse
 		}
 		($child, $cookie) = $tree->GetNextChild($item, $cookie);
 	}
+}
+
+
+#---------------------------------------------
+# _doCreateBranch - dialog-free NEW_BRANCH for /api/test
+#---------------------------------------------
+# Creates a new branch collection without opening the wxTextEntryDialog that
+# the user-facing NEW_BRANCH path uses. Computes push-down-stack position so
+# the new branch lands at the top of its parent (matching the user NEW
+# semantic). Refreshes the database panel after insert so the tree reflects
+# the new state for subsequent operations in the same test sequence.
+
+sub _doCreateBranch
+{
+	my ($main_win, $cmd) = @_;
+	my $parent_uuid = $cmd->{parent_uuid};
+	$parent_uuid    = undef if defined $parent_uuid && $parent_uuid eq '';
+	my $name        = $cmd->{name} // '';
+	if ($name eq '')
+	{
+		warning(0,0,"navTest: create_branch - missing name");
+		return;
+	}
+	my $dbh = connectDB();
+	if (!$dbh)
+	{
+		warning(0,0,"navTest: create_branch - db connect failed");
+		return;
+	}
+	my @new_pos = computePushDownPositions($dbh, $parent_uuid, 1);
+	my $uuid    = insertCollection($dbh, $name, $parent_uuid, $NODE_TYPE_BRANCH, '', $new_pos[0]);
+	disconnectDB($dbh);
+	if (!$uuid)
+	{
+		warning(0,0,"navTest: create_branch - insertCollection returned undef");
+		return;
+	}
+	display(0,0,"navTest: create_branch '$name' uuid=$uuid parent=" . ($parent_uuid // 'ROOT'));
+
+	# Refresh DB panes so the new branch is visible for follow-up ops.
+	my $db_pane = $main_win->findPane($WIN_DATABASE);
+	$db_pane->refresh() if $db_pane;
 }
 
 

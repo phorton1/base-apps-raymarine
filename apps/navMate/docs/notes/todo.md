@@ -130,11 +130,6 @@ that case.
 
 
 
-### [INSERT position assignment]
-INSERT functions do not yet assign `position` for new items -- they land at 0
-and sort to the top. Functions to update: `insertCollection`,
-`insertCollectionUUID`, `insertWaypoint`, `insertRoute`, `insertTrack`.
-Pattern: `SELECT COALESCE(MAX(position), 0) + 1 FROM <table> WHERE <scope>=?`
 
 
 ### [winDatabase reordering UX]

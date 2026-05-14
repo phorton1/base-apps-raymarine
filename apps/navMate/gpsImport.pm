@@ -188,8 +188,8 @@ sub import_gps_file
 			ts_end          => $ts_end,
 			ts_source       => $ts_source,
 			point_count     => scalar @pts,
-			collection_uuid => $coll_uuid);
-		$dbh->do("UPDATE tracks SET position=? WHERE uuid=?", [$pos, $uuid]);
+			collection_uuid => $coll_uuid,
+			position        => $pos);
 		insertTrackPoints($dbh, $uuid, \@pts);
 		$n_tracks++;
 	}
@@ -205,16 +205,15 @@ sub import_gps_file
 			created_ts      => $wpt->{ts} // 0,
 			ts_source       => defined($wpt->{ts}) ? 'gdb' : 'import',
 			source          => undef,
-			collection_uuid => $coll_uuid);
-		$dbh->do("UPDATE waypoints SET position=? WHERE uuid=?", [$pos, $uuid]);
+			collection_uuid => $coll_uuid,
+			position        => $pos);
 		$n_wpts++;
 	}
 
 	for my $rte (@{$parsed->{routes}})
 	{
 		$pos += 1;
-		my $route_uuid = insertRoute($dbh, $rte->{name}, undef, '', $coll_uuid);
-		$dbh->do("UPDATE routes SET position=? WHERE uuid=?", [$pos, $route_uuid]);
+		my $route_uuid = insertRoute($dbh, $rte->{name}, undef, '', $coll_uuid, $pos);
 		my $rp_pos = 0;
 		for my $pt (@{$rte->{points}})
 		{
@@ -226,9 +225,8 @@ sub import_gps_file
 				created_ts      => 0,
 				ts_source       => 'import',
 				source          => undef,
-				collection_uuid => $coll_uuid);
-			$dbh->do("UPDATE waypoints SET position=? WHERE uuid=?",
-				[$pos + 0.001 * $rp_pos, $wp_uuid]);
+				collection_uuid => $coll_uuid,
+				position        => $pos + 0.001 * $rp_pos);
 			appendRouteWaypoint($dbh, $route_uuid, $wp_uuid, $rp_pos);
 			$rp_pos++;
 		}

@@ -121,7 +121,7 @@ sub _wpFieldsDiffer
 
 sub _insertFreshWaypoint
 {
-	my ($dbh, $coll_uuid, $wp, $source) = @_;
+	my ($dbh, $coll_uuid, $wp, $source, $position) = @_;
 	my $ts     = $wp->{created_ts} // $wp->{ts} // time();
 	my $ts_src = $source eq 'e80' ? 'e80' : ($wp->{ts_source} // 'user');
 	return insertWaypoint($dbh,
@@ -136,6 +136,7 @@ sub _insertFreshWaypoint
 		ts_source       => $ts_src,
 		source          => $wp->{source},
 		collection_uuid => $coll_uuid,
+		position        => $position,
 	);
 }
 
@@ -147,7 +148,7 @@ sub _insertFreshWaypoint
 
 sub _pasteOneWaypointToDB
 {
-	my ($dbh, $coll_uuid, $tree, $item, $source, $policy_ref, $title) = @_;
+	my ($dbh, $coll_uuid, $tree, $item, $source, $policy_ref, $title, $position) = @_;
 	my $wp   = $item->{data};
 	my $uuid = $item->{uuid};
 
@@ -173,6 +174,7 @@ sub _pasteOneWaypointToDB
 			ts_source       => $ts_src,
 			source          => $wp->{source},
 			collection_uuid => $coll_uuid,
+			position        => $position,
 		);
 		return 'created';
 	}
@@ -526,37 +528,40 @@ sub _pasteItemsToCollection
 {
 	my ($dbh, $items, $target_uuid, $source, $fresh, $cut_flag, $tree, $policy_ref) = @_;
 
-	# SS12.1: E80-source pastes must process waypoints/groups before routes.
-	my @ordered_items;
-	if ($source eq 'e80')
-	{
-		push @ordered_items, grep { ($_->{type}//'') ne 'route' } @$items;
-		push @ordered_items, grep { ($_->{type}//'') eq 'route' } @$items;
-	}
-	else
-	{
-		@ordered_items = @$items;
-	}
+	# SS12.1 reorder removed: E80-sourced clipboards arrive in
+	# Groups->Routes->Tracks order by structural construction of the E80
+	# tree renderer, so no dependency reorder is needed here. The
+	# dependency reorder for the DB->E80 direction lives in navOpsE80.pm
+	# where it is actually required.
 
-	for my $item (@ordered_items)
+	# Push-down-stack: compute one position per top-level item up front so
+	# each new item lands above all current siblings of $target_uuid, with
+	# clipboard order preserved (items[0] gets the smallest position).
+	my @items     = @$items;
+	my $n         = scalar @items;
+	my @positions = computePushDownPositions($dbh, $target_uuid, $n);
+
+	for my $idx (0 .. $#items)
 	{
 		last if $$policy_ref && $$policy_ref eq 'abort';
-		my $t = $item->{type} // '';
+		my $item = $items[$idx];
+		my $pos  = $positions[$idx];
+		my $t    = $item->{type} // '';
 
 		if ($t eq 'waypoint')
 		{
 			if ($fresh)
 			{
-				_insertFreshWaypoint($dbh, $target_uuid, $item->{data}, $source);
+				_insertFreshWaypoint($dbh, $target_uuid, $item->{data}, $source, $pos);
 			}
 			elsif ($cut_flag && $source eq 'database')
 			{
-				moveWaypoint($dbh, $item->{uuid}, $target_uuid);
+				moveWaypoint($dbh, $item->{uuid}, $target_uuid, $pos);
 			}
 			else
 			{
 				my $result = _pasteOneWaypointToDB($dbh, $target_uuid, $tree, $item,
-					$source, $policy_ref, 'Paste Waypoint');
+					$source, $policy_ref, 'Paste Waypoint', $pos);
 				next if $$policy_ref && $$policy_ref eq 'abort';
 				if ($cut_flag && $result ne 'skipped' && $result ne 'aborted')
 				{
@@ -574,13 +579,14 @@ sub _pasteItemsToCollection
 					$item->{data}{name}    // '',
 					$target_uuid,
 					$NODE_TYPE_GROUP,
-					$item->{data}{comment} // '');
+					$item->{data}{comment} // '',
+					$pos);
 				_pasteItemsToCollection($dbh, $item->{members} // [], $new_uuid,
 					$source, 1, 0, $tree, $policy_ref);
 			}
 			elsif ($cut_flag && $source eq 'database' && $item->{uuid})
 			{
-				moveCollection($dbh, $item->{uuid}, $target_uuid);
+				moveCollection($dbh, $item->{uuid}, $target_uuid, $pos);
 			}
 			else
 			{
@@ -591,15 +597,19 @@ sub _pasteItemsToCollection
 						$item->{data}{name}    // '',
 						$target_uuid,
 						$NODE_TYPE_GROUP,
-						$item->{data}{comment} // '');
+						$item->{data}{comment} // '',
+						$pos);
 				}
 				my $dest_uuid   = $group_uuid // $target_uuid;
+				my $members     = $item->{members} // [];
+				my @mpos        = computePushDownPositions($dbh, $dest_uuid, scalar @$members);
 				my $any_skipped = 0;
-				for my $member (@{$item->{members} // []})
+				for my $midx (0 .. $#$members)
 				{
 					last if $$policy_ref && $$policy_ref eq 'abort';
+					my $member = $members->[$midx];
 					my $result = _pasteOneWaypointToDB($dbh, $dest_uuid, $tree, $member,
-						$source, $policy_ref, 'Paste Group');
+						$source, $policy_ref, 'Paste Group', $mpos[$midx]);
 					$any_skipped = 1 if $result eq 'skipped';
 					if ($cut_flag && $result ne 'skipped' && $result ne 'aborted')
 					{
@@ -629,13 +639,14 @@ sub _pasteItemsToCollection
 					$route_data->{name}    // '',
 					$route_color,
 					$route_data->{comment} // '',
-					$target_uuid);
-				my $pos = 0;
-				appendRouteWaypoint($dbh, $new_route_uuid, $_->{uuid}, $pos++) for @$route_points;
+					$target_uuid,
+					$pos);
+				my $rpos = 0;
+				appendRouteWaypoint($dbh, $new_route_uuid, $_->{uuid}, $rpos++) for @$route_points;
 			}
 			elsif ($cut_flag && $source eq 'database')
 			{
-				moveRoute($dbh, $item->{uuid}, $target_uuid);
+				moveRoute($dbh, $item->{uuid}, $target_uuid, $pos);
 			}
 			else
 			{
@@ -652,7 +663,8 @@ sub _pasteItemsToCollection
 						$route_data->{name}    // '',
 						$route_color,
 						$route_data->{comment} // '',
-						$target_uuid);
+						$target_uuid,
+						$pos);
 				}
 				else
 				{
@@ -660,10 +672,11 @@ sub _pasteItemsToCollection
 						$route_data->{name}    // '',
 						$route_color,
 						$route_data->{comment} // '');
+					$dbh->do("UPDATE routes SET position=? WHERE uuid=?", [$pos, $route_uuid]);
 				}
 				clearRouteWaypoints($dbh, $route_uuid);
-				my $pos = 0;
-				appendRouteWaypoint($dbh, $route_uuid, $_->{uuid}, $pos++) for @$route_points;
+				my $rpos = 0;
+				appendRouteWaypoint($dbh, $route_uuid, $_->{uuid}, $rpos++) for @$route_points;
 				if ($cut_flag)
 				{
 					$source eq 'e80'
@@ -676,7 +689,7 @@ sub _pasteItemsToCollection
 		{
 			if ($cut_flag && $source eq 'database' && !$fresh)
 			{
-				moveTrack($dbh, $item->{uuid}, $target_uuid);
+				moveTrack($dbh, $item->{uuid}, $target_uuid, $pos);
 			}
 			elsif ($source eq 'database' && !$fresh)
 			{
@@ -702,6 +715,7 @@ sub _pasteItemsToCollection
 					point_count     => scalar @$pts,
 					collection_uuid => $target_uuid,
 					companion_uuid  => ($source eq 'e80' ? $track->{trk_uuid} : undef),
+					position        => $pos,
 				);
 				if (@$pts)
 				{
@@ -730,13 +744,14 @@ sub _pasteItemsToCollection
 					$item->{data}{name}    // '',
 					$target_uuid,
 					$NODE_TYPE_BRANCH,
-					$item->{data}{comment} // '');
+					$item->{data}{comment} // '',
+					$pos);
 				_pasteItemsToCollection($dbh, $item->{members} // [], $new_uuid,
 					$source, 1, 0, $tree, $policy_ref);
 			}
 			elsif ($cut_flag && $source eq 'database' && $item->{uuid})
 			{
-				moveCollection($dbh, $item->{uuid}, $target_uuid);
+				moveCollection($dbh, $item->{uuid}, $target_uuid, $pos);
 			}
 			else
 			{
@@ -747,7 +762,8 @@ sub _pasteItemsToCollection
 						$item->{data}{name}    // '',
 						$target_uuid,
 						$NODE_TYPE_BRANCH,
-						$item->{data}{comment} // '');
+						$item->{data}{comment} // '',
+						$pos);
 				}
 				my $dest_uuid = $branch_uuid // $target_uuid;
 				_pasteItemsToCollection($dbh, $item->{members} // [], $dest_uuid,
@@ -798,35 +814,37 @@ sub _pasteDB
 			my $dbh = connectDB();
 			return if !$dbh;
 
-			# Look up anchor's container (coll_uuid) and its position within it.
-			my ($coll_uuid, $anchor_pos);
+			# Look up anchor's container (coll_uuid) and the table it lives in.
+			# computeFractionalBetween refetches the anchor's position itself
+			# (so it can recover from a precision-triggered renumber).
+			my ($coll_uuid, $anchor_table);
 			if ($anchor_type eq 'object' && $anchor_ot eq 'waypoint')
 			{
 				my $rec = getWaypoint($dbh, $anchor_uuid);
 				if (!$rec) { disconnectDB($dbh); warning(0, 0, "_pasteDB: PASTE_BEFORE/AFTER anchor waypoint $anchor_uuid not found"); return; }
-				$coll_uuid  = $rec->{collection_uuid};
-				$anchor_pos = $rec->{position} // 0;
+				$coll_uuid    = $rec->{collection_uuid};
+				$anchor_table = 'waypoints';
 			}
 			elsif ($anchor_type eq 'object' && $anchor_ot eq 'route')
 			{
 				my $rec = getRoute($dbh, $anchor_uuid);
 				if (!$rec) { disconnectDB($dbh); warning(0, 0, "_pasteDB: PASTE_BEFORE/AFTER anchor route $anchor_uuid not found"); return; }
-				$coll_uuid  = $rec->{collection_uuid};
-				$anchor_pos = $rec->{position} // 0;
+				$coll_uuid    = $rec->{collection_uuid};
+				$anchor_table = 'routes';
 			}
 			elsif ($anchor_type eq 'object' && $anchor_ot eq 'track')
 			{
 				my $rec = getTrack($dbh, $anchor_uuid);
 				if (!$rec) { disconnectDB($dbh); warning(0, 0, "_pasteDB: PASTE_BEFORE/AFTER anchor track $anchor_uuid not found"); return; }
-				$coll_uuid  = $rec->{collection_uuid};
-				$anchor_pos = $rec->{position} // 0;
+				$coll_uuid    = $rec->{collection_uuid};
+				$anchor_table = 'tracks';
 			}
 			elsif ($anchor_type eq 'collection')
 			{
 				my $rec = getCollection($dbh, $anchor_uuid);
 				if (!$rec) { disconnectDB($dbh); warning(0, 0, "_pasteDB: PASTE_BEFORE/AFTER anchor collection $anchor_uuid not found"); return; }
-				$coll_uuid  = $rec->{parent_uuid};
-				$anchor_pos = $rec->{position} // 0;
+				$coll_uuid    = $rec->{parent_uuid};
+				$anchor_table = 'collections';
 			}
 			else
 			{
@@ -835,26 +853,7 @@ sub _pasteDB
 				return;
 			}
 
-			# Cross-table neighbor query: find the nearest occupied position across
-			# all item types in the same container.
 			my $is_before = ($cmd_id == $CTX_CMD_PASTE_BEFORE || $cmd_id == $CTX_CMD_PASTE_NEW_BEFORE);
-			my ($cmp, $agg) = $is_before ? ('<', 'MAX') : ('>', 'MIN');
-			my $nbr_rec = $dbh->get_record(
-				"SELECT $agg(p) AS position FROM ("
-				. "SELECT position AS p FROM waypoints   WHERE collection_uuid=? AND position$cmp?"
-				. " UNION ALL "
-				. "SELECT position AS p FROM routes      WHERE collection_uuid=? AND position$cmp?"
-				. " UNION ALL "
-				. "SELECT position AS p FROM tracks      WHERE collection_uuid=? AND position$cmp?"
-				. " UNION ALL "
-				. "SELECT position AS p FROM collections WHERE parent_uuid=?    AND position$cmp?"
-				. ")",
-				[$coll_uuid, $anchor_pos, $coll_uuid, $anchor_pos,
-				 $coll_uuid, $anchor_pos, $coll_uuid, $anchor_pos]);
-			my $nbr_pos = (defined $nbr_rec && defined $nbr_rec->{position})
-				? $nbr_rec->{position}
-				: ($is_before ? $anchor_pos - 2.0 : $anchor_pos + 2.0);
-			my ($low, $high) = $is_before ? ($nbr_pos, $anchor_pos) : ($anchor_pos, $nbr_pos);
 
 			# Accept any positionable item type from the clipboard.
 			my @coll_items;
@@ -873,35 +872,42 @@ sub _pasteDB
 				return;
 			}
 
-			my $n = scalar @coll_items;
+			my $n         = scalar @coll_items;
+			my @positions = computeFractionalBetween($dbh, $coll_uuid,
+				$anchor_uuid, $anchor_table, $is_before, $n);
+			if (!@positions)
+			{
+				disconnectDB($dbh);
+				warning(0, 0, "_pasteDB: PASTE_BEFORE/AFTER: position allocation failed");
+				return;
+			}
 			my @to_cut;
 
 			for my $i (0 .. $#coll_items)
 			{
 				my $item = $coll_items[$i];
 				my $t    = $item->{type} // '';
-				my $pos  = $low + ($high - $low) * ($i + 1) / ($n + 1);
+				my $pos  = $positions[$i];
 
 				if ($t eq 'waypoint' || $t eq 'route_point')
 				{
 					if ($fresh)
 					{
-						my $new_uuid = _insertFreshWaypoint($dbh, $coll_uuid, $item->{data}, $source);
-						$dbh->do("UPDATE waypoints SET position=? WHERE uuid=?", [$pos, $new_uuid]);
+						_insertFreshWaypoint($dbh, $coll_uuid, $item->{data}, $source, $pos);
 					}
 					elsif ($cut_flag && $source eq 'database')
 					{
-						# Move: UPDATE is the entire operation; no separate delete.
-						$dbh->do("UPDATE waypoints SET collection_uuid=?, position=? WHERE uuid=?",
-							[$coll_uuid, $pos, $item->{uuid}]);
+						moveWaypoint($dbh, $item->{uuid}, $coll_uuid, $pos);
 					}
 					else
 					{
 						my $wp_policy = undef;
 						my $result = _pasteOneWaypointToDB($dbh, $coll_uuid, $tree, $item,
-							$source, \$wp_policy, 'Paste Before/After');
+							$source, \$wp_policy, 'Paste Before/After', $pos);
 						if ($result ne 'skipped' && $result ne 'aborted')
 						{
+							# 'replaced' / 'no_change' paths preserve UUID and didn't
+							# touch position; ensure the BEFORE/AFTER pos is applied.
 							$dbh->do("UPDATE waypoints SET position=? WHERE uuid=?",
 								[$pos, $item->{uuid}]);
 							push @to_cut, $item if $cut_flag;
@@ -914,15 +920,13 @@ sub _pasteDB
 					my $color = $source eq 'e80' ? e80ColorIndexToAbgr($rd->{color}) : $rd->{color};
 					if ($fresh)
 					{
-						my $new_uuid = insertRoute($dbh, $rd->{name} // '', $color, $rd->{comment} // '', $coll_uuid);
-						$dbh->do("UPDATE routes SET position=? WHERE uuid=?", [$pos, $new_uuid]);
+						my $new_uuid = insertRoute($dbh, $rd->{name} // '', $color, $rd->{comment} // '', $coll_uuid, $pos);
 						my $rpos = 0;
 						appendRouteWaypoint($dbh, $new_uuid, $_->{uuid}, $rpos++) for @{$item->{route_points} // []};
 					}
 					elsif ($cut_flag && $source eq 'database')
 					{
-						$dbh->do("UPDATE routes SET collection_uuid=?, position=? WHERE uuid=?",
-							[$coll_uuid, $pos, $item->{uuid}]);
+						moveRoute($dbh, $item->{uuid}, $coll_uuid, $pos);
 					}
 					else
 					{
@@ -930,15 +934,14 @@ sub _pasteDB
 						if (!$existing)
 						{
 							insertRouteUUID($dbh, $item->{uuid}, $rd->{name} // '', $color,
-								$rd->{comment} // '', $coll_uuid);
+								$rd->{comment} // '', $coll_uuid, $pos);
 						}
 						else
 						{
 							updateRoute($dbh, $item->{uuid}, $rd->{name} // '', $color, $rd->{comment} // '');
-							$dbh->do("UPDATE routes SET collection_uuid=? WHERE uuid=?",
-								[$coll_uuid, $item->{uuid}]);
+							$dbh->do("UPDATE routes SET collection_uuid=?, position=? WHERE uuid=?",
+								[$coll_uuid, $pos, $item->{uuid}]);
 						}
-						$dbh->do("UPDATE routes SET position=? WHERE uuid=?", [$pos, $item->{uuid}]);
 						clearRouteWaypoints($dbh, $item->{uuid});
 						my $rpos = 0;
 						for my $rp (@{$item->{route_points} // []})
@@ -959,8 +962,7 @@ sub _pasteDB
 					my $ts_end   = $tr->{ts_end}   // (@$pts ? $pts->[-1]{ts}       : undef);
 					if ($cut_flag && $source eq 'database' && !$fresh)
 					{
-						$dbh->do("UPDATE tracks SET collection_uuid=?, position=? WHERE uuid=?",
-							[$coll_uuid, $pos, $item->{uuid}]);
+						moveTrack($dbh, $item->{uuid}, $coll_uuid, $pos);
 					}
 					elsif ($source eq 'database' && !$fresh)
 					{
@@ -977,8 +979,8 @@ sub _pasteDB
 							point_count     => scalar @$pts,
 							collection_uuid => $coll_uuid,
 							companion_uuid  => ($source eq 'e80' ? $tr->{trk_uuid} : undef),
+							position        => $pos,
 						);
-						$dbh->do("UPDATE tracks SET position=? WHERE uuid=?", [$pos, $new_uuid]);
 						if (@$pts)
 						{
 							my @db_pts = map {{
@@ -1002,17 +1004,15 @@ sub _pasteDB
 							$item->{data}{name}    // '',
 							$coll_uuid,
 							$node_type,
-							$item->{data}{comment} // '');
-						$dbh->do("UPDATE collections SET position=? WHERE uuid=?", [$pos, $new_uuid]);
+							$item->{data}{comment} // '',
+							$pos);
 						my $inner = undef;
 						_pasteItemsToCollection($dbh, $item->{members} // [], $new_uuid,
 							$source, 1, 0, $tree, \$inner);
 					}
 					elsif ($cut_flag && $source eq 'database')
 					{
-						# Move: repoint parent_uuid and set position in one step.
-						$dbh->do("UPDATE collections SET parent_uuid=?, position=? WHERE uuid=?",
-							[$coll_uuid, $pos, $item->{uuid}]);
+						moveCollection($dbh, $item->{uuid}, $coll_uuid, $pos);
 					}
 					else
 					{
@@ -1024,12 +1024,13 @@ sub _pasteDB
 								$item->{data}{name}    // '',
 								$coll_uuid,
 								$node_type,
-								$item->{data}{comment} // '');
+								$item->{data}{comment} // '',
+								$pos);
 						}
 						elsif ($existing)
 						{
-							$dbh->do("UPDATE collections SET parent_uuid=? WHERE uuid=?",
-								[$coll_uuid, $uuid]);
+							$dbh->do("UPDATE collections SET parent_uuid=?, position=? WHERE uuid=?",
+								[$coll_uuid, $pos, $uuid]);
 						}
 						else
 						{
@@ -1037,10 +1038,9 @@ sub _pasteDB
 								$item->{data}{name}    // '',
 								$coll_uuid,
 								$node_type,
-								$item->{data}{comment} // '');
+								$item->{data}{comment} // '',
+								$pos);
 						}
-						$dbh->do("UPDATE collections SET position=? WHERE uuid=?", [$pos, $uuid])
-							if $uuid;
 						my $inner = undef;
 						_pasteItemsToCollection($dbh, $item->{members} // [], $uuid,
 							$source, 0, $cut_flag, $tree, \$inner);
@@ -1153,13 +1153,19 @@ sub _pasteDB
 				}
 				else
 				{
-					$wp_uuid = _insertFreshWaypoint($dbh, $coll_uuid, $item->{data}, $source);
+					my @wp_top = computePushDownPositions($dbh, $coll_uuid, 1);
+					$wp_uuid = _insertFreshWaypoint($dbh, $coll_uuid, $item->{data}, $source, $wp_top[0]);
 				}
 			}
 			else
 			{
+				# Route-point paste: the WP may need a new record in the route's
+				# container. Its position there is secondary to its position in
+				# route_waypoints (which the linkage code below handles).
+				# Push-down-stack at top of $coll_uuid for any waypoints created here.
+				my @wp_top = computePushDownPositions($dbh, $coll_uuid, 1);
 				my $result = _pasteOneWaypointToDB($dbh, $coll_uuid, $tree, $item,
-					$source, \$policy, 'Paste Route Point');
+					$source, \$policy, 'Paste Route Point', $wp_top[0]);
 				if ($policy && $policy eq 'abort')
 				{
 					disconnectDB($dbh);
@@ -1260,6 +1266,8 @@ sub _newDatabaseWaypoint
 
 	my $dbh = connectDB();
 	return if !$dbh;
+	my $coll_uuid = $right_click_node->{data}{uuid};
+	my @new_pos   = computePushDownPositions($dbh, $coll_uuid, 1);
 	insertWaypoint($dbh,
 		name            => $data->{name},
 		comment         => $data->{comment} // '',
@@ -1271,7 +1279,8 @@ sub _newDatabaseWaypoint
 		created_ts      => time(),
 		ts_source       => 'user',
 		source          => undef,
-		collection_uuid => $right_click_node->{data}{uuid},
+		collection_uuid => $coll_uuid,
+		position        => $new_pos[0],
 	);
 	disconnectDB($dbh);
 	_refreshDatabase();
@@ -1299,11 +1308,14 @@ sub _newDatabaseRoute
 
 	my $dbh = connectDB();
 	return if !$dbh;
+	my $coll_uuid = $right_click_node->{data}{uuid};
+	my @new_pos   = computePushDownPositions($dbh, $coll_uuid, 1);
 	insertRoute($dbh,
 		$data->{name},
 		$color,
 		$data->{comment} // '',
-		$right_click_node->{data}{uuid});
+		$coll_uuid,
+		$new_pos[0]);
 	disconnectDB($dbh);
 	_refreshDatabase();
 }

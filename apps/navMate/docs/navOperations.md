@@ -75,10 +75,68 @@ before any E80 write.
 
 ### 1.4 The FLOAT Position Ordering Scheme Must Be Maintained and Repacked
 
-All navOperations must correctly maintain the FLOAT position ordering scheme when modifying
-the database. New position FLOAT values must be assigned during operations such as cut/paste
-and copy/paste new. A repacking mechanism must execute when the ordering values approach
-the 32-bit boundary (not the 51-bit limit).
+Every navOperation that creates or moves a positioned object (collections, waypoints,
+routes, tracks) must compute and assign a `position` FLOAT value according to the rule
+for the operation. 0 is reserved as below-floor and is never a legitimate stored value.
+Siblings within a container have distinct positions. The full rule table:
+
+| Operation | Rule |
+|---|---|
+| PASTE / PASTE_NEW on container, N items | Push-down stack at top: `pos_i = upper * (i+1) / (N+1)` where `upper = MIN(positions)` if non-empty else `N+1`. Devolves to 1..N for empty containers. |
+| PASTE_BEFORE on anchor | Fractional between anchor and nearest-lower neighbor. No lower neighbor -> neighbor = 0. |
+| PASTE_AFTER on anchor | Fractional between anchor and nearest-upper neighbor. No upper neighbor -> neighbor = anchor + 1. |
+| NEW-X | Push-down stack of 1 item = MIN/2, or 1.0 if container is empty. |
+| Move (cut+paste) | Same as the corresponding paste rule. |
+| Import | Push-down stack of N items into destination. |
+
+PASTE on a container becomes a push-down-stack semantic: new items land above all
+current siblings, preserving clipboard order, with the most-recent paste visually
+on top. This is intentional UX: pasted items appear immediately at the top of the
+destination container, requiring no scrolling to verify.
+
+Clipboard order is the operative ordering for paste. Clipboard items' source
+positions are ignored at the destination -- multi-selection across containers
+produces heterogeneous source positions that do not compare. Only the order of
+items in the clipboard (tree-walk top-down order from the source panel) matters.
+
+Repacking is performed by the **Compact Positions** command under the Database
+main menu. Per-container renumbering to 1.0, 2.0, 3.0, ... in current sorted order.
+Used once to normalize legacy zero-positions on an older database, and thereafter
+when subdivisions approach the intentional 31-bit precision ceiling (well below
+the IEEE 754 51-bit limit). Idempotent on an already-compacted DB.
+
+The allocator additionally triggers a single-container renumber automatically
+when the per-slot gap of a planned insertion falls below `eps = 1e-9`. This is
+internal to the allocator and indistinguishable from manual Compact except for
+its trigger origin -- siblings end up with the same renumbered positions.
+Each automatic trigger emits a warning-color log line
+`AutoCompact FLOAT positions for container <coll_uuid>` -- the authoritative
+evidence the trigger fired.
+
+The cross-table neighbor and push-down helpers used by all paste paths live in
+`navDB.pm`: `getMinChildPosition`, `getMaxChildPosition`, `computePushDownPositions`,
+`computeFractionalBetween`, `getPositionByAnchor`, `compactContainer`,
+`compactAllContainers`.
+
+### 1.4a Transport-Direction Asymmetry for Dependency Reorder
+
+Two structural invariants justify placing the waypoint-before-route dependency
+reorder on the DB->E80 push side (where it is required) rather than on the E80->DB
+paste side (where it is redundant):
+
+- **E80 tree rendering order is fixed: Groups -> Routes -> Tracks.** Structural to
+  the E80 protocol, not a UI choice. An E80-sourced clipboard arrives in
+  dependency-correct order by construction. The E80->DB paste path therefore
+  performs no reorder.
+- **The DB tree permits arbitrary interleave** of waypoints, routes, tracks, and
+  sub-collections within a container. A DB-sourced clipboard may carry routes
+  ahead of their referenced waypoints. The DB->E80 push path
+  (`navOpsE80::_pushToE80`) therefore reorders so that all non-route items are
+  pushed before any route.
+
+The DB renderer (`winDatabase::_populateNode`) merges all sibling types into one
+position-sorted list. The E80 renderer continues to segregate by type, since the
+E80 has no positions to honor.
 
 ### 1.5 Recursive Paste of Parent to Children is Prohibited
 

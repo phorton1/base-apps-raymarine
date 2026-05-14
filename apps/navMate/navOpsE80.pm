@@ -1561,8 +1561,19 @@ sub _pushToE80
         return;
     }
 
+    # Dependency reorder for the DB->E80 direction: waypoints and groups
+    # must be pushed before routes so the E80 has every referenced WP
+    # available when a route is created. The DB tree allows arbitrary
+    # interleave, so a DB-sourced selection can carry routes ahead of
+    # their referenced waypoints. (The E80->DB direction does not need
+    # this reorder because the E80 tree is rendered in Groups->Routes->
+    # Tracks order by construction.)
+    my @ordered_items;
+    push @ordered_items, grep { ($_->{type}//'') ne 'route' } @$items;
+    push @ordered_items, grep { ($_->{type}//'') eq 'route' } @$items;
+
     my $total = 0;
-    for my $item (@$items)
+    for my $item (@ordered_items)
     {
         my $t = $item->{type} // '';
         if    ($t eq 'waypoint') { $total++;                                                  }
@@ -1574,7 +1585,7 @@ sub _pushToE80
         {cancel_label => 'Abort', cancel_msg => 'Aborted by user'});
     return if !$progress;
 
-    for my $item (@$items)
+    for my $item (@ordered_items)
     {
         last if $progress->{cancelled};
         my $t    = $item->{type} // '';

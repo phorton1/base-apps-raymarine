@@ -69,6 +69,7 @@ sub new
 	EVT_MENU($this, $COMMAND_CLEAR_MAP,			\&onCommand);
 	EVT_MENU($this, $COMMAND_REVERT_DB,			\&onCommand);
 	EVT_MENU($this, $COMMAND_COMMIT_DB,			\&onCommand);
+	EVT_MENU($this, $COMMAND_COMPACT_DB_POSITIONS, \&onCommand);
 	EVT_MENU($this, $COMMAND_SAVE_OUTLINE,		\&onCommand);
 	EVT_MENU($this, $COMMAND_RESTORE_OUTLINE,	\&onCommand);
 	EVT_MENU($this, $COMMAND_SAVE_SELECTION,	\&onCommand);
@@ -370,6 +371,10 @@ sub onCommand
 	elsif ($id == $COMMAND_COMMIT_DB)
 	{
 		_doCommitDB($this);
+	}
+	elsif ($id == $COMMAND_COMPACT_DB_POSITIONS)
+	{
+		_doCompactDBPositions($this);
 	}
 	elsif ($id == $COMMAND_SAVE_OUTLINE)
 	{
@@ -764,6 +769,40 @@ sub _doCommitDB
 		return;
 	}
 	display(0, 0, "nmFrame: navMate.db committed: $msg");
+}
+
+
+sub _doCompactDBPositions
+{
+	my ($this) = @_;
+	return if !yesNoDialog($this,
+		"This will renumber every container's child positions to 1.0, 2.0, 3.0, ...\n\n"
+		. "Used once to normalize legacy zero-positions, and thereafter for precision-wall reclamation.\n\n"
+		. "Proceed?",
+		'Compact Database Positions');
+	my $dbh = navDB::connectDB();
+	if (!$dbh)
+	{
+		error("Compact Positions: could not open database");
+		return;
+	}
+	my ($n_conts, $n_rows) = navDB::compactAllContainers($dbh);
+	navDB::disconnectDB($dbh);
+	if ($n_rows > 0)
+	{
+		display(0, 0, "nmFrame: compacted $n_rows row(s) across $n_conts container(s)");
+		$_->refresh() for $this->_findDatabasePanes();
+		okDialog($this,
+			"Compacted $n_rows row(s) across $n_conts container(s).",
+			'Compact Database Positions');
+	}
+	else
+	{
+		display(0, 0, "nmFrame: compact -- no changes needed; DB already compact");
+		okDialog($this,
+			"No compact needed -- all positions already normalized.",
+			'Compact Database Positions');
+	}
 }
 
 

@@ -76,3 +76,75 @@ C:/base_data/temp/raymarine/_cat32.gpx (gpsbabel conversion):
 
 ACTIVE LOG and ACTIVE LOG 001 tracks not imported (used as timestamp donor only).
 Tracks colored green and committed by Patrick.
+
+
+## Phase 2 -- oldE80 Resolution
+
+### MichelleToKuna gap fill (completed 2026-05-12)
+
+Imported one track from 2010-09-16-RhapsodyWithMichelle.gdb using the new
+ImportGPS (gdb,gpx) context menu command in winDatabase.
+
+Procedure:
+- ImportGPS into a temporary top-level "test" collection
+- Opened a second database window (new winDatabase multi-instance feature) and
+  used copy + paste-new to place the track into Michelle/MichelleToKuna between
+  2011-07-20-DinghyExploration and 2011-07-23-ToPorvenirAndChichime
+- Deleted the temporary "test" collection
+
+Source track name 2011-07-21-ToHollandaiseViaMiriadiadup carried through
+unchanged -- no rename required.
+
+Committed in c754060 along with the multi-instance database window feature and
+the navOps paste-new-after self-anchor fix.
+
+
+### RonAzul round-trip gap fill (completed 2026-05-13)
+
+Imported two tracks from 2010-09-16-RhapsodyWithMichelle.gdb using the same
+procedure as the MichelleToKuna gap fill:
+
+- 2011-04-23-Michelles2KenVonnes
+- 2011-04-24-KenVonnes2MichellesViaDolphinBay
+
+ImportGPS into a temporary top-level "test" collection, then second-window
+copy + paste-new into Michelle/RonAzul. Source track names carried through
+unchanged. Temporary "test" collection deleted. DB committed by Patrick.
+
+
+### BeforeKuna restructure and Andy's Island track (in progress 2026-05-13)
+
+Follow-up to the RonAzul fix above: the BOCAS1-005/006 Data_Fixup line also
+covered a Michelle/Andy's Island/Ken-and-Vaughn round trip. The Andy's Island
+leg was missed in the previous pass.
+
+Imported one track from 2010-09-16-RhapsodyWithMichelle.gdb:
+- 2011-02-22-Michelles2DolphinBay2BocasAnchorage
+
+Restructured Michelle to add a new "BeforeKuna" sub-collection, then moved the
+existing RonAzul under it. Final layout: Michelle/BeforeKuna/RonAzul, with the
+new track also under Michelle/BeforeKuna.
+
+Procedure (records the navOps path actually taken, including workarounds):
+- Created BeforeKuna via right-click new-branch on Michelle (lands at first
+  child position)
+- Repositioned it via cut + paste-after on Soundings (paste-before on RonAzul
+  was attempted first but produced no visible change -- see bugs below)
+- Cut RonAzul and paste (not paste-new) into the empty BeforeKuna -- succeeded
+- ImportGPS the .gdb track into a temporary top-level "test" collection
+- Copy + paste-new from test into BeforeKuna (which already contained
+  RonAzul at this point) -- track landed at end of BeforeKuna rather than
+  at the top as intended (see bugs below)
+- Attempt to reposition via cut + paste-before on RonAzul (same parent) --
+  no visible change (see bugs below)
+
+Current state is "relatively happy but not ideal": the track is in BeforeKuna
+but ordered after RonAzul rather than before it. Not yet committed.
+
+Observed navOps bugs during this session (not analyzed; logged for separate
+triage):
+- paste-before on a sibling appears to do nothing in at least two cases:
+  newly-created branch -> paste-before sibling, and intra-parent track
+  reposition via cut + paste-before
+- paste-new into a non-empty collection places the new item at the end
+  rather than at the top (first child position) as the design specifies

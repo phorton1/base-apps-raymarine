@@ -979,7 +979,8 @@ sub _doNew
 				my $dbh = connectDB();
 				if ($dbh)
 				{
-					insertCollection($dbh, $name, $parent_uuid, $NODE_TYPE_BRANCH);
+					my @new_pos = computePushDownPositions($dbh, $parent_uuid, 1);
+					insertCollection($dbh, $name, $parent_uuid, $NODE_TYPE_BRANCH, '', $new_pos[0]);
 					disconnectDB($dbh);
 					_refreshDatabase();
 				}
@@ -1000,7 +1001,8 @@ sub _doNew
 					my $dbh = connectDB();
 					if ($dbh)
 					{
-						insertCollection($dbh, $name, $parent_uuid, $NODE_TYPE_GROUP);
+						my @new_pos = computePushDownPositions($dbh, $parent_uuid, 1);
+						insertCollection($dbh, $name, $parent_uuid, $NODE_TYPE_GROUP, '', $new_pos[0]);
 						disconnectDB($dbh);
 						_refreshDatabase();
 					}

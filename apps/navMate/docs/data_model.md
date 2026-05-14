@@ -273,10 +273,62 @@ waypoint-only leaf collections that map to E80 WPMGR groups.
 **`position` is a REAL (float) ordering key, not an integer sequence.** `collections`,
 `waypoints`, `routes`, and `tracks` each carry a `position REAL NOT NULL DEFAULT 0`
 column (schema 10.0). Using REAL allows new items to be inserted between any two existing
-neighbors by taking the midpoint value - no surrounding rows need to be renumbered. The
-migration initialized all values from rowid order within parent, giving integer starting
-positions; subsequent insertions use bisection. `route_waypoints.position` and
-`track_points.position` are separate INTEGER primary-key components and were not changed.
+neighbors by taking the midpoint value - no surrounding rows need to be renumbered.
+`route_waypoints.position` and `track_points.position` are separate INTEGER
+primary-key components and are not part of the FLOAT scheme.
+
+**Position invariants:**
+
+- Position values are positive REALs. **0 is reserved as below-floor** and is
+  not a legitimate stored position; any row at position=0 after the initial
+  `Compact Positions` operation indicates a forgotten position assignment by
+  some caller of the insert/move primitives.
+- **Siblings within a container have distinct positions.** Container identity:
+  `parent_uuid` for sub-collections, `collection_uuid` for waypoints, routes,
+  and tracks.
+- Positions may shrink below 1.0 via paste-before-first (MIN/2, MIN/4, ...)
+  and grow without bound via append (MAX+1, MAX+2, ...). Both directions are
+  symmetric and require no surrounding-row renumbering until the 31-bit
+  subdivision precision ceiling is approached.
+
+**Position computing rules** (implemented in `navDB.pm` helpers and consumed
+by `navOpsDB.pm`, `navOps.pm`, `winDatabase.pm`, and importers):
+
+| Operation | Rule |
+|---|---|
+| PASTE / PASTE_NEW on container, N items | Push-down stack at top: `pos_i = upper * (i+1) / (N+1)` where `upper = MIN(positions)` if non-empty else `N+1`. Devolves to 1..N for empty containers. |
+| PASTE_BEFORE on anchor | Fractional between anchor and nearest-lower neighbor. No lower neighbor -> neighbor = 0. |
+| PASTE_AFTER on anchor | Fractional between anchor and nearest-upper neighbor. No upper neighbor -> neighbor = anchor + 1. |
+| NEW-X (new branch, new waypoint, ...) | Push-down stack of 1 item = MIN/2, or 1.0 if container is empty. |
+| Move (cut+paste) | Same as the corresponding paste rule. |
+| Import (ImportGPS, future importers) | Push-down stack of N items into destination. |
+
+**Compaction.** The `Database -> Compact Positions` main-menu command renumbers
+every container's children to 1.0, 2.0, 3.0, ... in current sorted order.
+Used once to normalize legacy zero-positions on an older database, and
+thereafter as the precision-wall reclamation tool when subdivisions approach
+the 31-bit ceiling. Idempotent on an already-compacted DB.
+
+The position allocator additionally renumbers a single container automatically
+when its sibling per-slot gap falls below a precision threshold (`eps = 1e-9`
+in `navDB.pm`). The automatic renumber preserves order, does not bump
+`db_version` on the touched rows, and is indistinguishable from the
+user-invoked Compact except for being triggered on the worst-case insertion
+sites rather than the whole DB. Each automatic trigger emits a warning-color
+log line `AutoCompact FLOAT positions for container <coll_uuid>` -- this is
+the direct evidence the trigger fired, useful for audit and for tests.
+
+**Renderer.** The `winDatabase` renderer (`_populateNode`) merges
+sub-collections and direct objects (waypoints, routes, tracks) into a single
+position-sorted list -- a container's children are ordered by `position`
+across types. The `winE80` renderer continues to segregate by type
+(Groups -> Routes -> Tracks), which is structural to the E80 and not a
+positional choice. This asymmetry is what justifies placing the
+waypoint-before-route dependency reorder in the DB->E80 push path
+(`navOpsE80::_pushToE80`) rather than in the E80->DB paste path: an
+E80-sourced clipboard arrives in dependency-correct order by construction,
+but a DB-sourced clipboard may carry routes ahead of their referenced
+waypoints because the DB tree permits arbitrary interleave.
 
 **Version columns are transport-specific fields in core tables.** `db_version`,
 `e80_version`, and `kml_version` are present on `waypoints`, `routes`, and `tracks`

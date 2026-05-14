@@ -139,6 +139,60 @@ DB changes.
 
 E80 need not be connected for this section.
 
+Test 2.0 runs first and is self-contained: it creates a disposable branch
+in a known parent, exercises 32 hot-spot bisections, verifies the precision
+trigger fires, and deletes the branch. It can be run on its own (without
+Section 1 reset) to verify the position-precision machinery.
+
+---
+
+### Test 2.0 Position precision -- 32 bisections force auto-renumber
+
+Verifies that the position allocator detects approaching float-precision
+underflow and automatically renumbers the destination container before the
+gap collapses to zero.
+
+Setup:
+- Use `/api/test op=create_branch&name=PrecisionTestBranch` to create a
+  clean disposable branch at the DB root (no name-input dialog).
+- Inside the branch, PASTE_NEW two waypoints from clipboard as anchors.
+  Push-down-stack places the first paste at position 1.0 and the second
+  paste at 0.5 (above the first), so the WP with the larger position is
+  the upper anchor `[PrecAnchorB]` and the smaller-position one is the
+  lower anchor `[PrecAnchorA]`. Initial gap is ~0.5.
+
+Action:
+- COPY `[IsolatedWP1]` (one copy serves every paste-new in the test;
+  PASTE_NEW and PASTE_NEW_BEFORE both preserve the clipboard).
+- Loop 32 times: PASTE_NEW_BEFORE `[PrecAnchorB]`. Each iteration halves
+  the gap between `[PrecAnchorA]` and `[PrecAnchorB]`.
+
+Expected:
+- **The 32 main-loop PASTE_NEW_BEFORE operations produce exactly 32 new
+  waypoint records in the branch.** Every one of the 32 loop inserts must
+  take effect; none may be dropped by the test-driver queue or by any
+  guard. This is the load-bearing success criterion. Combined with the
+  2 anchors from setup, the branch holds 34 items total -- but the
+  meaningful assertion is the 32-out-of-32 loop count. A loop-insert
+  count below 32 means a paste was silently lost and the test FAILS
+  regardless of any other check.
+- Final visual order in the branch:
+  `[PrecAnchorA]`, `inserted_1`, ..., `inserted_32`, `[PrecAnchorB]`.
+- The navMate log contains at least one warning-color line
+  `AutoCompact FLOAT positions for container <coll_uuid>` (around iteration
+  ~30 at `eps = 1e-9`). After the trigger fires, subsequent inserts go back
+  to large integer-spaced gaps. The warning text -- not the resulting
+  position values -- is the authoritative evidence that the trigger fired.
+- A final `/api/nmdb` snapshot shows all 34 items present in the branch
+  (2 anchors + 32 inserts) with no two items sharing a position value.
+
+Teardown:
+- DELETE_BRANCH `[PrecisionTestBranch]` (recursive).
+
+UUIDs for `[PrecisionTestBranch]`, `[PrecAnchorA]`, `[PrecAnchorB]`, and the
+32 inserted waypoints are resolved at runtime; they are not in the static
+UUID table.
+
 ---
 
 ### Test 2.1 Copy WP -> Paste New (duplicate with fresh UUID)

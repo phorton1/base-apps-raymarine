@@ -274,28 +274,45 @@ sub _loadTopLevel
 		_addCollectionItem($dbh, $this, $root, $coll);
 	}
 	disconnectDB($dbh);
-	$tree->Thaw();
 
-	# Expand/select restoration must run outside Freeze so that Expand() fires
-	# EVT_TREE_ITEM_EXPANDING synchronously, allowing onTreeExpanding to replace
-	# dummy children before the recursion descends into them.
+	# Expand() fires EVT_TREE_ITEM_EXPANDING synchronously regardless of Freeze
+	# state (wx Freeze suspends repaints, not event delivery), so onTreeExpanding
+	# replaces the DUMMY child with real entries before the recursion descends
+	# into them. Keeping the restoration inside Freeze avoids per-Expand
+	# repaints; the outer Freeze in refresh() guarantees a single repaint at
+	# the end. When _loadTopLevel is called from new() with no outer Freeze,
+	# our own Freeze/Thaw here still covers the restoration.
 	_restoreExpanded($tree, $root, $this->{_expanded_uuids});
 	_restoreSelected($tree, $root, $this->{_selected_uuids});
+	$tree->Thaw();
 }
 
 
 sub refresh
 {
 	my ($this) = @_;
-	if ($this->{tree}->GetCount() > 0)
-	{
-		_captureExpandedInto($this);
-		_captureSelectedInto($this);
-	}
-	_clearEditor($this);
-	$this->{detail}->SetValue('');
-	_loadTopLevel($this);
-	_applyCutStyle($this);
+	my $tree = $this->{tree};
+	# Suspend repaints across the entire refresh -- capture, clear, rebuild,
+	# expand restoration, select restoration, and cut styling. Without this,
+	# every Expand() call during _restoreExpanded fires its own repaint as
+	# each lazy-loaded sub-branch's children appear, producing the visible
+	# flicker and scrolling that automated tests provoke. Freeze/Thaw is a
+	# refcount in wx, so the inner Freeze in _loadTopLevel nests harmlessly.
+	$tree->Freeze();
+	eval {
+		if ($tree->GetCount() > 0)
+		{
+			_captureExpandedInto($this);
+			_captureSelectedInto($this);
+		}
+		_clearEditor($this);
+		$this->{detail}->SetValue('');
+		_loadTopLevel($this);
+		_applyCutStyle($this);
+	};
+	my $err = $@;
+	$tree->Thaw();
+	error("winDatabase::refresh: $err") if $err;
 }
 
 
@@ -426,16 +443,22 @@ sub _populateNode
 	my ($dbh, $this, $parent_item, $coll) = @_;
 	my $coll_uuid = $coll->{uuid};
 
-	my $children = getCollectionChildren($dbh, $coll_uuid);
+	# DB renderer: render sub-collections and direct objects in a single
+	# position-sorted list. The schema's per-row position is the unified
+	# ordering axis; collections-first / objects-after is the E80 panel's
+	# rule, not the DB's. (winE80 keeps its own type-segregated renderer
+	# since the E80 has no positions to honor.)
+	my $children = getContainerChildren($dbh, $coll_uuid);
 	for my $child (@$children)
 	{
-		_addCollectionItem($dbh, $this, $parent_item, $child);
-	}
-
-	my $objects = getCollectionObjects($dbh, $coll_uuid);
-	for my $obj (@$objects)
-	{
-		_addObjectItem($dbh, $this, $parent_item, $obj);
+		if (($child->{kind} // '') eq 'collection')
+		{
+			_addCollectionItem($dbh, $this, $parent_item, $child);
+		}
+		else
+		{
+			_addObjectItem($dbh, $this, $parent_item, $child);
+		}
 	}
 }
 
@@ -946,8 +969,8 @@ sub onLeafletTrackEdit
 			ts_end          => $track->{ts_end},
 			collection_uuid => $track->{collection_uuid},
 			point_count     => scalar @pts_b,
+			position        => $new_pos,
 		);
-		$dbh->do("UPDATE tracks SET position=? WHERE uuid=?", [$new_pos, $new_uuid]);
 		setDbVisible($new_uuid, getDbVisible($uuid));
 		insertTrackPoints($dbh, $new_uuid, \@pts_b);
 		$this->_pullFromLeaflet($uuid);
@@ -1040,8 +1063,8 @@ sub onLeafletRouteEdit
 					created_ts      => time(),
 					ts_source       => 'nav',
 					source          => 'navMate',
-					collection_uuid => $coll_uuid);
-				$dbh->do("UPDATE waypoints SET position=? WHERE uuid=?", [$wp_pos, $wp_uuid]);
+					collection_uuid => $coll_uuid,
+					position        => $wp_pos);
 			}
 			else
 			{
@@ -1079,8 +1102,7 @@ sub onLeafletRouteEdit
 		}
 		$dbh->do("UPDATE routes SET db_version=db_version+1 WHERE uuid=?", [$uuid]);
 		my $new_uuid = insertRoute($dbh, $new_name, $route->{color} // 0, $route->{comment} // '',
-			$route->{collection_uuid});
-		$dbh->do("UPDATE routes SET position=? WHERE uuid=?", [$new_pos, $new_uuid]);
+			$route->{collection_uuid}, $new_pos);
 		setDbVisible($new_uuid, getDbVisible($uuid));
 		for my $i (0 .. $#wps_b)
 		{
@@ -1104,8 +1126,7 @@ sub onLeafletRouteEdit
 		}
 		my $max_pos = _maxCollItemPos($dbh, $coll_uuid);
 		my $route_pos = ($max_pos // 0) + 1;
-		my $new_uuid = insertRoute($dbh, $name, 0, '', $coll_uuid);
-		$dbh->do("UPDATE routes SET position=? WHERE uuid=?", [$route_pos, $new_uuid]);
+		my $new_uuid = insertRoute($dbh, $name, 0, '', $coll_uuid, $route_pos);
 		my $n = scalar @$waypoints;
 		for my $i (0 .. $#$waypoints)
 		{
@@ -1124,8 +1145,8 @@ sub onLeafletRouteEdit
 				created_ts      => time(),
 				ts_source       => 'nav',
 				source          => 'navMate',
-				collection_uuid => $coll_uuid);
-			$dbh->do("UPDATE waypoints SET position=? WHERE uuid=?", [$wp_pos, $wp_uuid]);
+				collection_uuid => $coll_uuid,
+				position        => $wp_pos);
 			appendRouteWaypoint($dbh, $new_uuid, $wp_uuid, $i + 1);
 		}
 		_pushObjToLeaflet($dbh, $this, { uuid => $new_uuid, obj_type => 'route' }, undef);
@@ -1996,7 +2017,8 @@ sub _onNewBranch
 		if ($name ne '')
 		{
 			my $dbh = connectDB();
-			insertCollection($dbh, $name, $parent_uuid, $NODE_TYPE_BRANCH);
+			my @new_pos = computePushDownPositions($dbh, $parent_uuid, 1);
+			insertCollection($dbh, $name, $parent_uuid, $NODE_TYPE_BRANCH, '', $new_pos[0]);
 			disconnectDB($dbh);
 			$this->refresh();
 		}
@@ -2016,7 +2038,8 @@ sub _onNewGroup
 		if ($name ne '')
 		{
 			my $dbh = connectDB();
-			insertCollection($dbh, $name, $parent_uuid, $NODE_TYPE_GROUP);
+			my @new_pos = computePushDownPositions($dbh, $parent_uuid, 1);
+			insertCollection($dbh, $name, $parent_uuid, $NODE_TYPE_GROUP, '', $new_pos[0]);
 			disconnectDB($dbh);
 			$this->refresh();
 		}
