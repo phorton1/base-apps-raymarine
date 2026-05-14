@@ -514,6 +514,15 @@ sub _fmt
 }
 
 
+sub _fmt_ts
+{
+	my ($ts) = @_;
+	return $ts
+		? strftime("%Y-%m-%d %H:%M UTC", gmtime($ts))
+		: '(none)';
+}
+
+
 sub _showCollection
 {
 	my ($dbh, $this, $coll_stub) = @_;
@@ -526,6 +535,9 @@ sub _showCollection
 	$text .= _fmt('parent_uuid', $coll->{parent_uuid});
 	$text .= _fmt('comment',     $coll->{comment});
 	$text .= _fmt('position',    $coll->{position});
+	$text .= _fmt('source',      $coll->{source});
+	$text .= _fmt('created_ts',  _fmt_ts($coll->{created_ts}));
+	$text .= _fmt('modified_ts', _fmt_ts($coll->{modified_ts}));
 	$text .= "\n";
 	$text .= _fmt('branches',    $counts->{branches});
 	$text .= _fmt('groups',      $counts->{groups});
@@ -560,6 +572,9 @@ sub _showObject
 		$text .= _fmt('point_count',     $t->{point_count});
 		$text .= _fmt('collection_uuid', $t->{collection_uuid});
 		$text .= _fmt('position',        $t->{position});
+		$text .= _fmt('source',          $t->{source});
+		$text .= _fmt('created_ts',      _fmt_ts($t->{created_ts}));
+		$text .= _fmt('modified_ts',     _fmt_ts($t->{modified_ts}));
 		my $pts = getTrackPoints($dbh, $t->{uuid});
 		if (@$pts)
 		{
@@ -596,6 +611,7 @@ sub _showObject
 		$text .= _fmt('source',          $w->{source});
 		$text .= _fmt('collection_uuid', $w->{collection_uuid});
 		$text .= _fmt('position',        $w->{position});
+		$text .= _fmt('modified_ts',     _fmt_ts($w->{modified_ts}));
 	}
 	elsif ($obj_stub->{obj_type} eq 'route')
 	{
@@ -607,6 +623,9 @@ sub _showObject
 		$text .= _fmt('color',           $r->{color});
 		$text .= _fmt('collection_uuid', $r->{collection_uuid});
 		$text .= _fmt('position',        $r->{position});
+		$text .= _fmt('source',          $r->{source});
+		$text .= _fmt('created_ts',      _fmt_ts($r->{created_ts}));
+		$text .= _fmt('modified_ts',     _fmt_ts($r->{modified_ts}));
 		$text .= "\n";
 		for my $i (0 .. $#$wps)
 		{

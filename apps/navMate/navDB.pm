@@ -108,6 +108,9 @@ my $db_def = {
 		"node_type   TEXT NOT NULL DEFAULT 'branch'",
 		"comment     TEXT DEFAULT ''",
 		"position    REAL    NOT NULL DEFAULT 0",
+		"source      TEXT",
+		"created_ts  INTEGER NOT NULL",
+		"modified_ts INTEGER",
 	],
 
 	waypoints => [
@@ -128,6 +131,7 @@ my $db_def = {
 		"e80_version     INTEGER",
 		"kml_version     INTEGER",
 		"position        REAL    NOT NULL DEFAULT 0",
+		"modified_ts     INTEGER",
 	],
 
 	routes => [
@@ -140,6 +144,9 @@ my $db_def = {
 		"e80_version     INTEGER",
 		"kml_version     INTEGER",
 		"position        REAL    NOT NULL DEFAULT 0",
+		"source          TEXT",
+		"created_ts      INTEGER NOT NULL",
+		"modified_ts     INTEGER",
 	],
 
 	route_waypoints => [
@@ -163,6 +170,9 @@ my $db_def = {
 		"kml_version     INTEGER",
 		"position        REAL    NOT NULL DEFAULT 0",
 		"companion_uuid  TEXT",
+		"source          TEXT",
+		"created_ts      INTEGER NOT NULL",
+		"modified_ts     INTEGER",
 	],
 
 	track_points => [
@@ -297,6 +307,45 @@ sub openDB
 		warning(0,0,"navDB::openDB migration to 11.2 complete");
 	}
 
+	if ($stored eq '11.2')
+	{
+		warning(0,0,"navDB::openDB migrating schema 11.2 -> 11.3");
+
+		# Canonical onetimeImport timestamp, derived 2026-05-14 from the
+		# live DB: every one of 686 waypoints carries this exact value
+		# in created_ts (distinct_ts = 1, ts_source = 'import').
+		# Decodes to 2026-05-04 21:39:44 UTC.
+		my $ONETIME_IMPORT_TS = 1777930784;
+
+		# waypoints already has source/created_ts; add modified_ts only
+		$dbh->do("ALTER TABLE waypoints ADD COLUMN modified_ts INTEGER", []);
+		$dbh->do("UPDATE waypoints SET modified_ts = created_ts WHERE modified_ts IS NULL", []);
+		# normalize legacy source='' to 'onetimeImport'
+		$dbh->do("UPDATE waypoints SET source='onetimeImport' WHERE source IS NULL OR source=''", []);
+
+		# routes, tracks, collections: add all three provenance columns
+		for my $table (qw(routes tracks collections))
+		{
+			$dbh->do("ALTER TABLE $table ADD COLUMN source      TEXT", []);
+			$dbh->do("ALTER TABLE $table ADD COLUMN created_ts  INTEGER", []);
+			$dbh->do("ALTER TABLE $table ADD COLUMN modified_ts INTEGER", []);
+			$dbh->do("UPDATE $table SET source='onetimeImport' WHERE source IS NULL OR source=''", []);
+			$dbh->do("UPDATE $table SET created_ts=?, modified_ts=? WHERE created_ts IS NULL",
+				[$ONETIME_IMPORT_TS, $ONETIME_IMPORT_TS]);
+		}
+
+		$dbh->do("UPDATE key_values SET value='11.3' WHERE key='schema_version'", []);
+		$stored = '11.3';
+		warning(0,0,"navDB::openDB migration to 11.3 complete");
+	}
+
+	# Provenance triggers: auto-populate created_ts and modified_ts.
+	# Idempotent (CREATE TRIGGER IF NOT EXISTS); runs every openDB so
+	# fresh DBs and migrated DBs both end up with the triggers active.
+	# Relies on SQLite's default PRAGMA recursive_triggers = OFF so the
+	# triggers' own UPDATEs do not re-fire triggers.
+	_createTriggers($dbh);
+
 	my ($stored_major)   = split(/\./, $stored);
 	my ($expected_major) = split(/\./, $SCHEMA_VERSION);
 
@@ -380,6 +429,54 @@ sub _createTables
 		$dbh->createTable($table)
 			or return error("navDB::_createTables failed for $table: $dbh->{errstr}");
 	}
+	return 1;
+}
+
+
+#---------------------------------
+# _createTriggers
+#---------------------------------
+# Provenance triggers on the four WGRT tables.  Each table gets:
+#   <table>_insert_ts  - AFTER INSERT, sets created_ts (if not provided)
+#                        and modified_ts (= created_ts) using NEW.* and
+#                        COALESCE so explicit values win.
+#   <table>_update_ts  - AFTER UPDATE, touches modified_ts to current
+#                        time UNLESS the UPDATE itself already changed
+#                        modified_ts (WHEN OLD.modified_ts IS NEW.modified_ts
+#                        guards against trigger overriding an explicit set).
+#
+# Idempotent via CREATE TRIGGER IF NOT EXISTS.  Recursion safety relies
+# on SQLite's default PRAGMA recursive_triggers = OFF.
+
+sub _createTriggers
+{
+	my ($dbh) = @_;
+
+	for my $table (qw(waypoints routes tracks collections))
+	{
+		$dbh->do(<<SQL, []);
+CREATE TRIGGER IF NOT EXISTS ${table}_insert_ts AFTER INSERT ON $table
+FOR EACH ROW
+BEGIN
+    UPDATE $table
+       SET created_ts  = COALESCE(NEW.created_ts, strftime('%s','now')),
+           modified_ts = COALESCE(NEW.modified_ts, NEW.created_ts, strftime('%s','now'))
+     WHERE uuid = NEW.uuid;
+END
+SQL
+
+		$dbh->do(<<SQL, []);
+CREATE TRIGGER IF NOT EXISTS ${table}_update_ts AFTER UPDATE ON $table
+FOR EACH ROW
+WHEN OLD.modified_ts IS NEW.modified_ts
+BEGIN
+    UPDATE $table
+       SET modified_ts = strftime('%s','now')
+     WHERE uuid = NEW.uuid;
+END
+SQL
+	}
+
 	return 1;
 }
 
@@ -845,7 +942,7 @@ sub getCollection
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, parent_uuid, node_type, comment, position FROM collections WHERE uuid=?",
+		"SELECT uuid, name, parent_uuid, node_type, comment, position, source, created_ts, modified_ts FROM collections WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -858,7 +955,7 @@ sub getTrack
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, collection_uuid, position, companion_uuid FROM tracks WHERE uuid=?",
+		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, collection_uuid, position, companion_uuid, source, created_ts, modified_ts FROM tracks WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -871,7 +968,7 @@ sub getWaypoint
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm, temp_k, created_ts, ts_source, source, collection_uuid, position FROM waypoints WHERE uuid=?",
+		"SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm, temp_k, created_ts, ts_source, source, collection_uuid, position, modified_ts FROM waypoints WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -884,7 +981,7 @@ sub getRoute
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, comment, color, collection_uuid, position FROM routes WHERE uuid=?",
+		"SELECT uuid, name, comment, color, collection_uuid, position, source, created_ts, modified_ts FROM routes WHERE uuid=?",
 		[$uuid]);
 }
 
