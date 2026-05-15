@@ -32,6 +32,21 @@ sub exportKML
 	disconnectDB($dbh);
 }
 
+
+sub exportKMLSubtree
+{
+	my ($path, $root_uuid) = @_;
+	if (!defined $root_uuid || $root_uuid eq '')
+	{
+		error("navKML: exportKMLSubtree requires a root uuid");
+		return;
+	}
+	my $dbh = connectDB();
+	_exportSubtree($dbh, $path, $root_uuid);
+	disconnectDB($dbh);
+}
+
+
 sub _export
 {
 	my ($dbh, $path) = @_;
@@ -45,7 +60,73 @@ sub _export
 		$content .= _exportCollection($dbh, $coll, 2, \%styles);
 	}
 
-	my $style_xml = join('', map { $styles{$_} } sort keys %styles);
+	_writeKMLFile($path, 'navMate', \%styles, $content);
+	display(0,0,"navKML: export complete");
+}
+
+
+sub _exportSubtree
+{
+	my ($dbh, $path, $root_uuid) = @_;
+	display(0,0,"navKML: exporting subtree $root_uuid to $path");
+
+	my %styles;
+	my $content;
+	my $outer_name;
+
+	my $coll = getCollection($dbh, $root_uuid);
+	if ($coll)
+	{
+		$outer_name = $coll->{name};
+		$content    = _exportCollection($dbh, $coll, 2, \%styles);
+	}
+	else
+	{
+		my $wp = getWaypoint($dbh, $root_uuid);
+		if ($wp)
+		{
+			$outer_name = $wp->{name};
+			$content    = _exportWaypoint($dbh, $wp, 2, \%styles);
+		}
+		else
+		{
+			my $rt = getRoute($dbh, $root_uuid);
+			if ($rt)
+			{
+				$outer_name = $rt->{name};
+				$content    = _exportRoute($dbh, $rt, 2, \%styles);
+			}
+			else
+			{
+				my $tr = getTrack($dbh, $root_uuid);
+				if ($tr)
+				{
+					$outer_name = $tr->{name};
+					$content    = _exportTrack($dbh, $tr, 2, \%styles);
+				}
+				else
+				{
+					error("navKML: subtree uuid '$root_uuid' not found");
+					return;
+				}
+			}
+		}
+	}
+
+	_writeKMLFile($path, undef, \%styles, $content);
+	display(0,0,"navKML: subtree export complete");
+}
+
+
+# $outer_name:
+#   defined  - wrap $content in <Folder><name>$outer_name</name>...</Folder> (whole-DB export)
+#   undef    - emit $content directly under <Document> (subtree export, so the
+#              subtree's own top-level folder/placemark IS the Document child;
+#              avoids round-trip double-nesting when re-imported)
+sub _writeKMLFile
+{
+	my ($path, $outer_name, $styles, $content) = @_;
+	my $style_xml = join('', map { $styles->{$_} } sort keys %$styles);
 
 	my $fh;
 	if (!open($fh, '>:encoding(UTF-8)', $path))
@@ -58,14 +139,20 @@ sub _export
 	print $fh qq{<Document>\n};
 	print $fh qq{  <name>navMate.kml</name>\n};
 	print $fh $style_xml;
-	print $fh qq{  <Folder>\n};
-	print $fh qq{    <name>navMate</name>\n};
-	print $fh $content;
-	print $fh qq{  </Folder>\n};
+	if (defined $outer_name && $outer_name ne '')
+	{
+		print $fh qq{  <Folder>\n};
+		print $fh qq{    <name>} . _esc($outer_name) . qq{</name>\n};
+		print $fh $content;
+		print $fh qq{  </Folder>\n};
+	}
+	else
+	{
+		print $fh $content;
+	}
 	print $fh qq{</Document>\n};
 	print $fh qq{</kml>\n};
 	close $fh;
-	display(0,0,"navKML: export complete");
 }
 
 
@@ -291,13 +378,28 @@ sub importKML
 {
 	my ($path) = @_;
 	my $dbh = connectDB();
-	_import($dbh, $path);
+	_import($dbh, $path, undef);
 	disconnectDB($dbh);
 }
 
+
+sub importKMLSubtree
+{
+	my ($path, $target_uuid) = @_;
+	if (!defined $target_uuid || $target_uuid eq '')
+	{
+		error("navKML: importKMLSubtree requires a target uuid");
+		return;
+	}
+	my $dbh = connectDB();
+	_import($dbh, $path, $target_uuid);
+	disconnectDB($dbh);
+}
+
+
 sub _import
 {
-	my ($dbh, $path) = @_;
+	my ($dbh, $path, $initial_parent_uuid) = @_;
 	if (!-f $path)
 	{
 		error("navKML: not found: $path");
@@ -322,11 +424,11 @@ sub _import
 
 	for my $folder (@{$nm_folder->{Folder} // []})
 	{
-		_importFolder($dbh, $folder, undef, \%seen, \@pending_routes);
+		_importFolder($dbh, $folder, $initial_parent_uuid, \%seen, \@pending_routes);
 	}
 	for my $pm (@{$nm_folder->{Placemark} // []})
 	{
-		_importPlacemark($dbh, $pm, undef, \%seen);
+		_importPlacemark($dbh, $pm, $initial_parent_uuid, \%seen);
 	}
 
 	for my $r (@pending_routes)

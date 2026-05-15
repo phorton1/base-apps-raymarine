@@ -28,6 +28,12 @@ is handled separately by `navOneTimeImport.pm` and is not described here. See
 
 ## File Structure
 
+navMate produces two structural variants of the same KML schema. Both are valid
+GE-renderable KML and use identical styles, ExtendedData tags, and object encodings.
+They differ only in whether the content is wrapped in an outer `<Folder name="navMate">`.
+
+### Whole-DB export - `exportKML($path)`
+
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2" ...>
@@ -37,15 +43,40 @@ is handled separately by `navOneTimeImport.pm` and is not described here. See
   ...
   <Folder>
     <name>navMate</name>
-    ...content...
+    ...content - all root collections...
   </Folder>
 </Document>
 </kml>
 ```
 
-`<Style>` definitions are valid only inside `<Document>`, not inside `<Folder>`. The
-single outer `<Folder name="navMate">` is the importable unit. When loading the file
-in GE, this Folder can be dragged into My Places independently of the Document wrapper.
+The single outer `<Folder name="navMate">` is the importable unit. When loading the
+file in GE, this Folder can be dragged into My Places independently of the Document
+wrapper.
+
+### Subtree export - `exportKMLSubtree($path, $root_uuid)`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" ...>
+<Document>
+  <name>navMate.kml</name>
+  <Style id="nm1_track_ff0000ff">...</Style>
+  ...
+  ...content - the subtree's own top-level element...
+</Document>
+</kml>
+```
+
+The subtree's own top-level element (a collection `<Folder>`, a route `<Folder>`, a
+track `<Placemark>`, or a waypoint `<Placemark>`) sits directly under `<Document>`.
+There is no outer `<Folder name="navMate">` wrapper: it would duplicate the subtree's
+own top-level Folder on re-import and produce double-nested collections. `$root_uuid`
+may identify a collection (branch or group), waypoint, route, or track; the type is
+auto-detected via the navDB `getCollection` / `getWaypoint` / `getRoute` / `getTrack`
+lookup chain.
+
+`<Style>` definitions are valid only inside `<Document>`, not inside `<Folder>`, so
+they appear in the same position in both variants.
 
 ## Style Naming
 
@@ -237,6 +268,17 @@ and `color` are updated; the KML coordinate string does not replace stored track
 Re-import adds new objects and updates existing ones. It does not delete. Objects
 present in the DB but absent from the KML file are left untouched. To delete an
 object, use navMate's delete operations, then re-export. See [GE Notes](ge_notes.md).
+
+### Subtree import
+
+`importKMLSubtree($path, $target_uuid)` imports the KML's top-level Folders and
+Placemarks as direct children of the collection identified by `$target_uuid`, which
+must be a branch collection. UUID matching, route-resolution ordering, and additive
+semantics are otherwise identical to `importKML($path)`.
+
+A whole-DB-exported KML imported via either entry point is unwrapped: the importer
+recognizes the outer `<Folder name="navMate">` and recurses into its contents rather
+than creating a `navMate`-named collection.
 
 ---
 

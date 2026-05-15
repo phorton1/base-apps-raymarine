@@ -123,6 +123,22 @@ refreshes ancestor checkbox states.
 `nmUpload::uploadCollectionToE80` with a shared progress dialog. Uploads all
 waypoints, routes, and groups in the collection.
 
+#### Map and Import/Export Commands
+
+The right-click menu also includes view-state and KML/GPS commands, gated by
+node type. These appear below the Copy/Delete/New block, separated by a divider.
+
+| Command | Available on | Action |
+|---|---|---|
+| Show on Map | any non-root node | Mark the node visible on the Leaflet canvas |
+| Hide on Map | any non-root node | Mark the node hidden on the Leaflet canvas |
+| Export KML file (.kml)... | any non-root node | Subtree export via `navKML::exportKMLSubtree($path, $uuid)`; the subtree's own top-level element lands directly under `<Document>` (no `navMate` wrapper). Default filename is the node's sanitized name |
+| Import KML file (.kml)... | branch collection only | Subtree import via `navKML::importKMLSubtree($path, $target_uuid)`. Restricted to branches (not groups, not leaf objects) to keep the "import into container" semantics distinct from paste-before-node / paste-after-node |
+| Import GPS file (.gpx[, .gdb])... | any collection (branch or group) | Import GPX (and `.gdb` when `gpsbabel` is on PATH) via `gpsImport::import_gps_file` |
+
+Last-used directory for both KML dialogs is persisted under config key `kml_dir`,
+shared with the top-level `Database -> Import KML` / `Export KML` commands.
+
 ### Database Menu
 
 | Command | Description |

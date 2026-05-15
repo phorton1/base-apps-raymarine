@@ -36,9 +36,11 @@ use Wx::Event qw(
 use Pub::WX::Dialogs;
 use POSIX qw(strftime);
 use Pub::Utils qw(display warning error);
+use Pub::WX::AppConfig qw(readConfig writeConfig);
 use Pub::WX::Window;
 use Pub::WX::Menu;
 use navDB;
+use navKML;
 use navVisibility qw(getDbVisible setDbVisible);
 use navOutline;
 use navSelection;
@@ -59,6 +61,8 @@ my $CTX_CMD_DELETE     = 10562;
 my $CTX_CMD_NEW_BRANCH = 10563;
 my $CTX_CMD_NEW_GROUP  = 10564;
 my $CTX_CMD_IMPORT_GPS = 10565;
+my $CTX_CMD_IMPORT_KML = 10566;
+my $CTX_CMD_EXPORT_KML = 10567;
 
 my %rendered_uuids;
 my $last_clear_version = 0;
@@ -230,6 +234,8 @@ sub new
 	EVT_MENU($this, $CTX_CMD_SHOW_MAP,   \&_onShowMap);
 	EVT_MENU($this, $CTX_CMD_HIDE_MAP,   \&_onHideMap);
 	EVT_MENU($this, $CTX_CMD_IMPORT_GPS, \&_onImportGPS);
+	EVT_MENU($this, $CTX_CMD_IMPORT_KML, \&_onImportKML);
+	EVT_MENU($this, $CTX_CMD_EXPORT_KML, \&_onExportKML);
 	EVT_MENU_RANGE($this, 10200, 10299,  \&_onNmOpsCmd);
 	EVT_TEXT($this,   $this->{ed_name},    \&_onFieldChanged);
 	EVT_TEXT($this,   $this->{ed_comment}, \&_onFieldChanged);
@@ -1801,14 +1807,26 @@ sub _buildContextMenu
 		$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
 		$menu->Append($CTX_CMD_SHOW_MAP, 'Show on Map');
 		$menu->Append($CTX_CMD_HIDE_MAP, 'Hide on Map');
-	}
 
-	if ($node_type eq 'collection')
-	{
+		# Import/Export block.  Separator is unconditional within this branch
+		# because Export KML applies to every non-root node, so there is
+		# always at least one item below it.  Import KML is restricted to
+		# branch collections (not groups, not leaf objects) to keep the
+		# "import into container" semantics distinct from paste-before/after.
 		$menu->AppendSeparator();
-		my $gbs     = find_gpsbabel();
-		my $gps_label = $gbs ? 'Import GPS file (.gpx, .gdb)...' : 'Import GPS file (.gpx)...';
-		$menu->Append($CTX_CMD_IMPORT_GPS, $gps_label);
+		$menu->Append($CTX_CMD_EXPORT_KML, 'Export KML file (.kml)...');
+
+		my $sub_type = ($right_click_node->{data} // {})->{node_type} // '';
+		if ($node_type eq 'collection' && $sub_type eq $NODE_TYPE_BRANCH)
+		{
+			$menu->Append($CTX_CMD_IMPORT_KML, 'Import KML file (.kml)...');
+		}
+		if ($node_type eq 'collection')
+		{
+			my $gbs       = find_gpsbabel();
+			my $gps_label = $gbs ? 'Import GPS file (.gpx, .gdb)...' : 'Import GPS file (.gpx)...';
+			$menu->Append($CTX_CMD_IMPORT_GPS, $gps_label);
+		}
 	}
 
 	return $menu;
@@ -2022,6 +2040,70 @@ sub _onImportGPS
 		. "  Routes:    $result->{routes}";
 	Wx::MessageBox($msg, 'Import complete', wxOK | wxICON_INFORMATION, $this);
 	$this->refresh();
+}
+
+
+sub _onImportKML
+{
+	my ($this, $event) = @_;
+	my $target_uuid = ($this->{_right_click_node}{data} // {})->{uuid};
+	return if !$target_uuid;
+
+	my $default_dir = readConfig('kml_dir') || '';
+	my $dlg = Wx::FileDialog->new($this, 'Import KML file', $default_dir, '',
+		'KML files (*.kml)|*.kml|All files (*.*)|*.*',
+		wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+	if ($dlg->ShowModal() != wxID_OK)
+	{
+		$dlg->Destroy();
+		return;
+	}
+	my $path = $dlg->GetPath();
+	writeConfig('kml_dir', $dlg->GetDirectory());
+	$dlg->Destroy();
+	return if !$path;
+
+	eval { navKML::importKMLSubtree($path, $target_uuid) };
+	if ($@)
+	{
+		Wx::MessageBox("Import KML failed: $@", 'Import failed', wxOK | wxICON_ERROR, $this);
+		return;
+	}
+	$this->refresh();
+}
+
+
+sub _onExportKML
+{
+	my ($this, $event) = @_;
+	my $node = $this->{_right_click_node} // {};
+	my $type = $node->{type} // '';
+	my $uuid = ($type eq 'route_point') ? $node->{uuid} : ($node->{data} // {})->{uuid};
+	return if !$uuid;
+
+	my $name = ($node->{data} // {})->{name} // '';
+	$name =~ s/[^\w\-]+/_/g;
+	$name = 'navMate' if $name eq '';
+
+	my $default_dir = readConfig('kml_dir') || '';
+	my $dlg = Wx::FileDialog->new($this, 'Export KML', $default_dir, "$name.kml",
+		'KML files (*.kml)|*.kml|All files (*.*)|*.*',
+		wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+	if ($dlg->ShowModal() != wxID_OK)
+	{
+		$dlg->Destroy();
+		return;
+	}
+	my $path = $dlg->GetPath();
+	writeConfig('kml_dir', $dlg->GetDirectory());
+	$dlg->Destroy();
+	return if !$path;
+
+	eval { navKML::exportKMLSubtree($path, $uuid) };
+	if ($@)
+	{
+		Wx::MessageBox("Export KML failed: $@", 'Export failed', wxOK | wxICON_ERROR, $this);
+	}
 }
 
 

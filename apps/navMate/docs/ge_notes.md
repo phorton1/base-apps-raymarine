@@ -44,6 +44,28 @@ changes into navMate.
 6. **Version management** - before replacing the active navMate Folder in GE My Places,
    rename the old one (e.g., append the date) so it can be restored if needed.
 
+## Subtree Round-Trip via Right-Click
+
+`winDatabase` also offers per-node KML operations through the tree's right-click
+menu. These complement the full-DB Database menu commands and use the same
+`navKML.pm` machinery and re-import semantics.
+
+- **Export KML** is available on any non-root node (branch, group, waypoint, route,
+  track, or route-point) and writes a KML file containing just that node and its
+  descendants. The output has no outer `<Folder name="navMate">` envelope; the
+  subtree's own top-level element sits directly under `<Document>`. This keeps
+  round-trip mirror-clean - re-importing the same file under a target branch
+  reproduces the source structure exactly, with no double-nesting.
+
+- **Import KML** is available on branch collections only (not groups, not leaf
+  objects) and imports the file's contents under the right-clicked branch. UUID
+  reconciliation, additive semantics, and the safe/unsafe operation rules below
+  all apply identically to subtree import.
+
+Subtree files are useful for sharing a single voyage log, distributing a route
+proposal, or backing up a working branch without exporting unrelated data. See
+the [KML Specification](kml_specification.md) for the two structural variants.
+
 ## Safe Operations in GE
 
 The following operations within the navMate GE Folder produce results navMate can
