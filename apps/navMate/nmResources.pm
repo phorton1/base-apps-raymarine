@@ -48,6 +48,7 @@ BEGIN
 		$COMMAND_SAVE_FSH_FILE_AS
 		$COMMAND_SAVE_FSH_OUTLINE
 		$COMMAND_RESTORE_FSH_OUTLINE
+		$COMMAND_CONVERT_FSH_TO_NAVMATE
 	);
 }
 
@@ -83,6 +84,7 @@ our $COMMAND_SAVE_FSH_FILE		= 10082;
 our $COMMAND_SAVE_FSH_FILE_AS	= 10083;
 our $COMMAND_SAVE_FSH_OUTLINE	= 10084;
 our $COMMAND_RESTORE_FSH_OUTLINE = 10085;
+our $COMMAND_CONVERT_FSH_TO_NAVMATE = 10086;
 
 
 my $pane_data = {
@@ -103,6 +105,7 @@ my $command_data = {
 	$COMMAND_SAVE_FSH_FILE_AS	=> ['Save As...',			'Save FSH data to a new file and switch to that filename'],
 	$COMMAND_SAVE_FSH_OUTLINE	=> ['Save Outline',			'Save FSH tree expansion state to nmFSHOutline.json'],
 	$COMMAND_RESTORE_FSH_OUTLINE => ['Restore Outline',		'Restore FSH tree expansion state from nmFSHOutline.json'],
+	$COMMAND_CONVERT_FSH_TO_NAVMATE => ['Convert to navMate Working Copy', 'Replace each multi-segment track with N real -NNN tracks (in-memory; Save File to persist)'],
 	$COMMAND_OPEN_MAP			=> ['Open Map',				'Open the Leaflet map in a browser'],
 	$COMMAND_CLEAR_MAP			=> ['Clear Map',			'Set all visible=0 and clear the Leaflet map'],
 	$COMMAND_IMPORT_KML_NM		=> ['Import KML',			'Additive re-import from a navMate KML file'],
@@ -176,6 +179,8 @@ my $fsh_menu = [
 	$COMMAND_OPEN_FSH_FILE,
 	$COMMAND_SAVE_FSH_FILE,
 	$COMMAND_SAVE_FSH_FILE_AS,
+	$ID_SEPARATOR,
+	$COMMAND_CONVERT_FSH_TO_NAVMATE,
 	$ID_SEPARATOR,
 	$COMMAND_SAVE_FSH_OUTLINE,
 	$COMMAND_RESTORE_FSH_OUTLINE,

@@ -17,6 +17,7 @@ use Pub::Utils qw(display warning error);
 use apps::raymarine::FSH::fshUtils;
 use apps::raymarine::FSH::fshBlocks;
 use apps::raymarine::FSH::fshFile;
+use navDB;
 
 
 my $dbg_fsh = 0;
@@ -149,6 +150,134 @@ sub saveFSH
 	}
 
 	return $fsh->write($filename);
+}
+
+
+#-----------------------------------------
+# convertToNavMate
+#-----------------------------------------
+# One-shot in-memory promotion of an FSH working copy:
+#
+#   1) Every track name has ALL whitespace stripped (FSH encode space-pads
+#      names to 16 chars; Z16 decode leaves the spaces).  "Track 2" -> "Track2".
+#   2) Each track whose points contain sentinel breaks (lat =~ /^-0\.00/) is
+#      replaced with N new tracks named TRACKNAME-NNN (3-digit zero-padded),
+#      each carrying one segment's points and freshly minted navMate-domain
+#      UUIDs (mta_uuid and trk_uuid from newUUID).
+#
+# Single-segment tracks keep their (cleaned) name and stay as one track.
+# Waypoints, routes, and groups are untouched.
+# Caller must invoke navFSH::saveFSH() afterwards to persist the result.
+#
+# Returns { tracks_unchanged, tracks_converted, segments_created }.
+
+sub convertToNavMate
+{
+	my $stats = {
+		tracks_unchanged => 0,
+		tracks_converted => 0,
+		segments_created => 0,
+	};
+
+	if (!$fsh_db)
+	{
+		error("navFSH::convertToNavMate: no FSH database loaded");
+		return $stats;
+	}
+
+	my $dbh = navDB::connectDB();
+	if (!$dbh)
+	{
+		error("navFSH::convertToNavMate: could not open navMate database for UUID minting");
+		return $stats;
+	}
+
+	my $tracks = $fsh_db->{tracks};
+	my @track_uuids = keys %$tracks;
+
+	for my $uuid (@track_uuids)
+	{
+		my $track = $tracks->{$uuid};
+		my $points = $track->{points} // [];
+
+		# Normalize name: strip all whitespace (FSH encode pads to 16 with
+		# spaces, and decoded "Track 2" reads back as "Track 2          ").
+		my $orig_name = $track->{name} // 'track';
+		$orig_name =~ s/\s+//g;
+		$orig_name = 'track' if $orig_name eq '';
+
+		# Split into segments at sentinel points (lat =~ /^-0\.00/).
+		# Sentinels are gap markers; they belong to neither neighbor segment.
+
+		my @segments;
+		my @current;
+		for my $pt (@$points)
+		{
+			my $lat = $pt->{lat} // 0;
+			if ($lat =~ /^-0\.00/)
+			{
+				if (@current)
+				{
+					push @segments, [@current];
+					@current = ();
+				}
+			}
+			else
+			{
+				push @current, $pt;
+			}
+		}
+		push @segments, [@current] if @current;
+
+		my $n_seg = scalar @segments;
+		if ($n_seg <= 1)
+		{
+			$track->{name} = $orig_name if ($track->{name} // '') ne $orig_name;
+			$stats->{tracks_unchanged}++;
+			next;
+		}
+
+		my $color = $track->{color} // 0;
+
+		# Replace the original track with N new -NNN tracks.
+		# Each gets fresh navMate-domain mta_uuid and trk_uuid.
+
+		delete $tracks->{$uuid};
+
+		for (my $i = 0; $i < $n_seg; $i++)
+		{
+			my $seg_pts = $segments[$i];
+			my $new_mta = navDB::newUUID($dbh);
+			my $new_trk = navDB::newUUID($dbh);
+			if (!$new_mta || !$new_trk)
+			{
+				error("navFSH::convertToNavMate: UUID minting failed for $orig_name segment ".($i+1));
+				navDB::disconnectDB($dbh);
+				return $stats;
+			}
+			my $new_name = sprintf('%s-%03d', $orig_name, $i + 1);
+			$tracks->{$new_mta} = shared_clone({
+				mta_uuid => $new_mta,
+				trk_uuid => $new_trk,
+				name     => $new_name,
+				color    => $color,
+				points   => [@$seg_pts],
+				cnt      => scalar @$seg_pts,
+			});
+		}
+
+		$stats->{tracks_converted}++;
+		$stats->{segments_created} += $n_seg;
+	}
+
+	navDB::disconnectDB($dbh);
+
+	display(0, 0, sprintf("navFSH::convertToNavMate: unchanged=%d converted=%d segments=%d",
+		$stats->{tracks_unchanged},
+		$stats->{tracks_converted},
+		$stats->{segments_created}));
+
+	return $stats;
 }
 
 

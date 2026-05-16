@@ -56,6 +56,7 @@ sub new
 	EVT_MENU($this, $COMMAND_SAVE_FSH_FILE_AS,	\&onCommand);
 	EVT_MENU($this, $COMMAND_SAVE_FSH_OUTLINE,	\&onCommand);
 	EVT_MENU($this, $COMMAND_RESTORE_FSH_OUTLINE, \&onCommand);
+	EVT_MENU($this, $COMMAND_CONVERT_FSH_TO_NAVMATE, \&onCommand);
 	EVT_MENU($this, $COMMAND_OPEN_MAP,			\&onCommand);
 	EVT_MENU($this, $COMMAND_IMPORT_KML,		\&onCommand);
 	EVT_MENU($this, $COMMAND_REFRESH_WIN_E80,	\&onCommand);
@@ -83,6 +84,7 @@ sub new
 	EVT_UPDATE_UI($this, $COMMAND_SAVE_FSH_FILE_AS,		\&onCommandEnable);
 	EVT_UPDATE_UI($this, $COMMAND_SAVE_FSH_OUTLINE,		\&onCommandEnable);
 	EVT_UPDATE_UI($this, $COMMAND_RESTORE_FSH_OUTLINE,	\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_CONVERT_FSH_TO_NAVMATE, \&onCommandEnable);
 	EVT_IDLE($this, \&onIdle);
 
 	my $sb = Wx::StatusBar->new($this, -1);
@@ -323,6 +325,10 @@ sub onCommand
 		my $fsh = $this->findPane($WIN_FSH);
 		$fsh->doRestoreFSHOutline() if $fsh;
 	}
+	elsif ($id == $COMMAND_CONVERT_FSH_TO_NAVMATE)
+	{
+		_doConvertFSHToNavMate($this);
+	}
 	elsif ($id == $COMMAND_REFRESH_WIN_E80)
 	{
 		my $e80 = $this->findPane($WIN_E80);
@@ -483,7 +489,8 @@ sub onCommandEnable
 	elsif ($id == $COMMAND_SAVE_FSH_FILE
 	    || $id == $COMMAND_SAVE_FSH_FILE_AS
 	    || $id == $COMMAND_SAVE_FSH_OUTLINE
-	    || $id == $COMMAND_RESTORE_FSH_OUTLINE)
+	    || $id == $COMMAND_RESTORE_FSH_OUTLINE
+	    || $id == $COMMAND_CONVERT_FSH_TO_NAVMATE)
 	{
 		$enable = 0 if !$navFSH::fsh_db;
 	}
@@ -682,6 +689,35 @@ sub _doSaveFSHAs
 		}
 	}
 	$dialog->Destroy();
+}
+
+
+sub _doConvertFSHToNavMate
+{
+	my ($this) = @_;
+	if (!$navFSH::fsh_db)
+	{
+		error("nmFrame: _doConvertFSHToNavMate called with no FSH loaded");
+		return;
+	}
+	my $stats = navFSH::convertToNavMate();
+	my $fsh = $this->findPane($WIN_FSH);
+	$fsh->refresh() if $fsh;
+
+	my $msg;
+	if (!$stats->{tracks_converted})
+	{
+		$msg = sprintf("No tracks needed conversion.\n\n%d single-segment track(s) unchanged.",
+			$stats->{tracks_unchanged});
+	}
+	else
+	{
+		$msg = sprintf("Converted %d track(s) into %d segment(s).\n\n%d track(s) unchanged.\n\nUse FSH -> Save File (or Save As...) to persist.",
+			$stats->{tracks_converted},
+			$stats->{segments_created},
+			$stats->{tracks_unchanged});
+	}
+	okDialog($this, $msg, 'Convert to navMate Working Copy');
 }
 
 

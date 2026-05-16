@@ -29,7 +29,9 @@ use Wx::DateTime;
 use Wx::Calendar;
 use Wx::Event qw(
 	EVT_TREE_SEL_CHANGED
+	EVT_TREE_ITEM_RIGHT_CLICK
 	EVT_LEFT_DOWN
+	EVT_MENU
 	EVT_TEXT
 	EVT_BUTTON
 	EVT_CHOICE
@@ -51,6 +53,11 @@ use nmResources;
 use base 'winTreeBase';
 
 my $dbg_wfsh = 0;
+
+# Context-menu command IDs (parallel to winE80/winDatabase).
+# Same numeric values so the IDs are interchangeable across panels.
+my $CTX_CMD_SHOW_MAP = 10560;
+my $CTX_CMD_HIDE_MAP = 10561;
 
 
 sub new
@@ -205,6 +212,9 @@ sub new
 	$this->SetSashGravity(0);
 
 	EVT_TREE_SEL_CHANGED($this, $this->{tree}, \&onTreeSelect);
+	EVT_TREE_ITEM_RIGHT_CLICK($this, $this->{tree}, \&onTreeRightClick);
+	EVT_MENU($this, $CTX_CMD_SHOW_MAP, \&_onShowMap);
+	EVT_MENU($this, $CTX_CMD_HIDE_MAP, \&_onHideMap);
 	EVT_LEFT_DOWN($this->{tree}, sub { $this->_onTreeLeftDown(@_) });
 	EVT_TEXT($this,         $this->{ed_name},         $this->can('_onFieldChanged'));
 	EVT_TEXT($this,         $this->{ed_comment},       $this->can('_onFieldChanged'));
@@ -434,13 +444,82 @@ sub _buildTracks
 	my $hdr    = $tree->AppendItem($root, $label, -1, -1,
 		Wx::TreeItemData->new({ type => 'header', kind => 'tracks' }));
 
-	for my $uuid (sort { winTreeBase::_name_sort_key($tracks->{$a}{name}) cmp winTreeBase::_name_sort_key($tracks->{$b}{name}) }
-	              keys %$tracks)
+	# Collect tracks by name-prefix.  Names matching /^(.+)-(\d+)$/ with
+	# >= 2 siblings render under a visual collection header; everything
+	# else renders as a flat track child.
+
+	my %by_prefix;
+	my @singles;
+	for my $uuid (keys %$tracks)
 	{
-		my $track = $tracks->{$uuid};
-		my $pts   = $track->{cnt} // (ref $track->{points} eq 'ARRAY' ? scalar @{$track->{points}} : 0);
-		$tree->AppendItem($hdr, "$track->{name} ($pts pts)", -1, -1,
-			Wx::TreeItemData->new({ type => 'track', uuid => $uuid, data => $track }));
+		my $name = $tracks->{$uuid}{name} // '';
+		if ($name =~ /^(.+)-(\d+)$/)
+		{
+			push @{$by_prefix{$1}}, { uuid => $uuid, name => $name, suffix => $2 + 0 };
+		}
+		else
+		{
+			push @singles, { uuid => $uuid, name => $name };
+		}
+	}
+
+	my @rendered;
+	for my $prefix (keys %by_prefix)
+	{
+		my $members = $by_prefix{$prefix};
+		if (@$members >= 2)
+		{
+			push @rendered, {
+				kind     => 'group',
+				sort_key => winTreeBase::_name_sort_key($prefix),
+				prefix   => $prefix,
+				members  => $members,
+			};
+		}
+		else
+		{
+			push @singles, { uuid => $members->[0]{uuid}, name => $members->[0]{name} };
+		}
+	}
+	for my $s (@singles)
+	{
+		push @rendered, {
+			kind     => 'single',
+			sort_key => winTreeBase::_name_sort_key($s->{name}),
+			uuid     => $s->{uuid},
+		};
+	}
+	@rendered = sort { $a->{sort_key} cmp $b->{sort_key} } @rendered;
+
+	for my $entry (@rendered)
+	{
+		if ($entry->{kind} eq 'group')
+		{
+			my @members = sort { $a->{suffix} <=> $b->{suffix} } @{$entry->{members}};
+			my @uuids   = map { $_->{uuid} } @members;
+			my $cnt     = scalar @members;
+			my $grp_item = $tree->AppendItem($hdr, "$entry->{prefix} ($cnt segs)", -1, -1,
+				Wx::TreeItemData->new({
+					type   => 'track_group',
+					prefix => $entry->{prefix},
+					uuids  => \@uuids,
+				}));
+			for my $m (@members)
+			{
+				my $track = $tracks->{$m->{uuid}};
+				my $pts   = $track->{cnt} // (ref $track->{points} eq 'ARRAY' ? scalar @{$track->{points}} : 0);
+				$tree->AppendItem($grp_item, "$track->{name} ($pts pts)", -1, -1,
+					Wx::TreeItemData->new({ type => 'track', uuid => $m->{uuid}, data => $track }));
+			}
+		}
+		else
+		{
+			my $uuid  = $entry->{uuid};
+			my $track = $tracks->{$uuid};
+			my $pts   = $track->{cnt} // (ref $track->{points} eq 'ARRAY' ? scalar @{$track->{points}} : 0);
+			$tree->AppendItem($hdr, "$track->{name} ($pts pts)", -1, -1,
+				Wx::TreeItemData->new({ type => 'track', uuid => $uuid, data => $track }));
+		}
 	}
 
 	return $hdr;
@@ -473,6 +552,12 @@ sub onTreeSelect
 	{
 		$this->_clearEditor();
 		$text = "($node->{kind})";
+	}
+	elsif ($type eq 'track_group')
+	{
+		$this->_clearEditor();
+		my $n = scalar @{$node->{uuids} // []};
+		$text = "Track collection: $node->{prefix}\n$n segments";
 	}
 	elsif ($type eq 'my_waypoints')
 	{
@@ -718,8 +803,13 @@ sub _onSave
 	elsif ($type eq 'track')
 	{
 		my $name  = $this->{ed_name}->GetValue();
+		my $color = $this->{ed_color_choice}->GetSelection();
 		my $t_rec = $db->{tracks}{$uuid};
-		if ($t_rec) { $t_rec->{name} = $name }
+		if ($t_rec)
+		{
+			$t_rec->{name}  = $name;
+			$t_rec->{color} = $color if $color >= 0;
+		}
 		my $pts = $t_rec
 			? ($t_rec->{cnt} // (ref $t_rec->{points} eq 'ARRAY' ? scalar @{$t_rec->{points}} : 0))
 			: 0;
@@ -819,6 +909,87 @@ sub _allTracks
 	my ($this) = @_;
 	my $db = $navFSH::fsh_db;
 	return $db ? ($db->{tracks} // {}) : {};
+}
+
+
+#---------------------------------
+# right-click context menu (stub)
+#---------------------------------
+# Minimal pattern paralleling winE80 / winDatabase: right-click selects
+# the clicked item (if not already part of the selection) and pops a menu
+# with Show / Hide on Map for the current multi-selection.  The full
+# navOperations integration (copy/cut/paste/delete/new) will be added
+# when winFSH is wired into navOps.
+
+sub onTreeRightClick
+{
+	my ($this, $event) = @_;
+	my $item = $event->GetItem();
+	return if !$item->IsOk();
+	my $item_data = $this->{tree}->GetItemData($item);
+	return if !$item_data;
+	my $node = $item_data->GetData();
+	return if ref $node ne 'HASH';
+
+	if (!$this->{tree}->IsSelected($item))
+	{
+		$this->{tree}->UnselectAll();
+		$this->{tree}->SelectItem($item, 1);
+	}
+
+	$this->{_right_click_node} = $node;
+	my $menu = _buildContextMenu($this, $node);
+	$this->PopupMenu($menu, [-1, -1]);
+}
+
+
+sub _buildContextMenu
+{
+	my ($this, $right_click_node) = @_;
+	my $menu = Wx::Menu->new();
+	my $type = $right_click_node->{type} // '';
+	if ($type ne 'root')
+	{
+		$menu->Append($CTX_CMD_SHOW_MAP, 'Show on Map');
+		$menu->Append($CTX_CMD_HIDE_MAP, 'Hide on Map');
+	}
+	return $menu;
+}
+
+
+sub _onShowMap
+{
+	my ($this, $event) = @_;
+	_onShowHideFSHMap($this, 1);
+}
+
+
+sub _onHideMap
+{
+	my ($this, $event) = @_;
+	_onShowHideFSHMap($this, 0);
+}
+
+
+sub _onShowHideFSHMap
+{
+	my ($this, $new_visible) = @_;
+	my $tree = $this->{tree};
+
+	my @items = $tree->GetSelections();
+	return if !@items;
+
+	for my $item (@items)
+	{
+		my $d = $tree->GetItemData($item);
+		next if !$d;
+		my $node = $d->GetData();
+		next if ref $node ne 'HASH';
+		$this->_applyNodeVisibility($item, $node, $new_visible);
+	}
+
+	$this->_refreshAncestorStates($_) for @items;
+	openMapBrowser() if $new_visible && !isBrowserConnected();
 }
 
 

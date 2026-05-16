@@ -109,6 +109,7 @@ sub _nodeKey
     return "header:$node->{kind}"                  if $t eq 'header';
     return 'my_waypoints'                          if $t eq 'my_waypoints';
     return "rp:$node->{route_uuid}:$node->{uuid}" if $t eq 'route_point';
+    return "trackgrp:$node->{prefix}"              if $t eq 'track_group';
     return $node->{uuid};
 }
 
@@ -262,7 +263,7 @@ sub _walkRestoreStateImages
                 $tree->SetItemState($item, 0);
                 return;
             }
-            elsif ($type eq 'header' || $type eq 'my_waypoints' || $type eq 'group')
+            elsif ($type eq 'header' || $type eq 'my_waypoints' || $type eq 'group' || $type eq 'track_group')
             {
                 my ($child, $cookie) = $tree->GetFirstChild($item);
                 while ($child && $child->IsOk())
@@ -473,7 +474,8 @@ sub _loadEditor
                     || $type eq 'route'    || $type eq 'track');
     my $show_latlon  = ($type eq 'waypoint');
     my $show_sym     = ($type eq 'waypoint');
-    my $show_color   = ($type eq 'route');
+    my $show_color   = ($type eq 'route')
+                    || ($type eq 'track' && $this->_wpDataSource() eq 'fsh');
     my $show_comment = ($type eq 'waypoint'
                     || ($type eq 'group' && $this->_groupHasComment())
                     || $type eq 'route');
@@ -835,6 +837,16 @@ sub _applyNodeVisibility
         for my $uuid (keys %$wps)
         {
             _applyWpVisibility($this, $uuid, $wps->{$uuid}, $new_visible);
+        }
+        $tree->SetItemState($item, $new_visible ? 1 : 0);
+        _walkSetSubtreeState($tree, $item, $new_visible);
+    }
+    elsif ($type eq 'track_group')
+    {
+        my $tracks = $this->_allTracks();
+        for my $uuid (@{$node->{uuids} // []})
+        {
+            _applyTrackVisibility($this, $uuid, $tracks->{$uuid}, $new_visible);
         }
         $tree->SetItemState($item, $new_visible ? 1 : 0);
         _walkSetSubtreeState($tree, $item, $new_visible);
