@@ -84,7 +84,10 @@ collections (
   parent_uuid   TEXT REFERENCES collections(uuid),  -- NULL = root-level node
   node_type     TEXT NOT NULL DEFAULT 'branch',     -- 'branch' or 'group'
   comment       TEXT DEFAULT '',
-  position      REAL    NOT NULL DEFAULT 0          -- display order within parent (schema 10.0)
+  position      REAL    NOT NULL DEFAULT 0,         -- display order within parent (schema 10.0)
+  source        TEXT,                               -- see Provenance Columns (schema 11.3)
+  created_ts    INTEGER NOT NULL,                   -- see Provenance Columns (schema 11.3)
+  modified_ts   INTEGER                             -- see Provenance Columns (schema 11.3)
 )
 ```
 
@@ -114,14 +117,16 @@ waypoints (
   wp_type           TEXT NOT NULL DEFAULT 'nav',  -- see Waypoint Types
   color             TEXT DEFAULT NULL,   -- aabbggrr hex (GE byte order); NULL = type default
   depth_cm          INTEGER DEFAULT 0,   -- non-zero only for sounding waypoints
-  created_ts        INTEGER NOT NULL,    -- Unix epoch seconds; never NULL
+  temp_k            INTEGER DEFAULT NULL,-- water temperature x 100 Kelvin (schema 11.2); NULL = no data
+  created_ts        INTEGER NOT NULL,    -- Unix epoch seconds; never NULL; see Provenance Columns
   ts_source         TEXT NOT NULL,       -- see Timestamp Sources
-  source            TEXT,                -- 'kml', 'e80', 'user'
+  source            TEXT,                -- see Provenance Columns
   collection_uuid   TEXT NOT NULL REFERENCES collections(uuid),
   db_version        INTEGER NOT NULL DEFAULT 1,
   e80_version       INTEGER,             -- NULL = never synced to E80
   kml_version       INTEGER,             -- NULL = never exported via versioned KML
-  position          REAL    NOT NULL DEFAULT 0  -- display order within collection (schema 10.0)
+  position          REAL    NOT NULL DEFAULT 0, -- display order within collection (schema 10.0)
+  modified_ts       INTEGER              -- Unix epoch seconds; see Provenance Columns (schema 11.3)
 )
 ```
 
@@ -159,7 +164,10 @@ routes (
   db_version        INTEGER NOT NULL DEFAULT 1,
   e80_version       INTEGER,             -- NULL = never synced to E80
   kml_version       INTEGER,             -- NULL = never exported via versioned KML
-  position          REAL    NOT NULL DEFAULT 0  -- display order within collection (schema 10.0)
+  position          REAL    NOT NULL DEFAULT 0,  -- display order within collection (schema 10.0)
+  source            TEXT,                -- see Provenance Columns (schema 11.3)
+  created_ts        INTEGER NOT NULL,    -- see Provenance Columns (schema 11.3)
+  modified_ts       INTEGER              -- see Provenance Columns (schema 11.3)
 )
 
 route_waypoints (
@@ -190,13 +198,15 @@ tracks (
   ts_end            INTEGER,
   ts_source         TEXT NOT NULL,       -- see Timestamp Sources
   point_count       INTEGER,
-  source_file       TEXT,                -- KML filename when sourced from KML
   collection_uuid   TEXT NOT NULL REFERENCES collections(uuid),
   db_version        INTEGER NOT NULL DEFAULT 1,
   e80_version       INTEGER,             -- NULL = never synced to E80
   kml_version       INTEGER,             -- NULL = never exported via versioned KML
   position          REAL    NOT NULL DEFAULT 0,  -- display order within collection (schema 10.0)
-  companion_uuid    TEXT                 -- paired TRK block UUID (= trk_uuid at FSH/E80 boundary; schema 11.1)
+  companion_uuid    TEXT,                -- paired TRK block UUID (= trk_uuid at FSH/E80 boundary; schema 11.1)
+  source            TEXT,                -- see Provenance Columns (schema 11.3)
+  created_ts        INTEGER NOT NULL,    -- see Provenance Columns (schema 11.3)
+  modified_ts       INTEGER              -- see Provenance Columns (schema 11.3)
 )
 
 track_points (
@@ -231,12 +241,48 @@ Initial entries:
 
 | key | Purpose |
 |-----|---------|
-| `schema_version` | Current value `'11.1'`; `openDB` in `navDB.pm` migrates known prior versions in place |
+| `schema_version` | Current value `'11.3'`; `openDB` in `navDB.pm` migrates known prior versions in place |
 | `uuid_counter` | Integer; persistent counter for navMate UUID generation (bytes 4-5 of the UUID) |
+| `fsh_uuid_counter` | Integer; persistent counter for FSH-flavored UUID generation (`newFSHUUID`) |
 
 The `uuid_counter` entry is incremented atomically within the same transaction as
 each new object INSERT, ensuring the counter and the database objects it identifies
 never diverge.
+
+## Provenance Columns
+
+Every WGRT table (`waypoints`, `routes`, `tracks`, `collections`) carries the
+same three provenance columns, added in schema 11.3:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `source` | TEXT | Originating subsystem for the row. Known values include `'onetimeImport'` (legacy KML rebuild), `'navMate'` (created interactively in winDatabase), and importer-specific strings such as `'import_gdb:<file>'` set by `gpsImport` and the Michelle reconciliation pass. The set is open-ended -- new importers may introduce new values. |
+| `created_ts` | INTEGER | Unix epoch seconds at row creation. NOT NULL. |
+| `modified_ts` | INTEGER | Unix epoch seconds at last UPDATE. NULL only on rows that have never been modified after insert (rare; the insert trigger sets it). |
+
+`created_ts` and `modified_ts` are auto-populated by SQLite triggers
+(`<table>_insert_ts`, `<table>_update_ts`) installed by `_createTriggers` in
+`navDB.pm`. The triggers are idempotent (`CREATE TRIGGER IF NOT EXISTS`) and
+re-installed on every `openDB`, so both fresh databases and migrated databases
+end up with the triggers active.
+
+Trigger semantics:
+
+- **Insert trigger.** AFTER INSERT, `created_ts` and `modified_ts` are set
+  via COALESCE so explicit values provided by the caller win; otherwise both
+  default to `strftime('%s','now')`. `modified_ts` further falls back to
+  `NEW.created_ts` before defaulting to the current time, so an INSERT that
+  specifies `created_ts` but not `modified_ts` initializes both to the same value.
+- **Update trigger.** AFTER UPDATE, `modified_ts` is touched to
+  `strftime('%s','now')` ONLY when the UPDATE itself did not already change
+  `modified_ts` (guarded by `WHEN OLD.modified_ts IS NEW.modified_ts`). An
+  explicit SET on `modified_ts` therefore wins.
+- **Recursion safety** relies on SQLite's default `PRAGMA recursive_triggers = OFF`
+  so the trigger's own UPDATE does not re-fire the trigger.
+
+The deeper semantics of `modified_ts` -- particularly when a transport-layer
+sync should and should not bump it -- are still being worked out in the
+navOperations layer; see [navOperations](navOperations.md).
 
 ## Text Backup
 
@@ -342,8 +388,13 @@ was rejected in favor of simplicity given the small, slow-moving transport list.
 
 ## Timestamp Sources
 
-`ts_source` on both `waypoints` and `tracks` records the provenance and reliability
-of the stored timestamp:
+`ts_source` on `waypoints` and `tracks` records the provenance and reliability
+of the *position-acquisition* timestamp (`waypoints.created_ts`,
+`tracks.ts_start`). It is a domain field, distinct from the
+[Provenance Columns](#provenance-columns) `created_ts` / `modified_ts` /
+`source` that apply uniformly across all four WGRT tables. (`routes` and
+`collections` have no `ts_source` -- they have no acquired-position timestamp
+to characterize.)
 
 | ts_source | Meaning |
 |-----------|---------|
@@ -351,6 +402,13 @@ of the stored timestamp:
 | `'kml_timespan'` | From KML `gx:TimeSpan` - track-level span, accurate |
 | `'phorton'` | Enriched from phorton.com `map_data/` index - see Data Migration |
 | `'import'` | No temporal information available; value is the import timestamp |
+| `'gdb'` | From a `.gpx` / `.gdb` import via `gpsImport` (per-point timestamps) |
+| `'nav'` | Created interactively in winDatabase (`New Waypoint` etc.) |
+| `'user'` | Set by navOpsDB on user-driven waypoint creation paths |
+
+The list is open-ended; `n_defs.pm` exports the canonical four (`$TS_SOURCE_E80`,
+`$TS_SOURCE_KML_TIMESPAN`, `$TS_SOURCE_PHORTON`, `$TS_SOURCE_IMPORT`) but
+importers and editors are not constrained to it.
 
 `ts_source = 'phorton'` is set once during the voyage log import pass and is
 non-reversible - it records that the phorton.com enrichment has been applied.
