@@ -245,6 +245,8 @@ Missing FINISHED for fast/no-op operations (single-WP delete, etc.) is NOT a fai
 
 Known traps documented from prior cycles.
 
+- **No background pollers waiting on navMate state.** `until [ X = 0 ]; do sleep; done` run with `run_in_background: true` hangs across navMate restarts -- the curl returns garbage during a restart, the loop interprets it as "not yet", keeps looping. Five manual kills via /tasks in one hub-alpha session. Use finite-sleep + single curl probe; if not done, say so and let the operator decide rather than spawning a poller.
+
 - **`dialog_state` response body.** Always returns `{"ok":1}` regardless of dialog state. The words "idle" or "active" appear ONLY in the navMate log. Checking the response body for "idle" is always FALSE -- always check the log.
 - **`my_waypoints` no-op path.** When E80 has zero ungrouped WPs, the `my_waypoints` tree node does not exist and `cmd=10222 select=my_waypoints` logs `WARNING: navTest: fire cmd=10222 - no right_click_node set` instead of executing. No ProgressDialog. This is the documented no-op path; PASS if `/api/db` is still empty.
 - **PowerShell variable + colon parsing.** When a variable in a string is immediately followed by `:`, PowerShell parses `$var:` as a drive reference. Always use `${var}` in string interpolation: `"rp:${E80_RT}:${E80_RP1}"`.

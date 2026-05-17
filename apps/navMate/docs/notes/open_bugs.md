@@ -39,6 +39,44 @@ threads, suggesting it may be a general property of how Perl thread locks
 interact with the Windows message pump or console subsystem - not specific
 to navMate's code. No root cause identified.
 
+**Post-freeze console-charset corruption (2026-05-17, hub-alpha context):**
+When navMate is frozen and Patrick presses Ctrl-C in its cmd.exe window to
+force termination, the exit path runs through `NET/b_serial.pm:70` ("ctrl-C
+pressed ...") and `NET/b_serial.pm:114` ("EXITING PROGRAM from serial
+thread()"). navMate exits, but the cmd.exe terminal is left with its
+character set in **line-drawing / special-character mode** - all subsequent
+output renders as box-drawing or APL symbols, including the shell prompt
+itself. Example: `C:\base\apps\raymarine\apps\navMate>` displays as
+`C:\␉▒⎽␊\▒⎻⎻⎽\⎼▒≤└▒⎼␋┼␊\▒⎻⎻⎽\┼▒┴M▒├␊>`. Recovery requires closing and
+reopening the cmd.exe window.
+
+Mechanism: this is the classic **DEC Special Graphics Character Set**
+designated to G0 - a sticky VT terminal state, NOT a codepage switch
+(`chcp 437` won't fix it). The terminal received either an `ESC ( 0`
+designation sequence (0x1B 0x28 0x30) or a bare SHIFT-OUT byte (0x0E) with
+G1 already pre-loaded with Special Graphics (Windows Terminal does this
+by default). The mapping is identifiable - e.g. `s`(0x73)->⎽, `e`(0x65)->␊,
+`r`(0x72)->⎼, `i`(0x69)->␋, `a`(0x61)->▒, `l`(0x6c)->┌, `p`(0x70)->⎻,
+`m`(0x6d)->└, `b`(0x62)->␉, `f`(0x66)->°, `v`(0x76)->┴, `y`(0x79)->≤,
+`_`(0x5f)->blank.
+
+**Suspicion ("serial" smell):** the first two log lines that contained
+mangled bytes both reference `NET/b_serial.pm`, and the Ctrl-C exit handler
+itself lives in that module. The b_serial implementation in navMate is
+derived from `NET/b_serial.pm` and inherits its shared-memory plumbing.
+Patrick recalls a long-standing Perl `threads::shared` gotcha: **you cannot
+change the type of a shared scalar by assignment** - e.g. assigning `''`
+(or `0`) to a shared hashref does NOT clear or replace the hash, and the
+ensuing type mismatch under GC in a multi-thread context can produce
+random memory corruption including stray bytes being emitted to the
+console. The correct idiom is `shared_clone({})` or `undef` (and `undef`
+only when the slot's type is allowed to be undef). If b_serial's Ctrl-C
+handler is doing any `$shared_var = ''` assignments on hash/array shared
+slots during teardown, that could explain both the charset escape leak AND
+why the corruption appears specifically on this exit path. Worth grepping
+`NET/b_serial.pm` for shared-scalar assignments to non-matching types as
+the first diagnostic step.
+
 **Status:** Unresolved. TOP PRIORITY when next reproducible.
 
 ---

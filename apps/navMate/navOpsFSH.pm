@@ -927,10 +927,27 @@ sub _pasteGroupToFSH
 	if ($cb && $cb->{cut_flag})
 	{
 		# Cut-paste cross-spoke: remove the source group + members from
-		# the source spoke.  WPs cleaned first so they unhook from any
-		# routes referencing them before the group shell goes.
-		_cutPasteCleanupWp($cb, $_->{uuid}, $tree) for @$members;
-		_cutPasteCleanupGroup($cb, $nav_uuid, $tree);
+		# the source spoke.  For source=e80, mirror the _clearE80_DB
+		# ordering: delete the group SHELL first so member WPs become
+		# orphans, then delete each WP (E80 rejects deleting a WP that
+		# is still a group member).  skip_group=1 on the per-WP cleanup
+		# avoids redundant modifyGroup calls that would fail anyway since
+		# the group is gone.  modifyRoute (route-detach) still runs so
+		# any routes referencing these WPs stay consistent.
+		my $src = $cb->{source} // '';
+		if ($src eq 'e80')
+		{
+			navOps::_cutE80Group($nav_uuid, $tree);
+			navOps::_cutE80Waypoint($_->{uuid}, $tree, 1) for @$members;
+		}
+		else
+		{
+			# Source=database / source=fsh: original ordering -- members
+			# first (so their group-detach happens while group still
+			# exists locally), then the group shell.
+			_cutPasteCleanupWp($cb, $_->{uuid}, $tree) for @$members;
+			_cutPasteCleanupGroup($cb, $nav_uuid, $tree);
+		}
 	}
 }
 

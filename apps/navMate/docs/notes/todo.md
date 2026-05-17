@@ -8,23 +8,10 @@ own context here.
 
 ## Next
 
-### [testplan cleanup] - there are a number (all) of the routes in the current
-database that carry non-exact mappings to colors on the E80.  There are other
-issues as well, most predominantly the possibility that the particular items
-selected in the uuid map in the runbook might incur truncation warnings if used.
-
-Before the next testrun not only do the continued existence of the uuid/items
-need to be confirmed, but any that might trigger name uniqueness traps that
-didnt occur need to be prevented from unintentionally being used in the runbook.
-
-To the degree that the testplan is intended as a destructive test to the database
-(i.e. a revert must be done before using the actual database after a test run),
-the issue is actually to make sure that the test running claude (the runbook)
-knows how to deal with the abort/continue warnings and continue in spite of them.
-
-Apart from that, and not, per-se, to be driven by the runbook, these routes in
-the current database corrected so they have exact two way color mappings.
-
+### [continue module comments] - please add a  "# continued ..." comment to the
+navOps "continuation modules" (navOpsDB, navOpsE80, etc) and any other "continuation modules"
+in this project that dont have such a comment. Also add this to your global perl memory
+anytime you create or refactor into a new continuation module.
 
 
 ### [db_version increment wiring]

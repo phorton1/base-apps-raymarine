@@ -137,10 +137,15 @@ direction strings.
 ### Spoke-wide name and uuid-presence sets
 
 `_spokeNameAndUUIDSets($panel)` in `navOps.pm` returns `(\%wp_names,
-\%grp_names, \%rte_names, \%have_uuid)` for the spoke. Used by paste
-pre-flight Step 8 (spoke-wide name collision) and by the route-paste-
-member-WP-exception logic. New spokes extend `_spokeNameAndUUIDSets` with
-a fresh `elsif ($panel eq '<spoke>')` branch.
+\%grp_names, \%rte_names, \%have_uuid)` for the spoke. The three `*_names`
+hashes are `name -> UUID` maps (navMate canonical no-dash form), not just
+name presence sets, so the SS10.2 collision check can distinguish "same
+UUID, in-place update" (skip) from "different UUID, real name collision"
+(error). `have_uuid` is the set of all WP UUIDs at the spoke (standalone +
+group-embedded). Used by paste pre-flight Step 8 (spoke-wide name
+collision) and by the route-paste-member-WP-exception logic. New spokes
+extend `_spokeNameAndUUIDSets` with a fresh `elsif ($panel eq '<spoke>')`
+branch.
 
 ## Synchronous vs Asynchronous Spokes
 

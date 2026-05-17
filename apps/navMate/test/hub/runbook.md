@@ -136,9 +136,9 @@ Start-Sleep 8
 
 ---
 
-#### Test 4 -- GUARD: Paste FSH Track -> E80 silently skipped
+#### Test 4 -- GUARD: Paste FSH Track -> E80 blocked at tracks-header guard
 
-Uses [FSH_TestTrack] = `A24E-672E-FE06-0A80` ("Track2-006"). `_pasteAllToE80` skips type='track' at line 1011-1014 with debug log; no ERROR sentinel fires.
+Uses [FSH_TestTrack] = `A24E-672E-FE06-0A80` ("Track2-006"). The `navOps.pm:877` guard ("Cannot paste to E80 tracks header -- tracks are read-only") fires before any spoke-level dispatch -- this guard is E80-only (FSH alpha Bug 1 fix restricted it to E80; FSH header paste is allowed). The guard short-circuits at `_doPaste` so `_pasteAllToE80`'s track-type skip (line 1011-1014) is never reached.
 
 ```powershell
 $tk_before_e80 = @((curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json).tracks.PSObject.Properties).Count
@@ -155,9 +155,9 @@ $tk_after_fsh = @((curl.exe -s "http://localhost:9883/api/fsh" | ConvertFrom-Jso
 Write-Host "Tracks before: E80=$tk_before_e80 FSH=$tk_before_fsh; after: E80=$tk_after_e80 FSH=$tk_after_fsh"
 ```
 
-**Pass:** E80 tracks count unchanged (zero before, zero after). FSH tracks count unchanged. Log contains `_pasteAllToE80: skipping track 'Track2-006'` (or similar). ProgressDialog STARTED + FINISHED (empty work). No ERROR sentinel.
+**Pass:** E80 tracks count unchanged. FSH tracks count unchanged. Log contains `ERROR - Cannot paste to E80 tracks header -- tracks are read-only`. NO ProgressDialog (guard fires pre-write). Neither side mutated.
 
-**Note:** If E80 already had tracks from a track module run, the count assertion remains "unchanged"; only the cross-spoke item is what must NOT appear.
+**Note:** The runbook's first authoring predicted a silent-skip outcome based on `_pasteAllToE80`'s track-type branch -- that branch is unreachable for a tracks-header destination because the upstream guard fires first. The hard-abort sentinel is the correct guard behavior; "silent skip" would be reachable only for a track item pasted at a non-tracks-header destination (e.g. mixed multi-select where the destination is the groups header) -- such a flow isn't exercised in this runbook.
 
 ---
 
@@ -315,15 +315,20 @@ Critical: source-side cleanup dispatch. The analog of the navOpsDB cut-dispatch 
 
 #### Test 12 -- Cut E80 WP, Paste to FSH
 
-Cut [HUB_FRESH_E80_WP] (the fresh-UUID "Waypoint 10" on E80 from hub.9). E80-side cleanup renders ProgressDialog. FSH ends up with a record at the fresh navMate UUID (NOT at the original FSH UUID).
-
-Resolve the fresh UUID at runtime from `/api/db`:
+Setup: PASTE_NEW [IsolatedWP1] (BOCAS1) from DB to E80 first -- this lands a fresh-UUID "BOCAS1" on E80. The name "BOCAS1" is NOT in the FSH fixture (50 "Waypoint NN" + Timiteo + Michel_* groups; no BOCAS1), so the cut-to-FSH won't collide on name. Cut that fresh-UUID E80 WP and paste to FSH. E80-side cleanup renders ProgressDialog.
 
 ```powershell
+# Setup: paste-new BOCAS1 from DB to E80 (lands a fresh-UUID 'BOCAS1' on E80
+# whose name is not on FSH and so won't collide on the cut-paste).
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
+Start-Sleep 6
+
 $db = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
-$fresh_wp = $db.waypoints.PSObject.Properties | Where-Object { $_.Value.name -eq 'Waypoint 10' } | Select-Object -First 1
+$fresh_wp = $db.waypoints.PSObject.Properties | Where-Object { $_.Value.name -eq 'BOCAS1' } | Select-Object -First 1
 $HUB_FRESH_E80_WP = $fresh_wp.Name
-Write-Host "Cutting E80 WP: $HUB_FRESH_E80_WP"
+Write-Host "Cutting E80 WP: $HUB_FRESH_E80_WP (name BOCAS1)"
 
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.12" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$HUB_FRESH_E80_WP&cmd=10201" | Out-Null
@@ -332,9 +337,11 @@ curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&rig
 Start-Sleep 6
 ```
 
-**Pass:** ProgressDialog (for E80-side delete cleanup) STARTED + FINISHED. `/api/db` waypoints no longer contains `$HUB_FRESH_E80_WP`. `/api/fsh` waypoints gains a record at navMate-form `$HUB_FRESH_E80_WP` converted to FSH-form (via `dbToFsh`).
+**Pass:** ProgressDialog (for E80-side delete cleanup) STARTED + FINISHED. `/api/db` waypoints no longer contains `$HUB_FRESH_E80_WP`. `/api/fsh` waypoints gains a "BOCAS1" record at navMate-form `$HUB_FRESH_E80_WP` converted to FSH-form (via `dbToFsh`).
 
 **Bug probe:** if FAIL with E80-side WP still present after the paste, the cross-spoke CUT cleanup dispatch is broken (analog of the navOpsDB bug -- `_cutE80*` may be misrouted to a wrong helper).
+
+**Historical note:** original runbook used the fresh-UUID "Waypoint 10" from hub.9 as the cut source. That FAILed because FSH still had the original "Waypoint 10" at a different UUID -- real name collision at SS10.2 step 8. The BOCAS1 source sidesteps the collision because "BOCAS1" is absent from the FSH fixture.
 
 ---
 
@@ -363,10 +370,10 @@ curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.14" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=c482cba0d14e67b2&cmd=10201" | Out-Null
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
-Start-Sleep 10
+Start-Sleep 30
 ```
 
-**Pass:** ProgressDialog (E80 group delete) STARTED + FINISHED. `/api/db` no longer contains group `c482cba0d14e67b2` and its 6 members (or members may persist as ungrouped depending on cut semantics -- document actual behavior). `/api/fsh` groups still contains `C482-CBA0-D14E-67B2` with 6 wpts.
+**Pass:** ProgressDialog (E80 group delete) STARTED + FINISHED. `/api/db` no longer contains group `c482cba0d14e67b2` and its 6 members. `/api/fsh` groups still contains `C482-CBA0-D14E-67B2` with 6 wpts. **Long sleep**: the cleanup queues 1 deleteGroup + 6 modifyRoute (route detach) + 6 deleteWaypoint = 13 WPMGR commands; per-WP modifyGroup step is skipped (the group is being deleted anyway) but the queue still needs time to drain.
 
 **Probe note:** Cross-spoke CUT for a destination-already-present group is a coverage gap until tested. The expected behavior is "E80 source cleaned up; FSH destination already has the data so no real write." Document actual outcome.
 
@@ -443,23 +450,33 @@ Start-Sleep 6
 Source: E80 group `c482cba0d14e67b2` (still present after Test 14 cut/paste? -- if cut removed it from E80, re-establish via FSH->E80 first). NOTE: depends on Test 14's actual outcome. If E80 no longer has the group, skip this test and document.
 
 ```powershell
-# Verify precondition: group still on E80
+# Ensure precondition: group must be on E80. hub.14's cut may have removed it.
 $db = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
 $grp_present = [bool]($db.groups.PSObject.Properties | Where-Object { $_.Name -eq 'c482cba0d14e67b2' })
 
 if (-not $grp_present)
 {
-    Write-Host "hub.18: precondition not met -- group absent from E80 (Test 14 removed it); re-establish before continuing"
-    # Re-establish via FSH -> E80 paste
+    Write-Host "hub.18: precondition not met -- re-establishing Timiteo group on E80 via FSH paste"
     curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=C482-CBA0-D14E-67B2&cmd=10200" | Out-Null
     Start-Sleep 1
     curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
-    Start-Sleep 10
+    Start-Sleep 12
+    $db = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
+    $grp_present = [bool]($db.groups.PSObject.Properties | Where-Object { $_.Name -eq 'c482cba0d14e67b2' })
+    if (-not $grp_present)
+    {
+        Write-Host "hub.18: FAIL -- could not re-establish Timiteo group on E80; skipping"
+        # If we can't get the precondition, this test is NOT_RUN, not FAIL.
+        # The harness should record NOT_RUN(precondition_unmet) and continue.
+    }
 }
 
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.18" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=c482cba0d14e67b2&right_click=c482cba0d14e67b2&cmd=10251" | Out-Null
-Start-Sleep 3
+if ($grp_present)
+{
+    curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.18" | Out-Null
+    curl.exe -s "http://localhost:9883/api/test?panel=e80&select=c482cba0d14e67b2&right_click=c482cba0d14e67b2&cmd=10251" | Out-Null
+    Start-Sleep 3
+}
 ```
 
 **Pass:** NO ProgressDialog. FSH group `C482-CBA0-D14E-67B2` still present with 6 wpts. No new group. Log shows `PUSH TO FSH (e80) FINISHED`.
@@ -484,54 +501,65 @@ Start-Sleep 8
 
 #### Test 20 -- E80->FSH->E80 WP round-trip
 
-Use [HUB_FRESH_E80_WP] from hub.9 (the fresh "Waypoint 10" on E80 with navMate-assigned UUID; FSH does not have this UUID natively). Hop 1: E80->FSH PASTE (lands at fresh UUID on FSH). Hop 2: FSH->E80 PASTE_NEW (lands as second fresh UUID on E80, distinct from source). Compare fields.
+Use "Waypoint 14" at `83b2167d3f0037d9` -- on E80 after hub.13 (cut from FSH), no longer on FSH. Clean source for the round-trip: hop 1's same-UUID PASTE lands at a slot FSH doesn't have AND at a name FSH doesn't have, so no UUID-match and no name-collision. Hop 2 PASTE_NEW mints a fresh-UUID record on E80; deconflict will rename it because the source's name still exists on E80.
+
+Earlier versions of this test used "Waypoint 10" sourced from hub.9 -- that record's *name* still lives on FSH at a different UUID (the original FSH WP10 at `83B2-167D-3F00-ED99`), so hop 1 hit SS10.2 step 8 (different-UUID name collision) and the round-trip never actually round-tripped. The Waypoint 14 source sidesteps this because hub.13's cut removed the FSH-side record entirely.
 
 ```powershell
-# Resolve source UUID (fresh "Waypoint 10" from hub.9 -- may have been cut in hub.12)
+$src_uuid = '83b2167d3f0037d9'
 $db = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
-$src = $db.waypoints.PSObject.Properties | Where-Object { $_.Value.name -eq 'Waypoint 10' } | Select-Object -First 1
+$src = $db.waypoints.$src_uuid
 if (-not $src)
 {
-    Write-Host "hub.20: re-establishing 'Waypoint 10' on E80 via FSH paste-new"
-    curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=83B2-167D-3F00-ED99&cmd=10200" | Out-Null
+    Write-Host "hub.20: NOT_RUN -- source 'Waypoint 14' missing on E80 (hub.13 precondition not met)"
+}
+else
+{
+    $src_name = $src.name
+    $src_lat  = $src.lat
+    $src_lon  = $src.lon
+    Write-Host "hub.20 src: $src_uuid name='$src_name' lat=$src_lat lon=$src_lon"
+
+    # Snapshot E80 UUIDs BEFORE hop 2 so we can identify the fresh dst by set-diff
+    $db_before_uuids = @{}
+    foreach ($p in $db.waypoints.PSObject.Properties) { $db_before_uuids[$p.Name] = 1 }
+
+    curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.20" | Out-Null
+
+    # Hop 1: E80 -> FSH (same UUID, no collision)
+    curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$src_uuid&cmd=10200" | Out-Null
+    Start-Sleep 1
+    curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+    Start-Sleep 3
+
+    # Hop 2: FSH -> E80 PASTE_NEW (fresh UUID; name deconflicted because source name still on E80)
+    $u = $src_uuid.ToUpper()
+    $fsh_uuid_hop1 = "$($u.Substring(0,4))-$($u.Substring(4,4))-$($u.Substring(8,4))-$($u.Substring(12,4))"
+    curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=$fsh_uuid_hop1&cmd=10200" | Out-Null
     Start-Sleep 1
     curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
-    Start-Sleep 6
-    $db = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
-    $src = $db.waypoints.PSObject.Properties | Where-Object { $_.Value.name -eq 'Waypoint 10' } | Select-Object -First 1
+    Start-Sleep 8
+
+    $db_after = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
+    $dst = $null
+    foreach ($p in $db_after.waypoints.PSObject.Properties) {
+        if (-not $db_before_uuids[$p.Name] -and $p.Name -ne $src_uuid) { $dst = $p; break }
+    }
+    $log = curl.exe -s "http://localhost:9883/api/log?since=mark"
+    $err = ($log -match 'ERROR -|IMPLEMENTATION ERROR')
+    if ($dst) {
+        $dst_lat   = $dst.Value.lat
+        $dst_lon   = $dst.Value.lon
+        $lat_match = ([math]::Abs($src_lat - $dst_lat) -lt 0.0001)
+        $lon_match = ([math]::Abs($src_lon - $dst_lon) -lt 0.0001)
+        Write-Host "hub.20: dst=$($dst.Name) name='$($dst.Value.name)' lat_match=$lat_match lon_match=$lon_match err=$err"
+    } else {
+        Write-Host "hub.20: NO NEW WP FOUND on E80 after hop2; err=$err"
+    }
 }
-$src_uuid    = $src.Name
-$src_name    = $src.Value.name
-$src_lat     = $src.Value.lat
-$src_lon     = $src.Value.lon
-
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.20" | Out-Null
-
-# Hop 1: E80 -> FSH (same UUID)
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$src_uuid&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
-Start-Sleep 2
-
-# Hop 2: FSH -> E80 PASTE_NEW (fresh UUID)
-$fsh_uuid_hop1 = (dbToFsh $src_uuid)
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=$fsh_uuid_hop1&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
-Start-Sleep 6
-
-# Find new E80 record (second "Waypoint 10" with different UUID from $src_uuid)
-$db_after = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
-$candidates = $db_after.waypoints.PSObject.Properties | Where-Object { $_.Value.name -eq 'Waypoint 10' -and $_.Name -ne $src_uuid }
-$dst = $candidates | Select-Object -First 1
-$dst_lat = $dst.Value.lat
-$dst_lon = $dst.Value.lon
-$lat_match = ([math]::Abs($src_lat - $dst_lat) -lt 0.0001)
-$lon_match = ([math]::Abs($src_lon - $dst_lon) -lt 0.0001)
-Write-Host "Round-trip lat: $src_lat -> $dst_lat (match=$lat_match); lon: $src_lon -> $dst_lon (match=$lon_match)"
 ```
 
-**Pass:** Two ProgressDialog cycles (Hop 1 had none -- FSH-side; Hop 2 has one -- E80-side PASTE_NEW). lat/lon match within 1e-4. Source and destination UUIDs differ. Name preserved. Source still on E80 (PASTE_NEW didn't consume it).
+**Pass:** Hop 1 = no ProgressDialog (FSH-side, synchronous). Hop 2 = ProgressDialog 'Paste New' STARTED + FINISHED. lat/lon match within 1e-4. Source and destination UUIDs differ. Source still on E80 (PASTE_NEW didn't consume it). No `ERROR -` sentinel. Destination name will be deconflicted (`Waypoint 14 (2)` or similar) because "Waypoint 14" already exists on E80 at the source UUID -- this is expected and is the navMate-canonical PASTE_NEW behavior.
 
 ---
 
@@ -579,32 +607,45 @@ Start-Sleep 2
 $f = curl.exe -s "http://localhost:9883/api/fsh" | ConvertFrom-Json
 $u1_fsh = (dbToFsh $u1)
 $u2_fsh = (dbToFsh $u2)
-$present_1 = [bool]$f.waypoints.$u1_fsh
-$present_2 = [bool]$f.waypoints.$u2_fsh
-Write-Host "FSH has $u1_fsh = $present_1; $u2_fsh = $present_2"
+# Build the set of all FSH WP UUIDs (top-level + group-embedded)
+$fsh_uuids = @{}
+foreach ($p in $f.waypoints.PSObject.Properties) { $fsh_uuids[$p.Name] = 1 }
+foreach ($g in $f.groups.PSObject.Properties) {
+    foreach ($w in $g.Value.wpts) {
+        if ($w.uuid) { $fsh_uuids[$w.uuid] = 1 }
+    }
+}
+$present_1 = [bool]$fsh_uuids[$u1_fsh]
+$present_2 = [bool]$fsh_uuids[$u2_fsh]
+Write-Host "FSH has $u1_fsh = $present_1; $u2_fsh = $present_2 (top-level + group-embedded)"
 ```
 
 **Pass:** NO ProgressDialog. Both UUIDs present on FSH (either pre-existing or newly inserted). No ERROR. No name-collision sentinel (UUIDs match).
 
 ---
 
-#### Test 23 -- Multi-select FSH Group + Route, Paste to E80
+#### Test 23 -- GUARD: Heterogeneous clipboard (Group + Route) blocked
 
-Heterogeneous types. Per-type dispatch in `_pasteAllToE80` must process group before route (route's member-existence check requires group members already pasted).
+The homogeneity check at `navOps.pm:1052` rejects clipboards that mix types, with one special exception for waypoint+group (the natural multi-select-from-group-tree case). Group+Route is NOT a permitted mix and must hard-abort before any spoke-side write.
 
-Use [FSH_GroupInRoute] + [FSH_TestRoute]. Both share members t01..t06 so the route's members are satisfied by the group's paste (if not already on E80).
+Use [FSH_GroupInRoute] + [FSH_TestRoute] (multi-select a group and a route on FSH; paste to E80).
 
 ```powershell
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.23" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=C482-CBA0-D14E-67B2,C482-CB9E-D14E-67B2&cmd=10200" | Out-Null
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
-Start-Sleep 12   # group + route on E80
+Start-Sleep 3
+
+$r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
+$hetero_guard = @($r.lines | Where-Object { $_.text -match 'paste requires homogeneous content' }).Count
+$err          = @($r.lines | Where-Object { $_.text -match 'ERROR -|IMPLEMENTATION ERROR' }).Count
+Write-Host "hub.23: hetero_guard=$hetero_guard err=$err"
 ```
 
-**Pass:** ProgressDialog STARTED + FINISHED. `/api/db` groups contains `c482cba0d14e67b2` (already present from Test 2; no-op) and routes contains `c482cb9ed14e67b2` (already present from Test 3; no-op). No ERROR sentinel about member-WP-missing. No type-ordering bug visible.
+**Pass:** `hetero_guard=1` -- the homogeneity sentinel fired. No spoke mutation. NO wxProgressDialog (guard aborts before `_pasteAllToE80`; the op-boundary STARTED/FINISHED markers may still appear in the log).
 
-**Probe note:** if this fires `ERROR - route has missing member WPs`, the per-type dispatch did not process the group before the route. That is a real bug.
+**Note:** earlier versions of this test asserted that per-type dispatch would handle group+route automatically. That is not the design -- only wp+group is permitted to mix. A real positive multi-select test for the wp+group special case could be added separately; hub.22 already exercises the all-waypoints positive path.
 
 ---
 
@@ -671,39 +712,46 @@ Write-Host "ERROR sentinel: $has_error; Name-collision sentinel: $has_name_colli
 
 #### Test 26 -- GUARD: Intra-clipboard name collision
 
-Hard-abort when multi-select contains two same-named WPs. Establish two same-named WPs on E80 first (PASTE_NEW two copies of [FSH_IsolatedWP1]).
+Hard-abort when a clipboard contains two same-named items of the same type. Source from the DATABASE panel rather than E80/FSH -- those spokes enforce name uniqueness, so an "intra-clipboard collision" can only originate from a spoke that allows same-named records, which is DB by design (records distinguished by UUID).
+
+The baseline `navMate.db` has multiple WPs sharing names (e.g. several `BOCAS1` records). Find two same-named DB WPs at runtime, multi-select them, copy, and paste to FSH header. The SS10.2 step-7 intra-clipboard check should fire.
 
 ```powershell
-# Create two "Waypoint 25" fresh-UUID records on E80
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=80B2-C48A-5400-D3AE&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
-Start-Sleep 6
-
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=80B2-C48A-5400-D3AE&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
-Start-Sleep 6
-
-# Find two same-named E80 WPs (any pair with name = 'Waypoint 25')
-$db = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
-$pair = @($db.waypoints.PSObject.Properties | Where-Object { $_.Value.name -eq 'Waypoint 25' } | Select-Object -First 2)
-$p1 = $pair[0].Name
-$p2 = $pair[1].Name
-Write-Host "Multi-selecting same-named E80 WPs: $p1, $p2"
-
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.26" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$p1,$p2&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
-Start-Sleep 2
-
-$log = curl.exe -s "http://localhost:9883/api/log?since=mark"
-$intra_collision = $log -match "intra-clipboard" -or $log -match "duplicate name" -or $log -match "two items with name"
-Write-Host "Intra-clipboard collision sentinel: $intra_collision"
+# Find two same-named DB WPs
+$nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
+$by_name = @{}
+foreach ($w in $nmdb.waypoints) {
+    $n = $w.name
+    if (-not $by_name.ContainsKey($n)) { $by_name[$n] = @() }
+    $by_name[$n] += $w.uuid
+}
+$dup_name = $null
+foreach ($n in $by_name.Keys) {
+    if ($by_name[$n].Count -ge 2) { $dup_name = $n; break }
+}
+if (-not $dup_name) {
+    Write-Host "hub.26: NOT_RUN (no same-named WP pair in DB)"
+}
+else {
+    $uuids = $by_name[$dup_name]
+    $p1 = $uuids[0]
+    $p2 = $uuids[1]
+    Write-Host "Pair: $p1, $p2 (both named '$dup_name')"
+    curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.26" | Out-Null
+    curl.exe -s "http://localhost:9883/api/test?panel=database&select=$p1,$p2&cmd=10200" | Out-Null
+    Start-Sleep 1
+    curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+    Start-Sleep 2
+    $r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
+    $intra = @($r.lines | Where-Object { $_.text -match "Clipboard contains duplicate|duplicate.*name|intra-clipboard" }).Count
+    $err = @($r.lines | Where-Object { $_.text -match "ERROR -|IMPLEMENTATION ERROR" } | Where-Object { $_.text -notmatch "Could not send content" }).Count
+    Write-Host "hub.26: name='$dup_name' intra=$intra err=$err"
+}
 ```
 
-**Pass:** NO ProgressDialog. Hard-abort ERROR sentinel referencing intra-clipboard name collision. FSH state unchanged (no fresh records inserted).
+**Pass:** NO ProgressDialog. ERROR sentinel `Clipboard contains duplicate waypoint name '$name' -- aborting` (from `navOps.pm:1057`). FSH state unchanged.
+
+**Note:** sourcing from DB is the only way to construct an "intra-clipboard duplicate" clipboard since E80 and FSH enforce per-spoke name uniqueness. Earlier versions of this test tried to source from E80 -- that was a malformed test design (testing an impossible precondition).
 
 ---
 
@@ -716,23 +764,31 @@ Wait -- pasting at a node on the SAME panel where the clipboard came FROM is a s
 Actually the FSH route's t01 has FSH UUID `C482-CB98-D14E-67B2`. Its navMate-form is `c482cb98d14e67b2`. After Test 2 (FSH->E80 paste of Timiteo group), E80 has the member at that UUID.
 
 ```powershell
-# Copy FSH route; paste at E80 t01 (which is a descendant of the route)
+# Copy FSH route; attempt to paste at an E80 individual waypoint node
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.27" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=C482-CB9E-D14E-67B2&cmd=10200" | Out-Null
 Start-Sleep 1
-# Right-click target = E80 t01 (member of the route in clipboard)
+# Right-click target = E80 t01 (an individual waypoint node, also a member
+# of the route in clipboard).  The expected block is the upstream guard at
+# navOps.pm "Cannot paste at an individual E80 waypoint node".  Reaching
+# the navOpsE80.pm:1459 IMPLEMENTATION ERROR catch-all is a FAIL.
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=c482cb98d14e67b2&right_click=c482cb98d14e67b2&cmd=10210" | Out-Null
 Start-Sleep 2
 
-$log = curl.exe -s "http://localhost:9883/api/log?since=mark"
-$descendant_block = $log -match "descendant" -or $log -match "cannot paste.*into.*clipboard" -or $log -match "ancestor"
-Write-Host "Descendant guard sentinel: $descendant_block"
+$r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
+$clean_guard = @($r.lines | Where-Object { $_.text -match "Cannot paste at an individual E80 waypoint node" }).Count
+$impl_err    = @($r.lines | Where-Object { $_.text -match "IMPLEMENTATION ERROR.*paste handler" }).Count
+$err         = @($r.lines | Where-Object { $_.text -match "ERROR -|IMPLEMENTATION ERROR" } | Where-Object { $_.text -notmatch "Could not send content" }).Count
+Write-Host "hub.27: clean_guard=$clean_guard impl_err=$impl_err err=$err"
 ```
 
-**Pass:** NO ProgressDialog. Descendant-block ERROR sentinel in log. E80 state unchanged.
+**Pass:** `clean_guard=1` and `impl_err=0` -- the upstream guard at navOps.pm fired with the proper sentinel and the catch-all in navOpsE80.pm:1459 was NOT reached. E80 state unchanged.
 
-**Probe note:** cross-spoke descendant detection is a subtle case -- the clipboard's items are FSH-form UUIDs internally; the destination tree's node is an E80-form UUID. `_destIsDescendantOfClipboard` must do the conversion. Verify the guard fires.
+**FAIL conditions:**
+- `impl_err >= 1`: the catch-all was hit, meaning the upstream guard didn't catch this code path
+- `clean_guard == 0`: neither guard fired; the bad op may have proceeded
 
+**Note:** this test was previously categorized as a "descendant-of-clipboard" probe, but the actual block point for cross-spoke paste-at-WP-node is the simpler "no paste at individual WP node" guard, regardless of whether the target WP is a clipboard descendant. Same-spoke descendant detection (`_destIsDescendantOfClipboard`) is a separate concern not exercised by this test.
 ---
 
 #### Test 28 -- Route paste cross-spoke with missing member WPs

@@ -148,21 +148,27 @@ sub _e80CountWPDeleteOps
 sub _e80DeleteWP
     # Queue direct API calls to fully remove $wp_uuid from E80:
     # modifyRoute for each containing route (excluding $skip_route),
-    # modifyGroup if in a group, then deleteWaypoint.
+    # modifyGroup if in a group (unless $skip_group), then deleteWaypoint.
+    # $skip_group is used by cross-spoke cut-paste cleanup of a whole group,
+    # where the group is being deleted in the same batch so per-WP group
+    # detachment is wasted work and adds queue pressure.
 {
-    my ($wpmgr, $wp_uuid, $skip_route, $progress) = @_;
+    my ($wpmgr, $wp_uuid, $skip_route, $progress, $skip_group) = @_;
     for my $r_uuid (_e80WPRoutes($wpmgr, $wp_uuid, $skip_route))
     {
         my $route = $wpmgr->{routes}{$r_uuid};
         my @new   = grep { $_ ne $wp_uuid } @{$route->{uuids} // []};
         $wpmgr->modifyRoute({uuid => $r_uuid, waypoints => \@new, progress => $progress});
     }
-    my $g = _e80WPGroup($wpmgr, $wp_uuid);
-    if ($g)
+    if (!$skip_group)
     {
-        my $group = $wpmgr->{groups}{$g};
-        my @new   = grep { $_ ne $wp_uuid } @{$group->{uuids} // []};
-        $wpmgr->modifyGroup({uuid => $g, members => \@new, progress => $progress});
+        my $g = _e80WPGroup($wpmgr, $wp_uuid);
+        if ($g)
+        {
+            my $group = $wpmgr->{groups}{$g};
+            my @new   = grep { $_ ne $wp_uuid } @{$group->{uuids} // []};
+            $wpmgr->modifyGroup({uuid => $g, members => \@new, progress => $progress});
+        }
     }
     $wpmgr->deleteWaypoint($wp_uuid, $progress, 1);
 }
@@ -1478,10 +1484,10 @@ sub _pasteE80
 
 sub _cutE80Waypoint
 {
-    my ($uuid, $tree) = @_;
+    my ($uuid, $tree, $skip_group) = @_;
     my $wpmgr = _wpmgr();
     return if !$wpmgr;
-    _e80DeleteWP($wpmgr, $uuid, undef, undef);
+    _e80DeleteWP($wpmgr, $uuid, undef, undef, $skip_group);
 }
 
 

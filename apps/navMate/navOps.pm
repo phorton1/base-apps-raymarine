@@ -878,6 +878,20 @@ sub _doPaste
 		return;
 	}
 
+	# An individual E80 waypoint node is not a valid paste destination.
+	# (PASTE_BEFORE / PASTE_AFTER at a route_point node IS valid and
+	# uses type='route_point', not 'waypoint'.)  This guard is the
+	# upstream counterpart of the IMPLEMENTATION ERROR catch-all at
+	# navOpsE80.pm:1459; that catch-all stays as defensive backstop but
+	# should never be reached from normal user actions once this guard
+	# is in place.
+	if ($panel eq 'e80'
+	 && ($right_click_node->{type} // '') eq 'waypoint')
+	{
+		error("Cannot paste at an individual E80 waypoint node -- pick a header or group");
+		return;
+	}
+
 	# Step 1: Ancestor-wins resolution (SS6.2)
 	my @orig_items = @{$cb->{items}};
 	my @resolved   = _resolveAncestorWins(\@orig_items);
