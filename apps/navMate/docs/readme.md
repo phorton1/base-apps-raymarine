@@ -8,7 +8,8 @@
 **[navOperations](navOperations.md)** --
 **[Spoke Contract](navOps_spoke_contract.md)** --
 **[KML Specification](kml_specification.md)** --
-**[GE Notes](ge_notes.md)**
+**[GE Notes](ge_notes.md)** --
+**[Testing](testing.md)**
 
 Folders: **[Raymarine](../../../docs/readme.md)** --
 **[NET](../../../NET/docs/readme.md)** --
@@ -64,6 +65,11 @@ base, data model, and UI are the product. Everything else is a boundary adapter.
 - **[GE Notes](ge_notes.md)** -
   Google Earth round-trip workflow, safe and unsafe GE editing operations, the
   additive-only re-import asymmetry, track editing policy.
+
+- **[Testing](testing.md)** -
+  Outward-facing overview of the navOps test suite at `../test/`. Module
+  organization (db, e80, tracks, fsh, hub), shared headers, fixtures, full-cycle
+  orchestrator, and results archival.
 
 ## Third-Party Libraries
 

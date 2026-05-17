@@ -18,6 +18,9 @@
 #   op=create_branch&parent_uuid=X&name=Y    create a branch without the name-input dialog
 #                              (parent_uuid omitted -> root-level branch).
 #                              Use /api/nmdb after to look up the new branch's uuid by name.
+#   op=load_fsh&path=<abs>     load an FSH file via navFSH::loadFSH; opens or refreshes
+#                              the winFSH pane. `path` is the absolute filesystem path
+#                              to the .fsh archive.
 #
 # NOTE: NEW_* commands (10230-10233) open name-input dialogs and will block the
 # test machinery. Do not issue them via this endpoint -- use op=create_branch
@@ -27,12 +30,13 @@ package navTest;
 use strict;
 use warnings;
 use JSON::PP qw(decode_json);
-use Pub::Utils qw(display warning);
+use Pub::Utils qw(display warning error);
+use navFSH qw();
 use navOps qw(onContextMenuCommand);
 use navDB qw(connectDB disconnectDB insertCollection computePushDownPositions);
 use n_defs qw($NODE_TYPE_BRANCH);
 use nmDialogs qw($suppress_confirm);
-use nmResources qw($WIN_DATABASE $WIN_E80);
+use nmResources qw($WIN_DATABASE $WIN_E80 $WIN_FSH);
 
 
 BEGIN
@@ -86,6 +90,29 @@ sub dispatchTestCommand
 	if ($op eq 'create_branch')
 	{
 		_doCreateBranch($main_win, $cmd);
+		return;
+	}
+	if ($op eq 'load_fsh')
+	{
+		my $path = $cmd->{path} // '';
+		if (!$path)
+		{
+			warning(0,0,"navTest: load_fsh - no path specified");
+			return;
+		}
+		if (navFSH::loadFSH($path))
+		{
+			my $fsh = $main_win->findPane($WIN_FSH);
+			if ($fsh)
+				{ $fsh->refresh(); }
+			else
+				{ $main_win->createPane($WIN_FSH); }
+			display(0,0,"navTest: load_fsh done path=$path");
+		}
+		else
+		{
+			warning(0,0,"navTest: load_fsh failed for $path");
+		}
 		return;
 	}
 

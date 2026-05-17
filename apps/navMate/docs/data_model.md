@@ -8,7 +8,8 @@
 **[navOperations](navOperations.md)** --
 **[Spoke Contract](navOps_spoke_contract.md)** --
 **[KML Specification](kml_specification.md)** --
-**[GE Notes](ge_notes.md)**
+**[GE Notes](ge_notes.md)** --
+**[Testing](testing.md)**
 
 Folders: **[Raymarine](../../../docs/readme.md)** --
 **[NET](../../../NET/docs/readme.md)** --
