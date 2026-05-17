@@ -848,27 +848,71 @@ sub _pasteGroupToFSH
 	my $group_data   = $item->{data} // {};
 	my $members      = $item->{members} // [];
 
-	my %wp_pending;
-	my @embedded;
-	for my $member (@$members)
-	{
-		my $wp_data = $member->{data} // {};
-		my $wp_nav  = $member->{uuid};
-		my $wn_raw  = _deconflictFSHName($db, $wp_data->{name} // '', \%wp_pending, 'waypoints');
-		my ($wn, $wc) = _truncForFSH($wn_raw, $wp_data->{comment} // '');
-		push @embedded, _buildFSHWpRecord($wp_data, { uuid => $wp_nav, name => $wn, comment => $wc });
-	}
-
 	if ($db->{groups}{$fsh_uuid})
 	{
-		# UUID-preserving update of existing group: append members.
+		# UUID-preserving in-place update of existing group.  Merge
+		# clipboard members into the existing group by UUID: if a
+		# member's FSH UUID matches an existing wpt, update its fields
+		# in-place; otherwise deconflict its name + append.  Idempotent
+		# for unchanged data; counts do NOT inflate on a same-UUID
+		# round-trip.  Group name is replaced with the clipboard's value
+		# when non-empty.
 		my $grp = $db->{groups}{$fsh_uuid};
-		my @all = (@{$grp->{wpts} // []}, @embedded);
-		$grp->{wpts} = shared_clone(\@all);
-		display($dbg_fsh_ops, 0, "_pasteGroupToFSH: appended ".scalar(@embedded)." WPs to existing $fsh_uuid");
+		my $gname_raw = $group_data->{name} // '';
+		if ($gname_raw ne '')
+		{
+			my ($gname) = _truncForFSH($gname_raw, '');
+			$grp->{name} = $gname;
+		}
+
+		my %by_fsh_uuid;
+		for my $w (@{$grp->{wpts} // []})
+		{
+			$by_fsh_uuid{$w->{uuid} // ''} = $w if $w->{uuid};
+		}
+
+		my %wp_pending;
+		my @final  = @{$grp->{wpts} // []};
+		my $merged = 0;
+		my $added  = 0;
+		for my $member (@$members)
+		{
+			my $wp_data    = $member->{data} // {};
+			my $wp_nav     = $member->{uuid};
+			next if !$wp_nav;
+			my $wp_fsh     = navToFSHUUID($wp_nav);
+			my $existing_w = $by_fsh_uuid{$wp_fsh};
+			if ($existing_w)
+			{
+				# Same-UUID -- preserve the existing name (it IS our name)
+				# rather than deconflicting against ourselves.
+				my ($wn, $wc) = _truncForFSH($wp_data->{name} // '', $wp_data->{comment} // '');
+				_updateFSHWpFields($existing_w, $wp_data, $wn, $wc);
+				$merged++;
+			}
+			else
+			{
+				my $wn_raw = _deconflictFSHName($db, $wp_data->{name} // '', \%wp_pending, 'waypoints');
+				my ($wn, $wc) = _truncForFSH($wn_raw, $wp_data->{comment} // '');
+				push @final, _buildFSHWpRecord($wp_data, { uuid => $wp_nav, name => $wn, comment => $wc });
+				$added++;
+			}
+		}
+		$grp->{wpts} = shared_clone(\@final);
+		display($dbg_fsh_ops, 0, "_pasteGroupToFSH: in-place update of $fsh_uuid merged=$merged added=$added");
 	}
 	else
 	{
+		my %wp_pending;
+		my @embedded;
+		for my $member (@$members)
+		{
+			my $wp_data = $member->{data} // {};
+			my $wp_nav  = $member->{uuid};
+			my $wn_raw  = _deconflictFSHName($db, $wp_data->{name} // '', \%wp_pending, 'waypoints');
+			my ($wn, $wc) = _truncForFSH($wn_raw, $wp_data->{comment} // '');
+			push @embedded, _buildFSHWpRecord($wp_data, { uuid => $wp_nav, name => $wn, comment => $wc });
+		}
 		my $gname_raw = _deconflictFSHName($db, $group_data->{name} // '', $pending_names, 'groups');
 		my ($gname) = _truncForFSH($gname_raw, '');
 

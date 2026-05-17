@@ -110,7 +110,9 @@ sub _nodeKey
     return 'my_waypoints'                          if $t eq 'my_waypoints';
     return "rp:$node->{route_uuid}:$node->{uuid}" if $t eq 'route_point';
     return "trackgrp:$node->{prefix}"              if $t eq 'track_group';
-    return $node->{uuid};
+    # winDatabase nodes carry their uuid inside data; E80/FSH carry it
+    # at top level.  The fallback handles both.
+    return $node->{uuid} // ($node->{data} // {})->{uuid};
 }
 
 

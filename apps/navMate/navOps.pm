@@ -1060,34 +1060,44 @@ sub _doPaste
 			$seen{$key} = 1;
 		}
 
-		# Step 8: Spoke-wide name collision.  Build per-type name maps
-		# for whichever spoke we're pasting to, and check each effective
-		# item against them.  WP-uuid-already-present-at-spoke-as-route-
-		# member exception preserved from the E80 logic.
+		# Step 8: Spoke-wide name collision.  The *_names hashes are
+		# name -> UUID maps (navMate canonical form).  Skip the collision
+		# when the matching name on the spoke is already at the SAME UUID
+		# as the clipboard item (in-place update / no-op same-UUID round-
+		# trip).  Real collision = same name at a different UUID.  Also
+		# preserves the WP-already-present-as-route-member exception for
+		# WP pastes targeted at a route or route_point destination.
 		my ($spoke_wp_names, $spoke_grp_names, $spoke_rte_names, $spoke_have_uuid)
 			= _spokeNameAndUUIDSets($panel);
 		if ($spoke_wp_names)
 		{
 			for my $item (@effective)
 			{
-				my $t    = $item->{type} // '';
-				my $name = ($item->{data} // {})->{name} // '';
+				my $t         = $item->{type} // '';
+				my $name      = ($item->{data} // {})->{name} // '';
+				my $clip_uuid = $item->{uuid} // '';
 				next if !$name;
-				if ($t eq 'waypoint' && $spoke_wp_names->{$name})
+				if ($t eq 'waypoint' && exists $spoke_wp_names->{$name})
 				{
+					my $exist_uuid = $spoke_wp_names->{$name} // '';
+					next if $exist_uuid eq $clip_uuid;
 					my $dest_type = $right_click_node->{type} // '';
 					next if ($dest_type eq 'route' || $dest_type eq 'route_point')
-					     && $spoke_have_uuid->{$item->{uuid} // ''};
+					     && $spoke_have_uuid->{$clip_uuid};
 					error(uc($panel) . " already has a waypoint named '$name' -- aborting");
 					return;
 				}
-				if ($t eq 'group' && $spoke_grp_names->{$name})
+				if ($t eq 'group' && exists $spoke_grp_names->{$name})
 				{
+					my $exist_uuid = $spoke_grp_names->{$name} // '';
+					next if $exist_uuid eq $clip_uuid;
 					error(uc($panel) . " already has a group named '$name' -- aborting");
 					return;
 				}
-				if ($t eq 'route' && $spoke_rte_names->{$name})
+				if ($t eq 'route' && exists $spoke_rte_names->{$name})
 				{
+					my $exist_uuid = $spoke_rte_names->{$name} // '';
+					next if $exist_uuid eq $clip_uuid;
 					error(uc($panel) . " already has a route named '$name' -- aborting");
 					return;
 				}
@@ -1132,15 +1142,39 @@ sub _doPaste
 
 sub _spokeNameAndUUIDSets
 {
+	# Returns (\%wp_names, \%grp_names, \%rte_names, \%have_uuid) for the
+	# named spoke.  As of the hub-alpha fix, the *_names hashes are
+	# name -> UUID maps (navMate canonical no-dash form) rather than
+	# name -> 1 presence sets, so the SS10.2 collision check at the call
+	# site can distinguish "same UUID, in-place update" (skip) from
+	# "different UUID, real name collision" (error).  Names that are not
+	# unique on the spoke record one representative UUID; uniqueness is
+	# enforced by the spoke's own deconflict policy so multiplicity here
+	# is an invariant violation, not a normal state.
 	my ($panel) = @_;
 	if ($panel eq 'e80')
 	{
 		my $wpmgr = _wpmgr();
 		return (undef, undef, undef, undef) if !$wpmgr;
-		my %wp_names  = map { ($_->{name} // '') => 1 } values %{$wpmgr->{waypoints} // {}};
-		my %grp_names = map { ($_->{name} // '') => 1 } values %{$wpmgr->{groups}    // {}};
-		my %rte_names = map { ($_->{name} // '') => 1 } values %{$wpmgr->{routes}    // {}};
-		my %have_uuid = map { $_ => 1 }                  keys   %{$wpmgr->{waypoints} // {}};
+		my %wp_names;
+		for my $u (keys %{$wpmgr->{waypoints} // {}})
+		{
+			my $n = $wpmgr->{waypoints}{$u}{name} // '';
+			$wp_names{$n} = $u;
+		}
+		my %grp_names;
+		for my $u (keys %{$wpmgr->{groups} // {}})
+		{
+			my $n = $wpmgr->{groups}{$u}{name} // '';
+			$grp_names{$n} = $u;
+		}
+		my %rte_names;
+		for my $u (keys %{$wpmgr->{routes} // {}})
+		{
+			my $n = $wpmgr->{routes}{$u}{name} // '';
+			$rte_names{$n} = $u;
+		}
+		my %have_uuid = map { $_ => 1 } keys %{$wpmgr->{waypoints} // {}};
 		return (\%wp_names, \%grp_names, \%rte_names, \%have_uuid);
 	}
 	if ($panel eq 'fsh')
@@ -1152,21 +1186,34 @@ sub _spokeNameAndUUIDSets
 		# Standalone WPs.
 		for my $fsh_uuid (keys %{$db->{waypoints} // {}})
 		{
-			my $wp = $db->{waypoints}{$fsh_uuid};
-			$wp_names{$wp->{name} // ''} = 1;
-			$have_uuid{fshToNavUUID($fsh_uuid)} = 1;
+			my $wp      = $db->{waypoints}{$fsh_uuid};
+			my $nav_uuid = fshToNavUUID($fsh_uuid);
+			$wp_names{$wp->{name} // ''} = $nav_uuid;
+			$have_uuid{$nav_uuid} = 1;
 		}
 		# Group-embedded WPs (names participate in uniqueness).
 		for my $grp (values %{$db->{groups} // {}})
 		{
 			for my $wp (@{$grp->{wpts} // []})
 			{
-				$wp_names{$wp->{name} // ''} = 1 if defined $wp->{name};
-				$have_uuid{fshToNavUUID($wp->{uuid})} = 1 if $wp->{uuid};
+				next if !defined $wp->{name} || !$wp->{uuid};
+				my $nav_uuid = fshToNavUUID($wp->{uuid});
+				$wp_names{$wp->{name}} = $nav_uuid;
+				$have_uuid{$nav_uuid} = 1;
 			}
 		}
-		my %grp_names = map { ($_->{name} // '') => 1 } values %{$db->{groups} // {}};
-		my %rte_names = map { ($_->{name} // '') => 1 } values %{$db->{routes} // {}};
+		my %grp_names;
+		for my $fsh_uuid (keys %{$db->{groups} // {}})
+		{
+			my $n = $db->{groups}{$fsh_uuid}{name} // '';
+			$grp_names{$n} = fshToNavUUID($fsh_uuid);
+		}
+		my %rte_names;
+		for my $fsh_uuid (keys %{$db->{routes} // {}})
+		{
+			my $n = $db->{routes}{$fsh_uuid}{name} // '';
+			$rte_names{$n} = fshToNavUUID($fsh_uuid);
+		}
 		return (\%wp_names, \%grp_names, \%rte_names, \%have_uuid);
 	}
 	return (undef, undef, undef, undef);
