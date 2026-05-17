@@ -47,11 +47,13 @@ my $delete_progress = shared_clone({progress => undef});
 my $WPMGR_SERVICE_ID = 15;
 	# 15 = 0xf0 == 'F000' in streams
 
-my %BUFFER_CHUNK = (
-	$WHAT_WAYPOINT	=> 498,
-	$WHAT_ROUTE		=> 498,
-	$WHAT_GROUP		=> 498,
-);
+my $BUFFER_CHUNK = 498;
+	# Per-BUFFER-message payload ceiling.  E80 caps the BUFFER message body
+	# at 512 bytes; subtracting the inner overhead (cmd 2 + func 2 + seq 4 +
+	# chunk_len 4 = 12 bytes) leaves 500 bytes of chunk content, of which
+	# 498 is used with a 2-byte conservative margin.  Same ceiling applies
+	# to all WHAT_* types -- waypoints never approach it (max ~94 bytes),
+	# routes and groups can exceed it and are chunked accordingly.
 
 
 
@@ -199,20 +201,57 @@ sub createMsg
 sub buildBufferMsgs
 	# Split a hex-encoded buffer (big_len prefix + payload) into 512-byte-safe
 	# BUFFER messages.  The E80 rejects individual messages > 512 bytes, so any
-	# payload longer than 498 bytes must be sent as multiple BUFFER messages,
-	# each with its own big_len prefix, exactly mirroring how the E80 itself
-	# chunks large route/group buffers on the receive side.
+	# payload longer than $BUFFER_CHUNK bytes must be sent as multiple BUFFER
+	# messages, each with its own length prefix.
+	#
+	# GROUP records additionally require UUID-boundary alignment: E80 stores
+	# group member UUIDs as 8-byte blocks and rejects (or corrupts) a chunk
+	# that ends or starts mid-UUID.  Empirically confirmed by watching E80's
+	# own outbound chunking for a 61-member group (chunk 0 = 4-byte header +
+	# name + comment + as many whole UUIDs as fit; chunk N>0 = whole UUIDs
+	# only).  WAYPOINT records always fit in one chunk (max ~94 bytes), and
+	# ROUTE records appear to tolerate byte-blind splits (route receive path
+	# accumulates by concatenation), so both keep the original loop.
 {
 	my ($seq, $hex_data, $what) = @_;
 	my $bin     = pack('H*', $hex_data);
 	my $payload = substr($bin, 4);		# strip the big_len prefix
 	my $msgs    = '';
-	my $CHUNK   = $BUFFER_CHUNK{$what // 0} // 498;
 	my $offset  = 0;
+
+	if (($what // 0) == $WHAT_GROUP)
+	{
+		# Header bytes at payload offset 0=name_len, 1=cmt_len.
+		my $name_len   = unpack('C', substr($payload, 0, 1));
+		my $cmt_len    = unpack('C', substr($payload, 1, 1));
+		my $prefix_len = 4 + $name_len + $cmt_len;
+		# First chunk: prefix + as many whole 8-byte UUIDs as fit.
+		my $first_uuid_room = int(($BUFFER_CHUNK - $prefix_len) / 8) * 8;
+		my $first_n         = $prefix_len + $first_uuid_room;
+		$first_n = length($payload) if $first_n > length($payload);
+		my $first_chunk = substr($payload, 0, $first_n);
+		$msgs .= createMsg($seq, $DIRECTION_INFO, $CMD_BUFFER, 0,
+		                   unpack('H*', pack('V', length($first_chunk)) . $first_chunk));
+		$offset = $first_n;
+		# Subsequent chunks: whole UUIDs only, multiple of 8 bytes.
+		my $uuid_chunk_max = int($BUFFER_CHUNK / 8) * 8;
+		while ($offset < length($payload))
+		{
+			my $n = length($payload) - $offset;
+			$n = $uuid_chunk_max if $n > $uuid_chunk_max;
+			my $chunk = substr($payload, $offset, $n);
+			$msgs .= createMsg($seq, $DIRECTION_INFO, $CMD_BUFFER, 0,
+			                   unpack('H*', pack('V', $n) . $chunk));
+			$offset += $n;
+		}
+		return $msgs;
+	}
+
+	# Byte-blind path for WAYPOINT and ROUTE.
 	while ($offset < length($payload))
 	{
 		my $n     = length($payload) - $offset;
-		$n = $CHUNK if $n > $CHUNK;
+		$n = $BUFFER_CHUNK if $n > $BUFFER_CHUNK;
 		my $chunk = substr($payload, $offset, $n);
 		$msgs    .= createMsg($seq, $DIRECTION_INFO, $CMD_BUFFER, 0,
 		                      unpack('H*', pack('V',$n) . $chunk));

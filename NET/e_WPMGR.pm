@@ -216,11 +216,41 @@ sub parsePiece
 				delete $this->{tx}{item_total};
 			}
 		}
+		elsif ($what == $WHAT_GROUP)
+		{
+			# Mirror of the ROUTE accumulation logic. E80 chunks group
+			# records longer than ~498 bytes across multiple BUFFER
+			# messages; parseGroup must run on the assembled payload, not
+			# on a single chunk. Group total size = 4-byte header +
+			# name_len + cmt_len + num_uuids * 8.
+			my $big_len = unpack('V', substr($buffer, 0, 4));
+
+			if (!defined $this->{tx}{item_total})
+			{
+				$this->{tx}{item_buf} = substr($buffer, 4, $big_len);
+				my $name_len  = unpack('C', substr($this->{tx}{item_buf}, 0, 1));
+				my $cmt_len   = unpack('C', substr($this->{tx}{item_buf}, 1, 1));
+				my $num_uuids = unpack('v', substr($this->{tx}{item_buf}, 2, 2));
+				$this->{tx}{item_total} = 4 + $name_len + $cmt_len + $num_uuids * 8;
+			}
+			else
+			{
+				$this->{tx}{item_buf} .= substr($buffer, 4, $big_len);
+			}
+
+			if (length($this->{tx}{item_buf}) >= $this->{tx}{item_total})
+			{
+				my $total = length($this->{tx}{item_buf});
+				my $item = parseGroup(0, pack('V',$total) . $this->{tx}{item_buf}, $mon, $color);
+				$this->{tx}{item} = shared_clone($item) if $item;
+				delete $this->{tx}{item_buf};
+				delete $this->{tx}{item_total};
+			}
+		}
 		else
 		{
 			my $item;
 			$item = parseWaypoint(0,$buffer,$mon,$color) if $what == $WHAT_WAYPOINT;
-			$item = parseGroup(0,$buffer,$mon,$color)    if $what == $WHAT_GROUP;
 			$this->{tx}{item} = shared_clone($item);
 		}
 	}
