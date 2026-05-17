@@ -90,7 +90,7 @@ use Pub::Utils;
 use apps::raymarine::FSH::fshUtils;
 
 
-my $dbg_block = 0;
+my $dbg_block = 1;
 my $dbg_trk = 1;
 my $dbg_mta = 1;
 my $dbg_wpt = 1;

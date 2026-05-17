@@ -34,8 +34,8 @@ my $ACTIVE_BLOCKS_ONLY = 1;
 
 
 my $dbg_file = 0;
-my $dbg_flobs = 0;
-my $dbg_blocks = 0;
+my $dbg_flobs = 1;
+my $dbg_blocks = 1;
 
 
 my $FSH_FILE_HEADER_SIZE = 28;
