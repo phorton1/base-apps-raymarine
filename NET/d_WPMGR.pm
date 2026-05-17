@@ -623,7 +623,8 @@ sub handleEvent
 		else
 		{
 			warning($dbg_mods,0,"enquing mod($mod->{what}) uuid($mod->{uuid})");
-			$this->queueWPMGRCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef,$delete_progress->{progress},1);
+			my $follow_progress = $delete_progress->{progress};
+			$this->queueWPMGRCommand($API_GET_ITEM,$mod->{what},'mod_item',$mod->{uuid},undef,$follow_progress,1);
 		}
 
 	}	# for each mod

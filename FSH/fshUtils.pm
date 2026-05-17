@@ -23,6 +23,13 @@ our $FSH_BLK_ILL = 0xffff;  # Invalid block type
 
 our $UUID_SIZE = 8;
 
+# E80 name/comment limits as enforced at the FSH archive layer.
+# Numerically identical to NET/a_defs.pm's $E80_MAX_NAME / $E80_MAX_COMMENT,
+# defined locally here so fshBlocks need not reach up into the NET layer.
+
+our $FSH_MAX_NAME    = 15;    # waypoints, groups, routes, tracks
+our $FSH_MAX_COMMENT = 31;    # waypoints, routes (groups and tracks have no comment field)
+
 
 
 BEGIN
@@ -40,6 +47,9 @@ BEGIN
         $FSH_BLK_ILL
 
 		$UUID_SIZE
+
+		$FSH_MAX_NAME
+		$FSH_MAX_COMMENT
 
         blockTypeToStr
         uuidToStr

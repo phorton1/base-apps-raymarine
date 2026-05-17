@@ -20,6 +20,16 @@ use apps::raymarine::FSH::fshFile;
 use navDB;
 
 
+BEGIN
+{
+	use Exporter qw( import );
+	our @EXPORT_OK = qw(
+		fshToNavUUID
+		navToFSHUUID
+	);
+}
+
+
 my $dbg_fsh = 0;
 
 our $fsh_db       = undef;
@@ -28,6 +38,42 @@ our $fsh_filename = '';
 
 sub getFSHDb   { return $fsh_db; }
 sub getFilename { return $fsh_filename; }
+
+
+#-----------------------------------------
+# UUID format conversion helpers
+#-----------------------------------------
+# FSH stores UUIDs as 16-char uppercase hex with dashes after bytes
+# 1, 3, 5 (e.g. "B2C4-3C00-81B6-XXXX") via fshUtils::uuidToStr.
+# navMate (DB and NET layers) uses 16-char lowercase hex no dashes
+# (e.g. "b2c43c0081b6XXXX").
+#
+# All clipboard items in navOps carry navMate-form UUIDs; spoke-format
+# conversion happens at the FSH snapshot seam (in `_snapshotFSHNode`
+# and the inverse paste paths in `navOpsFSH.pm`).
+#
+# These helpers are exported for any module that needs to bridge
+# the two formats -- primarily `navClipboard::getPushMenuItems` (peer
+# presence checks across the seam) and `navOpsFSH.pm` itself.
+
+sub fshToNavUUID
+{
+	my ($u) = @_;
+	return $u if !defined $u || $u eq '';
+	# strToUuid: dashed-upper string -> 8 raw bytes
+	# unpack H16: 8 bytes -> 16 lower-hex chars no dashes
+	return unpack('H16', apps::raymarine::FSH::fshUtils::strToUuid($u));
+}
+
+
+sub navToFSHUUID
+{
+	my ($u) = @_;
+	return $u if !defined $u || $u eq '';
+	# pack H16: 16 hex chars (case-insensitive) -> 8 raw bytes
+	# uuidToStr: 8 bytes -> dashed-upper string
+	return apps::raymarine::FSH::fshUtils::uuidToStr(pack('H16', $u));
+}
 
 
 
@@ -117,36 +163,43 @@ sub saveFSH
 	}
 
 	my $fsh = apps::raymarine::FSH::fshFile->new();
+	my $ok  = 1;
 
 	for my $uuid (sort keys %{$fsh_db->{waypoints}})
 	{
-		$fsh->encodeWPT($fsh_db->{waypoints}{$uuid});
+		$ok &&= $fsh->encodeWPT($fsh_db->{waypoints}{$uuid});
 	}
 
 	for my $uuid (sort keys %{$fsh_db->{groups}})
 	{
-		$fsh->encodeGRP($fsh_db->{groups}{$uuid});
+		$ok &&= $fsh->encodeGRP($fsh_db->{groups}{$uuid});
 	}
 
 	for my $uuid (sort keys %{$fsh_db->{routes}})
 	{
-		$fsh->encodeRTE($fsh_db->{routes}{$uuid});
+		$ok &&= $fsh->encodeRTE($fsh_db->{routes}{$uuid});
 	}
 
 	for my $key (sort keys %{$fsh_db->{tracks}})
 	{
 		my $rec = $fsh_db->{tracks}{$key};
-		$fsh->encodeTRK({
+		$ok &&= $fsh->encodeTRK({
 			trk_uuid => $rec->{trk_uuid},
 			points   => $rec->{points},
 		});
-		$fsh->encodeMTA({
+		$ok &&= $fsh->encodeMTA({
 			mta_uuid => $rec->{mta_uuid},
 			trk_uuid => $rec->{trk_uuid},
 			name     => $rec->{name},
 			color    => $rec->{color} // 0,
 			points   => $rec->{points},
 		});
+	}
+
+	if (!$ok)
+	{
+		error("navFSH::saveFSH: one or more encode errors - file '$filename' NOT written");
+		return 0;
 	}
 
 	return $fsh->write($filename);

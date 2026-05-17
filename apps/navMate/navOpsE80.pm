@@ -764,9 +764,7 @@ sub _pasteWaypointToE80
 
     if ($cb->{cut_flag} && ($result eq 'created' || $result eq 'replaced'))
     {
-        $cb->{source} eq 'database'
-            ? _cutDatabaseWaypoint($uuid, $tree)
-            : _cutE80Waypoint($uuid, $tree);
+        _cutPasteCleanupWp($cb, $uuid, $tree);
     }
 }
 
@@ -814,9 +812,7 @@ sub _pasteGroupToE80
         $any_skipped = 1 if $result eq 'skipped';
         if ($cb->{cut_flag} && $result ne 'skipped' && $result ne 'aborted')
         {
-            $cb->{source} eq 'database'
-                ? _cutDatabaseWaypoint($member->{uuid}, $tree)
-                : _cutE80Waypoint($member->{uuid}, $tree);
+            _cutPasteCleanupWp($cb, $member->{uuid}, $tree);
         }
     }
 
@@ -856,9 +852,7 @@ sub _pasteGroupToE80
         }
         if ($cb->{cut_flag} && !$any_skipped)
         {
-            $cb->{source} eq 'database'
-                ? _cutDatabaseGroup($group_uuid, $tree)
-                : _cutE80Group($group_uuid, $tree);
+            _cutPasteCleanupGroup($cb, $group_uuid, $tree);
         }
     }
 }
@@ -931,9 +925,7 @@ sub _pasteRouteToE80
 
     if ($cb->{cut_flag})
     {
-        $cb->{source} eq 'database'
-            ? _cutDatabaseRoute($route_uuid, $tree)
-            : _cutE80Route($route_uuid, $tree);
+        _cutPasteCleanupRoute($cb, $route_uuid, $tree);
     }
 }
 
@@ -1422,9 +1414,7 @@ sub _pasteBeforeAfterE80
             last if $result eq 'aborted';
             if ($cb->{cut_flag} && ($result eq 'created' || $result eq 'replaced'))
             {
-                $cb->{source} eq 'database'
-                    ? _cutDatabaseWaypoint($wp_uuid, $tree)
-                    : _cutE80Waypoint($wp_uuid, $tree);
+                _cutPasteCleanupWp($cb, $wp_uuid, $tree);
             }
         }
         push @new_wp_uuids, $wp_uuid;

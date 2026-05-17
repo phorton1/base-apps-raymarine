@@ -24,20 +24,33 @@ this test cycle; treat every correction as a first-class commit.
 
 ## Toolbox
 
-### Rule: run tests inline, not via scripts
+### Rule: one test per tool call -- no batching, no temp scripts
 
-Execute each test as direct inline tool calls (curl + log inspection), one
-step at a time. Do NOT write a temporary PowerShell/bash script under
-`C:\base_data\temp\...` to run a test "all at once" -- such scripts are
-opaque to Patrick, hide intermediate state, and are exactly the
-"ad-hoc scripting" failure mode called out in
-[feedback_test_run_discipline.md]. Embedded PowerShell snippets that
-already live IN this runbook (Test 2.0's loop, the
-`Wait-NavCmdFinished`/`Mark-Phase` helpers) are part of the runbook
-itself -- it is fine to paste those into a single PowerShell tool call
-because the code is visible here. What is NOT fine is dropping a fresh
-script in a temp folder for a step that the runbook expresses as
-separate curl lines.
+**ONE test step per PowerShell/Bash tool call.** Within a single tool call
+you may issue all the curls, sleeps, log reads, and state assertions you
+need for THAT ONE TEST. You may NOT chain two or more tests into one tool
+call. After each test completes, evaluate it (PASS / PASSED_BUT / FAIL /
+NOT_RUN) and announce the result before firing any tool call for the next
+test.
+
+**Why this rule is strict.** Batching multiple tests into one tool call
+hides intermediate state, removes the per-test stop-on-failure decision
+point, lets state drift accumulate invisibly, and forces post-hoc
+forensics when something breaks. The runbook's "Run continuously until an
+issue is found, then stop" rule REQUIRES per-test evaluation; batching
+silently bypasses it. This is the same anti-pattern as temp-file scripts
+under `C:\base_data\temp\...` -- the "ad-hoc scripting" failure mode
+called out in [feedback_test_run_discipline.md] -- whether the script is
+in a temp file or inline in a PowerShell tool call makes no difference.
+
+**Exceptions** (the only ones; do not invent new ones mid-run):
+
+- Test 2.0 is documented in this runbook as a single batched script (it
+  contains a 32-iteration loop that is the test's whole point). Run it
+  as written.
+- Helper-function definitions (`Wait-NavCmdFinished`, `Mark-Phase`,
+  `Test-Check`-style) may live in the same tool call as the test that
+  uses them -- but only one test per call.
 
 ### Rule: new tools
 
@@ -228,9 +241,19 @@ $r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
 $r.lines | ForEach-Object { "$($_.seq)  $($_.text)" }
 ```
 
-Scan every log read for: `ERROR`, `WARNING`, `IMPLEMENTATION ERROR`.
+Scan every log read for: `ERROR`, `WARNING`, `IMPLEMENTATION ERROR`. Subject to the known-quiet exclusions below.
 
 **Note on seq tracking:** Each `/api/log` response has `seq` (current ring buffer position) and `overflow`. Use `since=mark` to get all lines since the last `cmd=mark`. Only fall back to explicit `since=N` if you need to read past the mark window without re-marking.
+
+### Known-quiet warnings (documented background noise)
+
+These warning patterns are documented background noise. They do not, by themselves, constitute test failure. This table is a reference for what these specific patterns mean -- NOT an exhaustive allowlist. A WARNING line in the log is a failure ONLY if (i) it is an `IMPLEMENTATION ERROR` and the test does not specifically expect one as a guard-fired sentinel, OR (ii) the warning correlates with an actual wrong data outcome, OR (iii) the warning explicitly reports that the test step failed. Random unfamiliar warnings emitted by the codebase are NOT, on their own, a stop condition; note them in observations and keep running.
+
+| Pattern | Where it appears | Why it is quiet |
+|---------|------------------|-----------------|
+| `WARNING: navDB::moveWaypoint: position not specified for '<uuid>' -- appending at N (caller should pass position explicitly)` | navDB.pm; any DB operation that reparents WPs (group dissolve, etc.) without passing an explicit position | Residue from a positioning-scheme refinement. The reparent itself still works; the warning is a code-smell flag for callers to update. Likely to appear multiple times in Section 2 reparenting operations. |
+| `WARNING: deleting waypoints(<uuid>) <Name>` | d_WPMGR.pm; emitted during E80 clear/delete operations | Normal protocol-level chatter during `clear_e80` and individual E80 deletes. |
+| `WARNING: enquing mod(...)` | d_WPMGR.pm:643-area; E80 protocol layer only | Pre-existing E80/NET warning. NEVER expected in Section 2 (intra-database tests do not touch E80). If it appears in Section 2, that IS a regression -- do not silently filter. |
 
 ### ProgressDialog wait snippet (PowerShell)
 
@@ -339,7 +362,7 @@ UUIDs verified 2026-05-08 from live /api/nmdb (schema 10, git-baseline navMate.d
 | **Group with no route refs (used by Section 2.5 delete test)** | | |
 | [GroupNoRoute] | a74e90d60300a434 | Bocas group -- Navigation/Waypoints (e54ede600200feee); 2 members (StarfishBeach + Fishfarm), none in route. Used for Section 2.5 (delete+WPs) ONLY. |
 | **Group for Section 2.4 dissolve test** | | |
-| [GroupNoRoute_Dissolve] | 4e4e405a08033af4 | Places group -- in Part 1 - Before Trip (214e7db00703a184); 3 members, none in route; small and safe to dissolve |
+| [GroupNoRoute_Dissolve] | 4e4e405a08033af4 | Places group -- in Part 1 - Before Trip (214e7db00703a184); 5 members, none in route; small and safe to dissolve |
 | **Group for Test 3.15 (paste new to E80) and Test 5.7 (ancestor-wins)** | | |
 | [TestGroup] | 1a4eaf5a8c00e922 | Timiteo -- under oldE80/Groups ([UnsafeBranch]); 6 members (t01-t06), none in any route; survives all Section 2 tests; name "Timiteo" never conflicts with E80 state at Test 3.15 time (which has Popa from Test 3.11b); Test 5.2 blocks [UnsafeBranch] delete so Timiteo is always safe; also used as group anchor in Test 2.16 |
 | [TestGroupMember] | d44e40468d000d96 | t01 -- first member of [TestGroup]; used in Section 5.7 multi-select to trigger ancestor-wins |
@@ -399,6 +422,7 @@ UUIDs verified 2026-05-08 from live /api/nmdb (schema 10, git-baseline navMate.d
 | Popa route | f34efdd6070022e8 | = [TestRoute] |
 | Bocas group | a74e90d60300a434 | = [GroupNoRoute] |
 | StarfishBeach | 9d4e232a0500dd90 | member of Bocas group (= [GroupNoRoute]); deleted by Section 2.5 |
+| Fishfarm | 124e0eb404000564 | member of Bocas group (= [GroupNoRoute]); deleted by Section 2.5. NOTE: there is also an unrelated WP also named "Fishfarm" at e84e625e980095c6 living under oldE80/Waypoints -- do not confuse them |
 | Popa0 | 314e56cc09005332 | = [WPinRoute] = [RP1] |
 | Popa1 | 8d4e68fa0a0073ee | = [RP2] |
 | Popa2 | 454e11a80b002884 | = [RP3] |
@@ -409,7 +433,7 @@ UUIDs verified 2026-05-08 from live /api/nmdb (schema 10, git-baseline navMate.d
 | MichellToKuna 2011-07 | 784e76f880029e1e | = [SomeBranch]; under Michelle |
 | Michelle top-level | 034e6b8ccb01fffe | Parent of DST, SafeBranch, SomeBranch, NestedBranch... |
 | Part 1 - Before Trip | 214e7db00703a184 | Parent of [GroupNoRoute_Dissolve] |
-| Places (Part 1) | 4e4e405a08033af4 | = [GroupNoRoute_Dissolve]; 3 members, none in route |
+| Places (Part 1) | 4e4e405a08033af4 | = [GroupNoRoute_Dissolve]; 5 members, none in route |
 | Agua group | 204ecbd24500a678 | Navigation/Routes; 10 WPs all in Agua route |
 | Agua route | d64e8c7e4400a186 | Navigation/Routes |
 | Michelle group | 104e199a1500e646 | Navigation/Routes; 46 WPs all in Michelle route |
@@ -637,7 +661,7 @@ Uses [GroupNoRoute_Dissolve] (Places/Part1), NOT Bocas, to preserve Bocas for Se
 curl -s "http://localhost:9883/api/command?cmd=mark+Test+2.4"
 curl -s "http://localhost:9883/api/test?panel=database&select=[GroupNoRoute_Dissolve]&right_click=[GroupNoRoute_Dissolve]&cmd=10221"
 ```
-Expected: group shell ([GroupNoRoute_Dissolve]) deleted; 3 member WPs reparented to Part 1 - Before Trip; WP UUIDs unchanged.
+Expected: group shell ([GroupNoRoute_Dissolve]) deleted; 5 member WPs reparented to Part 1 - Before Trip; WP UUIDs unchanged.
 
 ---
 
@@ -925,7 +949,7 @@ curl -s "http://localhost:9883/api/test?panel=database&select=[TestRoute]&cmd=10
 curl -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10210"
 ```
 Wait for ProgressDialog FINISHED.
-Expected: Popa route (f34efdd6070022e8) on E80; route_waypoints sequence matches DB (11 WPs, same UUIDs, same positional order).
+Expected: Popa route (f34efdd6070022e8) on E80; route_waypoints sequence matches DB (same WPs, same UUIDs, same positional order).
 Note [E80_RT] = f34efdd6070022e8 from /api/db routes.
 
 ---

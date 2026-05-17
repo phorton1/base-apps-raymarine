@@ -10,6 +10,7 @@ use threads;
 use threads::shared;
 use Pub::Utils qw(warning error getAppFrame);
 use navDB;
+use navFSH qw(fshToNavUUID navToFSHUUID);
 use n_defs;
 
 
@@ -54,6 +55,8 @@ my @ALL_PASTE_CMDS = (
 	$CTX_CMD_PASTE_NEW_BEFORE,
 	$CTX_CMD_PASTE_NEW_AFTER,
 	$CTX_CMD_PUSH,
+	$CTX_CMD_PUSH_FSH,
+	$CTX_CMD_PUSH_E80,
 );
 my @ALL_NEW_CMDS = (
 	$CTX_CMD_NEW_WAYPOINT, $CTX_CMD_NEW_GROUP, $CTX_CMD_NEW_ROUTE, $CTX_CMD_NEW_BRANCH,
@@ -80,7 +83,16 @@ sub allDeleteCmds { return @ALL_DELETE_CMDS }
 # clipboard state
 #----------------------------------------------------
 
-sub _classifyE80Items
+# Source-presence classification: walk the items and check each UUID
+# against the navMate DB.  Used by setCopy to mark E80- and FSH-source
+# clipboards as paste / push / mixed so paste pre-flight can choose
+# between the two operations at a DB destination.
+#
+# The clipboard items always carry navMate no-dash lowercase UUIDs
+# at this point (the spoke snapshot seam normalizes them), so the same
+# DB lookup applies regardless of whether the source was E80 or FSH.
+
+sub _classifyAgainstDB
 {
 	my ($items) = @_;
 	return undef if !$items || !@$items;
@@ -109,7 +121,9 @@ sub _classifyE80Items
 sub setCopy
 {
 	my ($source, $items) = @_;
-	my $class = ($source eq 'e80') ? (_classifyE80Items($items) // 'paste') : undef;
+	my $class = ($source eq 'e80' || $source eq 'fsh')
+		? (_classifyAgainstDB($items) // 'paste')
+		: undef;
 	$clipboard = { source => $source, cut_flag => 0, items => $items // [],
 	               clipboard_class => $class };
 	_updateStatusBar();
@@ -180,7 +194,7 @@ sub getNewMenuItems
 		return ();  # track, route_point
 	}
 
-	# e80
+	# e80 and fsh share the same New menu shape (no Branch concept on either)
 	return (
 		{ id => $CTX_CMD_NEW_GROUP,    label => 'New Group'    },
 		{ id => $CTX_CMD_NEW_WAYPOINT, label => 'New Waypoint' },
@@ -192,7 +206,7 @@ sub getNewMenuItems
 	return ({ id => $CTX_CMD_NEW_ROUTE, label => 'New Route' })
 		if $t eq 'header' && $kind eq 'routes';
 
-	return ();  # tracks header, track, route, route_point
+	return ();  # tracks header, track, route, route_point, track_group
 }
 
 
@@ -209,6 +223,11 @@ sub getDeleteMenuItems
 	my $nt   = ($right_click_node->{data} // {})->{node_type} // '';
 	my $ot   = ($right_click_node->{data} // {})->{obj_type}  // '';
 	my $n    = @nodes ? scalar(@nodes) : 1;
+
+	# track_group is a winFSH visual-only artifact -- a name-prefix
+	# rollup of segmented tracks.  It has no storage identity and no
+	# delete semantics; the user must delete the individual tracks.
+	return () if $t eq 'track_group';
 
 	if ($panel eq 'database')
 	{
@@ -246,7 +265,10 @@ sub getDeleteMenuItems
 		return ();
 	}
 
-	# e80
+	# e80 and fsh share the same Delete menu shape -- both transports
+	# have the same shallow hierarchy (Groups/Routes/Tracks headers,
+	# named Groups, My Waypoints pseudo-group, route_points within
+	# routes) and the same per-type delete semantics.
 	return ({ id => $CTX_CMD_REMOVE_ROUTEPOINT, label => 'Delete' })
 		if $t eq 'route_point';
 
@@ -306,7 +328,7 @@ sub getCopyMenuItems
 {
 	my ($panel, @nodes) = @_;
 	return () if !@nodes;
-	return () if grep { ($_->{type}//'') eq 'root' } @nodes;
+	return () if grep { my $t = $_->{type} // ''; $t eq 'root' || $t eq 'track_group' } @nodes;
 	return ({ id => $CTX_CMD_COPY, label => 'Copy' });
 }
 
@@ -314,7 +336,7 @@ sub getCutMenuItems
 {
 	my ($panel, @nodes) = @_;
 	return () if !@nodes;
-	return () if grep { ($_->{type}//'') eq 'root' } @nodes;
+	return () if grep { my $t = $_->{type} // ''; $t eq 'root' || $t eq 'track_group' } @nodes;
 	return ({ id => $CTX_CMD_CUT, label => 'Cut' });
 }
 
@@ -334,17 +356,20 @@ sub getPasteMenuItems
 	my $nt   = ($right_click_node->{data} // {})->{node_type} // '';
 	my $cut  = $clipboard->{cut_flag};
 
-	if ($panel eq 'e80')
+	# E80 and FSH share the tracks-readonly rule and the track_group
+	# exclusion (winFSH-only visual artifact, no paste target).
+	if ($panel eq 'e80' || $panel eq 'fsh')
 	{
 		return () if $t eq 'track';
+		return () if $t eq 'track_group';
 		return () if $t eq 'header' && $kind eq 'tracks';
 	}
 
 	# PASTE/PASTE_NEW: destination must be a collection (receives items into itself).
-	# E80: header folders, my_waypoints, groups, and routes (route = ordered WP collection).
-	# DB:  root and collection nodes (branch/group) only. NOT object or route_point nodes.
+	# E80/FSH: header folders, my_waypoints, groups, and routes (route = ordered WP collection).
+	# DB:      root and collection nodes (branch/group) only. NOT object or route_point nodes.
 	my $is_collection;
-	if ($panel eq 'e80')
+	if ($panel eq 'e80' || $panel eq 'fsh')
 	{
 		$is_collection = ($t eq 'header' && $kind ne 'tracks')
 		              || $t eq 'my_waypoints'
@@ -357,19 +382,24 @@ sub getPasteMenuItems
 	}
 
 	# PASTE_BEFORE/AFTER: destination supports positional insertion (adjacent to, not into).
-	# E80: route_point only. DB: any item or collection node except root (root has no parent).
-	my $positional = ($panel eq 'e80')
+	# E80/FSH: route_point only. DB: any item or collection node except root.
+	my $positional = ($panel eq 'e80' || $panel eq 'fsh')
 		? ($t eq 'route_point')
 		: ($t eq 'object' || $t eq 'route_point' || $t eq 'collection');
 
 	my @items;
 	if ($is_collection)
 	{
-		my $source           = $clipboard->{source} // '';
-		my $class            = $clipboard->{clipboard_class} // '';
-		my $is_e80_copy_to_db = ($panel eq 'database' && $source eq 'e80' && !$cut);
+		my $source             = $clipboard->{source} // '';
+		my $class              = $clipboard->{clipboard_class} // '';
+		# Source-spoke copy to DB uses class-driven paste-vs-push semantics
+		# (paste = none on DB; push = all on DB; mixed = neither).  Applies
+		# to E80-source and FSH-source clipboards alike.
+		my $is_spoke_copy_to_db = ($panel eq 'database'
+		                        && ($source eq 'e80' || $source eq 'fsh')
+		                        && !$cut);
 
-		if (!$is_e80_copy_to_db)
+		if (!$is_spoke_copy_to_db)
 		{
 			push @items, { id => $CTX_CMD_PASTE, label => 'Paste' };
 		}
@@ -416,74 +446,250 @@ sub getPasteMenuItems
 #----------------------------------------------------
 # getPushMenuItems
 # Direct selection-based push (no clipboard required).
-# E80 panel: offers "Push to DB" when all selected items have DB counterparts.
-# DB panel:  offers "Push to E80" when all selected items have E80 counterparts.
+# Three-panel signature:
+#   $peers = { wpmgr => $wpmgr_service_hash, fsh_db => $navFSH::fsh_db }
+# Returns one menu item per available push direction.  Each spoke panel
+# offers push to every OTHER panel where the selected items have matching
+# UUIDs.  Phase 3A landed: panel->DB always; DB->{E80,FSH} when peers
+# present.  Phase 3B added: E80->FSH and FSH->E80 cross-spoke pushes.
+#
+# Cmd-ID disambiguation:
+#   CTX_CMD_PUSH      -> "the other side" when there is only one
+#                        (E80 panel -> DB; FSH panel -> DB; DB panel -> E80)
+#   CTX_CMD_PUSH_FSH  -> explicitly push to FSH (from DB or E80)
+#   CTX_CMD_PUSH_E80  -> explicitly push to E80 (from FSH; DB uses CTX_CMD_PUSH)
 #----------------------------------------------------
 
 sub getPushMenuItems
 {
-	my ($panel, $wpmgr, @nodes) = @_;
+	my ($panel, $peers, @nodes) = @_;
+	$peers //= {};
 	return () if !@nodes;
-	return () if grep { ($_->{type} // '') eq 'root' } @nodes;
+	return () if grep { my $t = $_->{type} // ''; $t eq 'root' || $t eq 'track_group' } @nodes;
 
 	if ($panel eq 'e80')
 	{
-		my $dbh = connectDB();
-		return () if !$dbh;
-		my $all_present = 1;
-		for my $node (@nodes)
-		{
-			my $t    = $node->{type} // '';
-			my $uuid = $node->{uuid} // '';
-			if (!$uuid || $t eq 'track' || $t eq 'header'
-			           || $t eq 'my_waypoints' || $t eq 'route_point')
-			{
-				$all_present = 0;
-				last;
-			}
-			my $found;
-			if    ($t eq 'waypoint') { $found = getWaypoint($dbh, $uuid);   }
-			elsif ($t eq 'group')    { $found = getCollection($dbh, $uuid); }
-			elsif ($t eq 'route')    { $found = getRoute($dbh, $uuid);      }
-			else                     { $all_present = 0; last; }
-			if (!$found) { $all_present = 0; last; }
-		}
-		disconnectDB($dbh);
-		return $all_present ? ({ id => $CTX_CMD_PUSH, label => 'Push to DB' }) : ();
+		my @items;
+		push @items, { id => $CTX_CMD_PUSH,     label => 'Push to DB'  }
+			if _e80NodesAllInDB(\@nodes);
+		push @items, { id => $CTX_CMD_PUSH_FSH, label => 'Push to FSH' }
+			if $peers->{fsh_db} && _e80NodesAllInFSH($peers->{fsh_db}, \@nodes);
+		return @items;
 	}
-	else  # database panel
+
+	if ($panel eq 'fsh')
 	{
-		return () if !$wpmgr;
-		my $all_present = 1;
-		for my $node (@nodes)
-		{
-			my $t  = $node->{type}  // '';
-			my $d  = $node->{data}  // {};
-			my $ot = $d->{obj_type}  // '';
-			my $nt = $d->{node_type} // '';
-			my $uuid = $d->{uuid} // '';
-			if (!$uuid || $t eq 'root' || $t eq 'route_point')
-			{
-				$all_present = 0;
-				last;
-			}
-			my $found;
-			if ($t eq 'object')
-			{
-				if    ($ot eq 'waypoint') { $found = $wpmgr->{waypoints}{$uuid}; }
-				elsif ($ot eq 'route')    { $found = $wpmgr->{routes}{$uuid};    }
-				else                      { $all_present = 0; last; }
-			}
-			elsif ($t eq 'collection')
-			{
-				if ($nt eq 'group') { $found = $wpmgr->{groups}{$uuid}; }
-				else                { $all_present = 0; last; }
-			}
-			else { $all_present = 0; last; }
-			if (!$found) { $all_present = 0; last; }
-		}
-		return $all_present ? ({ id => $CTX_CMD_PUSH, label => 'Push to E80' }) : ();
+		my @items;
+		push @items, { id => $CTX_CMD_PUSH,     label => 'Push to DB'  }
+			if _fshNodesAllInDB(\@nodes);
+		push @items, { id => $CTX_CMD_PUSH_E80, label => 'Push to E80' }
+			if $peers->{wpmgr} && _fshNodesAllInE80($peers->{wpmgr}, \@nodes);
+		return @items;
 	}
+
+	# database panel
+	my @items;
+	if ($peers->{wpmgr} && _dbNodesAllInE80($peers->{wpmgr}, \@nodes))
+	{
+		push @items, { id => $CTX_CMD_PUSH, label => 'Push to E80' };
+	}
+	if ($peers->{fsh_db} && _dbNodesAllInFSH($peers->{fsh_db}, \@nodes))
+	{
+		push @items, { id => $CTX_CMD_PUSH_FSH, label => 'Push to FSH' };
+	}
+	return @items;
+}
+
+
+sub _e80NodesAllInDB
+{
+	# E80 tree-node UUIDs are already navMate no-dash form (the NET
+	# layer decodes them that way), so the DB lookup is direct.
+	my ($nodes) = @_;
+	my $dbh = connectDB();
+	return 0 if !$dbh;
+	my $ok = 1;
+	for my $node (@$nodes)
+	{
+		my $t    = $node->{type} // '';
+		my $uuid = $node->{uuid} // '';
+		if (!$uuid || $t eq 'track' || $t eq 'header'
+		           || $t eq 'my_waypoints' || $t eq 'route_point')
+		{
+			$ok = 0; last;
+		}
+		my $found;
+		if    ($t eq 'waypoint') { $found = getWaypoint($dbh, $uuid);   }
+		elsif ($t eq 'group')    { $found = getCollection($dbh, $uuid); }
+		elsif ($t eq 'route')    { $found = getRoute($dbh, $uuid);      }
+		else                     { $ok = 0; last; }
+		if (!$found) { $ok = 0; last; }
+	}
+	disconnectDB($dbh);
+	return $ok;
+}
+
+
+sub _fshNodesAllInDB
+{
+	# FSH tree-node UUIDs are dashed-upper (the FSH key form).  Convert
+	# to navMate no-dash form before DB lookup at the seam.
+	my ($nodes) = @_;
+	my $dbh = connectDB();
+	return 0 if !$dbh;
+	my $ok = 1;
+	for my $node (@$nodes)
+	{
+		my $t        = $node->{type} // '';
+		my $fsh_uuid = $node->{uuid} // '';
+		if (!$fsh_uuid || $t eq 'track' || $t eq 'header'
+		               || $t eq 'my_waypoints' || $t eq 'route_point')
+		{
+			$ok = 0; last;
+		}
+		my $uuid = fshToNavUUID($fsh_uuid);
+		my $found;
+		if    ($t eq 'waypoint') { $found = getWaypoint($dbh, $uuid);   }
+		elsif ($t eq 'group')    { $found = getCollection($dbh, $uuid); }
+		elsif ($t eq 'route')    { $found = getRoute($dbh, $uuid);      }
+		else                     { $ok = 0; last; }
+		if (!$found) { $ok = 0; last; }
+	}
+	disconnectDB($dbh);
+	return $ok;
+}
+
+
+sub _dbNodesAllInE80
+{
+	# DB selection nodes carry navMate-form UUIDs; $wpmgr's per-type
+	# hashes are keyed by the same form.  Direct lookup.
+	my ($wpmgr, $nodes) = @_;
+	for my $node (@$nodes)
+	{
+		my $t  = $node->{type}  // '';
+		my $d  = $node->{data}  // {};
+		my $ot = $d->{obj_type}  // '';
+		my $nt = $d->{node_type} // '';
+		my $uuid = $d->{uuid} // '';
+		return 0 if !$uuid || $t eq 'root' || $t eq 'route_point';
+		my $found;
+		if ($t eq 'object')
+		{
+			if    ($ot eq 'waypoint') { $found = $wpmgr->{waypoints}{$uuid}; }
+			elsif ($ot eq 'route')    { $found = $wpmgr->{routes}{$uuid};    }
+			else                      { return 0; }
+		}
+		elsif ($t eq 'collection')
+		{
+			if ($nt eq 'group') { $found = $wpmgr->{groups}{$uuid}; }
+			else                { return 0; }
+		}
+		else { return 0; }
+		return 0 if !$found;
+	}
+	return 1;
+}
+
+
+sub _dbNodesAllInFSH
+{
+	# DB selection nodes carry navMate-form UUIDs; FSH-db per-type
+	# hashes are keyed by FSH dashed-upper.  Convert at the seam.
+	my ($fsh_db, $nodes) = @_;
+	for my $node (@$nodes)
+	{
+		my $t  = $node->{type}  // '';
+		my $d  = $node->{data}  // {};
+		my $ot = $d->{obj_type}  // '';
+		my $nt = $d->{node_type} // '';
+		my $uuid = $d->{uuid} // '';
+		return 0 if !$uuid || $t eq 'root' || $t eq 'route_point';
+		my $fsh_uuid = navToFSHUUID($uuid);
+		my $found;
+		if ($t eq 'object')
+		{
+			if    ($ot eq 'waypoint') { $found = $fsh_db->{waypoints}{$fsh_uuid}; }
+			elsif ($ot eq 'route')    { $found = $fsh_db->{routes}{$fsh_uuid};    }
+			else                      { return 0; }
+		}
+		elsif ($t eq 'collection')
+		{
+			if ($nt eq 'group') { $found = $fsh_db->{groups}{$fsh_uuid}; }
+			else                { return 0; }
+		}
+		else { return 0; }
+		return 0 if !$found;
+	}
+	return 1;
+}
+
+
+sub _e80NodesAllInFSH
+{
+	# E80 tree-node UUIDs are navMate no-dash form; FSH-db is keyed by
+	# FSH dashed-upper.  Convert at the seam.  Walks group-embedded WPs
+	# too since FSH stores group members as embedded records, not as
+	# references to standalone WPT blocks.
+	my ($fsh_db, $nodes) = @_;
+	# Cache the union of standalone + embedded WP UUIDs as nav-form
+	# strings (we will be checking 1..N of them).
+	my %fsh_wp_have;
+	for my $fu (keys %{$fsh_db->{waypoints} // {}})
+	{
+		$fsh_wp_have{fshToNavUUID($fu)} = 1;
+	}
+	for my $grp (values %{$fsh_db->{groups} // {}})
+	{
+		for my $wp (@{$grp->{wpts} // []})
+		{
+			$fsh_wp_have{fshToNavUUID($wp->{uuid})} = 1 if $wp->{uuid};
+		}
+	}
+	for my $node (@$nodes)
+	{
+		my $t    = $node->{type} // '';
+		my $uuid = $node->{uuid} // '';
+		if (!$uuid || $t eq 'track' || $t eq 'header'
+		           || $t eq 'my_waypoints' || $t eq 'route_point')
+		{
+			return 0;
+		}
+		my $fsh_uuid = navToFSHUUID($uuid);
+		my $found;
+		if    ($t eq 'waypoint') { $found = $fsh_wp_have{$uuid}; }
+		elsif ($t eq 'group')    { $found = $fsh_db->{groups}{$fsh_uuid}; }
+		elsif ($t eq 'route')    { $found = $fsh_db->{routes}{$fsh_uuid}; }
+		else                     { return 0; }
+		return 0 if !$found;
+	}
+	return 1;
+}
+
+
+sub _fshNodesAllInE80
+{
+	# FSH tree-node UUIDs are FSH dashed-upper; E80 WPMGR hashes are
+	# keyed by navMate no-dash form.  Convert at the seam.
+	my ($wpmgr, $nodes) = @_;
+	for my $node (@$nodes)
+	{
+		my $t        = $node->{type} // '';
+		my $fsh_uuid = $node->{uuid} // '';
+		if (!$fsh_uuid || $t eq 'track' || $t eq 'header'
+		               || $t eq 'my_waypoints' || $t eq 'route_point')
+		{
+			return 0;
+		}
+		my $uuid = fshToNavUUID($fsh_uuid);
+		my $found;
+		if    ($t eq 'waypoint') { $found = $wpmgr->{waypoints}{$uuid}; }
+		elsif ($t eq 'group')    { $found = $wpmgr->{groups}{$uuid};    }
+		elsif ($t eq 'route')    { $found = $wpmgr->{routes}{$uuid};    }
+		else                     { return 0; }
+		return 0 if !$found;
+	}
+	return 1;
 }
 
 

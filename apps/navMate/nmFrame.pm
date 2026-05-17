@@ -25,6 +25,7 @@ use nmResources;
 use nmDialogs;
 use navServer;
 use navTest;
+use navOps;
 use navLeaflet;
 use navFSH;
 use winDatabase;

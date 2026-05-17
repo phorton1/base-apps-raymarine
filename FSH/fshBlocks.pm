@@ -322,13 +322,19 @@ sub decodeMTA
 	# Note that Z16 removes trailing nulls and garbage from strings
 	# And once again, no date-time on a track!!
     # uuid_cnt is always exactly 1 for E80 ARCHIVE.FSH's
-    
+
 	my $rec = unpackRecord($dbg_mta+1,$MTA_FIELD_SPECS,$bytes);
     if ($rec->{uuid_cnt} != 1)
     {
         error("MTA$dbg_str has $rec->{uuid_cnt} track uuid's!");
         return 0;
     }
+
+	# Z16 strips trailing NULs but NOT spaces; encodeMTA pads the 16-byte
+	# name field with spaces, so strip trailing whitespace here so callers
+	# see the logical name without the on-disk padding.
+
+	$rec->{name} =~ s/\s+$// if defined $rec->{name};
 
 	$rec->{mta_uuid} = uuidToStr($uuid);
 
@@ -442,16 +448,13 @@ sub encodeMTA  # create an MTA
 		$temp_k_end = $pt2->{temp_k} // 0;
 	}
 
-	my $name = $rec->{name};
-	my $name_len = length($name);
-	if ($name_len > 16)
+	my $name = $rec->{name} // '';
+	if (length($name) > $FSH_MAX_NAME)
 	{
-		$name = substr($name,0,16);
+		error("encodeMTA: track name '$name' exceeds $FSH_MAX_NAME chars");
+		return 0;
 	}
-	elsif ($name_len < 16)
-	{
-		$name .= ' ' x (16-$name_len);
-	}
+	$name .= ' ' x (16 - length($name));
 
 	my $mta_rec = {
 		k1_1         => 0x01,			# => 'c',        #   0     char a;                   // always 0x01
@@ -850,6 +853,18 @@ sub encodeWPT
 {
 	my ($this, $wpt) = @_;
 	display($dbg_wwpt, 0, "encodeWPT(".($wpt->{uuid}//'?').") name=".($wpt->{name}//''));
+	my $name    = $wpt->{name}    // '';
+	my $comment = $wpt->{comment} // '';
+	if (length($name) > $FSH_MAX_NAME)
+	{
+		error("encodeWPT: waypoint name '$name' exceeds $FSH_MAX_NAME chars");
+		return 0;
+	}
+	if (length($comment) > $FSH_MAX_COMMENT)
+	{
+		error("encodeWPT: waypoint '$name' comment exceeds $FSH_MAX_COMMENT chars");
+		return 0;
+	}
 	my $bytes = _encodeCommonWaypoint($wpt);
 	$this->createBlock($wpt->{uuid}, $FSH_BLK_WPT, $bytes);
 	return 1;
@@ -867,6 +882,27 @@ sub encodeGRP
 	my $wpts     = $grp->{wpts} // [];
 	my $uuid_cnt = scalar @$wpts;
 	display($dbg_wgrp, 0, "encodeGRP($name) uuid_cnt=$uuid_cnt");
+
+	if (length($name) > $FSH_MAX_NAME)
+	{
+		error("encodeGRP: group name '$name' exceeds $FSH_MAX_NAME chars");
+		return 0;
+	}
+	for my $wpt (@$wpts)
+	{
+		my $wn = $wpt->{name}    // '';
+		my $wc = $wpt->{comment} // '';
+		if (length($wn) > $FSH_MAX_NAME)
+		{
+			error("encodeGRP($name): member waypoint name '$wn' exceeds $FSH_MAX_NAME chars");
+			return 0;
+		}
+		if (length($wc) > $FSH_MAX_COMMENT)
+		{
+			error("encodeGRP($name): member waypoint '$wn' comment exceeds $FSH_MAX_COMMENT chars");
+			return 0;
+		}
+	}
 
 	my $bytes = pack('SS', length($name), $uuid_cnt) . $name;
 
@@ -897,6 +933,32 @@ sub encodeRTE
 	my $pts     = $rec->{pts}     // [];
 	my $uuid_cnt = scalar @$wpts;
 	display($dbg_wrte, 0, "encodeRTE($name) uuid_cnt=$uuid_cnt");
+
+	if (length($name) > $FSH_MAX_NAME)
+	{
+		error("encodeRTE: route name '$name' exceeds $FSH_MAX_NAME chars");
+		return 0;
+	}
+	if (length($comment) > $FSH_MAX_COMMENT)
+	{
+		error("encodeRTE: route '$name' comment exceeds $FSH_MAX_COMMENT chars");
+		return 0;
+	}
+	for my $wpt (@$wpts)
+	{
+		my $wn = $wpt->{name}    // '';
+		my $wc = $wpt->{comment} // '';
+		if (length($wn) > $FSH_MAX_NAME)
+		{
+			error("encodeRTE($name): member waypoint name '$wn' exceeds $FSH_MAX_NAME chars");
+			return 0;
+		}
+		if (length($wc) > $FSH_MAX_COMMENT)
+		{
+			error("encodeRTE($name): member waypoint '$wn' comment exceeds $FSH_MAX_COMMENT chars");
+			return 0;
+		}
+	}
 
 	# HDR1
 	my $hdr1_rec = {

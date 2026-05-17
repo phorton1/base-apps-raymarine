@@ -1,9 +1,9 @@
-# navOperations Test Run -- Cycle 19
+# navOperations Test Run -- Cycle 18
 
-**Date:** 2026-05-17
-**Start:** 04:16
-**End:** 04:49
-**Cycle:** 19
+**Date:** 2026-05-16
+**Start:** 15:25
+**End:** 16:02
+**Cycle:** 18
 
 ---
 
@@ -13,7 +13,7 @@
 |---------|--------|
 | Section 1 Reset | PASS |
 | Section 2 Database Tests (2.0-2.18b) | PASS -- all 23 steps |
-| Section 3 E80 Tests (3.1-3.18) | PASS -- all 26 steps |
+| Section 3 E80 Tests (3.1-3.18) | PASS -- all 22 steps |
 | Section 4 Track Tests (4.0-4.5) | PASS -- teensyBoat available; all 6 steps |
 | Section 5 Guard Tests | PASS -- all runnable steps; 5.13 NOT_RUN (db_versioning); 5.15a NOT_RUN (precondition already met) |
 

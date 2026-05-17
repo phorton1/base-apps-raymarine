@@ -6,6 +6,7 @@
 **[UI Model](ui_model.md)** --
 **[Implementation](implementation.md)** --
 **navOperations** --
+**[Spoke Contract](navOps_spoke_contract.md)** --
 **[KML Specification](kml_specification.md)** --
 **[GE Notes](ge_notes.md)**
 
@@ -35,10 +36,30 @@ destination panel, determines which commands are valid, and either commits to ex
 or aborts with a user-facing explanation. The rule sections (SS8-SS10) are the pre-flight
 specification; they are not a separate documentation view from the operation behavior.
 
-The feature is implemented across four modules: `navClipboard.pm` owns the clipboard state;
-`navOps.pm` dispatches each command; `navOpsDB.pm` executes database-side operations;
-`navOpsE80.pm` executes E80-side operations. The `navTest.pm` module provides the HTTP-driven
-test dispatcher. See [Implementation](implementation.md) for the full module inventory.
+The feature is implemented across several modules. `navClipboard.pm` owns the clipboard
+state and the pure `get*MenuItems` functions that enumerate logically-valid operations
+for a given context. `navOps.pm` exposes a single dispatch entry point
+`dispatchNavOpsCommand($context, $cmd_id)` which is called both by the wx context-menu
+path (via `onContextMenuCommand`) and by the HTTP path (via `/api/navops/dispatch`).
+`navOpsDB.pm` executes database-side operations; `navOpsE80.pm` and `navOpsFSH.pm`
+execute the E80-spoke and FSH-spoke operations respectively. The `navTest.pm` module
+provides the HTTP-driven UI-integration test dispatcher. See [Implementation](implementation.md)
+for the full module inventory.
+
+The hub-and-spoke abstraction that lets new transports plug in is documented in the
+[Spoke Contract](navOps_spoke_contract.md). E80 (`navOpsE80.pm`) is the original
+asynchronous spoke; FSH (`navOpsFSH.pm`, added Phase 3A) is a synchronous spoke that
+mutates the in-memory `$navFSH::fsh_db` directly and persists explicitly via the
+`Save FSH` menu command.
+
+### Log markers
+
+navOperations dispatches emit magenta `===== <op> (<panel>) STARTED =====` /
+`===== <op> (<panel>) FINISHED =====` lines around every context-menu operation,
+visible in the log via the testplan and monitoring tooling.  The existing
+`Pub::WX::ProgressDialog` continues to emit its own `===== ProgressDialog 'TITLE'
+STARTED / FINISHED =====` markers when a dialog renders for an asynchronous
+spoke operation; these are independent of the navOps op markers.
 
 
 ## 1. Invariants

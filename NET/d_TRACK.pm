@@ -926,7 +926,7 @@ sub handleEvent
 		if ($mask != 1)
 		{
 			warning($dbg_events,1,"enquing GET_CUR2");
-			$this->queueTRACKCommand($API_GENERAL_CMD_NAME,0,'cur2');
+			$this->queueTRACKCommand($API_GENERAL_CMD_NAME,0,'cur2',undef,undef);
 		}
 	}
 
@@ -954,7 +954,7 @@ sub handleEvent
 			else	# enqueue a GET_TRACK command
 			{
 				warning($dbg_mods,1,"enquing GET_TRACK($uuid)");
-				$this->queueTRACKCommand($API_GET_TRACK,$uuid);
+				$this->queueTRACKCommand($API_GET_TRACK,$uuid,undef,undef,undef);
 			}
 		}	# for each $mod
 	}	# {mods} && $WITH_MOD_PROCESSING

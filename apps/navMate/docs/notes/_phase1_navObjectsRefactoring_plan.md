@@ -1,5 +1,7 @@
 # Phase 1 -- navObjectsRefactoring + NET-Layer Bracketing
 
+> **REMOVAL NOTE 2026-05-17:** The NET-layer bracket system, the panel-free HTTP test surface (`/api/navops/*`, `synthesizeContext`, resolvers, `navTestProgress`), and the supporting infrastructure described below were removed.  The historical content of this document is preserved as-is for the archaeological record but does NOT reflect the current codebase.  See `_navOps_rework_plan.md` for the current architecture.
+
 Part of the navOps rework. See `_navOps_rework_plan.md` for the overall structure and rules. This document is transient (`_` prefix); will be deleted when the rework is complete.
 
 This phase doc starts detailed because Phase 1 is the next phase to be executed. Phases 2-5 start as sketches and are fleshed out before their respective execution sessions, informed by what earlier phases actually delivered.
@@ -140,13 +142,63 @@ Update on landing:
 
 ## Phase Completion Criteria
 
-1. Selection-context synthesis function exists; produces a valid data-hash `@nodes` list from `[Name]` / `rp:[Route]:[RP]` keys plus panel kind, with no wx involvement.
-2. `GET /api/navops/available` returns expected menu items for synthesized contexts.
-3. `POST /api/navops/dispatch` invokes `dispatchNavOpsCommand` and reaches `_doCopy` / `_doCut` / `_doPaste` / `_doDelete` / `_doPush` / `_doNew` for the appropriate `cmd_id`s.
-4. `dispatchNavOpsCommand` is the single entry point used by both `onContextMenuCommand` (wx) and `/api/navops/dispatch` (HTTP).
-5. `navOpsBracket.pm` emits `BRACKET_START <intent>` / `BRACKET_FINISH <intent>` for each navOps context-menu operation; `bracketOuterTick` is wired into `nmFrame.pm:_onIdle`. T = 1 s.
-6. `d_WPMGR` and `d_TRACK` emit `BRACKET_START <api-intent> (outer=<id>)` / `BRACKET_FINISH <api-intent> (outer=<id>)` for each `$API` command, with `outer_id` correctly propagated via `$progress`.
-7. `TestProgress` module exists, emits STARTED / FINISHED log lines, exposes hash contents via `GET /api/navops/progress`, and substitutes for `Pub::WX::ProgressDialog` in panel-free invocations without service-side changes.
-8. The existing testplan runbook still runs to completion with identical results (regression guardrail) -- formally proved in Phase 2 but checked locally during Phase 1 development.
-9. Official docs listed in "Documentation Feedback" have been updated.
-10. This phase doc has been updated to reflect what was actually built, with deviations from initial sketch documented inline.
+(Status as of 2026-05-16: implementation complete through Step 8; doc updates landing now; full testplan regression proof is Phase 2.)
+
+1. **[DONE]** Selection-context synthesis function exists; produces a valid data-hash `@nodes` list from `[Name]` / `rp:[Route]:[RP]` keys plus panel kind, with no wx involvement. Implemented in `navOps.pm` as `synthesizeContext` + `_resolveContextNode` plus E80 and DB resolvers.
+2. **[DONE]** `GET /api/navops/available` returns expected menu items for synthesized contexts. Implemented in `navServer.pm` calling `getAvailableItems` in `navOps.pm`.
+3. **[DONE]** `POST /api/navops/dispatch` invokes `dispatchNavOpsCommand` via the queued main-thread pattern (mirrors `/api/test`). Reaches the existing `_do*` family unchanged.
+4. **[DONE]** `dispatchNavOpsCommand` is the single entry point used by both `onContextMenuCommand` (wx) and `/api/navops/dispatch` (HTTP). `onContextMenuCommand` signature is preserved so `navTest.pm:_doFire` works unchanged.
+5. **[DONE]** `navOpsBracket.pm` emits `BRACKET_START <intent>` / `BRACKET_FINISH <intent>` (cyan via `$UTILS_COLOR_LIGHT_CYAN`) for each navOps context-menu operation. `bracketOuterTick()` is wired into `nmFrame.pm:onIdle`. `$QUIESCENCE_T = 1.0`.
+6. **[DONE]** `d_WPMGR` and `d_TRACK` emit `BRACKET_START <api-intent> inner=<n> outer=<id>` / `BRACKET_FINISH ...` for each `$API` command. `outer_id` correctly propagated via `$progress->{outer_id}` for direct dispatches, AND via the service-level `$current_outer_id :shared` tracker for service self-queued mod-event follow-up commands (see Build Notes).
+7. **[DONE]** `navTestProgress` module exists, emits STARTED / FINISHED log lines (matching `Pub/WX/Dialogs.pm:279` / `:292`), exposes hash contents via `GET /api/navops/progress`, and is constructed alongside `Pub::WX::ProgressDialog` rather than as a replacement (services don't know the difference -- they mutate whatever hash they receive via `$progress`).
+8. **[DEFERRED TO PHASE 2]** Existing testplan runbook regression -- formal proof is Phase 2's job. Step 8 verification on 2026-05-16 confirmed single-op dispatch works correctly through both legacy and new code paths.
+9. **[DONE]** Official docs updated: `navOperations.md` (new entry points + bracketing section), `design_vision.md` (hub-and-spoke + two-sync framing). Deferred: `navOps_spoke_contract.md` (writing it now without Phase 3's second-implementation pressure would lock the contract too early); `navOps_testplan.md` edits (will be revisited if Phase 2 surfaces stale panel-required-dispatch language).
+10. **[DONE]** This phase doc updated -- see Build Notes and Documented Limitations sections below.
+
+---
+
+## Build Notes (2026-05-16)
+
+Implementation summary; what's in this section is durable post-Phase-1 truth supplementing what's in the Scope section above.
+
+### Files
+
+- **New:** `apps/navMate/navTestProgress.pm`, `apps/navMate/navOpsBracket.pm`, `apps/raymarine/NET/a_bracket.pm`.
+- **Modified:** `apps/navMate/navOps.pm` (dispatch refactor + synthesizeContext + DB/E80 resolvers + bracket-context locals), `apps/navMate/navOpsE80.pm` (`_openE80Progress` stamps `outer_intent` / `outer_id` on `$progress`), `apps/navMate/nmFrame.pm` (`onIdle` calls `bracketInnerTick` + `bracketOuterTick` + `pollNavOpsCommand` + `dispatchNavOpsFromHTTP`), `apps/raymarine/NET/d_WPMGR.pm` and `d_TRACK.pm` (timestamps + accessors + inner bracket emission + `$current_outer_id` tracker + follow-up propagation), `apps/navMate/navServer.pm` (three new `/api/navops/*` endpoints + queue + poll).
+
+### Architectural choice: where inner-bracket logic lives
+
+INNER-bracket registry lives in NEW NET-layer module `apps/raymarine/NET/a_bracket.pm`, NOT in the navMate-layer `navOpsBracket.pm`. Rationale: `d_WPMGR` and `d_TRACK` are also used by `shark.pm`. Putting inner-bracket emission in a navMate-layer module would force shark to depend on navMate code (wrong layering direction). `a_bracket.pm` is NET-internal, callable from any consumer of `d_WPMGR` / `d_TRACK`.
+
+### Service self-queued follow-up correlation
+
+The mod-event handlers in `d_WPMGR.pm` (line 637 area) and `d_TRACK.pm` (lines 943, 971 area) auto-queue follow-up commands (GET_ITEM / GET_TRACK / GET_CUR2) when E80 broadcasts MODs. These follow-ups are **part of the originating navOps op semantically** -- they're the cascade we need to wait for before the operation is truly complete.
+
+To propagate `outer_id` onto these follow-ups:
+- Each service holds an `our $current_outer_id :shared = 'none';` module-level scalar.
+- `handleCommand` sets it from `$command->{progress}->{outer_id}` at the start of every command.
+- The mod-event follow-up queue sites read it and construct a `$progress` hash with `outer_id` stamped before calling `queueWPMGRCommand` / `queueTRACKCommand`.
+
+Step 8 verification (Copy WP "Waypoint 2" in DB, Paste New in E80 "test" group) confirmed all five inner brackets in the cascade correctly tagged `outer=3` matching the PASTE outer.
+
+### Inner-bracket FINISH pile-up
+
+By design: all inner brackets observe the same per-service `last_send_ts` / `last_event_ts`. When the service goes quiet, all open inner brackets pass quiescence in the same tick and emit `BRACKET_FINISH` together. The outer bracket emits its FINISH in the same tick (it observes the same timestamps). This is the documented consequence of the "per-`$API`-command START, per-service quiescence FINISH" model -- not a bug. Per-command FINISH timing granularity would require per-command reply tracking, deferred indefinitely.
+
+---
+
+## Documented Limitations
+
+### Dialog-blocking operations close their outer bracket prematurely
+
+When a navOps op opens a wx text-entry dialog and blocks waiting for user input (e.g. `NEW GROUP` asks for a name), there is no service activity during the wait. After `$QUIESCENCE_T = 1` second, the outer bracket closes via the idle tick. When the user dismisses the dialog and the actual `$API` command queues + dispatches, the inner bracket shows `outer=none` because the outer is gone.
+
+Verified case (2026-05-16): NEW GROUP "test" produced `BRACKET_FINISH <NEW GROUP (e80) [?]> outer=2` before the `BRACKET_START <NEW_ITEM Group test> inner=3 outer=none` from the eventual API call.
+
+This is a real limitation of the quiescence-only model for ops that block on user input. Phase 1 accepts the limitation; the operation behavior itself is correct, only the bracket-correlation logging suffers. Possible refinements for a future phase:
+
+- Pause `bracketOuterTick` while any modal wx dialog is active (would extend outer lifetime through the dialog wait).
+- Reset the outer's `start_ts` whenever a child inner bracket fires (would extend outer lifetime as long as ANY service activity occurs).
+- Accept the limitation and document it (current choice).
+
+Not in scope for Phase 1.

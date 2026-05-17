@@ -123,7 +123,7 @@ sub _insertFreshWaypoint
 {
 	my ($dbh, $coll_uuid, $wp, $source, $position) = @_;
 	my $ts     = $wp->{created_ts} // $wp->{ts} // time();
-	my $ts_src = $source eq 'e80' ? 'e80' : ($wp->{ts_source} // 'user');
+	my $ts_src = ($source eq 'e80' || $source eq 'fsh') ? 'e80' : ($wp->{ts_source} // 'user');
 	return insertWaypoint($dbh,
 		name            => $wp->{name}    // '',
 		comment         => $wp->{comment} // '',
@@ -155,7 +155,7 @@ sub _pasteOneWaypointToDB
 	return 'aborted' if $$policy_ref && $$policy_ref eq 'abort';
 
 	my $ts     = $wp->{created_ts} // $wp->{ts} // time();
-	my $ts_src = $source eq 'e80' ? 'e80' : ($wp->{ts_source} // 'user');
+	my $ts_src = ($source eq 'e80' || $source eq 'fsh') ? 'e80' : ($wp->{ts_source} // 'user');
 
 	my $existing = getWaypoint($dbh, $uuid);
 
@@ -179,7 +179,7 @@ sub _pasteOneWaypointToDB
 		return 'created';
 	}
 
-	if ($source eq 'e80')
+	if (($source eq 'e80' || $source eq 'fsh'))
 	{
 		updateWaypoint($dbh, $uuid,
 			name       => $wp->{name}    // '',
@@ -565,7 +565,7 @@ sub _pasteItemsToCollection
 				next if $$policy_ref && $$policy_ref eq 'abort';
 				if ($cut_flag && $result ne 'skipped' && $result ne 'aborted')
 				{
-					$source eq 'e80'
+					($source eq 'e80' || $source eq 'fsh')
 						? navOps::_cutE80Waypoint($item->{uuid}, $tree)
 						: _cutDatabaseWaypoint($item->{uuid}, $tree);
 				}
@@ -613,14 +613,14 @@ sub _pasteItemsToCollection
 					$any_skipped = 1 if $result eq 'skipped';
 					if ($cut_flag && $result ne 'skipped' && $result ne 'aborted')
 					{
-						$source eq 'e80'
+						($source eq 'e80' || $source eq 'fsh')
 							? navOps::_cutE80Waypoint($member->{uuid}, $tree)
 							: _cutDatabaseWaypoint($member->{uuid}, $tree);
 					}
 				}
 				if ($cut_flag && !($$policy_ref && $$policy_ref eq 'abort') && !$any_skipped && $group_uuid)
 				{
-					$source eq 'e80'
+					($source eq 'e80' || $source eq 'fsh')
 						? navOps::_cutE80Group($group_uuid, $tree)
 						: _cutDatabaseGroup($group_uuid, $tree);
 				}
@@ -632,7 +632,7 @@ sub _pasteItemsToCollection
 			{
 				my $route_data   = $item->{data};
 				my $route_points = $item->{route_points} // [];
-				my $route_color  = $source eq 'e80'
+				my $route_color  = ($source eq 'e80' || $source eq 'fsh')
 					? e80ColorIndexToAbgr($route_data->{color})
 					: $route_data->{color};
 				my $new_route_uuid = insertRoute($dbh,
@@ -653,7 +653,7 @@ sub _pasteItemsToCollection
 				my $route_uuid   = $item->{uuid};
 				my $route_data   = $item->{data};
 				my $route_points = $item->{route_points} // [];
-				my $route_color  = $source eq 'e80'
+				my $route_color  = ($source eq 'e80' || $source eq 'fsh')
 					? e80ColorIndexToAbgr($route_data->{color})
 					: $route_data->{color};
 				my $existing = getRoute($dbh, $route_uuid);
@@ -679,7 +679,7 @@ sub _pasteItemsToCollection
 				appendRouteWaypoint($dbh, $route_uuid, $_->{uuid}, $rpos++) for @$route_points;
 				if ($cut_flag)
 				{
-					$source eq 'e80'
+					($source eq 'e80' || $source eq 'fsh')
 						? navOps::_cutE80Route($route_uuid, $tree)
 						: _cutDatabaseRoute($route_uuid, $tree);
 				}
@@ -701,12 +701,12 @@ sub _pasteItemsToCollection
 				my $pts         = $track->{points} // [];
 				my $ts_start    = $track->{ts_start} // (@$pts ? ($pts->[0]{ts}  // 0) : 0);
 				my $ts_end      = $track->{ts_end}   // (@$pts ? $pts->[-1]{ts}       : undef);
-				my $ts_source   = $source eq 'e80' ? 'e80' : ($track->{ts_source} // 'user');
-				my $track_color = $source eq 'e80'
+				my $ts_source   = ($source eq 'e80' || $source eq 'fsh') ? 'e80' : ($track->{ts_source} // 'user');
+				my $track_color = ($source eq 'e80' || $source eq 'fsh')
 					? e80ColorIndexToAbgr($track->{color})
 					: $track->{color};
 				my $track_uuid = insertTrack($dbh,
-					($source eq 'e80' && !$fresh ? (uuid => $item->{uuid}) : ()),
+					(($source eq 'e80' || $source eq 'fsh') && !$fresh ? (uuid => $item->{uuid}) : ()),
 					name            => $track->{name} // '',
 					color           => $track_color,
 					ts_start        => $ts_start,
@@ -714,7 +714,7 @@ sub _pasteItemsToCollection
 					ts_source       => $ts_source,
 					point_count     => scalar @$pts,
 					collection_uuid => $target_uuid,
-					companion_uuid  => ($source eq 'e80' ? $track->{trk_uuid} : undef),
+					companion_uuid  => (($source eq 'e80' || $source eq 'fsh') ? $track->{trk_uuid} : undef),
 					position        => $pos,
 				);
 				if (@$pts)
@@ -730,7 +730,7 @@ sub _pasteItemsToCollection
 				}
 				if ($cut_flag)
 				{
-					$source eq 'e80'
+					($source eq 'e80' || $source eq 'fsh')
 						? navOps::_cutE80Track($item->{uuid}, $tree)
 						: _cutDatabaseTrack($item->{uuid}, $tree);
 				}
@@ -917,7 +917,7 @@ sub _pasteDB
 				elsif ($t eq 'route')
 				{
 					my $rd    = $item->{data};
-					my $color = $source eq 'e80' ? e80ColorIndexToAbgr($rd->{color}) : $rd->{color};
+					my $color = ($source eq 'e80' || $source eq 'fsh') ? e80ColorIndexToAbgr($rd->{color}) : $rd->{color};
 					if ($fresh)
 					{
 						my $new_uuid = insertRoute($dbh, $rd->{name} // '', $color, $rd->{comment} // '', $coll_uuid, $pos);
@@ -956,8 +956,8 @@ sub _pasteDB
 				{
 					my $tr       = $item->{data};
 					my $pts      = $tr->{points} // [];
-					my $ts_src   = $source eq 'e80' ? 'e80' : ($tr->{ts_source} // 'user');
-					my $color    = $source eq 'e80' ? e80ColorIndexToAbgr($tr->{color}) : $tr->{color};
+					my $ts_src   = ($source eq 'e80' || $source eq 'fsh') ? 'e80' : ($tr->{ts_source} // 'user');
+					my $color    = ($source eq 'e80' || $source eq 'fsh') ? e80ColorIndexToAbgr($tr->{color}) : $tr->{color};
 					my $ts_start = $tr->{ts_start} // (@$pts ? ($pts->[0]{ts} // 0) : 0);
 					my $ts_end   = $tr->{ts_end}   // (@$pts ? $pts->[-1]{ts}       : undef);
 					if ($cut_flag && $source eq 'database' && !$fresh)
@@ -978,7 +978,7 @@ sub _pasteDB
 							ts_source       => $ts_src,
 							point_count     => scalar @$pts,
 							collection_uuid => $coll_uuid,
-							companion_uuid  => ($source eq 'e80' ? $tr->{trk_uuid} : undef),
+							companion_uuid  => (($source eq 'e80' || $source eq 'fsh') ? $tr->{trk_uuid} : undef),
 							position        => $pos,
 						);
 						if (@$pts)
@@ -1055,19 +1055,19 @@ sub _pasteDB
 				my $t = $item->{type} // '';
 				if ($t eq 'waypoint' || $t eq 'route_point')
 				{
-					$source eq 'e80'
+					($source eq 'e80' || $source eq 'fsh')
 						? navOps::_cutE80Waypoint($item->{uuid}, $tree)
 						: _cutDatabaseWaypoint($item->{uuid}, $tree);
 				}
 				elsif ($t eq 'route')
 				{
-					$source eq 'e80'
+					($source eq 'e80' || $source eq 'fsh')
 						? navOps::_cutE80Route($item->{uuid}, $tree)
 						: _cutDatabaseRoute($item->{uuid}, $tree);
 				}
 				elsif ($t eq 'track')
 				{
-					$source eq 'e80'
+					($source eq 'e80' || $source eq 'fsh')
 						? navOps::_cutE80Track($item->{uuid}, $tree)
 						: _cutDatabaseTrack($item->{uuid}, $tree);
 				}
@@ -1204,7 +1204,7 @@ sub _pasteDB
 		for my $item (@to_cut)
 		{
 			next if ($item->{type} // '') eq 'route_point' && $source eq 'database';
-			$source eq 'e80'
+			($source eq 'e80' || $source eq 'fsh')
 				? navOps::_cutE80Waypoint($item->{uuid}, $tree)
 				: _cutDatabaseWaypoint($item->{uuid}, $tree);
 		}

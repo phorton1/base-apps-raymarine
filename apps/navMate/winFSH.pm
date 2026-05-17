@@ -32,6 +32,7 @@ use Wx::Event qw(
 	EVT_TREE_ITEM_RIGHT_CLICK
 	EVT_LEFT_DOWN
 	EVT_MENU
+	EVT_MENU_RANGE
 	EVT_TEXT
 	EVT_BUTTON
 	EVT_CHOICE
@@ -50,6 +51,8 @@ use n_defs;
 use n_utils;
 use navPrefs;
 use nmResources;
+use navClipboard;
+use navOps qw(buildContextMenu onContextMenuCommand);
 use base 'winTreeBase';
 
 my $dbg_wfsh = 0;
@@ -215,6 +218,10 @@ sub new
 	EVT_TREE_ITEM_RIGHT_CLICK($this, $this->{tree}, \&onTreeRightClick);
 	EVT_MENU($this, $CTX_CMD_SHOW_MAP, \&_onShowMap);
 	EVT_MENU($this, $CTX_CMD_HIDE_MAP, \&_onHideMap);
+	# Capture all navOps context-menu IDs (Copy=10200..PUSH_FSH=10251).
+	# Same range pattern as winE80/winDatabase keeps the panel dispatch
+	# parallel; see winE80.pm:_onNmOpsCmd for the matching handler.
+	EVT_MENU_RANGE($this, 10200, 10299, \&_onNmOpsCmd);
 	EVT_LEFT_DOWN($this->{tree}, sub { $this->_onTreeLeftDown(@_) });
 	EVT_TEXT($this,         $this->{ed_name},         $this->can('_onFieldChanged'));
 	EVT_TEXT($this,         $this->{ed_comment},       $this->can('_onFieldChanged'));
@@ -913,13 +920,13 @@ sub _allTracks
 
 
 #---------------------------------
-# right-click context menu (stub)
+# right-click context menu
 #---------------------------------
-# Minimal pattern paralleling winE80 / winDatabase: right-click selects
-# the clicked item (if not already part of the selection) and pops a menu
-# with Show / Hide on Map for the current multi-selection.  The full
-# navOperations integration (copy/cut/paste/delete/new) will be added
-# when winFSH is wired into navOps.
+# Wires winFSH up to navOperations as the third spoke (Phase 3A).
+# Pattern parallels winE80/winDatabase: right-click selects the clicked
+# item if not in the existing multi-selection, then the menu is built
+# from the get*MenuItems family (via navOps::buildContextMenu) plus
+# the winFSH-local Show/Hide on Map items.
 
 sub onTreeRightClick
 {
@@ -946,14 +953,46 @@ sub onTreeRightClick
 sub _buildContextMenu
 {
 	my ($this, $right_click_node) = @_;
-	my $menu = Wx::Menu->new();
+	my $tree = $this->{tree};
+
+	# Collect the full multi-selection as @nodes; navOps builds the
+	# menu from this plus the right-click node.
+	my @nodes;
+	for my $item ($tree->GetSelections())
+	{
+		my $d = $tree->GetItemData($item);
+		next if !$d;
+		my $n = $d->GetData();
+		push @nodes, $n if ref $n eq 'HASH';
+	}
+	$this->{_context_nodes} = \@nodes;
+
+	my $menu = buildContextMenu('fsh', $right_click_node, @nodes);
+
+	# Append winFSH-local Show/Hide on Map for non-root nodes.  Keeps
+	# the existing visibility commands available regardless of what
+	# navOps offers.
 	my $type = $right_click_node->{type} // '';
 	if ($type ne 'root')
 	{
+		$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
 		$menu->Append($CTX_CMD_SHOW_MAP, 'Show on Map');
 		$menu->Append($CTX_CMD_HIDE_MAP, 'Hide on Map');
 	}
 	return $menu;
+}
+
+
+sub _onNmOpsCmd
+	# EVT_MENU_RANGE handler for all navOps context-menu cmd IDs
+	# (10200..10299).  Parallels winE80::_onNmOpsCmd; reuses the
+	# right-click and selection state captured by onTreeRightClick.
+{
+	my ($this, $event) = @_;
+	my $cmd_id      = $event->GetId();
+	my $right_click = $this->{_right_click_node} // {};
+	my @nodes       = @{$this->{_context_nodes} // []};
+	onContextMenuCommand($cmd_id, 'fsh', $right_click, $this->{tree}, @nodes);
 }
 
 

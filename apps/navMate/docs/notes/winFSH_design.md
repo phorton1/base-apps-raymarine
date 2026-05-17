@@ -39,6 +39,27 @@ Active-blocks-only is the current load behavior.  The deleted-items path
 described below is Phase 2 work.
 
 
+## navOps Phase 3A - Context Menu Wired (2026-05-16)
+
+winFSH's right-click context menu is no longer a Show/Hide-on-Map stub.  It
+is now driven by the `get*MenuItems` family in `navClipboard.pm` via
+`navOps::buildContextMenu('fsh', ...)`, parallel to winE80 and winDatabase.
+See `apps/navMate/docs/navOps_spoke_contract.md` for the abstraction.
+
+The implementation rule below (sub-name parity with winE80 for the eventual
+winTreeBase refactor) was honored: `onTreeRightClick`, `_buildContextMenu`,
+and `_onNmOpsCmd` mirror their winE80 counterparts.  Show/Hide on Map remains
+as a winFSH-local appendage after the navOps items.
+
+Mutations from navOps land in `$navFSH::fsh_db` in memory.  The `.fsh` file
+on disk is NOT touched -- the user persists by invoking `Save FSH`
+explicitly.  This mirrors the DB-with-revert mental model and avoids
+rewriting a multi-GB archive on every edit.
+
+E80<->FSH cross-panel operations are Phase 3B work.  See
+`_phase3_winFSH_plan.md` for the full Phase 3 scope.
+
+
 ---
 
 ## Deleted Items - Design Concepts (not yet scheduled)

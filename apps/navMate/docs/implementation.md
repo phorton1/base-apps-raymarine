@@ -6,6 +6,7 @@
 **[UI Model](ui_model.md)** --
 **Implementation** --
 **[navOperations](navOperations.md)** --
+**[Spoke Contract](navOps_spoke_contract.md)** --
 **[KML Specification](kml_specification.md)** --
 **[GE Notes](ge_notes.md)**
 

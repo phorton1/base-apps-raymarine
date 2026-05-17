@@ -26,26 +26,9 @@ navOperations as a clean n-point hub-and-spoke architecture.
 
 Hub-and-spoke is a deliberately chosen sanity-saving limitation, not a structural necessity. Cross-spoke operations are composed pipelines routed through the hub; bespoke direct spoke-to-spoke adapters are forbidden. When a direct shortcut looks tempting because both spokes carry an attribute the hub does not represent, the answer is "widen the hub," not "carve a side-channel."
 
-**Operation bracketing -- two coexisting synchronization primitives.**
+**Operation log markers.** navOps dispatches emit magenta `===== <op> (<panel>) STARTED =====` / `===== <op> (<panel>) FINISHED =====` lines around every context-menu operation, visible in the log via the testplan and monitoring tooling.  The existing `Pub::WX::ProgressDialog` continues to emit its own `===== ProgressDialog 'TITLE' STARTED / FINISHED =====` markers when a dialog renders for asynchronous spoke operations.
 
-The existing ProgressDialog step-count sync is preserved unchanged. The dialog (defined as `Pub::WX::ProgressDialog` inside `Pub/WX/Dialogs.pm:178`) emits structured log lines `===== ProgressDialog 'TITLE' STARTED =====` (line 279) and `===== ProgressDialog 'TITLE' FINISHED =====` (line 292). Services in `d_WPMGR.pm`, `d_TRACK.pm`, and `e_wp_api.pm` mutate a shared progress hash (`$progress->{total}`, `$progress->{done}`, `$progress->{label}`, `$progress->{error}`, `$progress->{cancelled}`, `$progress->{workers}`) created by `Pub::WX::ProgressDialog::newProgressData` (`Pub/WX/Dialogs.pm:209`). The dialog polls the hash to render. No method dispatch; communication is shared-hash mutation. This proves a *service-correctness* property: did the service emit the right number of step-count mutations in the right shape. A hung dialog is a real bug signal, not a UI artifact.
-
-A new NET-layer quiescence detector is added inside `d_WPMGR` and `d_TRACK` as a second, independent sync primitive. It tracks `last_send_ts` and `last_event_ts` at the `handleCommand` and `handleEvent` entry points; emits `BRACKET_START <intent>` / `BRACKET_FINISH <intent>` log lines for each `$API` command (INNER bracket), where intent is a free-form per-command string. Quiescence interval T = 1 second starting value. This proves a *transport-completion* property: did the spoke actually fall idle. `navOps` code emits a parallel OUTER bracket per context-menu operation (one level of nesting; no inner-inner); outer brackets close when all child inner brackets have closed plus quiescence. Different consumer: the panel-free navOps-layer test surface, which subscribes to outer brackets and treats `$API`-level activity as opaque.
-
-The two primitives cross-check each other. Disagreement is signal: if quiescence closes but step-count is incomplete, the service under-emitted; if step-count completes but events are still firing, the dialog's expectation was wrong. **A hung ProgressDialog is never auto-dismissed by quiescence** -- that would mask exactly the step-count bugs the dialog exists to catch.
-
-**Test architecture -- two surfaces multiplied by three per-spoke branches.**
-
-Surfaces:
-- **navOps-layer (logic).** Tests panel-free: synthesized contexts dispatched directly to navOps; assertions on canonical state changes, identity reconciliation, lossy-transform fidelity. Consumes the quiescence sync primitive (no dialog).
-- **UI-integration.** The existing testplan runbook (`apps/navMate/docs/notes/navOps_testplan_runbook.md`): real wx tree widgets, real context-menu dispatch, real ProgressDialog rendering. Tests the plumbing between user action and navOps logic. Consumes the dialog's step-count sync primitive via the existing shared progress hash.
-
-Per-spoke branches:
-- **DB intra-hub.** Tests pure navMate canonical operations; no spoke crossings; no hardware; no panels. Function-call latency. The speed win that the rework unlocks.
-- **E80 hub-spoke.** Tests hub<->E80 crossings AND intra-E80 operations. Requires E80 hardware.
-- **FSH hub-spoke.** Tests hub<->FSH crossings AND intra-FSH operations. Requires an FSH archive open.
-
-No fourth "composition" category. By hub-and-spoke discipline, cross-spoke operations are composed pipelines through the hub. A DB->E80 paste is properly tested as hub-side correctness (DB branch) + E80-side write correctness (E80 branch).
+**Test architecture.** A single UI-integration test surface: the existing testplan runbook (`apps/navMate/docs/notes/navOps_testplan_runbook.md`), driving real wx tree widgets, real context-menu dispatch, and real ProgressDialog rendering. Phase 4 extends it with an FSH section and sectional independence. (An earlier draft of this plan called for a second panel-free test surface and the supporting bracket / `/api/navops/*` infrastructure; that was retired 2026-05-17 as superfluous -- see Phase Outline.)
 
 ---
 
@@ -65,39 +48,43 @@ Plan and phase docs (`_*.md`, transient) are the working surface for the rework 
 
 Inventory of current navOps state: module contents and function inventories for `navOps.pm` / `navOpsE80.pm` / `navOpsDB.pm` / `navClipboard.pm`; the `$progress` mutation path through `d_WPMGR` / `d_TRACK` / `e_wp_api`; the existing `Pub::WX::ProgressDialog` bracketing emission; `navTest.pm`'s panel-resolution chain; `winFSH.pm`'s current state including its context-menu stub at `winFSH.pm:946`; the FSH parsing module landscape (`apps/raymarine/FSH/*.pm`).
 
-The inventory's findings ground Phase 1's "Current State" section and informed the loose initial drafts of Phases 2-5. Inventory is not its own implementation phase.
+The inventory's findings ground Phase 1's "Current State" section and informed the loose initial drafts of Phases 2-4. Inventory is not its own implementation phase.
 
-### Phase 1 -- navObjectsRefactoring + NET-Layer Bracketing
+### Phase 1 -- navObjectsRefactoring -- COMPLETE 2026-05-16
 
-See `_phase1_navObjectsRefactoring_plan.md`.
+See `_phase1_navObjectsRefactoring_plan.md` for completion-criteria tick-offs and Build Notes.
 
-Add selection-context synthesis from test code so `_snapshotNodes` can be exercised without a wx panel (the downstream snapshot/menu-item/dispatch path is already data-layer-clean: `_snapshotNodes` takes a panel-kind string label and data hashes; `get*MenuItems` are pure functions in `navClipboard.pm`). Expose `/api/navops/...` entry points for navOps-layer testing. Add debounced quiescence bracketing in `d_WPMGR` / `d_TRACK` at `handleCommand` / `handleEvent` sites. Add a `TestProgress` parallel consumer of the shared progress hash. Change the existing testplan only where mechanically necessary.
+Refactored navOps so the downstream snapshot/menu-item/dispatch path is data-layer-clean: `_snapshotNodes` takes a panel-kind string label and data hashes; `get*MenuItems` are pure functions in `navClipboard.pm`.  Phase 1 also added an HTTP-driven panel-free test surface (synthesizeContext + `/api/navops/*` endpoints) and a NET-layer bracket / quiescence detector to support a planned second test surface; those pieces were removed 2026-05-17 (see Phase 1 doc top banner).  Changed the existing testplan only where mechanically necessary (turned out to be zero changes; `onContextMenuCommand` signature was preserved through the refactor).
 
-### Phase 2 -- Regression + Factoring Proof
+### Phase 2 -- Regression + Factoring Proof -- COMPLETE 2026-05-16
 
-See `_phase2_regressionProof_plan.md`.
+See `_phase2_regressionProof_plan.md` for what was actually delivered.
 
-Prove Phase 1's factoring is real. Existing testplan runbook runs unchanged (regression guardrail). New no-window / no-dialog cycle exercises Phase 1's navOps-layer entry points and passes. Eyeball comparison of dialog log lines versus `TestProgress` events catches drift between the two sync primitives.
+Scope reduced mid-phase: the regression guardrail (existing testplan runbook unchanged) was the load-bearing activity and shipped clean in Cycle 18. Two speculative activities originally sketched (panel-free no-window navOps-layer cycle; eyeball drift-check between dialog step-count sync and NET-layer quiescence) were retired.
 
-### Phase 3 -- winFSH Wiring + Rudimentary UX
+### Phase 3 -- winFSH Wiring + Rudimentary UX -- COMPLETE 2026-05-16
 
-See `_phase3_winFSH_plan.md`.
+See `_phase3_winFSH_plan.md` for both sub-phases' Build Notes and Documented Limitations.
 
-Replace `winFSH.pm`'s context menu stub at `winFSH.pm:946` (currently just Show/Hide Map) with the full `get*MenuItems` pattern. Implement `navOpsFSH.pm` using the factored abstractions established in Phase 1. Rudimentary real-world UX testing -- the second-implementation validation of the spoke contract.
+- **Phase 3A** (landed) -- Replaced `winFSH.pm`'s context menu stub at `winFSH.pm:946` with the full `get*MenuItems` pattern. Implemented `navOpsFSH.pm` using the factored abstractions established in Phase 1. Intra-FSH and DB<->FSH cross-panel operations. Authored the long-deferred `navOps_spoke_contract.md`. The second-implementation validation of the spoke contract landed here.
+- **Phase 3B** (landed) -- E80<->FSH cross-panel operations, composed as pipelines through the navMate canonical hub. Hub-and-spoke discipline preserved: no bespoke direct adapter; cross-spoke ops route through the existing snapshot/paste handlers because the canonical clipboard IS the hub for these in-memory ops. Centralized cut-cleanup dispatch in `_cutPasteCleanup*` helpers.
 
-### Phase 4 -- Testplan Bifurcation
+Phase 3 = feature-complete; testing is Phase 4 work.
 
-See `_phase4_testplanBifurcation_plan.md`.
+### Phase 4 -- FSH Test Coverage + Runbook Sectional Independence
 
-Pull a navOps-layer test surface out of the existing testplan runbook. Partition along the per-spoke axis (DB intra-hub, E80 hub-spoke, FSH hub-spoke) with per-branch preconditions segregated.
+See `_phase4_fshTestCoverage_plan.md`.
 
-### Phase 5 -- FSH Test Coverage (Completion Criterion)
+Two bundled deliverables in a single phase, deliberately combined because they are mutually enabling:
 
-See `_phase5_fshTestCoverage_plan.md`.
+1. Add **Section 6 (FSH)** to the existing UI-integration runbook (`apps/navMate/docs/notes/navOps_testplan_runbook.md`), bringing FSH coverage to parity with E80 on that surface.
+2. **Restructure the existing runbook for strict sectional independence**: each section reverts and sets itself up from baseline so it can run standalone OR as part of a full cycle. Section 1 collapses to "mark start time." UUID table chosen so reverted baseline supports every section's pre-state. Sections no longer chain.
 
-Develop AND RUN entries for navOpsFSH on the navOps-layer testplan, and for winFSH on the UI-integration testplan, bringing FSH coverage to parity with E80 across both surfaces.
+The independence work is what makes iterative FSH-testing useful -- you can re-run just Section 6 to prove/fix Phase 3's wiring without re-driving the rest of the cycle. Phase 4 closes with a clean full-cycle run as final regression.
 
-**Phase 5 is not deferred. It is the completion criterion for the rework.** The major implementation milestone is reached only when all tests, including FSH on both surfaces, have been developed and run.
+### Phase 5 -- Retired 2026-05-17
+
+Originally planned as "Testplan Bifurcation": a panel-free navOps-layer testplan consuming the latent `/api/navops/*` + `navTestProgress` infrastructure from Phase 1.  The supporting infrastructure was removed 2026-05-17 as superfluous; Phase 5 retired with it.  The single UI-integration test surface (Phase 4) is now the test surface.  See the `_phase5_testplanBifurcation_plan.md` deletion and the Phase 1 doc top banner for context.
 
 ---
 
@@ -105,10 +92,10 @@ Develop AND RUN entries for navOpsFSH on the navOps-layer testplan, and for winF
 
 The rework is complete when ALL of the following hold:
 
-1. All five phases have landed.
+1. Phases 1-4 have landed (Phase 5 retired 2026-05-17).
 2. Each phase doc has been updated to reflect what was actually built (deviations from initial sketch documented inline).
 3. Official navMate documentation (architecture docs, testplan runbook, design notes) is current with what each phase delivered.
-4. The bifurcated testplan exists and has been *run* against all three branches (DB intra-hub, E80 hub-spoke, FSH hub-spoke) on both surfaces (navOps-layer and UI-integration).
+4. The UI-integration runbook covers FSH (Section 6) and runs cleanly with strict sectional independence (Phase 4 deliverable).
 5. The transient `_*.md` plan documents (this file and the phase files) are reviewed for deletion.
 
 ---
