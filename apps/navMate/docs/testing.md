@@ -29,7 +29,7 @@ The navOps test suite verifies the cross-transport (hub-and-spoke) behavior of n
 - **db** -- DB-internal operations (copy/cut/paste/delete inside the database) + DB-only guards
 - **e80** -- DB <-> E80 cross-panel operations + DB-E80 guards
 - **tracks** -- E80 -> DB track download (requires teensyBoat)
-- **fsh** -- DB <-> FSH cross-panel operations + DB-FSH guards (stub; filled as winFSH operations land)
+- **fsh** -- DB <-> FSH cross-panel operations + DB-FSH guards, plus FSH-unique track writes (E80 blocks paste-to-tracks; FSH allows)
 - **hub** -- Three-panel operations routed through navMate (stub; filled as multi-spoke flows land)
 
 Each module runs from its own baseline (revert DB + clear E80 + optional FSH load), independent of any other module. A full-cycle orchestrator composes all modules in order and writes an archived results file.

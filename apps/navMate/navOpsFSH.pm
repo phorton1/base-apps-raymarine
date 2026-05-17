@@ -50,7 +50,7 @@ use threads::shared;
 use Wx qw(:everything);
 use Pub::Utils qw(display warning error getAppFrame);
 use Pub::WX::Dialogs;
-use apps::raymarine::FSH::fshUtils qw($FSH_MAX_NAME $FSH_MAX_COMMENT);
+use apps::raymarine::FSH::fshUtils qw($FSH_MAX_NAME $FSH_MAX_COMMENT latLonToNorthEast);
 use navFSH qw(fshToNavUUID navToFSHUUID);
 use n_defs;
 use n_utils;
@@ -645,14 +645,10 @@ sub _pasteFSH
 {
 	my ($cmd_id, $right_click_node, $tree, $items, $cb) = @_;
 
-	my $rn_type = $right_click_node ? ($right_click_node->{type} // '') : '';
-	my $rn_kind = $right_click_node ? ($right_click_node->{kind} // '') : '';
-	if ($rn_type eq 'track'
-	 || ($rn_type eq 'header' && $rn_kind eq 'tracks'))
-	{
-		warning(0, 0, "_pasteFSH: tracks destination reached paste handler (SS10.8)");
-		return;
-	}
+	# FSH allows track writes (unlike E80) -- paste-to-tracks-header is
+	# valid and routes through _pasteAllToFSH's per-type dispatch to
+	# _pasteTrackToFSH.  No SS10.8 guard here; the guard remains on the
+	# E80 side in navOps.pm.
 
 	if ($cmd_id == $CTX_CMD_PASTE_BEFORE    || $cmd_id == $CTX_CMD_PASTE_AFTER
 	 || $cmd_id == $CTX_CMD_PASTE_NEW_BEFORE || $cmd_id == $CTX_CMD_PASTE_NEW_AFTER)
@@ -955,14 +951,65 @@ sub _pasteRouteToFSH
 
 
 sub _pasteTrackToFSH
+	# Build an in-memory FSH track record from a navMate-canonical track
+	# clipboard item.  Computes FSH-native Mercator north/east from each
+	# point's lat/lon via latLonToNorthEast.  Round-trip to FSH file
+	# (Save FSH) is not yet exercised; that path may need additional
+	# segmentation/sentinel fields when implemented.
 {
-	# Tracks DB->FSH not in scope for Phase 3A (FSH track encoding
-	# expects raw point arrays with sentinels for segments; building
-	# them from a DB track requires the segmentation/encoding logic
-	# kmlToFSH uses, which is out of scope here).  Log and skip.
 	my ($node, $tree, $item, $cb) = @_;
-	warning(0, 0, "_pasteTrackToFSH: DB->FSH track paste not supported in Phase 3A; skipping '"
-	            . ($item->{data}{name} // $item->{uuid} // '?') . "'");
+	my $db = _fshDb();
+	if (!$db) { error("_pasteTrackToFSH: no FSH-db loaded"); return; }
+
+	my $nav_uuid = $item->{uuid};
+	my $fsh_uuid = navToFSHUUID($nav_uuid);
+	my $data     = $item->{data} // {};
+	my ($name, $comment) = _truncForFSH($data->{name} // '', $data->{comment} // '');
+
+	my $pts_in  = $data->{points} // [];
+	my $pts_out = shared_clone([]);
+	for my $pt (@$pts_in)
+	{
+		my $lat = $pt->{lat} // 0;
+		my $lon = $pt->{lon} // 0;
+		my $ne  = latLonToNorthEast($lat, $lon);
+		my $rec = &threads::shared::share({});
+		$rec->{lat}    = $lat;
+		$rec->{lon}    = $lon;
+		$rec->{north}  = $ne->{north} // 0;
+		$rec->{east}   = $ne->{east}  // 0;
+		$rec->{depth}  = $pt->{depth_cm} // 0;
+		$rec->{temp_k} = $pt->{temp_k}   // 0;
+		push @$pts_out, $rec;
+	}
+	my $cnt = scalar @$pts_out;
+
+	my $rec = &threads::shared::share({});
+	$rec->{mta_uuid}     = $fsh_uuid;
+	$rec->{trk_uuid}     = $fsh_uuid;
+	$rec->{name}         = $name;
+	$rec->{comment}      = $comment;
+	$rec->{color}        = abgrToE80Index($data->{color}) // 0;
+	$rec->{points}       = $pts_out;
+	$rec->{cnt}          = $cnt;
+	$rec->{_cnt}         = $cnt;
+	$rec->{uuid_cnt}     = 1;
+	$rec->{active}       = 1;
+	$rec->{north_start}  = $cnt ? $pts_out->[0]{north}  : 0;
+	$rec->{north_end}    = $cnt ? $pts_out->[-1]{north} : 0;
+	$rec->{east_start}   = $cnt ? $pts_out->[0]{east}   : 0;
+	$rec->{east_end}     = $cnt ? $pts_out->[-1]{east}  : 0;
+	$rec->{depth_start}  = $cnt ? $pts_out->[0]{depth}  : 0;
+	$rec->{depth_end}    = $cnt ? $pts_out->[-1]{depth} : 0;
+	$rec->{temp_k_start} = $cnt ? $pts_out->[0]{temp_k} : 0;
+	$rec->{temp_k_end}   = $cnt ? $pts_out->[-1]{temp_k}: 0;
+	$rec->{length}       = 0;
+	$rec->{u1}           = 0;
+	$rec->{k1_1}         = 1;
+	$rec->{k2_0}         = 0;
+
+	$db->{tracks}{$fsh_uuid} = $rec;
+	display($dbg_fsh_ops, 0, "_pasteTrackToFSH: stored '$name' uuid=$fsh_uuid points=$cnt");
 }
 
 

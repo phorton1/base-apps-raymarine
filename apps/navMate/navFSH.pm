@@ -32,8 +32,8 @@ BEGIN
 
 my $dbg_fsh = 0;
 
-our $fsh_db       = undef;
-our $fsh_filename = '';
+our $fsh_db       :shared = undef;
+our $fsh_filename :shared = '';
 
 
 sub getFSHDb   { return $fsh_db; }

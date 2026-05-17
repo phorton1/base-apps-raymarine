@@ -8,6 +8,8 @@ For shared toolbox, see [`../master_runbook.md`](../master_runbook.md). For UUID
 
 ## Baseline Setup
 
+Order matters: `op=suppress&val=1` MUST precede `op=load_fsh` -- the in-memory FSH may be dirty (from interactive work or a prior module run) and would otherwise raise a `discard/save/save-as/cancel` confirm dialog. Suppress auto-discards. See `../master_runbook.md` *Suppress ordering*.
+
 ```powershell
 git -C C:/dat/Rhapsody checkout -- navMate.db
 curl.exe -s "http://localhost:9883/api/test?op=refresh" | Out-Null

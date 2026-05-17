@@ -862,13 +862,15 @@ sub _doPaste
 		return;
 	}
 
-	# SS10.8: tracks header is not a valid paste destination on a spoke
-	# (tracks are read-only via the WPMGR/TRACK and FSH paths in 3A).
-	if ($is_spoke
+	# SS10.8: tracks header is not a valid paste destination on E80
+	# (tracks are E80-assigned UUIDs, read-only via WPMGR/TRACK).  FSH
+	# allows track writes via _pasteTrackToFSH (FSH is a file archive,
+	# not a service).
+	if ($panel eq 'e80'
 	 && ($right_click_node->{type} // '') eq 'header'
 	 && ($right_click_node->{kind} // '') eq 'tracks')
 	{
-		error("Cannot paste to " . uc($panel) . " tracks header -- tracks are read-only");
+		error("Cannot paste to E80 tracks header -- tracks are read-only");
 		return;
 	}
 

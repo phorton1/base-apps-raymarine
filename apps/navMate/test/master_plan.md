@@ -23,7 +23,7 @@ Modules are ordered consistently throughout the suite (overview docs, folder lis
 | 1     | db     | DB-internal ops + DB-only guards | Solid |
 | 2     | e80    | DB <-> E80 cross-panel ops + DB-E80 guards | Solid |
 | 3     | tracks | E80 -> DB tracks via teensyBoat | Solid |
-| 4     | fsh    | DB <-> FSH cross-panel ops + DB-FSH guards | Stub |
+| 4     | fsh    | DB <-> FSH cross-panel ops + DB-FSH guards (incl. FSH-unique track writes) | Solid |
 | 5     | hub    | Three-panel ops routed through navMate | Stub |
 
 ---

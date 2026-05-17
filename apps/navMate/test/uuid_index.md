@@ -97,9 +97,51 @@ UUIDs verified 2026-05-08 from live `/api/nmdb` (schema 10, git-baseline navMate
 
 ## Static -- FSH-side (`source=fsh:_fixtures/test.fsh`)
 
-TBD -- to be populated when fsh module is built. Entries will follow the same shape: `[Name]` token, UUID, role/notes.
+The fixture was copied 2026-05-17 from `FSH/test/working_oldE80.fsh`. Inventory: 50 isolated waypoints (under `my_waypoints`), 4 groups, 3 routes, 123 tracks. UUIDs below are FSH-native dashed-uppercase form -- the format returned by `/api/fsh` and stored in winFSH tree nodes. The navMate canonical form (16-hex lowercase, no dashes) is derived via `fshToNavUUID($fsh_uuid)` at the snapshot seam.
 
-The fixture was copied 2026-05-17 from `FSH/test/working_oldE80.fsh` (already promoted to navMate, with 16-hex UUIDs).
+### Isolated waypoints (under FSH `my_waypoints`)
+
+| [Name] | UUID | Notes |
+|--------|------|-------|
+| [FSH_IsolatedWP1] | 80B2-C48A-5400-D3AE | "Waypoint 25" -- top-level; no group, no route ref |
+| [FSH_IsolatedWP2] | 83B2-167D-3F00-ED99 | "Waypoint 10" -- top-level; no group, no route ref |
+| [FSH_IsolatedWP3] | 83B2-167D-3F00-37D9 | "Waypoint 14" -- top-level; consumed by delete-WP test |
+
+### Group without members in route (safe delete with WPS)
+
+| [Name] | UUID | Notes |
+|--------|------|-------|
+| [FSH_GroupNoRoute] | C482-CB97-D14E-67B2 | "test" group -- 79 embedded members, none referenced by any route. Safe for DELETE GROUP+WPS. |
+
+### Groups with members in routes (delete-WPS blocked)
+
+| [Name] | UUID | Notes |
+|--------|------|-------|
+| [FSH_GroupInRoute] | C482-CBA0-D14E-67B2 | "Timiteo" group -- 6 embedded members, all referenced by Timiteo route. Smallest of the three in-route groups. |
+| [FSH_GroupAguaRoute] | C782-7BB6-7A46-4722 | "Michel_Agua" group -- 10 embedded members, all in Michel_Agua route. |
+| [FSH_GroupSumwoodRoute] | C782-7BB7-7A46-4722 | "Michel_Sumwood" group -- 46 embedded members, all in Michel_Sumwood route. |
+
+### Route + route points (Timiteo)
+
+| [Name] | UUID | Notes |
+|--------|------|-------|
+| [FSH_TestRoute] | C482-CB9E-D14E-67B2 | "Timiteo" route -- 6 embedded points (t01..t06). |
+| [FSH_RP1] | C482-CB98-D14E-67B2 | t01 -- first point of [FSH_TestRoute]. Also embedded in [FSH_GroupInRoute]. |
+| [FSH_RP2] | C482-CB99-D14E-67B2 | t02 -- second point. |
+| [FSH_RP3] | C482-CB9A-D14E-67B2 | t03 -- third point. |
+
+### Track
+
+| [Name] | UUID | Notes |
+|--------|------|-------|
+| [FSH_TestTrack] | A24E-672E-FE06-0A80 | "Track2-006" -- first track in fixture (123 tracks total). |
+
+### FSH UUID format and selection-key construction
+
+- FSH tree nodes use the dashed-uppercase UUID as the `uuid` field; `_getNodeKey` returns this verbatim. `select=<uuid>` in `/api/test?panel=fsh&select=...` uses the FSH-native form.
+- Route point keys follow the same `rp:<route_uuid>:<wp_uuid>` shape as the database panel: `rp:C482-CB9E-D14E-67B2:C482-CB98-D14E-67B2`.
+- Header keys: `header:groups`, `header:routes`, `header:tracks`. `my_waypoints` for the ungrouped WP node.
+- When verifying state via `/api/nmdb` (DB side) after an FSH-to-DB op, expect lowercase-no-dash form -- run `$fsh_uuid -replace '-','' | ToLower` for cross-check.
 
 ---
 

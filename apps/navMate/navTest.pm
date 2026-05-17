@@ -7,7 +7,7 @@
 # via the /api/test HTTP endpoint.
 #
 # API (all params are query params on GET /api/test):
-#   panel=database|e80        which tree window to target
+#   panel=database|e80|fsh    which tree window to target
 #   select=key1,key2,...      node keys to select (UUIDs or "header:groups" etc.)
 #   right_click=key           which node is the right-click target (defaults to first in select)
 #   cmd=10200                 numeric CTX_CMD_* constant to fire
@@ -75,7 +75,10 @@ sub dispatchTestCommand
 	if ($op eq 'refresh')
 	{
 		my $pname = $cmd->{panel} // 'database';
-		my $pid   = ($pname eq 'e80') ? $WIN_E80 : $WIN_DATABASE;
+		my $pid   =
+			$pname eq 'fsh' ? $WIN_FSH :
+			$pname eq 'e80' ? $WIN_E80 :
+			                  $WIN_DATABASE;
 		my $pane  = $main_win->findPane($pid);
 		if (!$pane) { warning(0,0,"navTest: refresh - panel '$pname' not open"); return; }
 		$pane->refresh();
@@ -126,7 +129,10 @@ sub dispatchTestCommand
 
 	# Resolve panel
 	my $panel_name = $cmd->{panel} // 'database';
-	my $panel_id   = ($panel_name eq 'e80') ? $WIN_E80 : $WIN_DATABASE;
+	my $panel_id   =
+		$panel_name eq 'fsh' ? $WIN_FSH :
+		$panel_name eq 'e80' ? $WIN_E80 :
+		                       $WIN_DATABASE;
 	my $panel      = $main_win->findPane($panel_id);
 	if (!$panel)
 	{

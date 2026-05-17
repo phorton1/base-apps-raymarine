@@ -41,14 +41,15 @@ Base URL: `http://localhost:9883`.
 | `GET /api/command?cmd=mark` or `cmd=mark+<tag>` | -- | Snapshots ring seq for `?since=mark`. Response is `{"ok":1,"cmd":"mark"}` -- NO seq returned. Optional tag included in log as `------ MARK: <tag> ------`. |
 | `GET /api/command?cmd=dialog_state` | -- | Logs "dialog_state: active" or "idle" in the LOG (not the response body -- see Pitfalls below). |
 | `GET /api/command?cmd=close_dialog` | -- | Force-closes any hung ProgressDialog. |
-| `GET /api/test?op=refresh` | -- | Reloads navMate.db from disk. |
+| `GET /api/test?op=refresh` | `panel=database\|e80\|fsh` (optional, default `database`) | Refreshes the named panel. For DB it reloads navMate.db from disk; for e80 and fsh it re-renders the panel tree against current spoke state. |
 | `GET /api/test?op=suppress&val=1` | `val=0` to disable; `outcome=reject` for reject path | Enables auto-suppress (no confirmation dialogs). |
 | `GET /api/test?op=clear_e80` | -- | Deletes all E80 routes, groups, waypoints, tracks. Requires suppress=1. |
 | `GET /api/test?op=create_branch&name=NAME` | `parent_uuid` optional (omitted = root) | Dialog-free NEW_BRANCH. Returns `{ok:1,queued:1}`; new branch's UUID appears in log as `navTest: create_branch '<name>' uuid=<uuid>`. |
-| `GET /api/test?op=load_fsh&path=<abs>` | `path` = absolute filesystem path to a `.fsh` archive | Loads FSH file via `navFSH::loadFSH`; opens or refreshes winFSH pane. Log: `navTest: load_fsh done path=<path>` on success; `WARNING: navTest: load_fsh failed for <path>` on parse failure. |
-| `GET /api/test?panel=P&select=K&cmd=N` | `right_click=K` optional | Fires context-menu command N on panel P at node K. |
+| `GET /api/test?op=load_fsh&path=<abs>` | `path` = absolute filesystem path to a `.fsh` archive | Loads FSH file via `navFSH::loadFSH`; opens or refreshes winFSH pane. Log: `navTest: load_fsh done path=<path>` on success; `WARNING: navTest: load_fsh failed for <path>` on parse failure. **Requires `suppress=1` first** if the in-memory FSH may be dirty -- see Suppress ordering note in Reset Primitives. |
+| `GET /api/test?panel=P&select=K&cmd=N` | `right_click=K` optional; `P` = `database`, `e80`, or `fsh` | Fires context-menu command N on panel P at node K. |
 | `GET /api/nmdb` | -- | navMate DB state: arrays -- waypoints, collections, routes, route_waypoints, tracks. |
 | `GET /api/db` | -- | E80 live state: hashes keyed by UUID -- waypoints, groups, routes, tracks. |
+| `GET /api/fsh` | -- | navFSH in-memory state: hashes keyed by FSH-native UUID (dashed-uppercase) -- waypoints, groups, routes, tracks; plus `filename`. Returns `{error:"no FSH database loaded"}` before any `load_fsh`. |
 
 ### `/api/test` queue rule
 
@@ -127,14 +128,16 @@ git -C C:/dat/Rhapsody checkout -- navMate.db
 # Refresh navMate to load reverted DB
 curl.exe -s "http://localhost:9883/api/test?op=refresh"
 
-# Enable suppress (required before any E80 op)
+# Enable suppress (required BEFORE any E80 op AND before load_fsh on a
+# possibly-dirty in-memory FSH; see "Suppress ordering" below)
 curl.exe -s "http://localhost:9883/api/test?op=suppress&val=1"
 
 # Clear E80 (requires suppress=1)
 curl.exe -s "http://localhost:9883/api/test?op=clear_e80"
 # Wait for ProgressDialog FINISHED (see ProgressDialog Pattern below)
 
-# Load FSH fixture (absolute path required)
+# Load FSH fixture (absolute path required; suppress must already be enabled
+# to auto-discard the dirty-bit confirm dialog if the in-memory FSH is dirty)
 curl.exe -s "http://localhost:9883/api/test?op=load_fsh&path=C:/base/apps/raymarine/apps/navMate/test/_fixtures/test.fsh"
 
 # Mark log with module tag for since=mark queries
@@ -142,6 +145,12 @@ curl.exe -s "http://localhost:9883/api/command?cmd=mark+<module-name>+reset"
 ```
 
 The `load_fsh` primitive takes an absolute filesystem path (URL-encode separators if needed). It calls `navFSH::loadFSH($path)` and either refreshes the existing winFSH pane or opens a new one. Log markers: `navTest: load_fsh done path=<path>` on success; `WARNING: navTest: load_fsh failed for <path>` on parse failure. Wired in `navTest.pm` 2026-05-17.
+
+### Suppress ordering -- mandatory before load_fsh
+
+`op=suppress&val=1` MUST be issued before `op=load_fsh` whenever the in-memory FSH may be dirty (Patrick's interactive session, a prior module test run, or any state that left winFSH with unsaved changes). When dirty, `loadFSH` raises a `discard / save / save-as / cancel` confirm dialog; with suppress enabled the dialog is auto-handled as DISCARD so the test can proceed unattended. Without suppress, the dialog blocks the wx idle loop and the test sequence hangs.
+
+A clean cold start of navMate has no dirty FSH, so out-of-order suppress would happen to work -- until it doesn't. Always set suppress first; the cost is one curl.
 
 ---
 

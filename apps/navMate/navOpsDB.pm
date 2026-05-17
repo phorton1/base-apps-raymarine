@@ -565,8 +565,10 @@ sub _pasteItemsToCollection
 				next if $$policy_ref && $$policy_ref eq 'abort';
 				if ($cut_flag && $result ne 'skipped' && $result ne 'aborted')
 				{
-					($source eq 'e80' || $source eq 'fsh')
+					$source eq 'e80'
 						? navOps::_cutE80Waypoint($item->{uuid}, $tree)
+						: $source eq 'fsh'
+						? navOps::_cutFSHWaypoint($item->{uuid}, $tree)
 						: _cutDatabaseWaypoint($item->{uuid}, $tree);
 				}
 			}
@@ -613,15 +615,19 @@ sub _pasteItemsToCollection
 					$any_skipped = 1 if $result eq 'skipped';
 					if ($cut_flag && $result ne 'skipped' && $result ne 'aborted')
 					{
-						($source eq 'e80' || $source eq 'fsh')
+						$source eq 'e80'
 							? navOps::_cutE80Waypoint($member->{uuid}, $tree)
+							: $source eq 'fsh'
+							? navOps::_cutFSHWaypoint($member->{uuid}, $tree)
 							: _cutDatabaseWaypoint($member->{uuid}, $tree);
 					}
 				}
 				if ($cut_flag && !($$policy_ref && $$policy_ref eq 'abort') && !$any_skipped && $group_uuid)
 				{
-					($source eq 'e80' || $source eq 'fsh')
+					$source eq 'e80'
 						? navOps::_cutE80Group($group_uuid, $tree)
+						: $source eq 'fsh'
+						? navOps::_cutFSHGroup($group_uuid, $tree)
 						: _cutDatabaseGroup($group_uuid, $tree);
 				}
 			}
@@ -679,8 +685,10 @@ sub _pasteItemsToCollection
 				appendRouteWaypoint($dbh, $route_uuid, $_->{uuid}, $rpos++) for @$route_points;
 				if ($cut_flag)
 				{
-					($source eq 'e80' || $source eq 'fsh')
+					$source eq 'e80'
 						? navOps::_cutE80Route($route_uuid, $tree)
+						: $source eq 'fsh'
+						? navOps::_cutFSHRoute($route_uuid, $tree)
 						: _cutDatabaseRoute($route_uuid, $tree);
 				}
 			}
@@ -730,8 +738,10 @@ sub _pasteItemsToCollection
 				}
 				if ($cut_flag)
 				{
-					($source eq 'e80' || $source eq 'fsh')
+					$source eq 'e80'
 						? navOps::_cutE80Track($item->{uuid}, $tree)
+						: $source eq 'fsh'
+						? navOps::_cutFSHTrack($item->{uuid}, $tree)
 						: _cutDatabaseTrack($item->{uuid}, $tree);
 				}
 			}
@@ -1055,20 +1065,26 @@ sub _pasteDB
 				my $t = $item->{type} // '';
 				if ($t eq 'waypoint' || $t eq 'route_point')
 				{
-					($source eq 'e80' || $source eq 'fsh')
+					$source eq 'e80'
 						? navOps::_cutE80Waypoint($item->{uuid}, $tree)
+						: $source eq 'fsh'
+						? navOps::_cutFSHWaypoint($item->{uuid}, $tree)
 						: _cutDatabaseWaypoint($item->{uuid}, $tree);
 				}
 				elsif ($t eq 'route')
 				{
-					($source eq 'e80' || $source eq 'fsh')
+					$source eq 'e80'
 						? navOps::_cutE80Route($item->{uuid}, $tree)
+						: $source eq 'fsh'
+						? navOps::_cutFSHRoute($item->{uuid}, $tree)
 						: _cutDatabaseRoute($item->{uuid}, $tree);
 				}
 				elsif ($t eq 'track')
 				{
-					($source eq 'e80' || $source eq 'fsh')
+					$source eq 'e80'
 						? navOps::_cutE80Track($item->{uuid}, $tree)
+						: $source eq 'fsh'
+						? navOps::_cutFSHTrack($item->{uuid}, $tree)
 						: _cutDatabaseTrack($item->{uuid}, $tree);
 				}
 				# groups/branches from DB are already repositioned in-place; no separate cut
@@ -1204,8 +1220,10 @@ sub _pasteDB
 		for my $item (@to_cut)
 		{
 			next if ($item->{type} // '') eq 'route_point' && $source eq 'database';
-			($source eq 'e80' || $source eq 'fsh')
+			$source eq 'e80'
 				? navOps::_cutE80Waypoint($item->{uuid}, $tree)
+				: $source eq 'fsh'
+				? navOps::_cutFSHWaypoint($item->{uuid}, $tree)
 				: _cutDatabaseWaypoint($item->{uuid}, $tree);
 		}
 

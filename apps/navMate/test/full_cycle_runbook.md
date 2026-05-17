@@ -80,25 +80,37 @@ If teensyBoat is running, run `test/tracks/runbook.md` from Module Tests onward.
 
 ---
 
-## Step 4: fsh Module (currently stub)
+## Step 4: fsh Module
 
-Inter-module reset plus FSH load:
+Inter-module reset (same as Step 1 -- revert DB, refresh, **suppress=1**, mark, clear_e80, wait), then FSH load. `suppress=1` MUST precede `load_fsh` so the dirty-bit confirm dialog (if any) auto-discards; see `master_runbook.md` *Suppress ordering*.
 
 ```powershell
+git -C C:/dat/Rhapsody checkout -- navMate.db
+curl.exe -s "http://localhost:9883/api/test?op=refresh" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?op=suppress&val=1" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+fsh+module+reset" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?op=clear_e80" | Out-Null
+Start-Sleep 5
 curl.exe -s "http://localhost:9883/api/test?op=load_fsh&path=C:/base/apps/raymarine/apps/navMate/test/_fixtures/test.fsh" | Out-Null
 Start-Sleep 3
 # Verify "navTest: load_fsh done" in log
 ```
 
-Run `test/fsh/runbook.md`. While the module's tests are stubs, all tests record as `NOT_RUN (stub)` and module status is `NOT_RUN (stub)` -- but the FSH baseline DOES load, so the winFSH pane opens during a full cycle.
+Run `test/fsh/runbook.md` from Module Tests onward. Record each test as `fsh.<N>` per the Test Identifier Convention.
 
 ---
 
 ## Step 5: hub Module (currently stub)
 
-Inter-module reset plus FSH load (same as Step 4 -- hub flows generally require FSH side populated):
+Inter-module reset plus FSH load (same as Step 4 -- hub flows generally require FSH side populated; same suppress-before-load_fsh ordering applies):
 
 ```powershell
+git -C C:/dat/Rhapsody checkout -- navMate.db
+curl.exe -s "http://localhost:9883/api/test?op=refresh" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?op=suppress&val=1" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+hub+module+reset" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?op=clear_e80" | Out-Null
+Start-Sleep 5
 curl.exe -s "http://localhost:9883/api/test?op=load_fsh&path=C:/base/apps/raymarine/apps/navMate/test/_fixtures/test.fsh" | Out-Null
 Start-Sleep 3
 ```
