@@ -52,6 +52,7 @@ sub new
 	EVT_MENU($this, $WIN_E80,					\&onCommand);
 	EVT_MENU($this, $WIN_MONITOR,				\&onCommand);
 	EVT_MENU($this, $WIN_FSH,					\&onCommand);
+	EVT_MENU($this, $COMMAND_NEW_FSH,			\&onCommand);
 	EVT_MENU($this, $COMMAND_OPEN_FSH_FILE,		\&onCommand);
 	EVT_MENU($this, $COMMAND_SAVE_FSH_FILE,		\&onCommand);
 	EVT_MENU($this, $COMMAND_SAVE_FSH_FILE_AS,	\&onCommand);
@@ -304,6 +305,10 @@ sub onCommand
 	{
 		_doImportKML($this);
 	}
+	elsif ($id == $COMMAND_NEW_FSH)
+	{
+		_doNewFSH($this);
+	}
 	elsif ($id == $COMMAND_OPEN_FSH_FILE)
 	{
 		_doOpenFSH($this);
@@ -487,8 +492,12 @@ sub onCommandEnable
 		}
 		$enable = 0 if !$this->{_db_dirty};
 	}
-	elsif ($id == $COMMAND_SAVE_FSH_FILE
-	    || $id == $COMMAND_SAVE_FSH_FILE_AS
+	elsif ($id == $COMMAND_SAVE_FSH_FILE)
+	{
+		# Save (overwrite) requires a current filename AND pending changes
+		$enable = 0 if !$navFSH::fsh_db || !$navFSH::fsh_filename || !$navFSH::fsh_dirty;
+	}
+	elsif ($id == $COMMAND_SAVE_FSH_FILE_AS
 	    || $id == $COMMAND_SAVE_FSH_OUTLINE
 	    || $id == $COMMAND_RESTORE_FSH_OUTLINE
 	    || $id == $COMMAND_CONVERT_FSH_TO_NAVMATE)
@@ -627,9 +636,23 @@ sub _doImportKML
 }
 
 
+sub _doNewFSH
+{
+	my ($this) = @_;
+	return if !_confirmDiscardFSH($this, 'create a new FSH');
+	navFSH::newFSH();
+	my $fsh = $this->findPane($WIN_FSH);
+	if ($fsh)
+		{ $fsh->refresh(); }
+	else
+		{ $this->createPane($WIN_FSH); }
+}
+
+
 sub _doOpenFSH
 {
 	my ($this) = @_;
+	return if !_confirmDiscardFSH($this, 'open another FSH');
 	my $default_dir = readConfig('fsh_dir') || '';
 	my $dialog = Wx::FileDialog->new(
 		$this, 'Open FSH File',
@@ -653,6 +676,65 @@ sub _doOpenFSH
 }
 
 
+sub _confirmDiscardFSH
+	# Called by _doNewFSH, _doOpenFSH, and winFSH::closeOK (app exit) before
+	# any action that would discard the in-memory FSH.  Returns 1 if it is
+	# OK to proceed, 0 if the user cancelled.  Side effect: on "Save",
+	# performs the save (or save-as when untitled) and returns 1 only if
+	# the save succeeded.
+{
+	my ($this, $verb) = @_;
+	return 1 if !$navFSH::fsh_db || !$navFSH::fsh_dirty;
+
+	my $rslt = yesNoCancelDialog($this,
+		"The FSH document has unsaved changes.\n\n".
+		"Yes    = Save before you $verb\n".
+		"No     = Discard changes\n".
+		"Cancel = stay in this FSH",
+		'FSH has unsaved changes');
+
+	return 0 if $rslt < 0;     # Cancel
+	return 1 if $rslt == 0;    # Discard
+
+	# Yes -> Save (silent: skip the standard overwrite confirm, the user
+	# is already in a serial dialog flow).
+	if ($navFSH::fsh_filename)
+	{
+		return navFSH::saveFSH($navFSH::fsh_filename) ? 1 : 0;
+	}
+	return _saveFSHAsInteractive($this);
+}
+
+
+sub _saveFSHAsInteractive
+	# File-dialog driven Save As.  Returns 1 on success, 0 on cancel/failure.
+	# Shared by _doSaveFSHAs and the Yes branch of _confirmDiscardFSH.
+{
+	my ($this) = @_;
+	my $default_dir = readConfig('fsh_dir') || '';
+	my $dialog = Wx::FileDialog->new(
+		$this, 'Save FSH File As',
+		$default_dir, '',
+		'FSH files (*.fsh)|*.fsh|All files (*.*)|*.*',
+		wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+	my $rc = 0;
+	if ($dialog->ShowModal() == wxID_OK)
+	{
+		my $filename = $dialog->GetPath();
+		writeConfig('fsh_dir', $dialog->GetDirectory());
+		if (navFSH::saveFSH($filename))
+		{
+			$navFSH::fsh_filename = $filename;
+			my $fsh = $this->findPane($WIN_FSH);
+			$fsh->onFilenameChanged() if $fsh;
+			$rc = 1;
+		}
+	}
+	$dialog->Destroy();
+	return $rc;
+}
+
+
 sub _doSaveFSH
 {
 	my ($this) = @_;
@@ -672,24 +754,7 @@ sub _doSaveFSH
 sub _doSaveFSHAs
 {
 	my ($this) = @_;
-	my $default_dir = readConfig('fsh_dir') || '';
-	my $dialog = Wx::FileDialog->new(
-		$this, 'Save FSH File As',
-		$default_dir, '',
-		'FSH files (*.fsh)|*.fsh|All files (*.*)|*.*',
-		wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
-	if ($dialog->ShowModal() == wxID_OK)
-	{
-		my $filename = $dialog->GetPath();
-		writeConfig('fsh_dir', $dialog->GetDirectory());
-		if (navFSH::saveFSH($filename))
-		{
-			$navFSH::fsh_filename = $filename;
-			my $fsh = $this->findPane($WIN_FSH);
-			$fsh->onFilenameChanged() if $fsh;
-		}
-	}
-	$dialog->Destroy();
+	_saveFSHAsInteractive($this);
 }
 
 

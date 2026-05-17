@@ -13,10 +13,11 @@ use strict;
 use warnings;
 use threads;
 use threads::shared;
-use Pub::Utils qw(display warning error);
+use Pub::Utils qw(display warning error getAppFrame);
 use apps::raymarine::FSH::fshUtils;
 use apps::raymarine::FSH::fshBlocks;
 use apps::raymarine::FSH::fshFile;
+use nmResources;
 use navDB;
 
 
@@ -34,10 +35,60 @@ my $dbg_fsh = 0;
 
 our $fsh_db       :shared = undef;
 our $fsh_filename :shared = '';
+our $fsh_dirty    :shared = 0;
 
 
-sub getFSHDb   { return $fsh_db; }
+sub getFSHDb    { return $fsh_db; }
 sub getFilename { return $fsh_filename; }
+sub isDirty     { return $fsh_dirty; }
+
+
+sub _notifyPane
+{
+	my $frame = getAppFrame();
+	return if !$frame;
+	my $pane = $frame->findPane($WIN_FSH);
+	$pane->onDirtyChanged() if $pane && $pane->can('onDirtyChanged');
+}
+
+
+sub markDirty
+{
+	return if $fsh_dirty;
+	$fsh_dirty = 1;
+	_notifyPane();
+}
+
+
+sub clearDirty
+{
+	return if !$fsh_dirty;
+	$fsh_dirty = 0;
+	_notifyPane();
+}
+
+
+#-----------------------------------------
+# newFSH
+#-----------------------------------------
+# Create an empty, untitled FSH-db in memory.  Subsequent navOps
+# cut/copy/paste from other transports populates it.  Caller is
+# responsible for refreshing the WIN_FSH pane.
+
+sub newFSH
+{
+	display($dbg_fsh, 0, "navFSH::newFSH() creating empty untitled FSH");
+	$fsh_db = shared_clone({
+		waypoints => shared_clone({}),
+		groups    => shared_clone({}),
+		routes    => shared_clone({}),
+		tracks    => shared_clone({}),
+	});
+	$fsh_filename = '';
+	$fsh_dirty    = 0;
+	_notifyPane();
+	return 1;
+}
 
 
 #-----------------------------------------
@@ -134,6 +185,8 @@ sub loadFSH
     });
 
     $fsh_filename = $filename;
+    $fsh_dirty    = 0;
+    _notifyPane();
 
     my $nw = scalar keys %$waypoints;
     my $ng = scalar keys %$groups;
@@ -202,7 +255,13 @@ sub saveFSH
 		return 0;
 	}
 
-	return $fsh->write($filename);
+	my $write_ok = $fsh->write($filename);
+	if ($write_ok)
+	{
+		$fsh_dirty = 0;
+		_notifyPane();
+	}
+	return $write_ok;
 }
 
 
@@ -330,6 +389,7 @@ sub convertToNavMate
 		$stats->{tracks_converted},
 		$stats->{segments_created}));
 
+	markDirty() if $stats->{tracks_converted};
 	return $stats;
 }
 

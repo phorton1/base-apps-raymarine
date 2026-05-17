@@ -84,6 +84,10 @@ sub _refreshDatabase
 
 sub _refreshFSH
 {
+	# Single chokepoint called by all FSH-side mutation handlers in
+	# navOpsFSH.pm after a successful mutation.  Marks the FSH document
+	# dirty here so every navOps path participates uniformly.
+	navFSH::markDirty();
 	my $frame = getAppFrame();
 	return if !$frame;
 	my $fsh = $frame->findPane($WIN_FSH);

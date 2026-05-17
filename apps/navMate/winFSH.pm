@@ -278,6 +278,46 @@ sub onFilenameChanged
 }
 
 
+sub _topNodeLabel
+{
+	# Build the bold top-of-tree label.  Encodes both the filename
+	# (basename only, or <untitled> when fsh_filename is empty) and
+	# the document-level dirty bit (leading '*').
+	my $filename = $navFSH::fsh_filename // '';
+	$filename =~ s{.*[/\\]}{} if $filename;
+	my $base   = $filename ne '' ? $filename : '<untitled>';
+	my $prefix = $navFSH::fsh_dirty ? '*' : '';
+	return $prefix . $base;
+}
+
+
+sub onDirtyChanged
+{
+	# Lightweight callback from navFSH::markDirty / clearDirty.
+	# Just re-labels the top node -- no tree rebuild.
+	my ($this) = @_;
+	return if !$this->{_loaded} || !$this->{_top_item};
+	$this->{tree}->SetItemText($this->{_top_item}, _topNodeLabel());
+}
+
+
+sub closeOK
+{
+	# Pub::WX::Window override.  Honored by both Notebook tab-close
+	# (Pub::WX::Notebook:254) and app-exit (Pub::WX::Frame:268).
+	# We only want to prompt on APP EXIT -- tab-close does not destroy
+	# $navFSH::fsh_db (it lives at module scope and the pane can be
+	# re-opened from the View menu).  Pub::WX::Frame::onCloseFrame
+	# clears $frame->{running} immediately before iterating panes via
+	# onCloseWindows, so {running}==0 distinguishes the two paths.
+	my ($this) = @_;
+	my $frame = $this->{frame};
+	return 1 if $frame && $frame->{running};
+	return 1 if !$navFSH::fsh_db || !$navFSH::fsh_dirty;
+	return nmFrame::_confirmDiscardFSH($frame, 'exit') ? 1 : 0;
+}
+
+
 sub doSaveFSHOutline
 {
 	my ($this) = @_;
@@ -341,11 +381,10 @@ sub _buildAndRestore
 	}
 
 	my $root = $tree->AddRoot('FSH');
-	my $filename = $navFSH::fsh_filename;
-	$filename =~ s{.*[/\\]}{} if $filename;
-	my $top = $tree->AppendItem($root, $filename || 'FSH', -1, -1,
-		Wx::TreeItemData->new({ type => 'root', data => { name => $filename } }));
+	my $top  = $tree->AppendItem($root, _topNodeLabel(), -1, -1,
+		Wx::TreeItemData->new({ type => 'root', data => { name => $navFSH::fsh_filename // '' } }));
 	$tree->SetItemBold($top, 1);
+	$this->{_top_item} = $top;
 
 	_buildGroups($this, $tree, $root, $db);
 	_buildRoutes($this, $tree, $root, $db);
@@ -369,20 +408,21 @@ sub _buildGroups
 	my $hdr = $tree->AppendItem($root, 'Groups', -1, -1,
 		Wx::TreeItemData->new({ type => 'header', kind => 'groups' }));
 
-	# BLK_WPT standalone waypoints -> My Waypoints
+	# BLK_WPT standalone waypoints -> My Waypoints.  The pseudo-group
+	# node is created unconditionally so it remains a valid navOps paste
+	# target even when no standalone waypoints exist (e.g. immediately
+	# after FSH -> New, or when all WPs are grouped).
 	my @wpt_uuids = sort { winTreeBase::_name_sort_key($wps->{$a}{name}) cmp winTreeBase::_name_sort_key($wps->{$b}{name}) }
 	                keys %$wps;
-	if (@wpt_uuids)
+	my $n     = scalar @wpt_uuids;
+	my $label = $n ? "My Waypoints ($n)" : 'My Waypoints';
+	my $mw    = $tree->AppendItem($hdr, $label, -1, -1,
+		Wx::TreeItemData->new({ type => 'my_waypoints' }));
+	for my $uuid (@wpt_uuids)
 	{
-		my $n  = scalar @wpt_uuids;
-		my $mw = $tree->AppendItem($hdr, "My Waypoints ($n)", -1, -1,
-			Wx::TreeItemData->new({ type => 'my_waypoints' }));
-		for my $uuid (@wpt_uuids)
-		{
-			my $wp = $wps->{$uuid};
-			$tree->AppendItem($mw, $wp->{name} // $uuid, -1, -1,
-				Wx::TreeItemData->new({ type => 'waypoint', uuid => $uuid, data => $wp }));
-		}
+		my $wp = $wps->{$uuid};
+		$tree->AppendItem($mw, $wp->{name} // $uuid, -1, -1,
+			Wx::TreeItemData->new({ type => 'waypoint', uuid => $uuid, data => $wp }));
 	}
 
 	# BLK_GRP named groups
@@ -836,6 +876,7 @@ sub _onSave
 
 	$this->{ed_save}->Enable(0);
 	$this->{_editor_dirty} = 0;
+	navFSH::markDirty();
 }
 
 

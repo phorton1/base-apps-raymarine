@@ -43,6 +43,7 @@ BEGIN
 		$COMMAND_COMPACT_DB_POSITIONS
 
 		$WIN_FSH
+		$COMMAND_NEW_FSH
 		$COMMAND_OPEN_FSH_FILE
 		$COMMAND_SAVE_FSH_FILE
 		$COMMAND_SAVE_FSH_FILE_AS
@@ -79,6 +80,7 @@ our $COMMAND_REVERT_DB			= 10091;
 our $COMMAND_COMMIT_DB			= 10092;
 our $COMMAND_COMPACT_DB_POSITIONS = 10093;
 
+our $COMMAND_NEW_FSH			= 10080;
 our $COMMAND_OPEN_FSH_FILE		= 10081;
 our $COMMAND_SAVE_FSH_FILE		= 10082;
 our $COMMAND_SAVE_FSH_FILE_AS	= 10083;
@@ -100,6 +102,7 @@ my $command_data = {
 	$WIN_E80					=> ['E80',					'Live E80 contents'],
 	$WIN_MONITOR				=> ['Monitor',				'Monitor and control service monitoring bits'],
 	$WIN_FSH					=> ['FSH',					'FSH file browser'],
+	$COMMAND_NEW_FSH			=> ['New',					'Create a new empty untitled FSH in memory'],
 	$COMMAND_OPEN_FSH_FILE		=> ['Open File...',			'Load an FSH archive file into the FSH browser'],
 	$COMMAND_SAVE_FSH_FILE		=> ['Save File',			'Save FSH data back to the current file (round-trip rewrite)'],
 	$COMMAND_SAVE_FSH_FILE_AS	=> ['Save As...',			'Save FSH data to a new file and switch to that filename'],
@@ -176,6 +179,7 @@ my $e80_menu = [
 ];
 
 my $fsh_menu = [
+	$COMMAND_NEW_FSH,
 	$COMMAND_OPEN_FSH_FILE,
 	$COMMAND_SAVE_FSH_FILE,
 	$COMMAND_SAVE_FSH_FILE_AS,

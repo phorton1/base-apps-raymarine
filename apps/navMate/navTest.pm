@@ -21,6 +21,9 @@
 #   op=load_fsh&path=<abs>     load an FSH file via navFSH::loadFSH; opens or refreshes
 #                              the winFSH pane. `path` is the absolute filesystem path
 #                              to the .fsh archive.
+#   op=new_fsh                 create a new empty untitled FSH via navFSH::newFSH;
+#                              opens or refreshes the winFSH pane. Bypasses the
+#                              menu's _confirmDiscardFSH dialog (test-direct API path).
 #
 # NOTE: NEW_* commands (10230-10233) open name-input dialogs and will block the
 # test machinery. Do not issue them via this endpoint -- use op=create_branch
@@ -116,6 +119,17 @@ sub dispatchTestCommand
 		{
 			warning(0,0,"navTest: load_fsh failed for $path");
 		}
+		return;
+	}
+	if ($op eq 'new_fsh')
+	{
+		navFSH::newFSH();
+		my $fsh = $main_win->findPane($WIN_FSH);
+		if ($fsh)
+			{ $fsh->refresh(); }
+		else
+			{ $main_win->createPane($WIN_FSH); }
+		display(0,0,"navTest: new_fsh done");
 		return;
 	}
 
