@@ -51,6 +51,7 @@ use navServer;
 use navOps qw(buildContextMenu onContextMenuCommand);
 use nmResources;
 use gpsImport qw(import_gps_file find_gpsbabel);
+use winTreeBase;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
 my $DUMMY = '__dummy__';
@@ -87,106 +88,118 @@ sub new
 	$this->{tree}->SetStateImageList($state_imgs);
 	$this->{_state_imgs} = $state_imgs;
 
-	# inner splitter: editor panel (top) + detail panel (bottom)
-	my $right_split = Wx::SplitterWindow->new($this, -1);
-	$this->{right_split} = $right_split;
+	# right side is one grey panel: editor widgets at top (packed by the
+	# winTreeBase layout walker), single detail TextCtrl below filling
+	# the rest.  No inner splitter.
+	my $right_panel = Wx::Panel->new($this, -1);
+	$right_panel->SetBackgroundColour(
+		Wx::SystemSettings::GetColour(wxSYS_COLOUR_BTNFACE));
+	$this->{right_panel} = $right_panel;
 
-	# --- editor panel layout constants ---
-	my $ED_MARGIN        = 8;
-	my $ED_LABEL_W       = 60;
-	my $ED_COL_GAP       = 8;
-	my $ED_CTRL_X        = $ED_MARGIN + $ED_LABEL_W + $ED_COL_GAP;
-	my $ED_CTRL_H        = 23;
-	my $ED_ROW_GAP       = 2;
-	my $ED_ROW_H         = $ED_CTRL_H + $ED_ROW_GAP;
-	my $ED_HEADER_SIZE   = $ED_MARGIN + $ED_ROW_H;
-	my $ED_BOTTOM_MARGIN = 8;
-	my $ED_MAX_ROWS      = 7;
-	my $ED_TITLE_W       = 80;
-	my $ED_VIS_X         = $ED_CTRL_X + $ED_TITLE_W + 8;
-	$this->{_ed_ctrl_x}  = $ED_CTRL_X;
-	$this->{_ed_ctrl_h}  = $ED_CTRL_H;
-	$this->{_ed_margin}  = $ED_MARGIN;
+	# --- editor layout constants ---
+	my $ED_MARGIN      = 8;
+	my $ED_LABEL_W     = 60;
+	my $ED_COL_GAP     = 8;
+	my $ED_CTRL_X      = $ED_MARGIN + $ED_LABEL_W + $ED_COL_GAP;
+	my $ED_CTRL_H      = 23;
+	my $ED_ROW_GAP     = 2;
+	my $ED_ROW_H       = $ED_CTRL_H + $ED_ROW_GAP;
+	my $ED_HEADER_SIZE = $ED_MARGIN + $ED_ROW_H;
+	my $ED_TITLE_W     = 80;
+	my $ED_VIS_X       = $ED_CTRL_X + $ED_TITLE_W + 8;
+	$this->{_ed_ctrl_x}      = $ED_CTRL_X;
+	$this->{_ed_ctrl_h}      = $ED_CTRL_H;
+	$this->{_ed_margin}      = $ED_MARGIN;
+	$this->{_ed_header_size} = $ED_HEADER_SIZE;
+	$this->{_ed_row_h}       = $ED_ROW_H;
+	$this->{_ed_bottom_pad}  = $ED_ROW_H;
 
-	my $ED_INITIAL_SASH  = $ED_HEADER_SIZE + $ED_MAX_ROWS * $ED_ROW_H + $ED_BOTTOM_MARGIN;
-
-	# helper: y position of row N (0-based)
+	# helper: y position of row N (0-based) -- seed coordinates only;
+	# the layout walker repositions widgets per item type at load time.
 	my $ey = sub { $ED_HEADER_SIZE + $_[0] * $ED_ROW_H };
 
-	# --- editor panel ---
-	my $editor_panel = Wx::Panel->new($right_split, -1);
-	$this->{editor_panel} = $editor_panel;
-
 	# header row: Save button (label col) + bold type title (ctrl col)
-	$this->{ed_save} = Wx::Button->new($editor_panel, -1, 'Save',
+	$this->{ed_save} = Wx::Button->new($right_panel, -1, 'Save',
 		[$ED_MARGIN, $ED_MARGIN], [$ED_LABEL_W, $ED_CTRL_H]);
 	$this->{ed_save}->Enable(0);
 
-	$this->{ed_title} = Wx::StaticText->new($editor_panel, -1, '',
+	$this->{ed_title} = Wx::StaticText->new($right_panel, -1, '',
 		[$ED_CTRL_X, $ED_MARGIN], [$ED_TITLE_W, $ED_CTRL_H]);
 	$this->{ed_title}->SetFont(
 		Wx::Font->new(-1, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
 
-	$this->{ed_visible} = Wx::CheckBox->new($editor_panel, -1, 'Visible',
+	$this->{ed_visible} = Wx::CheckBox->new($right_panel, -1, 'Visible',
 		[$ED_VIS_X, $ED_MARGIN], [-1, $ED_CTRL_H], wxCHK_3STATE);
 	$this->{ed_visible}->Show(0);
 
-	# name row (row 0)
-	$this->{ed_lbl_name} = Wx::StaticText->new($editor_panel, -1, 'Name',
+	$this->{ed_lbl_name} = Wx::StaticText->new($right_panel, -1, 'Name',
 		[$ED_MARGIN, $ey->(0)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_name} = Wx::TextCtrl->new($editor_panel, -1, '',
+	$this->{ed_name} = Wx::TextCtrl->new($right_panel, -1, '',
 		[$ED_CTRL_X, $ey->(0)], [200, $ED_CTRL_H]);
 
-	# comment row (row 1)
-	$this->{ed_lbl_comment} = Wx::StaticText->new($editor_panel, -1, 'Comment',
+	$this->{ed_lbl_comment} = Wx::StaticText->new($right_panel, -1, 'Comment',
 		[$ED_MARGIN, $ey->(1)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_comment} = Wx::TextCtrl->new($editor_panel, -1, '',
+	$this->{ed_comment} = Wx::TextCtrl->new($right_panel, -1, '',
 		[$ED_CTRL_X, $ey->(1)], [200, $ED_CTRL_H]);
 
-	# lat row (row 2): TextCtrl + DDM label
-	$this->{ed_lbl_lat} = Wx::StaticText->new($editor_panel, -1, 'Lat',
+	$this->{ed_lbl_lat} = Wx::StaticText->new($right_panel, -1, 'Lat',
 		[$ED_MARGIN, $ey->(2)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_lat} = Wx::TextCtrl->new($editor_panel, -1, '',
+	$this->{ed_lat} = Wx::TextCtrl->new($right_panel, -1, '',
 		[$ED_CTRL_X, $ey->(2)], [110, $ED_CTRL_H]);
-	$this->{ed_lat_ddm} = Wx::StaticText->new($editor_panel, -1, '',
+	$this->{ed_lat_ddm} = Wx::StaticText->new($right_panel, -1, '',
 		[$ED_CTRL_X + 110 + 6, $ey->(2)], [-1, $ED_CTRL_H]);
 
-	# lon row (row 3): TextCtrl + DDM label
-	$this->{ed_lbl_lon} = Wx::StaticText->new($editor_panel, -1, 'Lon',
+	$this->{ed_lbl_lon} = Wx::StaticText->new($right_panel, -1, 'Lon',
 		[$ED_MARGIN, $ey->(3)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_lon} = Wx::TextCtrl->new($editor_panel, -1, '',
+	$this->{ed_lon} = Wx::TextCtrl->new($right_panel, -1, '',
 		[$ED_CTRL_X, $ey->(3)], [110, $ED_CTRL_H]);
-	$this->{ed_lon_ddm} = Wx::StaticText->new($editor_panel, -1, '',
+	$this->{ed_lon_ddm} = Wx::StaticText->new($right_panel, -1, '',
 		[$ED_CTRL_X + 110 + 6, $ey->(3)], [-1, $ED_CTRL_H]);
 
-	# wp_type row (row 4)
-	$this->{ed_lbl_wp_type} = Wx::StaticText->new($editor_panel, -1, 'Type',
+	$this->{ed_lbl_wp_type} = Wx::StaticText->new($right_panel, -1, 'Type',
 		[$ED_MARGIN, $ey->(4)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_wp_type} = Wx::Choice->new($editor_panel, -1,
+	$this->{ed_wp_type} = Wx::Choice->new($right_panel, -1,
 		[$ED_CTRL_X, $ey->(4)], [-1, $ED_CTRL_H],
 		[$WP_TYPE_NAV, $WP_TYPE_LABEL, $WP_TYPE_SOUNDING]);
 
-	# color row (row 5): swatch + optional E80 named-color choice + Pick button
-	$this->{ed_lbl_color} = Wx::StaticText->new($editor_panel, -1, 'Color',
+	# color row: swatch (primary widget) + optional E80 named-color choice + Pick button
+	$this->{ed_lbl_color} = Wx::StaticText->new($right_panel, -1, 'Color',
 		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_color_swatch} = Wx::Panel->new($editor_panel, -1,
+	$this->{ed_color_swatch} = Wx::Panel->new($right_panel, -1,
 		[$ED_CTRL_X, $ey->(5) + 1], [28, 20], wxSIMPLE_BORDER);
-	$this->{ed_e80_color} = Wx::Choice->new($editor_panel, -1,
+	$this->{ed_e80_color} = Wx::Choice->new($right_panel, -1,
 		[$ED_CTRL_X + 34, $ey->(5)], [160, $ED_CTRL_H],
 		[@E80_ROUTE_COLOR_NAMES, 'Custom']);
-	$this->{ed_pick_btn} = Wx::Button->new($editor_panel, -1, 'Pick...',
+	$this->{ed_pick_btn} = Wx::Button->new($right_panel, -1, 'Pick...',
 		[$ED_CTRL_X + 34 + 160 + 6, $ey->(5)], [-1, $ED_CTRL_H]);
 
-	# depth row (row 6): TextCtrl + unit label
-	$this->{ed_lbl_depth} = Wx::StaticText->new($editor_panel, -1, 'Depth',
+	$this->{ed_lbl_depth} = Wx::StaticText->new($right_panel, -1, 'Depth',
 		[$ED_MARGIN, $ey->(6)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_depth} = Wx::TextCtrl->new($editor_panel, -1, '',
+	$this->{ed_depth} = Wx::TextCtrl->new($right_panel, -1, '',
 		[$ED_CTRL_X, $ey->(6)], [70, $ED_CTRL_H]);
 	my $depth_unit = getPref($PREF_DEPTH_DISPLAY) == $DEPTH_DISPLAY_FEET ? 'ft' : 'm';
-	$this->{ed_depth_unit} = Wx::StaticText->new($editor_panel, -1, $depth_unit,
+	$this->{ed_depth_unit} = Wx::StaticText->new($right_panel, -1, $depth_unit,
 		[$ED_CTRL_X + 70 + 6, $ey->(6)], [-1, $ED_CTRL_H]);
 
-	EVT_SIZE($editor_panel, sub {
+	# For winDatabase the color row's primary widget is ed_color_swatch
+	# (not an ed_color); ed_e80_color and ed_pick_btn ride alongside.
+	$this->{_ed_field_widgets} = {
+		name    => [ 'ed_lbl_name',    'ed_name',         []                              ],
+		comment => [ 'ed_lbl_comment', 'ed_comment',      []                              ],
+		lat     => [ 'ed_lbl_lat',     'ed_lat',          ['ed_lat_ddm']                  ],
+		lon     => [ 'ed_lbl_lon',     'ed_lon',          ['ed_lon_ddm']                  ],
+		wp_type => [ 'ed_lbl_wp_type', 'ed_wp_type',      []                              ],
+		color   => [ 'ed_lbl_color',   'ed_color_swatch', ['ed_e80_color', 'ed_pick_btn'] ],
+		depth   => [ 'ed_lbl_depth',   'ed_depth',        ['ed_depth_unit']               ],
+	};
+
+	$this->{detail} = Wx::TextCtrl->new($right_panel, -1, '',
+		wxDefaultPosition, wxDefaultSize,
+		wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
+	$this->{detail}->SetFont(
+		Wx::Font->new(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
+
+	EVT_SIZE($right_panel, sub {
 		my ($panel, $event) = @_;
 		$event->Skip();
 		my $w = $panel->GetSize()->GetWidth();
@@ -194,27 +207,14 @@ sub new
 		$ctrl_w = 80 if $ctrl_w < 80;
 		$this->{ed_name}->SetSize($ctrl_w, $this->{_ed_ctrl_h});
 		$this->{ed_comment}->SetSize($ctrl_w, $this->{_ed_ctrl_h});
+		winTreeBase::_resizeRightPanel($this);
 	});
 
-	_clearEditor($this);
-
-	# --- detail panel (read-only monospaced) ---
-	my $detail_panel = Wx::Panel->new($right_split, -1);
-	$this->{detail_panel} = $detail_panel;
-	$this->{detail} = Wx::TextCtrl->new($detail_panel, -1, '', wxDefaultPosition, wxDefaultSize,
-		wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
-	my $font = Wx::Font->new(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
-	$this->{detail}->SetFont($font);
-	my $detail_vsizer = Wx::BoxSizer->new(wxVERTICAL);
-	$detail_vsizer->Add($this->{detail}, 1, wxEXPAND);
-	$detail_panel->SetSizer($detail_vsizer);
-
-	$right_split->SplitHorizontally($editor_panel, $detail_panel, $ED_INITIAL_SASH);
-	$right_split->SetSashGravity(0);
-
 	my $sash = ($data && ref($data) eq 'HASH' && $data->{sash}) ? $data->{sash} : 250;
-	$this->SplitVertically($this->{tree}, $right_split, $sash);
+	$this->SplitVertically($this->{tree}, $right_panel, $sash);
 	$this->SetSashGravity(0);
+
+	_clearEditor($this);
 
 	my @outline_uuids = navOutline::getExpanded('db');
 	$this->{_expanded_uuids} = { map { $_ => 1 } @outline_uuids };
@@ -642,7 +642,6 @@ sub _showObject
 		}
 	}
 
-	$this->{detail_panel}->Layout();
 	$this->{detail}->SetValue($text);
 }
 
@@ -665,14 +664,6 @@ sub _showRoutePoint
 #---------------------------------
 # editor panel
 #---------------------------------
-
-sub _ed_show_row
-{
-	my ($label, $ctrl, $show) = @_;
-	$label->Show($show ? 1 : 0);
-	$ctrl->Show($show ? 1 : 0);
-}
-
 
 #---------------------------------
 # checkbox state bitmaps
@@ -1424,18 +1415,7 @@ sub _clearEditor
 	$this->{_editor_dirty}  = 0;
 	$this->{ed_title}->SetLabel('');
 	$this->{ed_visible}->Show(0);
-	_ed_show_row($this->{ed_lbl_name},    $this->{ed_name},        0);
-	_ed_show_row($this->{ed_lbl_comment}, $this->{ed_comment},     0);
-	_ed_show_row($this->{ed_lbl_lat},     $this->{ed_lat},         0);
-	$this->{ed_lat_ddm}->Show(0);
-	_ed_show_row($this->{ed_lbl_lon},     $this->{ed_lon},         0);
-	$this->{ed_lon_ddm}->Show(0);
-	_ed_show_row($this->{ed_lbl_wp_type}, $this->{ed_wp_type},     0);
-	_ed_show_row($this->{ed_lbl_color},   $this->{ed_color_swatch},0);
-	$this->{ed_e80_color}->Show(0);
-	$this->{ed_pick_btn}->Show(0);
-	_ed_show_row($this->{ed_lbl_depth},   $this->{ed_depth},       0);
-	$this->{ed_depth_unit}->Show(0);
+	winTreeBase::_layoutEditor($this, []);
 	$this->{ed_save}->Enable(0);
 }
 
@@ -1475,18 +1455,18 @@ sub _loadEditor
 		: ucfirst($obj_type);
 	$this->{ed_title}->SetLabel($title);
 
-	_ed_show_row($this->{ed_lbl_name},    $this->{ed_name},         $show_name);
-	_ed_show_row($this->{ed_lbl_comment}, $this->{ed_comment},      $show_comment);
-	_ed_show_row($this->{ed_lbl_lat},     $this->{ed_lat},          $show_latlon);
-	$this->{ed_lat_ddm}->Show($show_latlon ? 1 : 0);
-	_ed_show_row($this->{ed_lbl_lon},     $this->{ed_lon},          $show_latlon);
-	$this->{ed_lon_ddm}->Show($show_latlon ? 1 : 0);
-	_ed_show_row($this->{ed_lbl_wp_type}, $this->{ed_wp_type},      $show_wptype);
-	_ed_show_row($this->{ed_lbl_color},   $this->{ed_color_swatch}, $show_color);
-	$this->{ed_e80_color}->Show($show_e80_color ? 1 : 0);
-	$this->{ed_pick_btn}->Show($show_color ? 1 : 0);
-	_ed_show_row($this->{ed_lbl_depth},   $this->{ed_depth},        $show_depth);
-	$this->{ed_depth_unit}->Show($show_depth ? 1 : 0);
+	my @fields;
+	push @fields, 'name'    if $show_name;
+	push @fields, 'comment' if $show_comment;
+	push @fields, 'lat'     if $show_latlon;
+	push @fields, 'lon'     if $show_latlon;
+	push @fields, 'wp_type' if $show_wptype;
+	push @fields, 'color'   if $show_color;
+	push @fields, 'depth'   if $show_depth;
+	winTreeBase::_layoutEditor($this, \@fields);
+	# ed_e80_color is a companion of 'color' but is hidden for waypoints
+	# (route/track use the named-color choice; waypoint uses Pick... only).
+	$this->{ed_e80_color}->Show(0) if !$show_e80_color;
 
 	$this->{_loading_editor} = 1;
 

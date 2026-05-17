@@ -64,12 +64,15 @@ Context menu items vary by `node_type` -- see [winDatabase Context Menu](#windat
 ### Layout
 
 All three wx panels (winDatabase, winE80, winFSH) share the same layout:
-an outer `Wx::SplitterWindow` with the tree on the left and a nested
-`Wx::SplitterWindow` (`right_split`) on the right. The right split holds an
-**editor panel** on top and a read-only **monospaced detail `TextCtrl`** on the
-bottom; sash opens at `$ED_INITIAL_SASH`, gravity 0 keeps the editor pane fixed
-on window resize. Multi-select (`wxTR_MULTIPLE`) is supported in all three panels;
-Ctrl+click and Shift+click work normally.
+an outer `Wx::SplitterWindow` with the tree on the left and a single grey
+`Wx::Panel` (`right_panel`) on the right. The right panel holds the editor
+widgets at the top (packed top-down by the `winTreeBase::_layoutEditor` walker
+based on which fields the selected item type uses) and a read-only
+**monospaced detail `TextCtrl`** (white background) immediately below them,
+filling the remaining vertical space. One blank row of grey separates the two.
+No inner splitter; the editor strip's height is determined by the selected item
+type, not by a user-draggable sash. Multi-select (`wxTR_MULTIPLE`) is supported
+in all three panels; Ctrl+click and Shift+click work normally.
 
 Selecting a tree node updates both the editor panel (with type-appropriate fields)
 and the detail TextCtrl (with the full structural / hex dump of the underlying
@@ -86,7 +89,8 @@ bold title `StaticText` (displaying "Waypoint", "Route", "Track", "Branch", or
 "Group") sits to its right (ctrl column). A **Visible** three-state checkbox
 (`ed_visible`, `wxCHK_3STATE`) is placed to the right of the title.
 
-**Field rows** are shown or hidden by `_ed_show_row` based on node type:
+**Field rows** are packed top-down by `winTreeBase::_layoutEditor` based on
+node type (declared in each window's `$this->{_ed_field_widgets}` registry):
 
 | Node type | Visible rows |
 |---|---|

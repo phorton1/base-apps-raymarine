@@ -70,126 +70,135 @@ sub new
 	$this->{tree} = Wx::TreeCtrl->new($this, -1, wxDefaultPosition, wxDefaultSize,
 		wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxTR_MULTIPLE);
 
-	# inner splitter: editor panel (top) + detail panel (bottom)
-	my $right_split = Wx::SplitterWindow->new($this, -1);
-	$this->{right_split} = $right_split;
+	# right side is one grey panel: editor widgets at top (packed by the
+	# winTreeBase layout walker), single detail TextCtrl below filling
+	# the rest.  No inner splitter.
+	my $right_panel = Wx::Panel->new($this, -1);
+	$right_panel->SetBackgroundColour(
+		Wx::SystemSettings::GetColour(wxSYS_COLOUR_BTNFACE));
+	$this->{right_panel} = $right_panel;
 
-	# --- editor panel layout constants ---
-	my $ED_MARGIN        = 8;
-	my $ED_LABEL_W       = 60;
-	my $ED_COL_GAP       = 8;
-	my $ED_CTRL_X        = $ED_MARGIN + $ED_LABEL_W + $ED_COL_GAP;
-	my $ED_CTRL_H        = 23;
-	my $ED_ROW_GAP       = 2;
-	my $ED_ROW_H         = $ED_CTRL_H + $ED_ROW_GAP;
-	my $ED_HEADER_SIZE   = $ED_MARGIN + $ED_ROW_H;
-	my $ED_BOTTOM_MARGIN = 8;
-	my $ED_MAX_ROWS      = 6;
-	my $ED_TITLE_W       = 80;
-	my $ED_VIS_X         = $ED_CTRL_X + $ED_TITLE_W + 8;
-	$this->{_ed_ctrl_x}  = $ED_CTRL_X;
-	$this->{_ed_ctrl_h}  = $ED_CTRL_H;
-	$this->{_ed_margin}  = $ED_MARGIN;
-
-	my $ED_INITIAL_SASH  = $ED_HEADER_SIZE + $ED_MAX_ROWS * $ED_ROW_H + $ED_BOTTOM_MARGIN;
-	my $ED_WP_ROWS       = 9;
-	$this->{_ed_sash_other} = $ED_INITIAL_SASH;
-	$this->{_ed_sash_wp}    = $ED_HEADER_SIZE + $ED_WP_ROWS * $ED_ROW_H + $ED_BOTTOM_MARGIN;
+	# --- editor layout constants ---
+	my $ED_MARGIN      = 8;
+	my $ED_LABEL_W     = 60;
+	my $ED_COL_GAP     = 8;
+	my $ED_CTRL_X      = $ED_MARGIN + $ED_LABEL_W + $ED_COL_GAP;
+	my $ED_CTRL_H      = 23;
+	my $ED_ROW_GAP     = 2;
+	my $ED_ROW_H       = $ED_CTRL_H + $ED_ROW_GAP;
+	my $ED_HEADER_SIZE = $ED_MARGIN + $ED_ROW_H;
+	my $ED_TITLE_W     = 80;
+	my $ED_VIS_X       = $ED_CTRL_X + $ED_TITLE_W + 8;
+	$this->{_ed_ctrl_x}      = $ED_CTRL_X;
+	$this->{_ed_ctrl_h}      = $ED_CTRL_H;
+	$this->{_ed_margin}      = $ED_MARGIN;
+	$this->{_ed_header_size} = $ED_HEADER_SIZE;
+	$this->{_ed_row_h}       = $ED_ROW_H;
+	$this->{_ed_bottom_pad}  = $ED_ROW_H;
 
 	my $ey = sub { $ED_HEADER_SIZE + $_[0] * $ED_ROW_H };
 
-	# --- editor panel ---
-	my $editor_panel = Wx::Panel->new($right_split, -1);
-	$this->{editor_panel} = $editor_panel;
-
-	$this->{ed_save} = Wx::Button->new($editor_panel, -1, 'Save',
+	# --- editor widgets (children of right_panel) ---
+	$this->{ed_save} = Wx::Button->new($right_panel, -1, 'Save',
 		[$ED_MARGIN, $ED_MARGIN], [$ED_LABEL_W, $ED_CTRL_H]);
 	$this->{ed_save}->Enable(0);
 
-	$this->{ed_title} = Wx::StaticText->new($editor_panel, -1, '',
+	$this->{ed_title} = Wx::StaticText->new($right_panel, -1, '',
 		[$ED_CTRL_X, $ED_MARGIN], [$ED_TITLE_W, $ED_CTRL_H]);
 	$this->{ed_title}->SetFont(
 		Wx::Font->new(-1, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
 
-	$this->{ed_visible} = Wx::CheckBox->new($editor_panel, -1, 'Visible',
+	$this->{ed_visible} = Wx::CheckBox->new($right_panel, -1, 'Visible',
 		[$ED_VIS_X, $ED_MARGIN], [-1, $ED_CTRL_H], wxCHK_3STATE);
 	$this->{ed_visible}->Show(0);
 
-	# name row (row 0)
-	$this->{ed_lbl_name} = Wx::StaticText->new($editor_panel, -1, 'Name',
+	# Editor rows.  The walker positions them per-item-type at load time;
+	# the initial $ey->(N) coordinates here are only seeds.
+	$this->{ed_lbl_name} = Wx::StaticText->new($right_panel, -1, 'Name',
 		[$ED_MARGIN, $ey->(0)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_name} = Wx::TextCtrl->new($editor_panel, -1, '',
+	$this->{ed_name} = Wx::TextCtrl->new($right_panel, -1, '',
 		[$ED_CTRL_X, $ey->(0)], [200, $ED_CTRL_H]);
 	$this->{ed_name}->SetMaxLength(15);
 
-	# comment row (row 1) - waypoint, group, route
-	$this->{ed_lbl_comment} = Wx::StaticText->new($editor_panel, -1, 'Comment',
+	$this->{ed_lbl_comment} = Wx::StaticText->new($right_panel, -1, 'Comment',
 		[$ED_MARGIN, $ey->(1)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_comment} = Wx::TextCtrl->new($editor_panel, -1, '',
+	$this->{ed_comment} = Wx::TextCtrl->new($right_panel, -1, '',
 		[$ED_CTRL_X, $ey->(1)], [200, $ED_CTRL_H]);
 	$this->{ed_comment}->SetMaxLength(31);
 
-	# lat row (row 2)
-	$this->{ed_lbl_lat} = Wx::StaticText->new($editor_panel, -1, 'Lat',
+	$this->{ed_lbl_lat} = Wx::StaticText->new($right_panel, -1, 'Lat',
 		[$ED_MARGIN, $ey->(2)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_lat} = Wx::TextCtrl->new($editor_panel, -1, '',
+	$this->{ed_lat} = Wx::TextCtrl->new($right_panel, -1, '',
 		[$ED_CTRL_X, $ey->(2)], [110, $ED_CTRL_H]);
-	$this->{ed_lat_ddm} = Wx::StaticText->new($editor_panel, -1, '',
+	$this->{ed_lat_ddm} = Wx::StaticText->new($right_panel, -1, '',
 		[$ED_CTRL_X + 110 + 6, $ey->(2)], [-1, $ED_CTRL_H]);
 
-	# lon row (row 3)
-	$this->{ed_lbl_lon} = Wx::StaticText->new($editor_panel, -1, 'Lon',
+	$this->{ed_lbl_lon} = Wx::StaticText->new($right_panel, -1, 'Lon',
 		[$ED_MARGIN, $ey->(3)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_lon} = Wx::TextCtrl->new($editor_panel, -1, '',
+	$this->{ed_lon} = Wx::TextCtrl->new($right_panel, -1, '',
 		[$ED_CTRL_X, $ey->(3)], [110, $ED_CTRL_H]);
-	$this->{ed_lon_ddm} = Wx::StaticText->new($editor_panel, -1, '',
+	$this->{ed_lon_ddm} = Wx::StaticText->new($right_panel, -1, '',
 		[$ED_CTRL_X + 110 + 6, $ey->(3)], [-1, $ED_CTRL_H]);
 
-	# sym row (row 4) - waypoint symbol index 0-39
-	$this->{ed_lbl_sym} = Wx::StaticText->new($editor_panel, -1, 'Sym',
+	$this->{ed_lbl_sym} = Wx::StaticText->new($right_panel, -1, 'Sym',
 		[$ED_MARGIN, $ey->(4)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_sym} = Wx::Choice->new($editor_panel, -1,
+	$this->{ed_sym} = Wx::Choice->new($right_panel, -1,
 		[$ED_CTRL_X, $ey->(4)], [-1, $ED_CTRL_H],
 		[map { sprintf('%2d - %s', $_, $apps::raymarine::NET::a_utils::WPICON_TABLE[$_][0]) }
 		 0..$#apps::raymarine::NET::a_utils::WPICON_TABLE]);
 
-	# color row (row 5) - route color index 0-5
-	$this->{ed_lbl_color} = Wx::StaticText->new($editor_panel, -1, 'Color',
+	$this->{ed_lbl_color} = Wx::StaticText->new($right_panel, -1, 'Color',
 		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_color_choice} = Wx::Choice->new($editor_panel, -1,
+	$this->{ed_color_choice} = Wx::Choice->new($right_panel, -1,
 		[$ED_CTRL_X, $ey->(5)], [-1, $ED_CTRL_H],
 		[@E80_ROUTE_COLOR_NAMES]);
 
-	# depth row (row 5, same as color - mutually exclusive) - waypoint only; wire value is cm (int32)
-	$this->{ed_lbl_depth} = Wx::StaticText->new($editor_panel, -1, 'Depth',
+	$this->{ed_lbl_depth} = Wx::StaticText->new($right_panel, -1, 'Depth',
 		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_depth} = Wx::TextCtrl->new($editor_panel, -1, '',
+	$this->{ed_depth} = Wx::TextCtrl->new($right_panel, -1, '',
 		[$ED_CTRL_X, $ey->(5)], [80, $ED_CTRL_H]);
-	$this->{ed_depth_unit} = Wx::StaticText->new($editor_panel, -1, '',
+	$this->{ed_depth_unit} = Wx::StaticText->new($right_panel, -1, '',
 		[$ED_CTRL_X + 86, $ey->(5)], [-1, $ED_CTRL_H]);
 
-	# temp row (row 6) - waypoint only; wire value is Kelvin * 100 (uint16)
-	$this->{ed_lbl_temp} = Wx::StaticText->new($editor_panel, -1, 'Temp',
+	$this->{ed_lbl_temp} = Wx::StaticText->new($right_panel, -1, 'Temp',
 		[$ED_MARGIN, $ey->(6)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_temp} = Wx::TextCtrl->new($editor_panel, -1, '',
+	$this->{ed_temp} = Wx::TextCtrl->new($right_panel, -1, '',
 		[$ED_CTRL_X, $ey->(6)], [80, $ED_CTRL_H]);
-	$this->{ed_temp_unit} = Wx::StaticText->new($editor_panel, -1, '',
+	$this->{ed_temp_unit} = Wx::StaticText->new($right_panel, -1, '',
 		[$ED_CTRL_X + 86, $ey->(6)], [-1, $ED_CTRL_H]);
 
-	# date row (row 7) - waypoint only; wire value is days since 1970-01-01 (uint16)
-	$this->{ed_lbl_date} = Wx::StaticText->new($editor_panel, -1, 'Date',
+	$this->{ed_lbl_date} = Wx::StaticText->new($right_panel, -1, 'Date',
 		[$ED_MARGIN, $ey->(7)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_date} = Wx::DatePickerCtrl->new($editor_panel, -1,
+	$this->{ed_date} = Wx::DatePickerCtrl->new($right_panel, -1,
 		Wx::DateTime::Today(), [$ED_CTRL_X, $ey->(7)], [-1, $ED_CTRL_H],
 		wxDP_DROPDOWN | wxDP_SHOWCENTURY);
 
-	# time row (row 8) - waypoint only; wire value is seconds since midnight (uint32)
-	$this->{ed_lbl_time} = Wx::StaticText->new($editor_panel, -1, 'Time',
+	$this->{ed_lbl_time} = Wx::StaticText->new($right_panel, -1, 'Time',
 		[$ED_MARGIN, $ey->(8)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_time} = Wx::TextCtrl->new($editor_panel, -1, '',
+	$this->{ed_time} = Wx::TextCtrl->new($right_panel, -1, '',
 		[$ED_CTRL_X, $ey->(8)], [80, $ED_CTRL_H]);
 
-	EVT_SIZE($editor_panel, sub {
+	$this->{_ed_field_widgets} = {
+		name    => [ 'ed_lbl_name',    'ed_name',         []                ],
+		comment => [ 'ed_lbl_comment', 'ed_comment',      []                ],
+		lat     => [ 'ed_lbl_lat',     'ed_lat',          ['ed_lat_ddm']    ],
+		lon     => [ 'ed_lbl_lon',     'ed_lon',          ['ed_lon_ddm']    ],
+		sym     => [ 'ed_lbl_sym',     'ed_sym',          []                ],
+		color   => [ 'ed_lbl_color',   'ed_color_choice', []                ],
+		depth   => [ 'ed_lbl_depth',   'ed_depth',        ['ed_depth_unit'] ],
+		temp    => [ 'ed_lbl_temp',    'ed_temp',         ['ed_temp_unit']  ],
+		date    => [ 'ed_lbl_date',    'ed_date',         []                ],
+		time    => [ 'ed_lbl_time',    'ed_time',         []                ],
+	};
+
+	# --- detail (info pane): read-only monospaced TextCtrl, white background ---
+	$this->{detail} = Wx::TextCtrl->new($right_panel, -1, '',
+		wxDefaultPosition, wxDefaultSize,
+		wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
+	$this->{detail}->SetFont(
+		Wx::Font->new(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
+
+	EVT_SIZE($right_panel, sub {
 		my ($panel, $event) = @_;
 		$event->Skip();
 		my $w = $panel->GetSize()->GetWidth();
@@ -197,27 +206,14 @@ sub new
 		$ctrl_w = 80 if $ctrl_w < 80;
 		$this->{ed_name}->SetSize($ctrl_w, $this->{_ed_ctrl_h});
 		$this->{ed_comment}->SetSize($ctrl_w, $this->{_ed_ctrl_h});
+		winTreeBase::_resizeRightPanel($this);
 	});
 
-	$this->_clearEditor();
-
-	# --- detail panel (read-only monospaced) ---
-	my $detail_panel = Wx::Panel->new($right_split, -1);
-	$this->{detail_panel} = $detail_panel;
-	$this->{detail} = Wx::TextCtrl->new($detail_panel, -1, '', wxDefaultPosition, wxDefaultSize,
-		wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
-	my $font = Wx::Font->new(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
-	$this->{detail}->SetFont($font);
-	my $detail_vsizer = Wx::BoxSizer->new(wxVERTICAL);
-	$detail_vsizer->Add($this->{detail}, 1, wxEXPAND);
-	$detail_panel->SetSizer($detail_vsizer);
-
-	$right_split->SplitHorizontally($editor_panel, $detail_panel, $ED_INITIAL_SASH);
-	$right_split->SetSashGravity(0);
-
 	my $sash = ($data && ref($data) eq 'HASH' && $data->{sash}) ? $data->{sash} : 250;
-	$this->SplitVertically($this->{tree}, $right_split, $sash);
+	$this->SplitVertically($this->{tree}, $right_panel, $sash);
 	$this->SetSashGravity(0);
+
+	$this->_clearEditor();
 
 	my $state_imgs = Wx::ImageList->new(13, 13);
 	$state_imgs->Add(winTreeBase::_makeCheckBitmap(0));

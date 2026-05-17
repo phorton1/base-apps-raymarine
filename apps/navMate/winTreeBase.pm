@@ -424,14 +424,97 @@ sub onClearMap
 
 
 #---------------------------------
-# editor panel helpers
+# layout walker (per-item-type packed layout)
 #---------------------------------
+# Class-agnostic on purpose: takes $this as a hashref-of-widgets, not as
+# self. winDatabase (NOT a winTreeBase subclass) calls this as
+# winTreeBase::_layoutEditor(...) directly.
+#
+# Reads from $this:
+#   {_ed_field_widgets}  - { field => [label_key, control_key, [companion_keys]] }
+#   {_ed_header_size}, {_ed_row_h}, {_ed_margin}, {_ed_ctrl_x}, {_ed_bottom_pad}
+#   {right_panel}, {detail}
+#
+# Writes:
+#   {_editor_height}     - pixel height of the editor strip (header + visible
+#                           rows + one row of grey at bottom)
+#
+# Called with $fields = []  -> editor strip collapses to header + bottom pad,
+# every editor widget hidden.  Called with $fields = [...]  -> listed fields
+# are positioned top-down with a running y-counter, all other fields hidden.
 
-sub _ed_show_row
+sub _layoutEditor
 {
-    my ($label, $ctrl, $show) = @_;
-    $label->Show($show ? 1 : 0);
-    $ctrl->Show($show ? 1 : 0);
+    my ($this, $fields) = @_;
+    $fields ||= [];
+    my $widgets = $this->{_ed_field_widgets} || {};
+    my %in_show = map { $_ => 1 } @$fields;
+
+    # hide everything not in show list
+    for my $field (keys %$widgets)
+    {
+        next if $in_show{$field};
+        my ($lkey, $ckey, $comps) = @{$widgets->{$field}};
+        my $lbl  = $lkey ? $this->{$lkey} : undef;
+        my $ctrl = $ckey ? $this->{$ckey} : undef;
+        $lbl->Show(0)  if $lbl;
+        $ctrl->Show(0) if $ctrl;
+        for my $ck (@{$comps || []})
+        {
+            my $w = $this->{$ck};
+            $w->Show(0) if $w;
+        }
+    }
+
+    # position + show fields in registry order
+    my $y     = $this->{_ed_header_size};
+    my $row_h = $this->{_ed_row_h};
+    my $mx    = $this->{_ed_margin};
+    my $cx    = $this->{_ed_ctrl_x};
+
+    for my $field (@$fields)
+    {
+        my $w = $widgets->{$field};
+        next if !$w;
+        my ($lkey, $ckey, $comps) = @$w;
+        my $lbl  = $lkey ? $this->{$lkey} : undef;
+        my $ctrl = $ckey ? $this->{$ckey} : undef;
+        if ($lbl)  { $lbl->Move([$mx, $y]); $lbl->Show(1); }
+        if ($ctrl) { $ctrl->Move([$cx, $y]); $ctrl->Show(1); }
+        for my $ck (@{$comps || []})
+        {
+            my $comp = $this->{$ck};
+            next if !$comp;
+            my $pos = $comp->GetPosition();
+            $comp->Move([$pos->x, $y]);
+            $comp->Show(1);
+        }
+        $y += $row_h;
+    }
+
+    my $bottom_pad = $this->{_ed_bottom_pad} // $row_h;
+    $this->{_editor_height} = $y + $bottom_pad;
+    _resizeRightPanel($this);
+    return $this->{_editor_height};
+}
+
+
+sub _resizeRightPanel
+{
+    my ($this) = @_;
+    my $rp = $this->{right_panel};
+    return if !$rp;
+    my $sz = $rp->GetSize();
+    my $w  = $sz->GetWidth();
+    my $h  = $sz->GetHeight();
+    my $eh = $this->{_editor_height}
+          // ($this->{_ed_header_size} + ($this->{_ed_bottom_pad} // $this->{_ed_row_h}));
+    my $detail = $this->{detail};
+    return if !$detail;
+    my $dh = $h - $eh;
+    $dh = 0 if $dh < 0;
+    $detail->Move([0, $eh]);
+    $detail->SetSize($w, $dh);
 }
 
 
@@ -444,21 +527,7 @@ sub _clearEditor
     $this->{_editor_dirty} = 0;
     $this->{ed_title}->SetLabel('');
     $this->{ed_visible}->Show(0);
-    _ed_show_row($this->{ed_lbl_name},    $this->{ed_name},         0);
-    _ed_show_row($this->{ed_lbl_lat},     $this->{ed_lat},          0);
-    $this->{ed_lat_ddm}->Show(0);
-    _ed_show_row($this->{ed_lbl_lon},     $this->{ed_lon},          0);
-    $this->{ed_lon_ddm}->Show(0);
-    _ed_show_row($this->{ed_lbl_sym},     $this->{ed_sym},          0);
-    _ed_show_row($this->{ed_lbl_color},   $this->{ed_color_choice}, 0);
-    _ed_show_row($this->{ed_lbl_comment}, $this->{ed_comment},      0);
-    _ed_show_row($this->{ed_lbl_depth},   $this->{ed_depth},        0);
-    $this->{ed_depth_unit}->Show(0);
-    _ed_show_row($this->{ed_lbl_temp},    $this->{ed_temp},         0);
-    $this->{ed_temp_unit}->Show(0);
-    _ed_show_row($this->{ed_lbl_date},    $this->{ed_date},         0);
-    _ed_show_row($this->{ed_lbl_time},    $this->{ed_time},         0);
-    $this->{right_split}->SetSashPosition($this->{_ed_sash_other}) if $this->{right_split};
+    _layoutEditor($this, []);
     $this->{ed_save}->Enable(0);
 }
 
@@ -492,20 +561,18 @@ sub _loadEditor
               :                       '';
     $this->{ed_title}->SetLabel($title);
 
-    _ed_show_row($this->{ed_lbl_name},    $this->{ed_name},         $show_name);
-    _ed_show_row($this->{ed_lbl_lat},     $this->{ed_lat},          $show_latlon);
-    $this->{ed_lat_ddm}->Show($show_latlon ? 1 : 0);
-    _ed_show_row($this->{ed_lbl_lon},     $this->{ed_lon},          $show_latlon);
-    $this->{ed_lon_ddm}->Show($show_latlon ? 1 : 0);
-    _ed_show_row($this->{ed_lbl_sym},     $this->{ed_sym},          $show_sym);
-    _ed_show_row($this->{ed_lbl_color},   $this->{ed_color_choice}, $show_color);
-    _ed_show_row($this->{ed_lbl_comment}, $this->{ed_comment},      $show_comment);
-    _ed_show_row($this->{ed_lbl_depth},   $this->{ed_depth},        $show_wp);
-    $this->{ed_depth_unit}->Show($show_wp ? 1 : 0);
-    _ed_show_row($this->{ed_lbl_temp},    $this->{ed_temp},         $show_wp);
-    $this->{ed_temp_unit}->Show($show_wp ? 1 : 0);
-    _ed_show_row($this->{ed_lbl_date},    $this->{ed_date},         $show_wp);
-    _ed_show_row($this->{ed_lbl_time},    $this->{ed_time},         $show_wp);
+    my @fields;
+    push @fields, 'name'    if $show_name;
+    push @fields, 'comment' if $show_comment;
+    push @fields, 'lat'     if $show_latlon;
+    push @fields, 'lon'     if $show_latlon;
+    push @fields, 'sym'     if $show_sym;
+    push @fields, 'color'   if $show_color;
+    push @fields, 'depth'   if $show_wp;
+    push @fields, 'temp'    if $show_wp;
+    push @fields, 'date'    if $show_wp;
+    push @fields, 'time'    if $show_wp;
+    _layoutEditor($this, \@fields);
 
     $this->{_loading_editor} = 1;
 
@@ -570,8 +637,6 @@ sub _loadEditor
     }
 
     $this->{_loading_editor} = 0;
-    $this->{right_split}->SetSashPosition(
-        $show_wp ? $this->{_ed_sash_wp} : $this->{_ed_sash_other});
     $this->{ed_save}->Enable(0);
 }
 
