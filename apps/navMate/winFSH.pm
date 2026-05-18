@@ -154,8 +154,10 @@ sub new
 	$this->{ed_lbl_color} = Wx::StaticText->new($right_panel, -1, 'Color',
 		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
 	$this->{ed_color_choice} = Wx::Choice->new($right_panel, -1,
-		[$ED_CTRL_X, $ey->(5)], [-1, $ED_CTRL_H],
+		[$ED_CTRL_X, $ey->(5)], [160, $ED_CTRL_H],
 		[@E80_ROUTE_COLOR_NAMES]);
+	$this->{ed_color_swatch} = Wx::Panel->new($right_panel, -1,
+		[$ED_CTRL_X + 160 + 6, $ey->(5)], [28, 20], wxSIMPLE_BORDER);
 
 	$this->{ed_lbl_depth} = Wx::StaticText->new($right_panel, -1, 'Depth',
 		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
@@ -188,7 +190,7 @@ sub new
 		lat     => [ 'ed_lbl_lat',     'ed_lat',          ['ed_lat_ddm']    ],
 		lon     => [ 'ed_lbl_lon',     'ed_lon',          ['ed_lon_ddm']    ],
 		sym     => [ 'ed_lbl_sym',     'ed_sym',          []                ],
-		color   => [ 'ed_lbl_color',   'ed_color_choice', []                ],
+		color   => [ 'ed_lbl_color',   'ed_color_choice', ['ed_color_swatch'] ],
 		depth   => [ 'ed_lbl_depth',   'ed_depth',        ['ed_depth_unit'] ],
 		temp    => [ 'ed_lbl_temp',    'ed_temp',         ['ed_temp_unit']  ],
 		date    => [ 'ed_lbl_date',    'ed_date',         []                ],
@@ -233,7 +235,7 @@ sub new
 	EVT_TEXT($this,         $this->{ed_lat},           $this->can('_onLatEdit'));
 	EVT_TEXT($this,         $this->{ed_lon},           $this->can('_onLonEdit'));
 	EVT_CHOICE($this,       $this->{ed_sym},           $this->can('_onFieldChanged'));
-	EVT_CHOICE($this,       $this->{ed_color_choice},  $this->can('_onFieldChanged'));
+	EVT_CHOICE($this,       $this->{ed_color_choice},  \&_onColorChoice);
 	EVT_TEXT($this,         $this->{ed_depth},         $this->can('_onFieldChanged'));
 	EVT_TEXT($this,         $this->{ed_temp},          $this->can('_onFieldChanged'));
 	EVT_TEXT($this,         $this->{ed_time},          $this->can('_onFieldChanged'));
@@ -904,6 +906,48 @@ sub _trackColorABGR
 	my ($this, $track) = @_;
 	my $cidx = defined($track->{color}) ? ($track->{color} + 0) : 0;
 	return $E80_ROUTE_COLOR_ABGR[$cidx] // 'FF888888';
+}
+
+
+# E80 index 5 is named BLACK in the protocol but its ABGR is white-on-map;
+# the swatch shows protocol BLACK (literal black) per user request.
+sub _setColorSwatch
+{
+	my ($this) = @_;
+	my $cidx = $this->{ed_color_choice}->GetSelection();
+	$cidx = 0 if $cidx < 0;
+	my ($rr, $gg, $bb);
+	if ($cidx == 5)
+	{
+		($rr, $gg, $bb) = (0, 0, 0);
+	}
+	else
+	{
+		my $abgr = $E80_ROUTE_COLOR_ABGR[$cidx] // 'ff888888';
+		$rr = hex(substr($abgr, 6, 2));
+		$gg = hex(substr($abgr, 4, 2));
+		$bb = hex(substr($abgr, 2, 2));
+	}
+	$this->{ed_color_swatch}->SetBackgroundColour(Wx::Colour->new($rr, $gg, $bb));
+	$this->{ed_color_swatch}->Refresh();
+}
+
+
+sub _onColorChoice
+{
+	my ($this, $event) = @_;
+	_setColorSwatch($this);
+	return if $this->{_loading_editor};
+	$this->{_editor_dirty} = 1;
+	$this->{ed_save}->Enable(1);
+}
+
+
+sub _loadEditor
+{
+	my ($this, $node) = @_;
+	$this->SUPER::_loadEditor($node);
+	_setColorSwatch($this);
 }
 
 sub _getVisible         { getFSHVisible($_[1]) }

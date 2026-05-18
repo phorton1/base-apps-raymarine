@@ -163,16 +163,16 @@ sub new
 		[$ED_CTRL_X, $ey->(4)], [-1, $ED_CTRL_H],
 		[$WP_TYPE_NAV, $WP_TYPE_LABEL, $WP_TYPE_SOUNDING]);
 
-	# color row: swatch (primary widget) + optional E80 named-color choice + Pick button
+	# color row: E80 named-color choice (primary) + swatch + Pick button
 	$this->{ed_lbl_color} = Wx::StaticText->new($right_panel, -1, 'Color',
 		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_color_swatch} = Wx::Panel->new($right_panel, -1,
-		[$ED_CTRL_X, $ey->(5) + 1], [28, 20], wxSIMPLE_BORDER);
 	$this->{ed_e80_color} = Wx::Choice->new($right_panel, -1,
-		[$ED_CTRL_X + 34, $ey->(5)], [160, $ED_CTRL_H],
+		[$ED_CTRL_X, $ey->(5)], [160, $ED_CTRL_H],
 		[@E80_ROUTE_COLOR_NAMES, 'Custom']);
+	$this->{ed_color_swatch} = Wx::Panel->new($right_panel, -1,
+		[$ED_CTRL_X + 160 + 6, $ey->(5)], [28, 20], wxSIMPLE_BORDER);
 	$this->{ed_pick_btn} = Wx::Button->new($right_panel, -1, 'Pick...',
-		[$ED_CTRL_X + 34 + 160 + 6, $ey->(5)], [-1, $ED_CTRL_H]);
+		[$ED_CTRL_X + 160 + 6 + 28 + 6, $ey->(5)], [-1, $ED_CTRL_H]);
 
 	$this->{ed_lbl_depth} = Wx::StaticText->new($right_panel, -1, 'Depth',
 		[$ED_MARGIN, $ey->(6)], [$ED_LABEL_W, $ED_CTRL_H]);
@@ -182,16 +182,16 @@ sub new
 	$this->{ed_depth_unit} = Wx::StaticText->new($right_panel, -1, $depth_unit,
 		[$ED_CTRL_X + 70 + 6, $ey->(6)], [-1, $ED_CTRL_H]);
 
-	# For winDatabase the color row's primary widget is ed_color_swatch
-	# (not an ed_color); ed_e80_color and ed_pick_btn ride alongside.
+	# For winDatabase the color row's primary widget is ed_e80_color;
+	# ed_color_swatch and ed_pick_btn ride alongside to the right.
 	$this->{_ed_field_widgets} = {
-		name    => [ 'ed_lbl_name',    'ed_name',         []                              ],
-		comment => [ 'ed_lbl_comment', 'ed_comment',      []                              ],
-		lat     => [ 'ed_lbl_lat',     'ed_lat',          ['ed_lat_ddm']                  ],
-		lon     => [ 'ed_lbl_lon',     'ed_lon',          ['ed_lon_ddm']                  ],
-		wp_type => [ 'ed_lbl_wp_type', 'ed_wp_type',      []                              ],
-		color   => [ 'ed_lbl_color',   'ed_color_swatch', ['ed_e80_color', 'ed_pick_btn'] ],
-		depth   => [ 'ed_lbl_depth',   'ed_depth',        ['ed_depth_unit']               ],
+		name    => [ 'ed_lbl_name',    'ed_name',         []                                ],
+		comment => [ 'ed_lbl_comment', 'ed_comment',      []                                ],
+		lat     => [ 'ed_lbl_lat',     'ed_lat',          ['ed_lat_ddm']                    ],
+		lon     => [ 'ed_lbl_lon',     'ed_lon',          ['ed_lon_ddm']                    ],
+		wp_type => [ 'ed_lbl_wp_type', 'ed_wp_type',      []                                ],
+		color   => [ 'ed_lbl_color',   'ed_e80_color',    ['ed_color_swatch', 'ed_pick_btn'] ],
+		depth   => [ 'ed_lbl_depth',   'ed_depth',        ['ed_depth_unit']                 ],
 	};
 
 	$this->{detail} = Wx::TextCtrl->new($right_panel, -1, '',
@@ -942,6 +942,10 @@ sub _setColorSwatch
 		my $rr = hex(substr($color, 6, 2));
 		my $gg = hex(substr($color, 4, 2));
 		my $bb = hex(substr($color, 2, 2));
+		# E80 index 5 is named BLACK in the protocol but its ABGR is ffffffff
+		# (rendered white-on-map). Display the swatch as literal black to
+		# match the protocol name.
+		if (lc($color) eq 'ffffffff') { ($rr, $gg, $bb) = (0, 0, 0); }
 		$this->{ed_color_swatch}->SetBackgroundColour(Wx::Colour->new($rr, $gg, $bb));
 	}
 	else
