@@ -148,10 +148,6 @@ sub onIdle
 		dispatchRouteEdit($this, $route_edit) if $route_edit;
 	}
 
-	if (pollBrowserConnectEvent())
-	{
-		$_->onBrowserConnect() for $this->_findDatabasePanes();
-	}
 	if (pollClearMapPending())
 	{
 		$_->onClearMap() for $this->_findDatabasePanes();
@@ -834,7 +830,7 @@ sub _doRevertDB
 	}
 	my @dbs = $this->_findDatabasePanes();
 	$_->refresh() for @dbs;
-	$_->onBrowserConnect() for @dbs;
+	$_->resyncDbToLeaflet() for @dbs;
 }
 
 

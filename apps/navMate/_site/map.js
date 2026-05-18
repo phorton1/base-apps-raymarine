@@ -1,6 +1,46 @@
 // navMate map.js
-// Leaflet client. Polls /poll?v=N at 1Hz; on version change fetches /geojson
-// and re-renders all features. Additive accumulation is server-side.
+// Leaflet client.
+//
+// SERVER PROTOCOL
+// ---------------
+// The server (navServer.pm) holds the truth in %features_by_key, keyed by
+// composite "$source:$uuid".  Three endpoints:
+//   GET /poll      -> { version }     cheap version probe
+//   GET /geojson   -> FeatureCollection of everything currently visible
+//   POST /clear    -> wipe-all (user-driven coarse clear)
+//
+// CLIENT STATE MACHINE
+// --------------------
+// Three version variables drive the protocol:
+//   _polled_version        -- last value received from /poll
+//   _rendering_version     -- version of the in-flight render (null when idle)
+//   _last_rendered_version -- version of the most recently completed render
+//
+// Two timers (split deliberately):
+//   _pollVersion   at _POLL_INTERVAL_MS    -- updates _polled_version
+//   _renderTrigger at _RENDER_INTERVAL_MS  -- fires _fetchAndRender if needed
+//
+// This split keeps the keep-alive cadence independent of render workload --
+// but JavaScript is single-threaded, so the split alone is not enough.
+// renderAll is async and yields via requestAnimationFrame between chunks;
+// THAT is what actually lets _pollVersion fire on schedule during a heavy
+// render.  Do not remove that yield.
+//
+// CLIENT-OWNED RECONNECT
+// ----------------------
+// All fetches use AbortController with short timeouts.  On timeout or any
+// fetch error, _connection_state flips to 'disconnected' and
+// _resetForReconnect() runs:  clears the layer, resets prevRenderedUuids,
+// sets _last_rendered_version = -1.  The next successful /poll will see a
+// version mismatch and fire a full /geojson resync.  The server has no
+// notion of "browser connect" -- it just answers questions.
+//
+// FEATURE IDENTITY
+// ----------------
+// Render identity is composite (data_source, uuid), not bare uuid.  A
+// single UUID may exist as denormalized renderable items under db / e80 /
+// fsh with different colors and geometries -- they coexist on the map as
+// distinct features.  prevRenderedUuids stores "source:uuid" strings.
 
 // ---- Google Maps satellite base + Esri labels overlay ----
 
@@ -184,13 +224,24 @@ function abgrToCSS(abgr) {
 
 // ---- Render all features from a GeoJSON FeatureCollection ----
 
-// Track UUIDs from the previous render; autozoom fires only for UUIDs absent
-// from the previous call, so toggle-off then toggle-on re-triggers zoom correctly.
+// Composite "source:uuid" keys from the previous render.  Autozoom fires
+// only for keys absent from the previous call, so toggle-off then toggle-on
+// re-triggers zoom correctly.  Same UUID under different data_source
+// counts as separate keys (the whole point of the source-keyed identity).
 let prevRenderedUuids = new Set();
 
 let lastGeojson = null;
 
+// Render-generation counter.  Every renderAll invocation captures its own
+// generation at entry; if a newer renderAll starts while this one is still
+// yielding between chunks, the older one bails out at its next yield.
+// Without this, a filter-checkbox click during a heavy poll-driven render
+// would leave two async renderAlls interleaving on renderLayer.
+let _render_generation = 0;
+
 function rerender() {
+    // Fire-and-forget.  renderAll is async now; _render_generation handles
+    // the case where this is called while another renderAll is mid-chunk.
     if (lastGeojson) renderAll(lastGeojson);
 }
 
@@ -203,44 +254,66 @@ function isDbVisible()  { const cb = document.getElementById('src_db');  return 
 function isE80Visible() { const cb = document.getElementById('src_e80'); return cb ? cb.checked : true; }
 function isFshVisible() { const cb = document.getElementById('src_fsh'); return cb ? cb.checked : true; }
 
-function renderAll(geojson) {
+async function renderAll(geojson)
+    // Re-renders the full visible feature set from a /geojson snapshot.
+    //
+    // CHUNKED + YIELDED.  After every _RENDER_CHUNK_SIZE features we yield
+    // via `await requestAnimationFrame`.  This is the single most important
+    // line of the whole client protocol: it is what lets _pollVersion fire
+    // during a heavy render.  JavaScript is single-threaded; without this
+    // yield both interval timers stall until the loop completes, which is
+    // exactly the "tracks disappear after 10-30s" class of bug that this
+    // whole rework is fixing.  Do not remove the yield.
+    //
+    // GENERATION GUARD.  Captures _render_generation at entry; if a newer
+    // renderAll starts during a yield, the older one returns at the next
+    // generation check.  Prevents two async renders from interleaving on
+    // renderLayer (e.g. a filter-checkbox rerender during a poll-driven
+    // render).
+    //
+    // FEATURE IDENTITY IS COMPOSITE.  prevRenderedUuids is keyed
+    // "source:uuid".  See top-of-file comment.
+{
     if (editMode || joinMode) return;
+    const my_gen = ++_render_generation;
     clearHandles();
     if (editSubject) { editSubject = null; hideCtxMenu(); }
     renderLayer.clearLayers();
     lastGeojson = geojson;
     const features = geojson.features || [];
 
-    // Server cleared  -  reset our UUID tracking.
+    // Server cleared  -  reset our key tracking.
     if (features.length === 0) {
         prevRenderedUuids = new Set();
         return;
     }
 
-    const newLatLngs = [];
-    const currentUuids = new Set();
+    const newLatLngs  = [];
+    const currentKeys = new Set();
 
-    features.forEach(f => {
+    for (let i = 0; i < features.length; i++) {
+        const f = features[i];
         const geom  = f.geometry;
         const props = f.properties || {};
-        if (!geom) return;
-
-        const isNew = !prevRenderedUuids.has(props.uuid);
-        if (props.uuid) currentUuids.add(props.uuid);
+        if (!geom) continue;
 
         const dsrc = props.data_source;
-        if (dsrc === 'db'  && !isDbVisible())  return;
-        if (dsrc === 'e80' && !isE80Visible()) return;
-        if (dsrc === 'fsh' && !isFshVisible()) return;
+        const key  = (dsrc || '') + ':' + (props.uuid || '');
+        const isNew = !prevRenderedUuids.has(key);
+        if (props.uuid) currentKeys.add(key);
+
+        if (dsrc === 'db'  && !isDbVisible())  continue;
+        if (dsrc === 'e80' && !isE80Visible()) continue;
+        if (dsrc === 'fsh' && !isFshVisible()) continue;
 
         if (geom.type === 'Point') {
             const [lon, lat] = geom.coordinates;
             const wpType  = props.wp_type || 'nav';
             const isNavWp = (wpType !== 'label' && wpType !== 'sounding');
 
-            if (wpType === 'label'    && !isLabels())              return;
-            if (wpType === 'sounding' && !isSoundings())           return;
-            if (isNavWp               && !isWPs() && !isWpNames()) return;
+            if (wpType === 'label'    && !isLabels())              continue;
+            if (wpType === 'sounding' && !isSoundings())           continue;
+            if (isNavWp               && !isWPs() && !isWpNames()) continue;
 
             let m;
             if (wpType === 'label') {
@@ -291,7 +364,7 @@ function renderAll(geojson) {
             }
         }
         else if (geom.type === 'LineString') {
-            if (!geom.coordinates.length) return;
+            if (!geom.coordinates.length) continue;
             const isSentinel = ([lat, lon]) => Math.abs(lat) < 0.01 && Math.abs(lon) < 0.01;
             const rawPts = geom.coordinates.map(([lon, lat]) => [lat, lon]);
             const coords = rawPts.filter(pt => !isSentinel(pt));
@@ -393,9 +466,18 @@ function renderAll(geojson) {
                 });
             }
         }
-    });
 
-    prevRenderedUuids = currentUuids;
+        // Yield to event loop between chunks so timers (especially
+        // _pollVersion) can fire during a heavy render.  See the function
+        // header block for why this line is load-bearing.
+        if ((i + 1) % _RENDER_CHUNK_SIZE === 0 && i < features.length - 1) {
+            await new Promise(function(r) { requestAnimationFrame(r); });
+            if (my_gen !== _render_generation) return;
+        }
+    }
+
+    if (my_gen !== _render_generation) return;
+    prevRenderedUuids = currentKeys;
 
     if (isAutoZoom() && newLatLngs.length) {
         if (newLatLngs.length === 1) {
@@ -425,22 +507,123 @@ function deselectFeature() {
     hideCtxMenu();
 }
 
-// ---- Polling ----
+// ============================================================================
+// Server protocol -- poll/render state machine and fetch lifecycle
+// ============================================================================
+// Tuning constants and state variables for the protocol described at the top
+// of this file.  Read that header block first.
 
-let currentVersion = -1;
+const _POLL_INTERVAL_MS   = 1000;    // server version-probe cadence
+const _RENDER_INTERVAL_MS = 250;     // render-decision cadence; cheap when guarded
+const _POLL_TIMEOUT_MS    = 2000;    // /poll fetch timeout -- short, detect disconnect quickly
+const _GEOJSON_TIMEOUT_MS = 10000;   // /geojson fetch timeout -- longer; payload can be large
+const _RENDER_CHUNK_SIZE  = 50;      // features per chunk between renderAll yields
 
-function poll() {
-    fetch('/poll?v=' + currentVersion)
-        .then(r => r.json())
-        .then(data => {
-            if (data.version === currentVersion) return;
-            currentVersion = data.version;
-            fetch('/geojson')
-                .then(r => r.json())
-                .then(renderAll)
-                .catch(() => {});
-        })
-        .catch(() => {});
+let _polled_version        = -1;
+let _rendering_version     = null;          // non-null while a /geojson fetch+render is in flight
+let _last_rendered_version = -1;
+let _connection_state      = 'connected';   // 'connected' | 'disconnected'
+
+
+function _fetchWithTimeout(url, ms)
+    // AbortController-based fetch timeout.  fetch() has no native timeout; a
+    // stalled response would otherwise block the protocol indefinitely.
+    // Returns parsed JSON, or throws on timeout / network error.
+{
+    const ctrl  = new AbortController();
+    const timer = setTimeout(function() { ctrl.abort(); }, ms);
+    return fetch(url, { signal: ctrl.signal })
+        .then(function(r) { return r.json(); })
+        .finally(function() { clearTimeout(timer); });
 }
 
-setInterval(poll, 1000);
+
+function _resetForReconnect()
+    // Local state reset triggered by detected disconnect (fetch timeout, or
+    // tab becoming visible after being hidden).  Setting
+    // _last_rendered_version to -1 guarantees the next /poll comparison
+    // fires a fresh /geojson resync, picking up whatever server truth is
+    // now.  Does NOT touch the server -- the server holds the union of all
+    // pane contributions and the right thing for us to do on reconnect is
+    // to re-pull, not to push.
+{
+    _last_rendered_version = -1;
+    prevRenderedUuids = new Set();
+    renderLayer.clearLayers();
+    if (editSubject) { editSubject = null; hideCtxMenu(); }
+}
+
+
+function _pollVersion()
+    // Timer A.  Asks the server for its current version and updates
+    // _polled_version.  Does not render -- _renderTrigger makes that
+    // decision on its own cadence so a slow render cannot delay subsequent
+    // polls.  Fetch timeout flips to 'disconnected' and resets local
+    // render state so the next successful poll triggers a full resync.
+{
+    _fetchWithTimeout('/poll?v=' + _polled_version, _POLL_TIMEOUT_MS)
+        .then(function(data) {
+            if (_connection_state === 'disconnected') {
+                _connection_state = 'connected';
+            }
+            _polled_version = data.version;
+        })
+        .catch(function() {
+            if (_connection_state === 'connected') {
+                _connection_state = 'disconnected';
+                _resetForReconnect();
+            }
+        });
+}
+
+
+function _renderTrigger()
+    // Timer B.  Fires every _RENDER_INTERVAL_MS but only kicks off a render
+    // when (a) there is something new to render and (b) no render is
+    // already in flight.  The _rendering_version guard is what prevents
+    // overlapping poll-driven renders when /geojson is slow.  Re-entry
+    // from rerender() (filter checkboxes) is handled differently -- see
+    // _render_generation in renderAll.
+{
+    if (_rendering_version !== null) return;
+    if (_polled_version < 0) return;
+    if (_polled_version === _last_rendered_version) return;
+    _fetchAndRender(_polled_version);
+}
+
+
+function _fetchAndRender(version)
+    // Claims the in-flight slot, fetches /geojson, awaits the async
+    // renderAll, then commits _last_rendered_version.  On error or timeout
+    // releases the slot and flips to 'disconnected' so the next successful
+    // poll triggers a fresh resync.
+{
+    _rendering_version = version;
+    _fetchWithTimeout('/geojson', _GEOJSON_TIMEOUT_MS)
+        .then(function(geojson) { return renderAll(geojson); })
+        .then(function() {
+            _last_rendered_version = version;
+            _rendering_version = null;
+        })
+        .catch(function() {
+            _rendering_version = null;
+            if (_connection_state === 'connected') {
+                _connection_state = 'disconnected';
+                _resetForReconnect();
+            }
+        });
+}
+
+
+setInterval(_pollVersion,   _POLL_INTERVAL_MS);
+setInterval(_renderTrigger, _RENDER_INTERVAL_MS);
+
+
+document.addEventListener('visibilitychange', function() {
+    // When the tab becomes visible again after being hidden (laptop closed,
+    // tab switched, system sleep), local state may be stale by an arbitrary
+    // amount.  Force a full resync via the reconnect path.
+    if (document.visibilityState === 'visible') {
+        _resetForReconnect();
+    }
+});

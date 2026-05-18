@@ -681,7 +681,9 @@ sub _onCheckboxClick
 	return if $node->{type} eq 'root' || $node->{type} eq 'route_point';
 
 	my $cur_state   = $this->{tree}->GetItemState($item);
-	my $new_visible = ($cur_state == 1) ? 0 : 1;
+	# Click cycle on a tristate container: none -> all -> none -> all,
+	# mixed -> none -> all.  See matching comment in winTreeBase::_onCheckboxClick.
+	my $new_visible = ($cur_state == 0) ? 1 : 0;
 
 	my $dbh = connectDB();
 	if ($node->{type} eq 'collection')

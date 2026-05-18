@@ -371,7 +371,7 @@ sub _buildAndRestore
 	my @prev_visible = getAllFSHVisibleUUIDs();
 	if (@prev_visible)
 	{
-		removeRenderFeatures(\@prev_visible);
+		removeRenderFeatures('fsh', \@prev_visible);
 		clearAllFSHVisible();
 	}
 
@@ -818,7 +818,7 @@ sub _onSave
 		$this->{tree}->SetItemText($this->{_edit_item}, $name) if $this->{_edit_item};
 		if (getFSHVisible($uuid))
 		{
-			removeRenderFeatures([$uuid]);
+			removeRenderFeatures('fsh', [$uuid]);
 			addRenderFeatures([$this->_buildWpFeature($uuid, $wp_rec)]) if $wp_rec;
 		}
 	}
@@ -846,7 +846,7 @@ sub _onSave
 		$this->{tree}->SetItemText($this->{_edit_item}, "$name ($n pts)") if $this->{_edit_item};
 		if (getFSHVisible($uuid) && $r_rec)
 		{
-			removeRenderFeatures([$uuid]);
+			removeRenderFeatures('fsh', [$uuid]);
 			my $feat = $this->_buildRouteFeature($uuid, $r_rec);
 			addRenderFeatures([$feat]) if $feat;
 		}
@@ -867,7 +867,7 @@ sub _onSave
 		$this->{tree}->SetItemText($this->{_edit_item}, "$name ($pts pts)") if $this->{_edit_item};
 		if (getFSHVisible($uuid) && $t_rec)
 		{
-			removeRenderFeatures([$uuid]);
+			removeRenderFeatures('fsh', [$uuid]);
 			my $feat = $this->_buildTrackFeature($uuid, $t_rec);
 			addRenderFeatures([$feat]) if $feat;
 		}
@@ -1105,7 +1105,7 @@ sub onLeafletTrackEdit
 		my @new_pts = map { shared_clone({ lat => $_->[0]+0, lon => $_->[1]+0 }) } @$coords;
 		$rec->{points} = shared_clone(\@new_pts);
 		$rec->{cnt}    = scalar @new_pts;
-		removeRenderFeatures([$uuid]);
+		removeRenderFeatures('fsh', [$uuid]);
 		my $feat = $this->_buildTrackFeature($uuid, $rec);
 		addRenderFeatures([$feat]) if $feat;
 	}
@@ -1132,7 +1132,7 @@ sub onLeafletTrackEdit
 			points => shared_clone(\@pts_b),
 			cnt    => scalar @pts_b,
 		});
-		removeRenderFeatures([$uuid]);
+		removeRenderFeatures('fsh', [$uuid]);
 		my $feat_a = $this->_buildTrackFeature($uuid,     $rec);
 		my $feat_b = $this->_buildTrackFeature($new_uuid, $tracks->{$new_uuid});
 		addRenderFeatures([$feat_a]) if $feat_a;

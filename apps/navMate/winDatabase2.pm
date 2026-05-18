@@ -6,7 +6,7 @@
 # split out to keep individual Perl files under ~1100 lines.
 #
 # Contents:
-#   - Leaflet sync (push/pull DB <-> map, onBrowserConnect, onClearMap)
+#   - Leaflet sync (push/pull DB <-> map, resyncDbToLeaflet, onClearMap)
 #   - Context menu + tree edit (right-click, key-down, cut, delete)
 #   - Import / export + new branch / new group
 #   - Show/hide map menu
@@ -180,7 +180,7 @@ sub _pullFromLeaflet
 	my @children = ref($rendered_uuids{$uuid}) eq 'ARRAY' ? @{$rendered_uuids{$uuid}} : ();
 	my @remove   = ($uuid, @children);
 	delete $rendered_uuids{$_} for @remove;
-	removeRenderFeatures(\@remove);
+	removeRenderFeatures('db', \@remove);
 }
 
 
@@ -486,12 +486,12 @@ sub _pullCollectionFromLeaflet
 		push @accumulator, $obj_uuid, @children;
 		delete $rendered_uuids{$_} for ($obj_uuid, @children);
 	}
-	removeRenderFeatures(\@accumulator) if @accumulator;
+	removeRenderFeatures('db', \@accumulator) if @accumulator;
 }
 
 
 #---------------------------------
-# browser connect / clear map
+# leaflet sync entry points
 #---------------------------------
 
 sub onObjectsDeleted
@@ -504,15 +504,19 @@ sub onObjectsDeleted
 		push @remove, $uuid;
 		delete $rendered_uuids{$uuid};
 	}
-	removeRenderFeatures(\@remove) if @remove;
+	removeRenderFeatures('db', \@remove) if @remove;
 }
 
 
-sub onBrowserConnect
+sub resyncDbToLeaflet
+	# Called after a DB swap (e.g. revert).  Previously-rendered DB UUIDs may
+	# now reference rows that no longer exist, so we evict everything this
+	# pane pushed and re-publish whatever the post-swap DB currently has
+	# marked visible.  Scoped to source 'db' -- must NOT clearRenderMap()
+	# because FSH and E80 features in the shared store belong to other panes.
 {
 	my ($this) = @_;
-	clearRenderMap();
-	$last_clear_version = getClearVersion();
+	removeRenderFeatures('db', [keys %rendered_uuids]) if %rendered_uuids;
 	%rendered_uuids = ();
 	my $dbh = connectDB();
 	my $vis  = getAllVisibleFeatures($dbh);

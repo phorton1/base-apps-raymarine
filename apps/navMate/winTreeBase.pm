@@ -405,7 +405,12 @@ sub _onCheckboxClick
     return if $type eq 'root' || $type eq 'route_point';
 
     my $cur_state   = $this->{tree}->GetItemState($item);
-    my $new_visible = ($cur_state == 1) ? 0 : 1;
+    # Click cycle on a tristate container: none -> all -> none -> all,
+    # mixed -> none -> all.  Going to "none" first from a mixed state
+    # preserves whatever the user was visually focused on -- otherwise an
+    # implicit "all" toggle re-renders unrelated items and re-autozooms
+    # the leaflet outwards, losing the user's context.
+    my $new_visible = ($cur_state == 0) ? 1 : 0;
 
     _applyNodeVisibility($this, $item, $node, $new_visible);
     _refreshAncestorStates($this, $item);
@@ -821,7 +826,7 @@ sub _applyWpVisibility
     else
     {
         $this->_setVisible($uuid, 0);
-        removeRenderFeatures([$uuid]);
+        removeRenderFeatures($this->_wpDataSource(), [$uuid]);
     }
 }
 
@@ -841,7 +846,7 @@ sub _applyRouteVisibility
     else
     {
         $this->_setVisible($uuid, 0);
-        removeRenderFeatures([$uuid]);
+        removeRenderFeatures($this->_wpDataSource(), [$uuid]);
     }
 }
 
@@ -861,7 +866,7 @@ sub _applyTrackVisibility
     else
     {
         $this->_setVisible($uuid, 0);
-        removeRenderFeatures([$uuid]);
+        removeRenderFeatures($this->_wpDataSource(), [$uuid]);
     }
 }
 
@@ -988,9 +993,9 @@ sub _syncLeafletAfterRebuild
             push @to_remove, $uuid;
         }
     }
-    $this->_batchRemoveVisible(\@stale)   if @stale;
-    removeRenderFeatures(\@to_remove)     if @to_remove;
-    addRenderFeatures(\@features)         if @features;
+    $this->_batchRemoveVisible(\@stale)               if @stale;
+    removeRenderFeatures($this->_wpDataSource(), \@to_remove) if @to_remove;
+    addRenderFeatures(\@features)                     if @features;
 }
 
 

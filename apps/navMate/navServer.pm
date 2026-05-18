@@ -41,10 +41,9 @@ my $nm_server;
 
 my $map_version           :shared = 0;
 my $last_poll_time        :shared = 0;
-my %features_by_uuid      :shared;
+my %features_by_key       :shared;   # keyed "$source:$uuid" -- see addRenderFeatures
 my $clear_version         :shared = 0;
 my $test_pending          :shared = '';
-my $browser_connect_event :shared = 0;
 my $clear_map_pending     :shared = 0;
 my $track_edit_pending    :shared = '';
 my $route_edit_pending    :shared = '';
@@ -63,7 +62,6 @@ BEGIN
 		openMapBrowser
 		getClearVersion
 		pollTestCommand
-		pollBrowserConnectEvent
 		pollClearMapPending
 		pollTrackEditPending
 		pollRouteEditPending
@@ -92,30 +90,50 @@ sub dispatchNavMateCommand
 
 
 sub addRenderFeatures
+	# Render-identity is the pair (data_source, uuid), not bare uuid:  a single
+	# UUID may exist as denormalized renderable items in two or three panes
+	# (DB / E80 / FSH) with different colors, point lists, etc.  Each feature
+	# already carries its `data_source` in properties; we form the composite
+	# storage key "$source:$uuid" from that, so add() callers do not need an
+	# explicit source argument.
 {
 	my ($features_ref) = @_;
 	return if !@$features_ref;
-	my %encoded = map { $_->{properties}{uuid} => encode_json($_) } @$features_ref;
+	my %encoded;
+	for my $f (@$features_ref)
+	{
+		my $source = $f->{properties}{data_source} // '';
+		my $uuid   = $f->{properties}{uuid}        // '';
+		next if $source eq '' || $uuid eq '';
+		$encoded{"$source:$uuid"} = encode_json($f);
+	}
+	return if !%encoded;
 	lock($map_version);
-	$features_by_uuid{$_} = $encoded{$_} for keys %encoded;
+	$features_by_key{$_} = $encoded{$_} for keys %encoded;
 	$map_version++;
 }
 
 
 sub removeRenderFeatures
+	# Remove takes an explicit ($source, $uuids_ref) because the caller does
+	# not have the feature objects -- only UUIDs -- so we cannot derive the
+	# source the way addRenderFeatures does.  Asymmetric on purpose.
 {
-	my ($uuids_ref) = @_;
-	return if !@$uuids_ref;
+	my ($source, $uuids_ref) = @_;
+	return if !$source || !@$uuids_ref;
 	lock($map_version);
-	delete $features_by_uuid{$_} for @$uuids_ref;
+	delete $features_by_key{"$source:$_"} for @$uuids_ref;
 	$map_version++;
 }
 
 
 sub clearRenderMap
+	# Whole-map wipe.  User-driven coarse clear -- invoked from the Leaflet
+	# "Clear" button (/clear endpoint) and from each pane's onClearMap.  NOT a
+	# synchronization primitive; do not call from reconnect / refresh paths.
 {
 	lock($map_version);
-	%features_by_uuid = ();
+	%features_by_key = ();
 	$clear_version++;
 	$map_version++;
 }
@@ -146,15 +164,6 @@ sub pollTestCommand
 	my $cmd = $test_pending;
 	$test_pending = '';
 	return $cmd;
-}
-
-
-sub pollBrowserConnectEvent
-{
-	lock($browser_connect_event);
-	return 0 if !$browser_connect_event;
-	$browser_connect_event = 0;
-	return 1;
 }
 
 
@@ -214,20 +223,21 @@ sub handle_request
 
 	if ($uri eq '/poll')
 	{
+		# Pure version query.  Server no longer detects reconnects via poll
+		# gaps; that proved unreliable when the JS thread blocked on heavy
+		# renders.  The client owns its own reconnect handling (see map.js
+		# state machine + fetch timeouts).  $last_poll_time is still updated
+		# so isBrowserConnected() can answer "have I been polled recently?"
+		# for openMapBrowser() decisions.
 		my $cv;
 		{ lock($map_version); $cv = $map_version + 0; }
-		if (time() - $last_poll_time >= 3)
-		{
-			lock($browser_connect_event);
-			$browser_connect_event++;
-		}
 		$last_poll_time = time();
 		return json_response($request,{ version => $cv });
 	}
 	elsif ($uri eq '/geojson')
 	{
 		my @feature_jsons;
-		{ lock($map_version); @feature_jsons = values %features_by_uuid; }
+		{ lock($map_version); @feature_jsons = values %features_by_key; }
 		my @features = map { decode_json($_) } @feature_jsons;
 		return json_response($request,{
 			type     => 'FeatureCollection',

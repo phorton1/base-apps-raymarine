@@ -40,13 +40,13 @@ These modules implement the context menu feature spanning both panels.
 
 ## HTTP server - navServer
 
-`navServer.pm` extends `h_server.pm` from the NET library to provide navMate's embedded HTTP server on port 9883. It exposes the `/api/` endpoints: ring buffer log, command dispatch, database queries (`/api/nmdb`), GeoJSON features for Leaflet, and test dispatch. The Leaflet applet HTML/JS in `_site/` is served by this module. The `/poll` handler detects browser reconnect (gap >= 3 s since last poll) and signals via `pollBrowserConnectEvent()`; the `/clear` handler sets a flag consumed by `pollClearMapPending()`. Both are polled from `nmFrame::onIdle`.
+`navServer.pm` extends `h_server.pm` from the NET library to provide navMate's embedded HTTP server on port 9883. It exposes the `/api/` endpoints: ring buffer log, command dispatch, database queries (`/api/nmdb`), GeoJSON features for Leaflet, and test dispatch. The Leaflet applet HTML/JS in `_site/` is served by this module. The `/poll` handler is a pure version-probe (server has no notion of browser connect; the client detects its own reconnects via fetch timeouts in `_site/map.js`); the `/clear` handler sets a flag consumed by `pollClearMapPending()` and polled from `nmFrame::onIdle`. Render storage is keyed `"$source:$uuid"` so DB / E80 / FSH versions of the same UUID coexist; `addRenderFeatures` derives source from each feature's `data_source` property and `removeRenderFeatures` takes it explicitly.
 
 ## wx layer - navMate.pm, nmFrame, nmResources, winDatabase, winE80, winMonitor
 
 `navMate.pm` is the wx process boundary - it initializes the wx application and runs the main loop. `nmFrame.pm` is the application frame: it owns the top-level menu dispatch, status bar, and `onIdle` heartbeat that drives WPMGR callbacks, tree refresh, and test dispatch. `nmResources.pm` defines shared wx resource constants (IDs, menu constants); `nmResources.pm` exports `$COMMAND_CLEAR_MAP = 10030` (View menu).
 
-`winDatabase.pm` presents the navMate SQLite database as a lazily-loaded wx tree with an editor panel and read-only detail pane. The editor uses absolute positioning with named constants; the tree carries per-node visibility state images (unchecked/checked/indeterminate). `onBrowserConnect` and `onClearMap` handle Leaflet sync events dispatched from `nmFrame::onIdle`. `winE80.pm` presents the live E80 device state as a tree rebuilt whenever the NET version counter increments. `winMonitor.pm` is the console/log monitor panel.
+`winDatabase.pm` presents the navMate SQLite database as a lazily-loaded wx tree with an editor panel and read-only detail pane. The editor uses absolute positioning with named constants; the tree carries per-node visibility state images (unchecked/checked/indeterminate). `onClearMap` handles the Leaflet clear-map event dispatched from `nmFrame::onIdle`; `resyncDbToLeaflet` runs after a DB swap (e.g. revert) to re-publish post-swap DB visibles. `winE80.pm` presents the live E80 device state as a tree rebuilt whenever the NET version counter increments. `winMonitor.pm` is the console/log monitor panel.
 
 ## Standalone tools
 

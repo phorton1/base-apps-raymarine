@@ -547,16 +547,26 @@ separate in-memory hashes and separate accessors:
 Each tree displays three-state checkboxes (unchecked / checked / indeterminate);
 checking or unchecking immediately updates the in-memory state for that source
 and pushes a GeoJSON add/remove to Leaflet via `addRenderFeatures` /
-`removeRenderFeatures`. Collection nodes bulk-set their descendants.
+`removeRenderFeatures`.  Render identity on the server is composite
+(`"$source:$uuid"`), so DB / E80 / FSH versions of the same UUID coexist on
+the map as distinct renderable features.  `addRenderFeatures` reads the
+source from each feature's `data_source` property; `removeRenderFeatures`
+takes an explicit `($source, $uuids_ref)` since callers do not have the
+features at remove time.  Collection nodes bulk-set their descendants.
 
 The persisted JSON file holds three top-level keys (`db_visibility`,
 `e80_visibility`, `fsh_visibility`). It is loaded at startup
 (`loadViewState`) and saved on clean frame close (`saveViewState` in
 `nmFrame::onCloseFrame`).
 
-On browser connect, each tree panel's `onBrowserConnect` clears the Leaflet
-canvas and re-pushes its visible features, keeping the canvas in sync after
-page reload or reconnect.
+Browser reconnect is handled entirely on the client (see `_site/map.js`
+top-of-file comment): on fetch timeout or `visibilitychange`, the client
+resets `_last_rendered_version` and the next successful poll triggers a
+full `/geojson` resync.  The server has no reconnect notion -- it just
+answers `/poll` and `/geojson`.  After a DB swap (revert), the DB pane
+calls `resyncDbToLeaflet` to evict its previous contributions and
+re-publish from the new DB state, scoped to source `'db'` so FSH and E80
+features are unaffected.
 
 ---
 
