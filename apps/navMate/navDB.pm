@@ -2008,5 +2008,38 @@ sub compactAllContainers
 }
 
 
+#---------------------------------
+# getCollectionHierarchyPath  (used by navMatch::enumerateDbCandidates)
+#---------------------------------
+# Builds a "/"-separated path of collection names from root to the given
+# collection.  Used by winFind to give the user context about where a
+# candidate lives.  Caches per-call via a hash to avoid re-traversal for
+# items sharing parents -- the caller can pass the same cache across many
+# lookups if it wants.
+
+sub getCollectionHierarchyPath
+{
+	my ($dbh, $coll_uuid, $cache) = @_;
+	return '' if !$coll_uuid;
+	$cache //= {};
+	return $cache->{$coll_uuid} if exists $cache->{$coll_uuid};
+	my @parts;
+	my $cur = $coll_uuid;
+	my %seen;
+	while ($cur && !$seen{$cur})
+	{
+		$seen{$cur} = 1;
+		my $rec = $dbh->get_record(
+			"SELECT name, parent_uuid FROM collections WHERE uuid=?", [$cur]);
+		last if !$rec;
+		unshift @parts, $rec->{name} // '';
+		$cur = $rec->{parent_uuid};
+	}
+	my $path = join('/', @parts);
+	$cache->{$coll_uuid} = $path;
+	return $path;
+}
+
+
 1;
 

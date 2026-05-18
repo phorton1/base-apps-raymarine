@@ -54,14 +54,17 @@ use navPrefs;
 use nmResources;
 use navClipboard;
 use navOps qw(buildContextMenu onContextMenuCommand);
+use navMatch;
+use winFind;
 use base 'winTreeBase';
 
 my $dbg_wfsh = 0;
 
 # Context-menu command IDs (parallel to winE80/winDatabase).
 # Same numeric values so the IDs are interchangeable across panels.
-my $CTX_CMD_SHOW_MAP = 10560;
-my $CTX_CMD_HIDE_MAP = 10561;
+my $CTX_CMD_SHOW_MAP  = 10560;
+my $CTX_CMD_HIDE_MAP  = 10561;
+my $CTX_CMD_FIND_THIS = 10570;
 
 
 sub new
@@ -223,8 +226,9 @@ sub new
 	EVT_TREE_SEL_CHANGED($this, $this->{tree}, \&onTreeSelect);
 	EVT_TREE_ITEM_RIGHT_CLICK($this, $this->{tree}, \&onTreeRightClick);
 	EVT_TREE_ITEM_ACTIVATED($this, $this->{tree}, \&_onTreeActivated);
-	EVT_MENU($this, $CTX_CMD_SHOW_MAP, \&_onShowMap);
-	EVT_MENU($this, $CTX_CMD_HIDE_MAP, \&_onHideMap);
+	EVT_MENU($this, $CTX_CMD_SHOW_MAP,  \&_onShowMap);
+	EVT_MENU($this, $CTX_CMD_HIDE_MAP,  \&_onHideMap);
+	EVT_MENU($this, $CTX_CMD_FIND_THIS, \&_onFindThis);
 	# Capture all navOps context-menu IDs (Copy=10200..PUSH_FSH=10251).
 	# Same range pattern as winE80/winDatabase keeps the panel dispatch
 	# parallel; see winE80.pm:_onNmOpsCmd for the matching handler.
@@ -261,6 +265,8 @@ sub new
 	{
 		_buildAndRestore($this);
 	}
+
+	$this->installVisibilityObserver();
 
 	return $this;
 }
@@ -1067,6 +1073,10 @@ sub _buildContextMenu
 		$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
 		$menu->Append($CTX_CMD_SHOW_MAP, 'Show on Map');
 		$menu->Append($CTX_CMD_HIDE_MAP, 'Hide on Map');
+		if ($type eq 'waypoint' || $type eq 'track' || $type eq 'route')
+		{
+			$menu->Append($CTX_CMD_FIND_THIS, 'Find This...');
+		}
 	}
 	return $menu;
 }
@@ -1089,6 +1099,68 @@ sub _onTreeActivated
 {
 	my ($this, $event) = @_;
 	_onShowHideFSHMap($this, 1);
+}
+
+
+sub _onFindThis
+	# Extract the right-clicked object's geometry from $navFSH::fsh_db and
+	# open winFind with it as the subject.  Only fires for waypoint / track
+	# / route node types (gated by _buildContextMenu).
+{
+	my ($this, $event) = @_;
+	my $node = $this->{_right_click_node} // {};
+	my $type = $node->{type} // '';
+	return if $type ne 'waypoint' && $type ne 'track' && $type ne 'route';
+	my $uuid = $node->{uuid};
+	return if !$uuid;
+	my $db = $navFSH::fsh_db;
+	return if !$db;
+
+	my %args = (
+		frame    => $this->{frame},
+		source   => 'fsh',
+		uuid     => $uuid,
+		obj_type => $type,
+		name     => ($node->{data} // {})->{name} // '',
+	);
+
+	if ($type eq 'waypoint')
+	{
+		my $wp = $node->{data} // {};
+		$args{lat} = ($wp->{lat} // 0) + 0;
+		$args{lon} = ($wp->{lon} // 0) + 0;
+		$args{bbox} = { min_lat => $args{lat}, max_lat => $args{lat},
+		                min_lon => $args{lon}, max_lon => $args{lon} };
+		$args{hierarchy_path} = 'FSH/Waypoints';
+		$args{npts} = 1;
+	}
+	elsif ($type eq 'track')
+	{
+		my $t = $db->{tracks}{$uuid};
+		my $pts = $t ? ($t->{points} // []) : [];
+		$args{points} = $pts;
+		$args{npts}   = scalar @$pts;
+		$args{bbox}   = navMatch::bboxOfPoints($pts);
+		$args{hierarchy_path} = 'FSH/Tracks';
+	}
+	elsif ($type eq 'route')
+	{
+		my $r = $db->{routes}{$uuid};
+		my @pts;
+		if ($r)
+		{
+			for my $w (@{$r->{wpts} // []})
+			{
+				push @pts, { lat => ($w->{lat}//0)+0, lon => ($w->{lon}//0)+0 };
+			}
+		}
+		$args{points} = \@pts;
+		$args{npts}   = scalar @pts;
+		$args{bbox}   = navMatch::bboxOfPoints(\@pts);
+		$args{hierarchy_path} = 'FSH/Routes';
+	}
+
+	winFind::openForSubject(%args);
 }
 
 

@@ -1,0 +1,769 @@
+#!/usr/bin/perl
+#------------------------------------------
+# winFind.pm
+#------------------------------------------
+# Modeless "Find similar to this" window.
+#
+# Triggered by right-click "Find This..." on a waypoint/track/route node
+# in winDatabase / winFSH / winE80.  Searches all three sources for items
+# whose geographic bounding box overlaps the subject's bbox, scores each
+# candidate via navMatch, and presents a sortable list.
+#
+# Per-row interactions:
+#   - Visibility checkbox    -- drives navVisibility for that source:uuid
+#                               (and through the observer pattern, updates
+#                               the source pane's tree checkbox + the
+#                               leaflet feature in one motion)
+#   - Click on candidate name -- focusOnObject in the source pane (no
+#                                visibility change, no leaflet zoom)
+#   - Color swatch click      -- editable per source-asymmetry rules:
+#                                  DB: arbitrary AABBGGRR (wxColourDialog)
+#                                  FSH track/route: enumerated palette picker
+#                                  FSH waypoint: no swatch (no color)
+#                                  E80: read-only swatch
+#   - Refresh button          -- re-runs the matcher with current settings,
+#                                re-reads candidate state from sources.
+#                                Use when you suspect color / name has been
+#                                edited elsewhere (no mutation observer).
+#
+# winFind registers a visibility observer to keep its row checkboxes in
+# sync with toggles made elsewhere (tree panes, editor checkbox).  It
+# does NOT register a mutation observer -- the Refresh button is the
+# remedy for color/name drift, by design.
+#
+# Lifetime: one winFind window at a time per app.  A new "Find This..."
+# invocation closes the existing window and opens a fresh one.
+#
+# Post-MVP growth (see memory winfind_future_items.md):
+#   - per-row right-click context menu with enrichment actions
+#   - matcher option toolbar (exact only / allow lat_shift / ...)
+#   - score-banded row colors
+
+package winFind;
+use strict;
+use warnings;
+use Wx qw(:everything);
+use Wx::Event qw(
+	EVT_BUTTON
+	EVT_CHECKBOX
+	EVT_LEFT_DOWN
+	EVT_CLOSE
+	EVT_SIZE
+);
+use Pub::Utils qw(display warning error);
+use n_defs;
+use n_utils;
+use nmResources;
+use navVisibility;
+use navMatch;
+use navServer qw(addRenderFeatures removeRenderFeatures);
+use navDB;
+use navFSH;
+use base 'Wx::Frame';
+
+
+my $current_window;   # one-at-a-time tracker
+
+
+#---------------------------------
+# entry point
+#---------------------------------
+# Called from each pane's "Find This..." context menu handler with the
+# selected subject's data.  Closes any existing winFind, opens a fresh
+# one for the new subject.
+
+sub openForSubject
+{
+	my (%args) = @_;
+	# Required: frame, source, uuid, obj_type, name, bbox
+	# For tracks/routes: points
+	# For waypoints: lat, lon
+
+	if ($current_window)
+	{
+		eval { $current_window->Close(1) };
+		$current_window = undef;
+	}
+
+	my $w = winFind->new(\%args);
+	$current_window = $w;
+	$w->Show(1);
+	return $w;
+}
+
+
+#---------------------------------
+# constructor
+#---------------------------------
+
+sub new
+{
+	my ($class, $args) = @_;
+	my $frame  = $args->{frame};
+	my $title  = sprintf('Find: %s [%s %s]',
+		$args->{name} // '(unnamed)',
+		uc($args->{source} // ''),
+		$args->{obj_type} // '');
+
+	my $this = $class->SUPER::new($frame, -1, $title,
+		wxDefaultPosition, [1000, 600],
+		wxDEFAULT_FRAME_STYLE | wxFRAME_FLOAT_ON_PARENT);
+
+	$this->{_subject}    = $args;
+	$this->{_frame}      = $frame;
+	$this->{_row_widgets} = {};   # key "source:uuid" -> { checkbox, swatch_panel, ... }
+
+	# Top-level panel with vertical layout
+	my $panel = Wx::Panel->new($this, -1);
+	$this->{_panel} = $panel;
+	my $vbox = Wx::BoxSizer->new(wxVERTICAL);
+
+	# --- Subject summary line(s) ---
+	my $subj_box = Wx::StaticBox->new($panel, -1, 'Subject');
+	my $subj_sizer = Wx::StaticBoxSizer->new($subj_box, wxVERTICAL);
+	my $subj_text = sprintf("%s  --  %s\nsource: %s  type: %s  npts: %d",
+		$args->{name} // '(unnamed)',
+		$args->{hierarchy_path} // '',
+		uc($args->{source} // ''),
+		$args->{obj_type} // '',
+		$args->{npts} // ($args->{points} ? scalar @{$args->{points}} : 1));
+	$subj_sizer->Add(Wx::StaticText->new($panel, -1, $subj_text), 0, wxALL, 4);
+	$vbox->Add($subj_sizer, 0, wxALL | wxEXPAND, 4);
+
+	# --- Toolbar row ---
+	my $tb = Wx::BoxSizer->new(wxHORIZONTAL);
+	$this->{_refresh_btn} = Wx::Button->new($panel, -1, 'Refresh');
+	$this->{_close_btn}   = Wx::Button->new($panel, -1, 'Close');
+	$tb->Add($this->{_refresh_btn}, 0, wxALL, 4);
+	$tb->Add($this->{_close_btn},   0, wxALL, 4);
+	$tb->AddStretchSpacer(1);
+	$this->{_status_text} = Wx::StaticText->new($panel, -1, '');
+	$tb->Add($this->{_status_text}, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+	$vbox->Add($tb, 0, wxEXPAND);
+
+	# --- Column header row (fixed) ---
+	my $hdr_panel = Wx::Panel->new($panel, -1);
+	$hdr_panel->SetBackgroundColour(Wx::Colour->new(220, 220, 220));
+	my $hbox = Wx::BoxSizer->new(wxHORIZONTAL);
+	_addHeaderCell($hdr_panel, $hbox, 'Vis',   34);
+	_addHeaderCell($hdr_panel, $hbox, 'Color', 34);
+	_addHeaderCell($hdr_panel, $hbox, 'Src',   40);
+	_addHeaderCell($hdr_panel, $hbox, 'Label', 70);
+	_addHeaderCell($hdr_panel, $hbox, 'Score', 55);
+	_addHeaderCell($hdr_panel, $hbox, 'npts',  50);
+	_addHeaderCell($hdr_panel, $hbox, 'Path',  300);
+	_addHeaderCell($hdr_panel, $hbox, 'Name',  300);
+	$hdr_panel->SetSizer($hbox);
+	$vbox->Add($hdr_panel, 0, wxEXPAND);
+
+	# --- Scrolled candidate list ---
+	$this->{_list_scroll} = Wx::ScrolledWindow->new($panel, -1,
+		wxDefaultPosition, wxDefaultSize, wxVSCROLL);
+	$this->{_list_scroll}->SetScrollRate(0, 18);
+	$this->{_list_sizer} = Wx::BoxSizer->new(wxVERTICAL);
+	$this->{_list_scroll}->SetSizer($this->{_list_sizer});
+	$vbox->Add($this->{_list_scroll}, 1, wxEXPAND);
+
+	$panel->SetSizer($vbox);
+
+	EVT_BUTTON($this, $this->{_refresh_btn}, sub { $this->_doRefresh() });
+	EVT_BUTTON($this, $this->{_close_btn},   sub { $this->Close(1)      });
+	EVT_CLOSE ($this, sub { $this->_onClose($_[1]) });
+
+	# Visibility observer.  Keeps row checkboxes in sync with toggles
+	# coming from tree panes, editor checkboxes, or other agents.
+	$this->{_vis_observer_alive} = 1;
+	$this->{_vis_observer} = navVisibility::addVisibilityObserver(sub {
+		my ($delta) = @_;
+		return if !$this->{_vis_observer_alive};
+		$this->_onVisibilityDelta($delta);
+	});
+
+	$this->_doRefresh();
+
+	return $this;
+}
+
+
+sub _onClose
+{
+	my ($this, $event) = @_;
+	$this->{_vis_observer_alive} = 0;
+	if ($this->{_vis_observer})
+	{
+		navVisibility::removeVisibilityObserver($this->{_vis_observer});
+		$this->{_vis_observer} = undef;
+	}
+	$current_window = undef if $current_window && $current_window == $this;
+	$event->Skip();
+}
+
+
+sub _addHeaderCell
+{
+	my ($parent, $sizer, $label, $width) = @_;
+	my $t = Wx::StaticText->new($parent, -1, $label,
+		wxDefaultPosition, [$width, -1]);
+	my $f = $t->GetFont();
+	$f->SetWeight(wxFONTWEIGHT_BOLD);
+	$t->SetFont($f);
+	$sizer->Add($t, 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
+}
+
+
+#---------------------------------
+# refresh: enumerate + score + repopulate
+#---------------------------------
+
+sub _doRefresh
+{
+	my ($this) = @_;
+	my $args = $this->{_subject};
+	my $obj_type = $args->{obj_type} // '';
+
+	# Modeless busy info window auto-destroys when the lexical goes out of
+	# scope at end of sub.  Tells the user the matcher is working so the
+	# several-second response doesn't feel like a hung app.
+	my $busy = Wx::BusyInfo->new('Finding similar items...');
+
+	$this->{_status_text}->SetLabel('Searching...');
+	$this->{_panel}->Layout();
+
+	# Subject bbox -- needed for prefilter.  For tracks/routes, compute from
+	# points; for waypoints, derive single-point bbox.
+	my $subj_bbox = $args->{bbox};
+	if (!$subj_bbox)
+	{
+		if ($obj_type eq 'waypoint')
+		{
+			my $lat = $args->{lat} + 0;
+			my $lon = $args->{lon} + 0;
+			$subj_bbox = { min_lat => $lat, max_lat => $lat,
+			               min_lon => $lon, max_lon => $lon };
+		}
+		elsif ($args->{points})
+		{
+			$subj_bbox = navMatch::bboxOfPoints($args->{points});
+		}
+	}
+
+	# Enumerate from all three sources.  Each enumerator handles its own
+	# bbox prefilter; we still pass the inflated bbox so the candidate set
+	# is reasonable.
+	my @all;
+	eval {
+		push @all, @{navMatch::enumerateDbCandidates($obj_type, $subj_bbox)};
+	};
+	warning(0,0,"enumerateDbCandidates: $@") if $@;
+	eval {
+		push @all, @{navMatch::enumerateFshCandidates($obj_type, $subj_bbox)};
+	};
+	warning(0,0,"enumerateFshCandidates: $@") if $@;
+	eval {
+		push @all, @{navMatch::enumerateE80Candidates($obj_type, $subj_bbox)};
+	};
+	warning(0,0,"enumerateE80Candidates: $@") if $@;
+
+	# Score each candidate.  Skip the subject itself.
+	my $subj_src  = $args->{source} // '';
+	my $subj_uuid = $args->{uuid}   // '';
+	my @scored;
+	for my $cand (@all)
+	{
+		next if $cand->{source} eq $subj_src && $cand->{uuid} eq $subj_uuid;
+		my $result;
+		if ($obj_type eq 'waypoint')
+		{
+			$result = navMatch::scoreWaypointPair(
+				$args->{lat} + 0, $args->{lon} + 0,
+				$cand->{lat} + 0, $cand->{lon} + 0);
+		}
+		else
+		{
+			$result = navMatch::scoreLineStringPair($args->{points}, $cand->{points});
+		}
+		next if $result->{label} eq 'none';
+		# Hide low-coverage near-* rows: anything below 10% in the near
+		# tier is noise, not signal.  Exact-tier and match-tier results
+		# of any coverage stay in (a trimmed-end exact match could
+		# legitimately score low).
+		next if $result->{label} =~ /^near\b/
+		     && ($result->{score} // 0) < 0.10;
+		$cand->{_match} = $result;
+		push @scored, $cand;
+	}
+
+	# Sort descending by score.
+	@scored = sort { $b->{_match}{score} <=> $a->{_match}{score} } @scored;
+
+	$this->_populate(\@scored);
+	$this->{_status_text}->SetLabel(scalar(@scored) . ' candidate(s)');
+}
+
+
+sub _populate
+{
+	my ($this, $candidates) = @_;
+
+	$this->{_list_scroll}->Freeze();
+	eval {
+		# Tear down existing rows
+		$this->{_list_sizer}->Clear(1);   # destroy children
+		$this->{_row_widgets} = {};
+
+		for my $cand (@$candidates)
+		{
+			$this->_addRow($cand);
+		}
+
+		$this->{_list_scroll}->FitInside();
+		$this->{_list_scroll}->Layout();
+	};
+	my $err = $@;
+	$this->{_list_scroll}->Thaw();
+	error("winFind::_populate: $err") if $err;
+}
+
+
+sub _addRow
+{
+	my ($this, $cand) = @_;
+	my $scroll = $this->{_list_scroll};
+
+	my $row = Wx::Panel->new($scroll, -1);
+	my $hbox = Wx::BoxSizer->new(wxHORIZONTAL);
+
+	my $source = $cand->{source};
+	my $uuid   = $cand->{uuid};
+	my $key    = "$source:$uuid";
+
+	# Visibility checkbox
+	my $cb = Wx::CheckBox->new($row, -1, '',
+		wxDefaultPosition, [28, -1]);
+	$cb->SetValue(_isVisible($source, $uuid) ? 1 : 0);
+	EVT_CHECKBOX($this, $cb, sub { $this->_onVisToggle($cand, $cb) });
+	$hbox->Add($cb, 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
+
+	# Color swatch.  Suppressed for FSH/E80 waypoints (no color in those
+	# storage models); shown read-only for E80 tracks/routes; editable
+	# for DB anything and FSH tracks/routes.
+	my $swatch_w = 28;
+	if (_sourceHasColorFor($source, $cand->{obj_type}))
+	{
+		my $swatch = Wx::Panel->new($row, -1,
+			wxDefaultPosition, [$swatch_w, 16], wxSIMPLE_BORDER);
+		_paintSwatch($swatch, $source, $cand);
+		if (_sourceColorEditable($source, $cand->{obj_type}))
+		{
+			EVT_LEFT_DOWN($swatch, sub { $this->_onColorPick($cand, $swatch); });
+		}
+		$hbox->Add($swatch, 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
+		$this->{_row_widgets}{$key}{swatch} = $swatch;
+	}
+	else
+	{
+		# placeholder to keep column alignment
+		$hbox->Add(Wx::Panel->new($row, -1,
+			wxDefaultPosition, [$swatch_w, 16]), 0,
+			wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
+	}
+
+	# Source label
+	$hbox->Add(Wx::StaticText->new($row, -1, uc($source),
+		wxDefaultPosition, [40, -1]),
+		0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
+
+	# Match label split into Kind (exact/match/near) + Extent (blank for
+	# 'full', else trimmed/subset/superset/partial).  Two columns so the
+	# axis you care about scanning -- "is this an exact one?" -- isn't
+	# buried inside a wider per-row string.
+	my ($kind, $extent) = winFind::_splitMatchLabel($cand->{_match}{label});
+	$hbox->Add(Wx::StaticText->new($row, -1, $kind,
+		wxDefaultPosition, [45, -1]),
+		0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
+	$hbox->Add(Wx::StaticText->new($row, -1, $extent,
+		wxDefaultPosition, [65, -1]),
+		0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
+
+	# Score (percentage)
+	my $score_pct = sprintf('%.0f%%', ($cand->{_match}{score} // 0) * 100);
+	$hbox->Add(Wx::StaticText->new($row, -1, $score_pct,
+		wxDefaultPosition, [55, -1]),
+		0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
+
+	# npts
+	$hbox->Add(Wx::StaticText->new($row, -1, ($cand->{npts} // 1) . '',
+		wxDefaultPosition, [50, -1]),
+		0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
+
+	# Path (truncate if too long)
+	my $path = $cand->{hierarchy_path} // '';
+	$hbox->Add(Wx::StaticText->new($row, -1, $path,
+		wxDefaultPosition, [300, -1]),
+		0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
+
+	# Name (clickable -> navigate)
+	my $name_text = Wx::StaticText->new($row, -1, $cand->{name} // '',
+		wxDefaultPosition, [300, -1]);
+	my $f = $name_text->GetFont();
+	$f->SetUnderlined(1);
+	$name_text->SetFont($f);
+	$name_text->SetForegroundColour(Wx::Colour->new(0, 0, 192));
+	$name_text->SetCursor(Wx::Cursor->new(wxCURSOR_HAND));
+	EVT_LEFT_DOWN($name_text, sub { $this->_onNameClick($cand); });
+	$hbox->Add($name_text, 1, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
+
+	$row->SetSizer($hbox);
+	$this->{_list_sizer}->Add($row, 0, wxEXPAND | wxBOTTOM, 1);
+
+	$this->{_row_widgets}{$key}{checkbox} = $cb;
+	$this->{_row_widgets}{$key}{cand}     = $cand;
+}
+
+
+#---------------------------------
+# helpers: label split, visibility lookup, color asymmetry, swatch paint
+#---------------------------------
+
+sub _splitMatchLabel
+{
+	# navMatch label vocabulary: 'exact' / 'match' / 'near', optionally
+	# suffixed with -trimmed / -subset / -superset / -partial.  Split into
+	# the two orthogonal axes for separate columns.  Bare tier name means
+	# 'full' extent -- return empty string for that column.
+	my ($label) = @_;
+	return ('', '') if !defined $label;
+	return ('', '') if $label eq '';
+	return ('', '') if $label eq 'none';
+	my $dash = index($label, '-');
+	if ($dash < 0)
+	{
+		return ($label, '');
+	}
+	my $kind   = substr($label, 0, $dash);
+	my $extent = substr($label, $dash + 1);
+	return ($kind, $extent);
+}
+
+
+sub _isVisible
+{
+	my ($source, $uuid) = @_;
+	if    ($source eq 'db')  { return navVisibility::getDbVisible($uuid)  }
+	elsif ($source eq 'e80') { return navVisibility::getE80Visible($uuid) }
+	elsif ($source eq 'fsh') { return navVisibility::getFSHVisible($uuid) }
+	return 0;
+}
+
+
+sub _sourceHasColorFor
+{
+	my ($source, $obj_type) = @_;
+	# DB: all three types have color
+	# FSH: tracks and routes only (waypoints have no color in FSH)
+	# E80: tracks and routes only (waypoints have no color in E80)
+	return 1 if $source eq 'db';
+	return 0 if $obj_type eq 'waypoint';
+	return 1;   # fsh/e80 track or route
+}
+
+
+sub _sourceColorEditable
+{
+	my ($source, $obj_type) = @_;
+	return 1 if $source eq 'db';
+	return 1 if $source eq 'fsh';   # any FSH non-waypoint
+	return 0;                        # E80 not editable
+}
+
+
+sub _paintSwatch
+{
+	my ($swatch, $source, $cand) = @_;
+	my $abgr = _resolveColorABGR($source, $cand);
+	my ($rr, $gg, $bb) = (192, 192, 192);
+	if (defined($abgr) && $abgr =~ /^[0-9a-fA-F]{8}$/)
+	{
+		$rr = hex(substr($abgr, 6, 2));
+		$gg = hex(substr($abgr, 4, 2));
+		$bb = hex(substr($abgr, 2, 2));
+	}
+	$swatch->SetBackgroundColour(Wx::Colour->new($rr, $gg, $bb));
+	$swatch->Refresh();
+}
+
+
+sub _resolveColorABGR
+{
+	my ($source, $cand) = @_;
+	if ($source eq 'db')
+	{
+		return $cand->{color_value};   # already AABBGGRR
+	}
+	# FSH and E80: color_value is an index into E80_ROUTE_COLOR_ABGR
+	my $idx = $cand->{color_value};
+	return undef if !defined $idx;
+	return $E80_ROUTE_COLOR_ABGR[$idx + 0] // 'FF888888';
+}
+
+
+#---------------------------------
+# event: visibility toggle
+#---------------------------------
+
+sub _onVisToggle
+{
+	my ($this, $cand, $cb) = @_;
+	my $new = $cb->GetValue() ? 1 : 0;
+	my $source = $cand->{source};
+	my $uuid   = $cand->{uuid};
+
+	# Update visibility store.  The observer notification will fire back
+	# into our own _onVisibilityDelta, which idempotently re-sets this
+	# checkbox (a no-op since we just set it).  Also updates other panes.
+	if    ($source eq 'db')  { navVisibility::setDbVisible($uuid,  $new) }
+	elsif ($source eq 'e80') { navVisibility::setE80Visible($uuid, $new) }
+	elsif ($source eq 'fsh') { navVisibility::setFSHVisible($uuid, $new) }
+
+	# Drive the leaflet directly -- the visibility observer notifies
+	# widgets, but it does not push/pull features.  That's the caller's
+	# job and there is no central "push from visibility flag" service
+	# (the existing tree-pane code does this in line with its toggle).
+	if ($new)
+	{
+		my $feature = _buildFeatureForLeaflet($source, $cand);
+		addRenderFeatures([$feature]) if $feature;
+	}
+	else
+	{
+		removeRenderFeatures($source, [$uuid]);
+	}
+}
+
+
+sub _buildFeatureForLeaflet
+{
+	my ($source, $cand) = @_;
+	my $obj_type = $cand->{obj_type};
+	my $color_abgr = _resolveColorABGR($source, $cand) // 'FF888888';
+
+	if ($obj_type eq 'waypoint')
+	{
+		return {
+			type       => 'Feature',
+			properties => {
+				uuid        => $cand->{uuid},
+				name        => $cand->{name} // '',
+				obj_type    => 'waypoint',
+				data_source => $source,
+				wp_type     => $cand->{wp_type} // 'nav',
+				color       => $color_abgr,
+				lat         => $cand->{lat} + 0,
+				lon         => $cand->{lon} + 0,
+			},
+			geometry => { type => 'Point',
+				coordinates => [$cand->{lon} + 0, $cand->{lat} + 0] },
+		};
+	}
+	elsif ($obj_type eq 'track')
+	{
+		my $pts = $cand->{points} // [];
+		return undef if !@$pts;
+		return {
+			type       => 'Feature',
+			properties => {
+				uuid        => $cand->{uuid},
+				name        => $cand->{name} // '',
+				obj_type    => 'track',
+				data_source => $source,
+				color       => $color_abgr,
+				point_count => scalar(@$pts) + 0,
+			},
+			geometry => { type => 'LineString',
+				coordinates => [map { [($_->{lon}//0)+0, ($_->{lat}//0)+0] } @$pts] },
+		};
+	}
+	elsif ($obj_type eq 'route')
+	{
+		my $pts = $cand->{points} // [];
+		return undef if !@$pts;
+		return {
+			type       => 'Feature',
+			properties => {
+				uuid        => $cand->{uuid},
+				name        => $cand->{name} // '',
+				obj_type    => 'route',
+				data_source => $source,
+				color       => $color_abgr,
+				wp_count    => scalar(@$pts) + 0,
+			},
+			geometry => { type => 'LineString',
+				coordinates => [map { [($_->{lon}//0)+0, ($_->{lat}//0)+0] } @$pts] },
+		};
+	}
+	return undef;
+}
+
+
+#---------------------------------
+# event: name click -> focus pane
+#---------------------------------
+
+sub _onNameClick
+{
+	my ($this, $cand) = @_;
+	my $frame = $this->{_frame};
+	return if !$frame;
+
+	my $pane_id = $cand->{source} eq 'db'  ? $WIN_DATABASE
+	            : $cand->{source} eq 'e80' ? $WIN_E80
+	            : $cand->{source} eq 'fsh' ? $WIN_FSH
+	            :                            undef;
+	return if !$pane_id;
+
+	my $pane = $frame->findPane($pane_id);
+	return if !$pane;
+	if ($pane->can('focusOnObject'))
+	{
+		$pane->focusOnObject($cand->{uuid}, $cand->{obj_type});
+	}
+}
+
+
+#---------------------------------
+# event: color pick
+#---------------------------------
+
+sub _onColorPick
+{
+	my ($this, $cand, $swatch) = @_;
+	my $source = $cand->{source};
+	my $obj_type = $cand->{obj_type};
+	my $uuid     = $cand->{uuid};
+
+	if ($source eq 'db')
+	{
+		$this->_pickDbColor($cand, $swatch);
+	}
+	elsif ($source eq 'fsh')
+	{
+		$this->_pickFshColor($cand, $swatch);
+	}
+	# E80: no-op; not editable.
+}
+
+
+sub _pickDbColor
+{
+	my ($this, $cand, $swatch) = @_;
+	my $current = $cand->{color_value} // 'FF0000FF';
+	my $aa = substr($current, 0, 2);
+	my $rr = hex(substr($current, 6, 2));
+	my $gg = hex(substr($current, 4, 2));
+	my $bb = hex(substr($current, 2, 2));
+
+	my $cd = Wx::ColourData->new();
+	$cd->SetColour(Wx::Colour->new($rr, $gg, $bb));
+	$cd->SetChooseFull(1);
+
+	my $dlg = Wx::ColourDialog->new($this, $cd);
+	if ($dlg->ShowModal() == wxID_OK)
+	{
+		my $c = $dlg->GetColourData()->GetColour();
+		my $new_abgr = sprintf('%s%02x%02x%02x',
+			$aa, $c->Blue(), $c->Green(), $c->Red());
+		$cand->{color_value} = $new_abgr;
+		_paintSwatch($swatch, 'db', $cand);
+
+		my $table = $cand->{obj_type} eq 'waypoint' ? 'waypoints'
+		          : $cand->{obj_type} eq 'route'    ? 'routes'
+		          :                                    'tracks';
+		my $dbh = connectDB();
+		if ($dbh)
+		{
+			$dbh->do("UPDATE $table SET color=? WHERE uuid=?",
+				[$new_abgr, $cand->{uuid}]);
+			disconnectDB($dbh);
+		}
+
+		# If visible, refresh on leaflet.
+		if (_isVisible('db', $cand->{uuid}))
+		{
+			removeRenderFeatures('db', [$cand->{uuid}]);
+			my $feature = _buildFeatureForLeaflet('db', $cand);
+			addRenderFeatures([$feature]) if $feature;
+		}
+	}
+	$dlg->Destroy();
+}
+
+
+sub _pickFshColor
+{
+	my ($this, $cand, $swatch) = @_;
+	my $cur = $cand->{color_value} // 0;
+	my @choices = @E80_ROUTE_COLOR_NAMES;
+
+	my $dlg = Wx::SingleChoiceDialog->new($this,
+		'Pick color', 'FSH Color', \@choices);
+	$dlg->SetSelection($cur);
+	if ($dlg->ShowModal() == wxID_OK)
+	{
+		my $idx = $dlg->GetSelection();
+		$cand->{color_value} = $idx;
+		_paintSwatch($swatch, 'fsh', $cand);
+
+		# Mutate the in-memory FSH record.
+		my $db = $navFSH::fsh_db;
+		if ($db)
+		{
+			my $rec;
+			if ($cand->{obj_type} eq 'track')
+			{
+				$rec = $db->{tracks}{$cand->{uuid}};
+			}
+			elsif ($cand->{obj_type} eq 'route')
+			{
+				$rec = $db->{routes}{$cand->{uuid}};
+			}
+			if ($rec)
+			{
+				$rec->{color} = $idx;
+				navFSH::markDirty();
+			}
+		}
+
+		# If visible, refresh on leaflet.
+		if (_isVisible('fsh', $cand->{uuid}))
+		{
+			removeRenderFeatures('fsh', [$cand->{uuid}]);
+			my $feature = _buildFeatureForLeaflet('fsh', $cand);
+			addRenderFeatures([$feature]) if $feature;
+		}
+	}
+	$dlg->Destroy();
+}
+
+
+#---------------------------------
+# observer: cross-source visibility changes
+#---------------------------------
+
+sub _onVisibilityDelta
+{
+	my ($this, $delta) = @_;
+	for my $source (keys %$delta)
+	{
+		my $changes = $delta->{$source};
+		for my $uuid (keys %$changes)
+		{
+			my $key = "$source:$uuid";
+			my $w = $this->{_row_widgets}{$key};
+			next if !$w || !$w->{checkbox};
+			$w->{checkbox}->SetValue($changes->{$uuid} ? 1 : 0);
+		}
+	}
+}
+
+
+1;

@@ -31,13 +31,16 @@ use navServer;
 use navOps qw(buildContextMenu onContextMenuCommand);
 use nmResources;
 use gpsImport qw(import_gps_file find_gpsbabel);
+use navMatch;
+use winFind;
 
 # winDatabase.pm declares these CTX_CMD_* IDs with `our`.  Re-declared
 # here (no assignment) so `use strict` resolves the unqualified
 # references in the subs below.
 our ($CTX_CMD_SHOW_MAP, $CTX_CMD_HIDE_MAP, $CTX_CMD_DELETE,
      $CTX_CMD_NEW_BRANCH, $CTX_CMD_NEW_GROUP,
-     $CTX_CMD_IMPORT_GPS, $CTX_CMD_IMPORT_KML, $CTX_CMD_EXPORT_KML);
+     $CTX_CMD_IMPORT_GPS, $CTX_CMD_IMPORT_KML, $CTX_CMD_EXPORT_KML,
+     $CTX_CMD_FIND_THIS);
 
 # File-scoped state.  %rendered_uuids is `our` because winDatabase.pm's
 # _onSave checks it to know whether an edited object is currently on
@@ -675,6 +678,15 @@ sub _buildContextMenu
 		$menu->Append($CTX_CMD_SHOW_MAP, 'Show on Map');
 		$menu->Append($CTX_CMD_HIDE_MAP, 'Hide on Map');
 
+		# "Find This..." only for object nodes -- terminal items have
+		# geographic identity worth searching for.  Collections, groups,
+		# route_points etc. are aggregates or sub-objects and don't
+		# stand alone as findable subjects.
+		if ($node_type eq 'object')
+		{
+			$menu->Append($CTX_CMD_FIND_THIS, 'Find This...');
+		}
+
 		# Import/Export block.  Separator is unconditional within this branch
 		# because Export KML applies to every non-root node, so there is
 		# always at least one item below it.  Import KML is restricted to
@@ -708,6 +720,58 @@ sub _onNmOpsCmd
 	my @nodes       = @{$this->{_context_nodes} // []};
 	onContextMenuCommand($cmd_id, 'database', $right_click, $this->{tree}, @nodes);
 	_applyCutStyle($this);
+}
+
+
+sub _onFindThis
+	# Extract the right-clicked object's geometry from the DB and open
+	# winFind with that as the subject.  Only meaningful for object nodes;
+	# the menu-build code already gates this.
+{
+	my ($this, $event) = @_;
+	my $node = $this->{_right_click_node} // {};
+	return if ($node->{type} // '') ne 'object';
+	my $data     = $node->{data} // {};
+	my $uuid     = $data->{uuid};
+	my $obj_type = $data->{obj_type};
+	return if !$uuid || !$obj_type;
+
+	my $dbh = connectDB();
+	return if !$dbh;
+	my %args = (
+		frame    => $this->{frame},
+		source   => 'db',
+		uuid     => $uuid,
+		obj_type => $obj_type,
+		name     => $data->{name} // '',
+		hierarchy_path => navDB::getCollectionHierarchyPath($dbh, $data->{collection_uuid}),
+	);
+	if ($obj_type eq 'waypoint')
+	{
+		my $w = getWaypoint($dbh, $uuid);
+		$args{lat} = $w->{lat} + 0;
+		$args{lon} = $w->{lon} + 0;
+		$args{bbox} = { min_lat => $args{lat}, max_lat => $args{lat},
+		                min_lon => $args{lon}, max_lon => $args{lon} };
+		$args{npts} = 1;
+	}
+	elsif ($obj_type eq 'track')
+	{
+		my $pts = getTrackPoints($dbh, $uuid) // [];
+		$args{points} = $pts;
+		$args{npts}   = scalar @$pts;
+		$args{bbox}   = navMatch::bboxOfPoints($pts);
+	}
+	elsif ($obj_type eq 'route')
+	{
+		my $pts = getRoutePoints($dbh, $uuid) // [];
+		$args{points} = $pts;
+		$args{npts}   = scalar @$pts;
+		$args{bbox}   = navMatch::bboxOfPoints($pts);
+	}
+	disconnectDB($dbh);
+
+	winFind::openForSubject(%args);
 }
 
 
@@ -1044,6 +1108,10 @@ sub _onHideMap
 
 
 sub _onShowHideMap
+	# Wrapped with navVisibility::begin/endVisibilityBatch so that multi-
+	# select Show/Hide-on-Map fires one observer notification with a complete
+	# delta across both the case1 collection loop and the leaf-node loop.
+	# Other DB pane instances and winFind see one update event total.
 {
 	my ($this, $new_visible) = @_;
 	my ($case1_colls, $case2_colls, $leaf_nodes) = _analyzeShowHideSelection($this);
@@ -1051,6 +1119,9 @@ sub _onShowHideMap
 
 	my $dbh = connectDB();
 	return if !$dbh;
+
+	navVisibility::beginVisibilityBatch();
+	eval {
 
 	for my $entry (@$case1_colls)
 	{
@@ -1075,6 +1146,12 @@ sub _onShowHideMap
 		if ($new_visible) { _pushObjToLeaflet($dbh, $this, { uuid => $uuid, obj_type => $obj_type }) }
 		else              { _pullFromLeaflet($this, $uuid) }
 	}
+
+	};
+	my $err = $@;
+	navVisibility::endVisibilityBatch();
+	error("_onShowHideMap: $err") if $err;
+	return if $err;
 
 	for my $entry (@$case2_colls)
 	{

@@ -52,13 +52,16 @@ use navServer qw(addRenderFeatures removeRenderFeatures openMapBrowser isBrowser
 use navVisibility qw(getE80Visible setE80Visible clearAllE80Visible getAllE80VisibleUUIDs batchRemoveE80Visible);
 use nmResources;
 use navPrefs;
+use navMatch;
+use winFind;
 use base 'winTreeBase';
 
 our $dbg_wine80 = 0;
 my $CUT_COLOR;
 
-my $CTX_CMD_SHOW_MAP = 10560;
-my $CTX_CMD_HIDE_MAP = 10561;
+my $CTX_CMD_SHOW_MAP  = 10560;
+my $CTX_CMD_HIDE_MAP  = 10561;
+my $CTX_CMD_FIND_THIS = 10570;
 
 
 sub new
@@ -233,6 +236,7 @@ sub new
 	EVT_MENU($this, $COMMAND_CLEAR_E80_DB,   sub { doClearE80DB($_[0]->{tree}) });
 	EVT_MENU($this, $CTX_CMD_SHOW_MAP,       \&_onShowMap);
 	EVT_MENU($this, $CTX_CMD_HIDE_MAP,       \&_onHideMap);
+	EVT_MENU($this, $CTX_CMD_FIND_THIS,      \&_onFindThis);
 	EVT_MENU_RANGE($this, 10200, 10299, \&_onNmOpsCmd);
 	EVT_TEXT($this,   $this->{ed_name},         $this->can('_onFieldChanged'));
 	EVT_TEXT($this,   $this->{ed_lat},          $this->can('_onLatEdit'));
@@ -258,6 +262,8 @@ sub new
 	}
 	$this->{_selected_keys} = {};
 	$this->{_e80_loaded}    = 0;
+
+	$this->installVisibilityObserver();
 
 	return $this;
 }
@@ -712,6 +718,11 @@ sub _buildContextMenu
 		$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
 		$menu->Append($CTX_CMD_SHOW_MAP, 'Show on Map');
 		$menu->Append($CTX_CMD_HIDE_MAP, 'Hide on Map');
+		my $t = $right_click_node->{type} // '';
+		if ($t eq 'waypoint' || $t eq 'track' || $t eq 'route')
+		{
+			$menu->Append($CTX_CMD_FIND_THIS, 'Find This...');
+		}
 	}
 
 	$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
@@ -729,6 +740,74 @@ sub _onNmOpsCmd
 	my @nodes       = @{$this->{_context_nodes} // []};
 	onContextMenuCommand($cmd_id, 'e80', $right_click, $this->{tree}, @nodes);
 	_applyCutStyle($this);
+}
+
+
+sub _onFindThis
+	# Build a winFind subject from the right-clicked E80 node.  E80 waypoint
+	# lat/lon is stored as integer * 1e7; scale here.  Tracks come from the
+	# TRACK service with decimal-degree points.
+{
+	my ($this, $event) = @_;
+	my $node = $this->{_right_click_node} // {};
+	my $type = $node->{type} // '';
+	return if $type ne 'waypoint' && $type ne 'track' && $type ne 'route';
+	my $uuid = $node->{uuid};
+	return if !$uuid;
+
+	my $wpmgr     = $raydp ? $raydp->findImplementedService('WPMGR', 1) : undef;
+	my $track_mgr = $raydp ? $raydp->findImplementedService('TRACK', 1) : undef;
+
+	my %args = (
+		frame    => $this->{frame},
+		source   => 'e80',
+		uuid     => $uuid,
+		obj_type => $type,
+		name     => ($node->{data} // {})->{name} // '',
+	);
+
+	if ($type eq 'waypoint' && $wpmgr)
+	{
+		my $wp  = $wpmgr->{waypoints}{$uuid} // {};
+		my $lat = (($wp->{lat} // 0) + 0) / 1e7;
+		my $lon = (($wp->{lon} // 0) + 0) / 1e7;
+		$args{lat}  = $lat;
+		$args{lon}  = $lon;
+		$args{bbox} = { min_lat => $lat, max_lat => $lat,
+		                min_lon => $lon, max_lon => $lon };
+		$args{hierarchy_path} = 'E80/Waypoints';
+		$args{npts} = 1;
+	}
+	elsif ($type eq 'track' && $track_mgr)
+	{
+		my $t   = $track_mgr->{tracks}{$uuid} // {};
+		my $pts = $t->{points} // [];
+		$args{points} = $pts;
+		$args{npts}   = scalar @$pts;
+		$args{bbox}   = navMatch::bboxOfPoints($pts);
+		$args{hierarchy_path} = 'E80/Tracks';
+	}
+	elsif ($type eq 'route' && $wpmgr)
+	{
+		my $r   = $wpmgr->{routes}{$uuid} // {};
+		my $wps = $wpmgr->{waypoints}     // {};
+		my @pts;
+		for my $wp_uuid (@{$r->{uuids} // []})
+		{
+			my $wp = $wps->{$wp_uuid};
+			next if !$wp;
+			push @pts, {
+				lat => (($wp->{lat} // 0) + 0) / 1e7,
+				lon => (($wp->{lon} // 0) + 0) / 1e7,
+			};
+		}
+		$args{points} = \@pts;
+		$args{npts}   = scalar @pts;
+		$args{bbox}   = navMatch::bboxOfPoints(\@pts);
+		$args{hierarchy_path} = 'E80/Routes';
+	}
+
+	winFind::openForSubject(%args);
 }
 
 

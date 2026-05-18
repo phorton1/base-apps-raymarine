@@ -64,6 +64,7 @@ our $CTX_CMD_NEW_GROUP  = 10564;
 our $CTX_CMD_IMPORT_GPS = 10565;
 our $CTX_CMD_IMPORT_KML = 10566;
 our $CTX_CMD_EXPORT_KML = 10567;
+our $CTX_CMD_FIND_THIS  = 10570;
 
 # Declared and populated in winDatabase2.pm by the Leaflet sync code.
 # Re-declared here (no assignment) so `use strict` resolves the
@@ -237,6 +238,7 @@ sub new
 	EVT_MENU($this, $CTX_CMD_IMPORT_GPS, \&_onImportGPS);
 	EVT_MENU($this, $CTX_CMD_IMPORT_KML, \&_onImportKML);
 	EVT_MENU($this, $CTX_CMD_EXPORT_KML, \&_onExportKML);
+	EVT_MENU($this, $CTX_CMD_FIND_THIS,  \&_onFindThis);
 	EVT_MENU_RANGE($this, 10200, 10299,  \&_onNmOpsCmd);
 	EVT_TEXT($this,   $this->{ed_name},    $this->can('_onFieldChanged'));
 	EVT_TEXT($this,   $this->{ed_comment}, $this->can('_onFieldChanged'));
@@ -253,7 +255,191 @@ sub new
 
 	_loadTopLevel($this);
 
+	$this->installVisibilityObserver();
+
 	return $this;
+}
+
+
+#---------------------------------
+# visibility observer overrides
+#---------------------------------
+# winDatabase's tree shape and container-state model differ from the base:
+#   - node uuid lives at $node->{data}{uuid}, not $node->{uuid}
+#   - containers are 'collection' nodes, possibly lazy-loaded
+#   - container state comes from the DB via getCollectionVisibleState, not
+#     from walking the loaded tree (would be wrong when children aren't yet
+#     loaded)
+#
+# Also: the base observer body's editor-checkbox sync only matches when
+# _edit_uuid is in the delta directly.  For a DB collection edit, the delta
+# carries the collection's descendant UUIDs, not the collection's own UUID.
+# We override _onVisibilityDelta to add a "re-band edited collection" pass
+# at the end.
+
+sub _wpDataSource { 'db' }
+
+
+sub _visObserverNodeUuid
+{
+	my ($this, $node) = @_;
+	return ($node->{data} // {})->{uuid};
+}
+
+
+sub _visObserverIsContainer
+{
+	my ($this, $node) = @_;
+	return ($node->{type} // '') eq 'collection';
+}
+
+
+sub _visObserverComputeContainerState
+{
+	my ($this, $item, $node) = @_;
+	my $uuid = ($node->{data} // {})->{uuid};
+	return 0 if !$uuid;
+	my $dbh = connectDB();
+	return 0 if !$dbh;
+	my $vs = getCollectionVisibleState($dbh, $uuid);
+	disconnectDB($dbh);
+	return $vs;
+}
+
+
+sub _onVisibilityDelta
+{
+	my ($this, $delta) = @_;
+	my $changes = $delta->{db};
+	return if !$changes;
+	my $tree = $this->{tree};
+	return if !$tree || $tree->GetCount() <= 0;
+
+	$tree->Freeze();
+	eval {
+		winTreeBase::_walkApplyVisDelta($this, $tree, $tree->GetRootItem(), $changes);
+
+		# Editor checkbox sync.  Two cases:
+		#   - edited item is a leaf in the delta -> set from delta value
+		#   - edited item is a collection whose descendants are in the delta
+		#     -> recompute via getCollectionVisibleState
+		my $edit_uuid = $this->{_edit_uuid} // '';
+		my $edit_type = $this->{_edit_type} // '';
+		if ($edit_uuid && $this->{ed_visible})
+		{
+			$this->{_loading_editor} = 1;
+			if (exists $changes->{$edit_uuid})
+			{
+				$this->{ed_visible}->Set3StateValue(
+					$changes->{$edit_uuid} ? wxCHK_CHECKED : wxCHK_UNCHECKED);
+			}
+			elsif ($edit_type eq 'collection')
+			{
+				my $dbh = connectDB();
+				if ($dbh)
+				{
+					my $vs = getCollectionVisibleState($dbh, $edit_uuid);
+					disconnectDB($dbh);
+					$this->{ed_visible}->Set3StateValue(
+						$vs == 1 ? wxCHK_CHECKED :
+						$vs == 2 ? wxCHK_UNDETERMINED :
+						           wxCHK_UNCHECKED);
+				}
+			}
+			$this->{_loading_editor} = 0;
+		}
+	};
+	my $err = $@;
+	$tree->Thaw();
+	error("winDatabase::_onVisibilityDelta: $err") if $err;
+}
+
+
+#---------------------------------
+# focusOnObject override (lazy expand on the way down)
+#---------------------------------
+# The base implementation walks the currently-loaded tree only.  DB
+# collections are lazy-loaded -- their children appear only after the
+# collection's EVT_TREE_ITEM_EXPANDING fires.  So for a freshly-opened
+# winDatabase the target leaf isn't in the tree yet.  We resolve the
+# leaf's parent chain via the DB (collection_uuid + parent_uuid links),
+# expand each ancestor top-down (Expand triggers lazy-load synchronously),
+# then re-run the base finder on the now-populated subtree.
+
+sub focusOnObject
+{
+	my ($this, $uuid, $obj_type) = @_;
+	return 0 if !$uuid;
+	my $tree = $this->{tree};
+	return 0 if !$tree;
+
+	# Fast path: if the item is already loaded, just select it.
+	my $found = winTreeBase::_findItemByUuid($tree, $tree->GetRootItem(), $uuid);
+	if (!($found && $found->IsOk()))
+	{
+		# Resolve parent chain via DB.
+		my $dbh = connectDB();
+		return 0 if !$dbh;
+
+		my $parent_uuid;
+		if    ($obj_type eq 'waypoint') { my $r = $dbh->get_record("SELECT collection_uuid FROM waypoints WHERE uuid=?", [$uuid]); $parent_uuid = $r ? $r->{collection_uuid} : undef; }
+		elsif ($obj_type eq 'track')    { my $r = $dbh->get_record("SELECT collection_uuid FROM tracks    WHERE uuid=?", [$uuid]); $parent_uuid = $r ? $r->{collection_uuid} : undef; }
+		elsif ($obj_type eq 'route')    { my $r = $dbh->get_record("SELECT collection_uuid FROM routes    WHERE uuid=?", [$uuid]); $parent_uuid = $r ? $r->{collection_uuid} : undef; }
+
+		my @chain;
+		my $cur = $parent_uuid;
+		my %seen;
+		while ($cur && !$seen{$cur})
+		{
+			$seen{$cur} = 1;
+			unshift @chain, $cur;
+			my $rec = $dbh->get_record("SELECT parent_uuid FROM collections WHERE uuid=?", [$cur]);
+			last if !$rec;
+			$cur = $rec->{parent_uuid};
+		}
+		disconnectDB($dbh);
+
+		# Walk down, expanding each ancestor in turn.  Expand() fires
+		# EVT_TREE_ITEM_EXPANDING synchronously, which lazy-loads the
+		# direct children.  After each expand, the next ancestor is
+		# guaranteed loaded as a direct child of $cur_item.
+		my $cur_item = $tree->GetRootItem();
+		$tree->Freeze();
+		eval {
+			for my $coll_uuid (@chain)
+			{
+				my $next = winTreeBase::_findItemByUuid($tree, $cur_item, $coll_uuid);
+				last if !$next || !$next->IsOk();
+				$tree->Expand($next);
+				$cur_item = $next;
+			}
+		};
+		my $err = $@;
+		$tree->Thaw();
+		error("focusOnObject expand walk: $err") if $err;
+
+		$found = winTreeBase::_findItemByUuid($tree, $cur_item, $uuid);
+	}
+
+	return 0 if !$found || !$found->IsOk();
+
+	$tree->UnselectAll();
+	$tree->SelectItem($found, 1);
+	$tree->EnsureVisible($found);
+
+	my $book = $this->{book};
+	if ($book)
+	{
+		for my $i (0 .. $book->GetPageCount() - 1)
+		{
+			if ($book->GetPage($i) == $this)
+			{
+				$book->SetSelection($i);
+				last;
+			}
+		}
+	}
+	return 1;
 }
 
 

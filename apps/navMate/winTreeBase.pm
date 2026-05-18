@@ -30,6 +30,7 @@ use n_defs;
 use n_utils;
 use navPrefs;
 use navServer qw(addRenderFeatures removeRenderFeatures openMapBrowser isBrowserConnected);
+use navVisibility;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
 
 
@@ -342,6 +343,222 @@ sub _refreshAncestorStates
         $tree->SetItemState($parent, _computeContainerState($tree, $parent));
         $parent = $tree->GetItemParent($parent);
     }
+}
+
+
+#---------------------------------
+# visibility observer (cross-pane sync)
+#---------------------------------
+# Tree panes register an observer with navVisibility at construction time.
+# When ANY caller mutates visibility (this pane, another pane, winFind,
+# bulk operations), every observer receives a delta hash of the form
+# { source => { uuid => new_value, ... }, ... } and updates its widgets to
+# match.  This is what keeps multi-instance winDatabase in sync, what lets
+# the editor "Visible" checkbox track tree clicks, and what lets winFind
+# drive visibility from outside the source pane.
+#
+# Default observer body (this file) handles E80/FSH-style trees where node
+# uuids live at $node->{uuid} and container state is computed by walking the
+# loaded tree.  winDatabase overrides the per-node uuid extraction and the
+# container-state computation (collections may be lazy-loaded; it consults
+# the DB instead).
+
+sub installVisibilityObserver
+{
+	# Called from each pane's new() after the tree exists and abstract
+	# methods are usable.
+	my ($this) = @_;
+	$this->{_vis_observer_alive} = 1;
+	$this->{_vis_observer} = navVisibility::addVisibilityObserver(sub {
+		my ($delta) = @_;
+		return if !$this->{_vis_observer_alive};
+		$this->_onVisibilityDelta($delta);
+	});
+}
+
+
+sub uninstallVisibilityObserver
+{
+	# Mark the closure inert.  Safe to call multiple times.
+	my ($this) = @_;
+	$this->{_vis_observer_alive} = 0;
+	if ($this->{_vis_observer})
+	{
+		navVisibility::removeVisibilityObserver($this->{_vis_observer});
+		$this->{_vis_observer} = undef;
+	}
+}
+
+
+#---------------------------------
+# focusOnObject  (winFind callback)
+#---------------------------------
+# Selects the tree item whose node carries the given uuid and brings the
+# pane to the front of the notebook.  Default walks the currently-loaded
+# tree only; lazy-loaded subtrees that haven't been expanded yet will not
+# be found (post-MVP could expand-on-the-way).  Returns 1 if found, 0 if
+# not.  Subclasses MAY override to add expand-on-the-way behavior.
+
+sub focusOnObject
+{
+	my ($this, $uuid, $obj_type) = @_;
+	return 0 if !$uuid;
+	my $tree = $this->{tree};
+	return 0 if !$tree;
+
+	my $found = _findItemByUuid($tree, $tree->GetRootItem(), $uuid);
+	return 0 if !$found || !$found->IsOk();
+
+	$tree->UnselectAll();
+	$tree->SelectItem($found, 1);
+	$tree->EnsureVisible($found);
+
+	# Bring this pane to the front of its notebook.
+	my $book = $this->{book};
+	if ($book)
+	{
+		for my $i (0 .. $book->GetPageCount() - 1)
+		{
+			if ($book->GetPage($i) == $this)
+			{
+				$book->SetSelection($i);
+				last;
+			}
+		}
+	}
+	return 1;
+}
+
+
+sub _findItemByUuid
+{
+	my ($tree, $item, $uuid) = @_;
+	return undef if !$item || !$item->IsOk();
+	my $d = $tree->GetItemData($item);
+	if ($d)
+	{
+		my $node = $d->GetData();
+		if (ref $node eq 'HASH')
+		{
+			# Try top-level uuid (E80/FSH style) then data->uuid (DB style).
+			my $cand = $node->{uuid} // (($node->{data} // {})->{uuid});
+			return $item if $cand && $cand eq $uuid;
+		}
+	}
+	my ($child, $cookie) = $tree->GetFirstChild($item);
+	while ($child && $child->IsOk())
+	{
+		my $r = _findItemByUuid($tree, $child, $uuid);
+		return $r if $r && $r->IsOk();
+		($child, $cookie) = $tree->GetNextChild($item, $cookie);
+	}
+	return undef;
+}
+
+
+sub _visObserverNodeUuid
+{
+	# Default: E80/FSH-style node carries uuid at top level.
+	my ($this, $node) = @_;
+	return $node->{uuid};
+}
+
+
+sub _visObserverIsContainer
+{
+	# Default: container-style node types whose state is computed from
+	# descendants.  winDatabase overrides because its container is
+	# 'collection' and its computation is DB-backed.
+	my ($this, $node) = @_;
+	my $type = $node->{type} // '';
+	return ($type eq 'header'
+		|| $type eq 'group'
+		|| $type eq 'my_waypoints'
+		|| $type eq 'track_group');
+}
+
+
+sub _visObserverComputeContainerState
+{
+	# Default: walk currently-loaded children and band them.
+	my ($this, $item, $node) = @_;
+	return _computeContainerState($this->{tree}, $item);
+}
+
+
+sub _onVisibilityDelta
+{
+	my ($this, $delta) = @_;
+	my $source = $this->_wpDataSource();
+	my $changes = $delta->{$source};
+	return if !$changes;
+	my $tree = $this->{tree};
+	return if !$tree || $tree->GetCount() <= 0;
+
+	$tree->Freeze();
+	eval {
+		_walkApplyVisDelta($this, $tree, $tree->GetRootItem(), $changes);
+
+		# Editor checkbox sync.  Use _loading_editor guard to suppress
+		# the EVT_CHECKBOX from firing _onEdVisibleChanged.
+		my $edit_uuid = $this->{_edit_uuid} // '';
+		if ($edit_uuid && exists $changes->{$edit_uuid} && $this->{ed_visible})
+		{
+			$this->{_loading_editor} = 1;
+			$this->{ed_visible}->Set3StateValue(
+				$changes->{$edit_uuid} ? wxCHK_CHECKED : wxCHK_UNCHECKED);
+			$this->{_loading_editor} = 0;
+		}
+	};
+	my $err = $@;
+	$tree->Thaw();
+	error("_onVisibilityDelta: $err") if $err;
+}
+
+
+sub _walkApplyVisDelta
+{
+	# Recursive walker: for each item, if its uuid is in the delta set the
+	# leaf state; if any descendant changed, recompute container state on
+	# the way back up.  Returns 1 if anything in this subtree changed.
+	my ($this, $tree, $item, $changes) = @_;
+	return 0 if !$item || !$item->IsOk();
+
+	my $d = $tree->GetItemData($item);
+	my $is_leaf_change = 0;
+	my $node;
+
+	if ($d)
+	{
+		$node = $d->GetData();
+		if (ref $node eq 'HASH')
+		{
+			my $uuid = $this->_visObserverNodeUuid($node);
+			if ($uuid && exists $changes->{$uuid})
+			{
+				$tree->SetItemState($item, $changes->{$uuid} ? 1 : 0);
+				$is_leaf_change = 1;
+			}
+		}
+	}
+
+	my $descendant_change = 0;
+	my ($child, $cookie) = $tree->GetFirstChild($item);
+	while ($child && $child->IsOk())
+	{
+		my $r = _walkApplyVisDelta($this, $tree, $child, $changes);
+		$descendant_change = 1 if $r;
+		($child, $cookie) = $tree->GetNextChild($item, $cookie);
+	}
+
+	if ($descendant_change && $node && ref $node eq 'HASH'
+		&& $this->_visObserverIsContainer($node))
+	{
+		$tree->SetItemState($item,
+			$this->_visObserverComputeContainerState($item, $node));
+	}
+
+	return ($is_leaf_change || $descendant_change) ? 1 : 0;
 }
 
 
@@ -872,12 +1089,21 @@ sub _applyTrackVisibility
 
 
 sub _applyNodeVisibility
+    # Wrapped with navVisibility::begin/endVisibilityBatch so that container-
+    # type toggles (group / my_waypoints / track_group / header) produce one
+    # observer notification with a complete delta, not one per child UUID.
+    # Single-item types (waypoint / route / track) get one set call inside the
+    # batch, which still resolves to one notification at endBatch.  No flicker
+    # in this pane, no notification storm to other panes.
 {
     my ($this, $item, $node, $new_visible) = @_;
     my $type = $node->{type} // '';
     my $tree = $this->{tree};
 
     return if $type eq 'root' || $type eq 'route_point';
+
+    navVisibility::beginVisibilityBatch();
+    eval {
 
     if ($type eq 'waypoint')
     {
@@ -953,6 +1179,11 @@ sub _applyNodeVisibility
         $tree->SetItemState($item, $new_visible ? 1 : 0);
         _walkSetSubtreeState($tree, $item, $new_visible);
     }
+
+    };
+    my $err = $@;
+    navVisibility::endVisibilityBatch();
+    error("_applyNodeVisibility: $err") if $err;
 }
 
 
