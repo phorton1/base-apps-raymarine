@@ -387,7 +387,7 @@ sub _onTreeLeftDown
     my ($item, $flags) = $tree->HitTest($event->GetPosition());
     if ($item && $item->IsOk() && ($flags & wxTREE_HITTEST_ONITEMSTATEICON))
     {
-        _onCheckboxClick($this, $item);
+        $this->_onCheckboxClick($item);
         return;
     }
     $event->Skip();

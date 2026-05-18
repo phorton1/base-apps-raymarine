@@ -30,6 +30,7 @@ use Wx::Calendar;
 use Wx::Event qw(
 	EVT_TREE_SEL_CHANGED
 	EVT_TREE_ITEM_RIGHT_CLICK
+	EVT_TREE_ITEM_ACTIVATED
 	EVT_LEFT_DOWN
 	EVT_MENU
 	EVT_MENU_RANGE
@@ -219,6 +220,7 @@ sub new
 
 	EVT_TREE_SEL_CHANGED($this, $this->{tree}, \&onTreeSelect);
 	EVT_TREE_ITEM_RIGHT_CLICK($this, $this->{tree}, \&onTreeRightClick);
+	EVT_TREE_ITEM_ACTIVATED($this, $this->{tree}, \&_onTreeActivated);
 	EVT_MENU($this, $CTX_CMD_SHOW_MAP, \&_onShowMap);
 	EVT_MENU($this, $CTX_CMD_HIDE_MAP, \&_onHideMap);
 	# Capture all navOps context-menu IDs (Copy=10200..PUSH_FSH=10251).
@@ -1036,6 +1038,13 @@ sub _onNmOpsCmd
 	my $right_click = $this->{_right_click_node} // {};
 	my @nodes       = @{$this->{_context_nodes} // []};
 	onContextMenuCommand($cmd_id, 'fsh', $right_click, $this->{tree}, @nodes);
+}
+
+
+sub _onTreeActivated
+{
+	my ($this, $event) = @_;
+	_onShowHideFSHMap($this, 1);
 }
 
 
