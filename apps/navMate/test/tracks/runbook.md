@@ -87,7 +87,7 @@ curl.exe -s "http://localhost:9881/api/command?cmd=S%3D0"
 
 Note `[E80_TK1]` and `[E80_TK2]` from `/api/db` tracks (in save order).
 
-**Pass:** `/api/db` tracks contains exactly 2 tracks with names "Track1" and "Track2"; both UUIDs have byte 1 = `B2` (E80-assigned). The track-record protocol warnings are documented known-quiet (see `../master_runbook.md`).
+**Pass:** `/api/db` tracks contains exactly 2 tracks with names "Track1" and "Track2"; both UUIDs have byte 1 = `B2` (E80-assigned -- e.g. UUID `81b266af4000df98` has byte 1 = `b2`, i.e. characters at string positions 2-3 of the lowercase no-dash hex form; byte 0 is positions 0-1). The track-record protocol warnings are documented known-quiet (see `../master_runbook.md`).
 
 ---
 

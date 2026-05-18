@@ -55,15 +55,23 @@ Base URL: `http://localhost:9883`.
 
 `/api/test` is single-slot: the server stores at most one pending test command. A second `/api/test` call fired before the wx idle loop picks up the first will overwrite the first. Any sequenced multi-step test (COPY then PASTE, looped pastes) MUST wait for each command to actually run before issuing the next. Use the `Wait-NavCmdFinished` helper below.
 
-### `/api/nmdb` field names
+### `/api/nmdb` shape and field names
 
-| Entity        | Parent field      | WP-ref field |
-|---------------|-------------------|--------------|
-| waypoints     | `collection_uuid` | -- |
-| collections   | `parent_uuid`     | -- |
-| routes        | `collection_uuid` | -- |
-| route_waypoints | `route_uuid`    | `wp_uuid` |
-| tracks        | `collection_uuid` | -- |
+Top-level keys: `collections`, `routes`, `route_waypoints`, `tracks`, `waypoints`. **There is no top-level `groups` array.** Groups live inside `collections`, distinguished by `node_type='group'`. Branches have `node_type='branch'`. So a group-presence check looks like:
+
+```powershell
+@($nmdb.collections | Where-Object { $_.uuid -eq $grp_uuid -and $_.node_type -eq 'group' }).Count
+```
+
+NOT `@($nmdb.groups | Where-Object { ... })` -- that property doesn't exist and the filter silently returns 0, which can masquerade as "group deleted". This bit cycle 20 partway through db.5/db.6/db.7; the runbook prose says "Bocas group gone" without specifying the underlying property, so check authors have to know the schema.
+
+| Entity        | Parent field      | WP-ref field | Type field |
+|---------------|-------------------|--------------|------------|
+| waypoints     | `collection_uuid` | -- | -- |
+| collections   | `parent_uuid`     | -- | `node_type` (group/branch) |
+| routes        | `collection_uuid` | -- | -- |
+| route_waypoints | `route_uuid`    | `wp_uuid` | -- |
+| tracks        | `collection_uuid` | -- | -- |
 
 Use `parent_uuid` for collections (branches, groups). `collection_uuid` on a collection always returns empty.
 

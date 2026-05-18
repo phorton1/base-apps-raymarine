@@ -266,7 +266,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=C482-CBA0-D14E-67B2
 Start-Sleep 2
 ```
 
-**Pass:** `ERROR - Cannot delete group 'Timiteo' and its waypoints: one or more members are used in a route.` (or analogous FSH-side ERROR); no IMPL ERROR; Timiteo group + 6 members + Timiteo route still in `/api/fsh`.
+**Pass:** `ERROR - Cannot delete FSH group 'Timiteo' and its waypoints: one or more members are referenced by routes. Use Delete Group to dissolve without deleting members, or remove from routes first.`; no IMPL ERROR; Timiteo group + 6 members + Timiteo route still in `/api/fsh`.
 
 ---
 

@@ -30,7 +30,7 @@ The navOps test suite verifies the cross-transport (hub-and-spoke) behavior of n
 - **e80** -- DB <-> E80 cross-panel operations + DB-E80 guards
 - **tracks** -- E80 -> DB track download (requires teensyBoat)
 - **fsh** -- DB <-> FSH cross-panel operations + DB-FSH guards, plus FSH-unique track writes (E80 blocks paste-to-tracks; FSH allows)
-- **hub** -- Three-panel operations routed through navMate (stub; filled as multi-spoke flows land)
+- **hub** -- Three-panel operations routed through navMate (E80<->FSH cross-spoke flows routed through the DB hub)
 
 Each module runs from its own baseline (revert DB + clear E80 + optional FSH load), independent of any other module. A full-cycle orchestrator composes all modules in order and writes an archived results file.
 
@@ -53,8 +53,8 @@ The suite is documentation, not code. Tests are specified as exact curl commands
 | db     | [test/db/plan.md](../test/db/plan.md)     | [test/db/runbook.md](../test/db/runbook.md) |
 | e80    | [test/e80/plan.md](../test/e80/plan.md)   | [test/e80/runbook.md](../test/e80/runbook.md) |
 | tracks | [test/tracks/plan.md](../test/tracks/plan.md) | [test/tracks/runbook.md](../test/tracks/runbook.md) |
-| fsh    | [test/fsh/plan.md](../test/fsh/plan.md)   | [test/fsh/runbook.md](../test/fsh/runbook.md) (stub) |
-| hub    | [test/hub/plan.md](../test/hub/plan.md)   | [test/hub/runbook.md](../test/hub/runbook.md) (stub) |
+| fsh    | [test/fsh/plan.md](../test/fsh/plan.md)   | [test/fsh/runbook.md](../test/fsh/runbook.md) |
+| hub    | [test/hub/plan.md](../test/hub/plan.md)   | [test/hub/runbook.md](../test/hub/runbook.md) |
 
 ## Resources
 

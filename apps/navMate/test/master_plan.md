@@ -24,7 +24,9 @@ Modules are ordered consistently throughout the suite (overview docs, folder lis
 | 2     | e80    | DB <-> E80 cross-panel ops + DB-E80 guards | Solid |
 | 3     | tracks | E80 -> DB tracks via teensyBoat | Solid |
 | 4     | fsh    | DB <-> FSH cross-panel ops + DB-FSH guards (incl. FSH-unique track writes) | Solid |
-| 5     | hub    | Three-panel ops routed through navMate | Stub |
+| 5     | hub    | Three-panel ops routed through navMate | Solid |
+
+First clean all-PASS full cycle landed 2026-05-17 (cycle 20). All 141 attempted tests passed; the 2 NOT_RUNs in e80 are by design (`e80.27 db_versioning` infrastructure absent, `e80.28a` precondition-met no-op).
 
 ---
 
@@ -101,15 +103,15 @@ Existing cycle records (`last_testrun14.md` through `last_testrun18.md` in `apps
 
 ## Module Composition (provenance)
 
-The solid modules were ported from a single monolithic runbook (`apps/navMate/docs/notes/navOps_testplan_runbook.md`) that ran cleanly through Cycle 19 (2026-05-17). The mapping:
+The first four modules were ported from a single monolithic runbook (`apps/navMate/docs/notes/navOps_testplan_runbook.md`) that ran cleanly through Cycle 19 (2026-05-17 morning). The mapping:
 
 | New module | Source content |
 |------------|---------------|
 | db         | Section 2 (2.0 -- 2.18b) + DB-only guards (5.1, 5.2, 5.5, 5.9, 5.14a-d, 5.16a-b) |
 | e80        | Section 3 (3.1 -- 3.18) + DB-E80 guards (5.3, 5.4c, 5.6d, 5.7, 5.8, 5.10, 5.11b, 5.12, 5.15b-c) |
 | tracks     | Section 4 (4.0 -- 4.5) |
-| fsh        | New -- stub for now |
-| hub        | New -- stub for now |
+| fsh        | New -- developed and stabilized over 2026-05-17 |
+| hub        | New -- developed and stabilized over 2026-05-17 (cycle 20 was its first full-cycle appearance) |
 
 Cross-section state-shuffle steps from the legacy runbook (e.g. 2.11 moving [TestRoute] to [DST]; 3.9a/3.11a/3.12a/3.16a re-uploads after intra-section deletes; 5.4a/5.4b pre-cleanup) disappear with per-module reset. They become module setup operations or vanish entirely -- they were never tests in the first place; they were inter-section housekeeping masquerading as tests.
 

@@ -557,6 +557,8 @@ Start-Sleep 4
 
 **Pass:** PASTE NEW BEFORE STARTED/FINISHED; no IMPL ERROR; route_waypoints count increased by exactly the COPY-reported item count. No new WP records (`SS1.6`).
 
+**Timing note:** the `_doCopy: database N item(s)` log line is racy to capture mid-sequence -- grepping for it before the COPY has actually finished returns nothing, and a checker that records `copy_count=0` will then false-FAIL the delta assertion. If the count can't be captured reliably, fall back to `delta > 0 AND no new WP records (SS1.6 holds) AND no IMPL ERROR`; that combination is sufficient evidence the splice landed correctly.
+
 ---
 
 End of db module tests.
