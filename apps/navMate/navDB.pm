@@ -34,6 +34,7 @@ BEGIN
 		findTrackByNameAndSource
 		getTrackTsSource
 		updateTrackTimestamps
+		updateTrackPointFields
 		getCollectionChildren
 		getCollectionCounts
 		getCollectionObjects
@@ -850,6 +851,53 @@ sub updateTrackTimestamps
 
 
 #---------------------------------
+# updateTrackPointFields
+#---------------------------------
+# Per-point column update used by navEnrich.  $changes is [{ position, new_val }, ...].
+# Runs in a single transaction and explicitly bumps tracks.modified_ts at the
+# end (the table-level trigger doesn't cascade from track_points UPDATE).
+# $field is whitelisted -- only depth_cm / temp_k / ts are accepted, since
+# the column name is interpolated into SQL.
+
+sub updateTrackPointFields
+{
+	my ($dbh, $track_uuid, $field, $changes) = @_;
+	return 0 if !$changes || !@$changes;
+
+	my %ok = (depth_cm => 1, temp_k => 1, ts => 1);
+	if (!$ok{$field})
+	{
+		error("navDB::updateTrackPointFields refused unknown field '$field'");
+		return 0;
+	}
+
+	my $count = 0;
+	eval
+	{
+		$dbh->{dbh}->begin_work();
+		my $sth = $dbh->{dbh}->prepare(
+			"UPDATE track_points SET $field=? WHERE track_uuid=? AND position=?");
+		for my $c (@$changes)
+		{
+			$sth->execute($c->{new_val}, $track_uuid, $c->{position});
+			$count++;
+		}
+		$dbh->{dbh}->do(
+			"UPDATE tracks SET modified_ts = strftime('%s','now') WHERE uuid = ?",
+			undef, $track_uuid);
+		$dbh->commit();
+	};
+	if ($@)
+	{
+		eval { $dbh->rollback() };
+		error("navDB::updateTrackPointFields failed: $@");
+		return 0;
+	}
+	return $count;
+}
+
+
+#---------------------------------
 # getCollectionChildren
 #---------------------------------
 
@@ -1647,7 +1695,7 @@ sub _appendPositionFallback
 	my ($dbh, $container_uuid, $fn, $what) = @_;
 	my $max = getMaxChildPosition($dbh, $container_uuid);
 	my $pos = defined($max) ? ($max + 1) : 1.0;
-	warning(0, 0, "navDB::$fn: position not specified for '" . ($what // '') .
+	warning(1, 0, "navDB::$fn: position not specified for '" . ($what // '') .
 		"' -- appending at $pos (caller should pass position explicitly)");
 	return $pos;
 }

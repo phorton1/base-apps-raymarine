@@ -93,6 +93,20 @@
 #              callers that want to display the structural breakdown
 #              directly without interpreting tier/shape.
 #
+#   mode    -- EXACT only: 'noshift' or 'latshift' indicating which predicate
+#              the contiguous run matched under.  Diagnostic; not used for
+#              enrichment math (scalar fields like depth/temp transfer the
+#              same way regardless of the coordinate shift).
+#
+#   steps   -- DTW (match/near) only: per-cell alignment path in ORIGINAL-
+#              index space.  Array of { subj_idx, cand_idx, tb, cost } in
+#              path order from start to end.  tb is 0=diagonal (1:1),
+#              1=vertical (subject advanced, candidate held), 2=horizontal
+#              (candidate advanced, subject held), 3=start.  Used by
+#              navEnrich to map cells back to source/destination points
+#              when transferring values across a warped alignment.  Absent
+#              on EXACT (matched_window + 1:1 invariant is sufficient).
+#
 # Waypoints: scoreWaypointPair returns tier='exact'/shape='full' when
 # the two points are within EXACT_DEG, else 'none'.  No bbox or warping
 # concepts apply to a single point.
@@ -600,6 +614,7 @@ sub _classifyExact
 		tier           => 'exact',
 		shape          => $shape,
 		quality        => undef,        # not meaningful for exact
+		mode           => $ex->{mode},  # 'noshift' | 'latshift'
 		subj_coverage  => ($n > 0) ? ($subj_in / $n) : 0,
 		cand_coverage  => ($m > 0) ? ($cand_in / $m) : 0,
 		matched_window => [$ex->{i_start}, $ex->{i_end},
@@ -1082,6 +1097,22 @@ sub _classifyDTW
 		$shape = 'partial';
 	}
 
+	# Translate walkback steps from decimated-index to original-index space
+	# using the same _orig_idx map carried on decimated points.  Reverse the
+	# array so steps run from start to end of the path (walkback recorded
+	# them end-to-start).  Each step preserves tb so navEnrich can interpret
+	# diagonal vs vertical vs horizontal alignment cells.
+	my @orig_steps;
+	for my $st (reverse @{$dtw->{steps}})
+	{
+		push @orig_steps, {
+			subj_idx => $subj_dec->[$st->{i}]{_orig_idx},
+			cand_idx => $cand_dec->[$st->{j}]{_orig_idx},
+			tb       => $st->{tb},
+			cost     => $st->{cost},
+		};
+	}
+
 	return {
 		tier           => $tier,
 		shape          => $shape,
@@ -1098,6 +1129,7 @@ sub _classifyDTW
 			cand_in_match => $cand_in,
 			cand_after    => $cand_after,
 		},
+		steps          => \@orig_steps,
 	};
 }
 
@@ -1344,12 +1376,16 @@ sub enumerateFshCandidates
 			my $cand_bbox = bboxOfPoints($pts);
 			next if !$cand_bbox;
 			next if !bboxOverlaps($cand_bbox, $padded_bbox);
+			# FSH track points carry `depth` (int16 cm) and `temp_k` (uint16
+			# Kelvin*100) per BLK_TRK decode -- not the navMate-DB column
+			# names depth_cm / temp_k.  Match the flag check to the actual
+			# field names produced by FSH::fshBlocks::decodeTRK.
 			my $has_depth = 0;
 			my $has_temp  = 0;
 			for my $p (@$pts)
 			{
-				$has_depth = 1 if ($p->{depth_cm} // 0) > 0;
-				$has_temp  = 1 if ($p->{temp_k}   // 0) > 0;
+				$has_depth = 1 if ($p->{depth}  // 0) > 0;
+				$has_temp  = 1 if (($p->{temp_k} // 0) > 0 && $p->{temp_k} != 65535);
 				last if $has_depth && $has_temp;
 			}
 			push @out, {
@@ -1514,12 +1550,15 @@ sub enumerateE80Candidates
 			my $cand_bbox = bboxOfPoints($pts);
 			next if !$cand_bbox;
 			next if !bboxOverlaps($cand_bbox, $padded_bbox);
+			# E80 TRACK points carry `depth` (signed cm) and `temp_k`
+			# (uint16 Kelvin*100) per b_records.pm point layout -- not
+			# the navMate-DB column names depth_cm / temp_k.
 			my $has_depth = 0;
 			my $has_temp  = 0;
 			for my $p (@$pts)
 			{
-				$has_depth = 1 if ($p->{depth_cm} // 0) > 0;
-				$has_temp  = 1 if ($p->{temp_k}   // 0) > 0;
+				$has_depth = 1 if ($p->{depth}  // 0) > 0;
+				$has_temp  = 1 if (($p->{temp_k} // 0) > 0 && $p->{temp_k} != 65535);
 				last if $has_depth && $has_temp;
 			}
 			push @out, {

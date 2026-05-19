@@ -47,6 +47,8 @@ use Wx::Event qw(
 	EVT_BUTTON
 	EVT_CHECKBOX
 	EVT_LEFT_DOWN
+	EVT_RIGHT_DOWN
+	EVT_MENU
 	EVT_CLOSE
 	EVT_SIZE
 );
@@ -56,6 +58,7 @@ use n_utils;
 use nmResources;
 use navVisibility;
 use navMatch;
+use navEnrich;
 use navServer qw(addRenderFeatures removeRenderFeatures);
 use navDB;
 use navFSH;
@@ -249,6 +252,13 @@ sub _doRefresh
 			$subj_bbox = navMatch::bboxOfPoints($args->{points});
 		}
 	}
+
+	# Populate has_depth/has_temp_k/has_ts on subject so it can be used as a
+	# candidate-shaped hash by navEnrich.  Subject is the originating item
+	# (passed to openForSubject) -- not enumerated, so these flags aren't
+	# otherwise on it.  Source-specific point-field names; matches what the
+	# enumerators do.
+	_populateSubjectHasFlags($args);
 
 	# Enumerate from all three sources.  Each enumerator handles its own
 	# bbox prefilter; we still pass the inflated bbox so the candidate set
@@ -446,6 +456,18 @@ sub _addRow
 
 	$row->SetSizer($hbox);
 	$this->{_list_sizer}->Add($row, 0, wxEXPAND | wxBOTTOM, 1);
+
+	# Right-click anywhere in the row opens the enrichment context menu.
+	# EVT_RIGHT_DOWN does not propagate from child widgets to the parent
+	# panel in wx, so bind on the row panel AND on every child window
+	# (static texts, swatch panel, checkbox, etc.).  Each binding shares
+	# the same handler closure.
+	my $rclick = sub { $this->_onRowRightDown($cand); };
+	EVT_RIGHT_DOWN($row, $rclick);
+	for my $child ($row->GetChildren())
+	{
+		EVT_RIGHT_DOWN($child, $rclick);
+	}
 
 	$this->{_row_widgets}{$key}{checkbox} = $cb;
 	$this->{_row_widgets}{$key}{cand}     = $cand;
@@ -808,6 +830,277 @@ sub _onVisibilityDelta
 			$w->{checkbox}->SetValue($changes->{$uuid} ? 1 : 0);
 		}
 	}
+}
+
+
+#---------------------------------
+# subject has_* flag population
+#---------------------------------
+
+sub _populateSubjectHasFlags
+{
+	# Source-specific point field names (mirrors what the enumerators do):
+	#   DB    -- depth_cm, temp_k, ts
+	#   FSH   -- depth,    temp_k, (no per-point ts)
+	#   E80   -- depth,    temp_k, (no per-point ts)
+	# Sentinel: temp_k == 65535 is "no reading" for FSH/E80.
+	my ($args) = @_;
+	my $pts = $args->{points} // [];
+	my $src = $args->{source} // '';
+
+	# Single-point objects (waypoints) read scalar fields from $args directly.
+	# Track/route iterates points.
+	my $depth_key = ($src eq 'db') ? 'depth_cm' : 'depth';
+	my $temp_key  = 'temp_k';
+	my $ts_key    = 'ts';
+
+	my $has_depth = 0;
+	my $has_temp  = 0;
+	my $has_ts    = 0;
+
+	if (@$pts)
+	{
+		for my $p (@$pts)
+		{
+			$has_depth = 1 if ($p->{$depth_key} // 0) > 0;
+			my $tk = $p->{$temp_key} // 0;
+			$has_temp  = 1 if ($tk > 0 && $tk != 65535);
+			$has_ts    = 1 if $p->{$ts_key};
+			last if $has_depth && $has_temp && $has_ts;
+		}
+	}
+	else
+	{
+		# Waypoint subject: depth/temp on $args directly.
+		my $d = $args->{$depth_key} // $args->{depth} // 0;
+		my $t = $args->{temp_key}   // 0;
+		$has_depth = 1 if $d > 0;
+		$has_temp  = 1 if ($t > 0 && $t != 65535);
+		$has_ts    = 1 if $args->{created_ts};
+	}
+
+	$args->{has_depth}  = $has_depth;
+	$args->{has_temp_k} = $has_temp;
+	$args->{has_ts}     = $has_ts;
+}
+
+
+#---------------------------------
+# right-click row -> enrichment menu
+#---------------------------------
+
+sub _onRowRightDown
+{
+	my ($this, $cand) = @_;
+
+	# Build candidate items from navEnrich (cheap; uses has_* flags only).
+	my $subj  = $this->{_subject};
+	my $items = navEnrich::canEnrich($subj, $cand, $cand->{_match}) // [];
+	return if !@$items;
+
+	# Per-field plan to get counts; skip items with no actionable changes.
+	my $menu = Wx::Menu->new();
+	my $any  = 0;
+	for my $item (@$items)
+	{
+		my $plan = navEnrich::planEnrichment(
+			$subj, $cand, $cand->{_match},
+			$item->{field}, $item->{direction});
+		next if !$plan;
+		my $cnt = $plan->{counts} // {};
+		next if ($cnt->{enrich} + $cnt->{update}) == 0;
+
+		my $id    = Wx::NewId();
+		my $label = _enrichmentLabel($item, $plan, $cand);
+		$menu->Append($id, $label);
+		EVT_MENU($this, $id, sub { $this->_doEnrichment($cand, $plan); });
+		$any++;
+	}
+
+	if (!$any)
+	{
+		$menu->Destroy();
+		return;
+	}
+
+	$this->PopupMenu($menu, [-1, -1]);
+	$menu->Destroy();
+}
+
+
+sub _enrichmentLabel
+{
+	my ($item, $plan, $cand) = @_;
+	my $cnt = $plan->{counts};
+	my $field_name = $item->{field} eq 'depth'  ? 'depth'
+	               : $item->{field} eq 'temp_k' ? 'temp'
+	               :                              $item->{field};
+
+	# Direction word.  to_subj: this row is the SOURCE -- "from".
+	#                  to_other: this row is the DESTINATION -- "to".
+	my $dir_word = $item->{direction} eq 'to_subj' ? 'FROM' : 'TO';
+	my $other_descr = uc($cand->{source} // '');
+
+	my $verb;
+	my $count_str;
+	if ($cnt->{update} == 0)
+	{
+		$verb      = 'Enrich';
+		$count_str = sprintf('%d pts', $cnt->{enrich});
+	}
+	elsif ($cnt->{enrich} == 0)
+	{
+		$verb      = 'Update';
+		$count_str = sprintf('%d differ, %d agree', $cnt->{update}, $cnt->{agree});
+	}
+	else
+	{
+		$verb      = 'Enrich + update';
+		$count_str = sprintf('%d fill, %d update', $cnt->{enrich}, $cnt->{update});
+	}
+
+	return sprintf('%s %s %s %s (%s)',
+		$verb, $field_name, $dir_word, $other_descr, $count_str);
+}
+
+
+sub _doEnrichment
+{
+	my ($this, $cand, $plan) = @_;
+
+	# Confirm dialog for update / hybrid / anomaly cases.  Pure enrich is
+	# additive (only fills empty cells) and proceeds silently.
+	my $cnt     = $plan->{counts};
+	my $needs   = ($cnt->{update} > 0) || (($plan->{shape} // '') eq 'anomaly');
+	if ($needs)
+	{
+		my $msg = _confirmMessage($plan);
+		my $dlg = Wx::MessageDialog->new($this, $msg, 'Confirm enrichment',
+			wxYES_NO | wxICON_QUESTION);
+		my $rc  = $dlg->ShowModal();
+		$dlg->Destroy();
+		return if $rc != wxID_YES;
+	}
+
+	my ($ok, $err) = navEnrich::applyEnrichment($plan);
+	if (!$ok)
+	{
+		error("winFind enrichment failed: " . ($err // 'unknown'));
+		my $dlg = Wx::MessageDialog->new($this,
+			"Enrichment failed:\n" . ($err // 'unknown'),
+			'Enrichment failed', wxOK | wxICON_ERROR);
+		$dlg->ShowModal();
+		$dlg->Destroy();
+		return;
+	}
+
+	# Cache coherency: update the in-memory points on whichever side was the
+	# destination so subsequent right-clicks see the new state.  The DB has
+	# already been authoritatively updated.
+	_applyChangesToInMemoryPoints($this, $cand, $plan);
+
+	# Refresh the cand's has_* flags for the destination side; the source
+	# side flags are unchanged.  Match score and row layout don't change.
+	if ($plan->{direction} eq 'to_subj')
+	{
+		_populateSubjectHasFlags($this->{_subject});
+	}
+	else
+	{
+		_recomputeCandHasFlags($cand);
+	}
+
+	# Destination is always the DB.  Tell the winDatabase pane to rebuild
+	# so its tree/editor see the new track-point data.  Same pattern as
+	# create/delete (navOpsDB::_refreshDatabaseWithDelete).
+	my $frame = $this->{_frame};
+	if ($frame)
+	{
+		my $db_pane = $frame->findPane($WIN_DATABASE);
+		$db_pane->refresh() if $db_pane;
+	}
+
+	$this->{_status_text}->SetLabel(sprintf(
+		'%s: %d points written', $plan->{field}, scalar @{$plan->{changes}}));
+}
+
+
+sub _confirmMessage
+{
+	my ($plan) = @_;
+	my $cnt = $plan->{counts};
+	my @lines;
+	push @lines, sprintf("Enrich field: %s", $plan->{field});
+	push @lines, sprintf("Source:       %s", $plan->{src_descr});
+	push @lines, sprintf("Destination:  %s", $plan->{dst_descr});
+	push @lines, '';
+	push @lines, sprintf("Match tier:   %s",  $plan->{tier});
+	push @lines, sprintf("Match shape:  %s",  $plan->{shape} // '');
+	push @lines, '';
+	push @lines, sprintf("Enrich (fill empty): %d", $cnt->{enrich});
+	push @lines, sprintf("Update (overwrite):  %d", $cnt->{update});
+	push @lines, sprintf("Agree (no change):   %d", $cnt->{agree});
+	push @lines, sprintf("Skip  (no source):   %d", $cnt->{skip});
+
+	if (($plan->{shape} // '') eq 'anomaly')
+	{
+		push @lines, '';
+		push @lines, '*** MATCH ANOMALY: both tracks have non-trivial leftover. ***';
+		push @lines, '*** Review the pair before applying.                     ***';
+	}
+
+	push @lines, '';
+	push @lines, 'Proceed?';
+	return join("\n", @lines);
+}
+
+
+sub _applyChangesToInMemoryPoints
+{
+	my ($this, $cand, $plan) = @_;
+	# Pick whichever side is the DB destination.  For to_subj direction the
+	# subject is destination; for to_other the cand is destination.
+	my $dst_pts;
+	if ($plan->{direction} eq 'to_subj')
+	{
+		$dst_pts = $this->{_subject}{points};
+	}
+	else
+	{
+		$dst_pts = $cand->{points};
+	}
+	return if !$dst_pts;
+
+	# Destination is DB; DB column matches logical field via the same map
+	# navEnrich uses.  Just resolve once here.
+	my $col = $plan->{field} eq 'depth'  ? 'depth_cm'
+	        : $plan->{field} eq 'temp_k' ? 'temp_k'
+	        :                               $plan->{field};
+	for my $c (@{$plan->{changes}})
+	{
+		my $p = $dst_pts->[$c->{position}];
+		$p->{$col} = $c->{new_val} if $p;
+	}
+}
+
+
+sub _recomputeCandHasFlags
+{
+	my ($cand) = @_;
+	my $pts = $cand->{points} // [];
+	my $depth_key = ($cand->{source} // '') eq 'db' ? 'depth_cm' : 'depth';
+	my ($has_depth, $has_temp, $has_ts) = (0, 0, 0);
+	for my $p (@$pts)
+	{
+		$has_depth = 1 if ($p->{$depth_key} // 0) > 0;
+		my $tk = $p->{temp_k} // 0;
+		$has_temp  = 1 if ($tk > 0 && $tk != 65535);
+		$has_ts    = 1 if $p->{ts};
+		last if $has_depth && $has_temp && $has_ts;
+	}
+	$cand->{has_depth}  = $has_depth;
+	$cand->{has_temp_k} = $has_temp;
+	$cand->{has_ts}     = $has_ts;
 }
 
 
