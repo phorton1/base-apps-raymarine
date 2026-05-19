@@ -1082,6 +1082,20 @@ sub _buildRouteFeature
 }
 
 
+sub _trackPointDepthCm
+    # Returns the per-point depth in cm for JSON emission, normalizing
+    # absent / sentinel values to undef (JSON null).  Accepts points from
+    # either the FSH/E80 path ({depth}) or the DB path ({depth_cm}).
+{
+    my ($pt) = @_;
+    my $d = exists $pt->{depth_cm} ? $pt->{depth_cm} : $pt->{depth};
+    return undef if !defined $d;
+    return undef if $d == 0xFFFFFFFF;   # uint32 sentinel
+    return undef if $d == -1;           # legacy DB rows from pre-uint32-fix era
+    return $d + 0;
+}
+
+
 sub _buildTrackFeature
 {
     my ($this, $uuid, $track) = @_;
@@ -1097,6 +1111,7 @@ sub _buildTrackFeature
             data_source => $this->_wpDataSource(),
             color       => $this->_trackColorABGR($track),
             point_count => scalar(@$pts) + 0,
+            depth_cm    => [ map { _trackPointDepthCm($_) } @$pts ],
             ($comp ? (companion_uuid => $comp) : ()),
         },
         geometry   => { type => 'LineString',

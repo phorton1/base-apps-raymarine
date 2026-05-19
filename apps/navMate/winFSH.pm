@@ -734,11 +734,18 @@ sub _fshTrackText
 		$text .= "\n";
 		for my $i (0 .. $#$points)
 		{
-			my $pt   = $points->[$i];
-			my $d_ft = ($pt->{depth} // 0) ? sprintf('%.1fft', $pt->{depth} / 30.48) : '-';
-			my $t_f  = ($pt->{temp_k}  // 0) ? sprintf('%.1fF',  ($pt->{temp_k}  / 100 - 273) * 9 / 5 + 32) : '-';
+			my $pt          = $points->[$i];
+			my $lat         = ($pt->{lat} // 0) + 0;
+			my $lon         = ($pt->{lon} // 0) + 0;
+			my $is_sentinel = ($lat == 0 && $lon == 0);
+			my $d_ft = $is_sentinel ? '-'
+					 : ($pt->{depth} // 0) ? sprintf('%.1fft', $pt->{depth} / 30.48)
+					 : '-';
+			my $t_f  = $is_sentinel ? '-'
+					 : ($pt->{temp_k} // 0) ? sprintf('%.1fF', ($pt->{temp_k} / 100 - 273) * 9 / 5 + 32)
+					 : '-';
 			$text .= sprintf("  %2d  %9.6f  %10.6f  %7s  %s\n",
-				$i + 1, ($pt->{lat} // 0) + 0, ($pt->{lon} // 0) + 0, $d_ft, $t_f);
+				$i + 1, $lat, $lon, $d_ft, $t_f);
 		}
 	}
 	return $text;
