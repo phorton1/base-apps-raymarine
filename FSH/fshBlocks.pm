@@ -201,11 +201,10 @@ sub decodeTRK     # parse into array of points in track_points
 	{
 		my $point_str = substr($bytes,$offset,$TRACK_POINT_SIZE);
 		$offset += $TRACK_POINT_SIZE;
-		my ($north,$east,$temp_k,$depth,$c) = unpack('llSss',$point_str);
+		my ($north,$east,$temp_k,$depth) = unpack('llSV',$point_str);
 			# 	int32_t north, east; // prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
 			# 	uint16_t tempr;      // temperature in Kelvin * 100
-			# 	int16_t depth;       // depth in cm
-			# 	int16_t c;           // unknown, always 0
+			# 	uint32_t depth;      // depth in cm
         my $coords = northEastToLatLon($north,$east);
 
 		if ($dbg_trk < 0)
@@ -264,11 +263,10 @@ sub encodeTRK
 			$north = $coords->{north};
 			$east  = $coords->{east};
 		}
-		$bytes .= pack('llSss',$north,$east,$point->{temp_k}//0,$point->{depth},0);
+		$bytes .= pack('llSV',$north,$east,$point->{temp_k}//0,$point->{depth}//0);
 			# 	int32_t north, east; // prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
 			# 	uint16_t tempr;      // temperature in Kelvin * 100
-			# 	int16_t depth;       // depth in cm
-			# 	int16_t c;           // unknown, always 0
+			# 	uint32_t depth;      // depth in cm
 	}
 
 	$this->createBlock($rec->{trk_uuid},$FSH_BLK_TRK,$bytes);
@@ -294,11 +292,11 @@ my $MTA_FIELD_SPECS = [             # typedef struct fsh_track_meta     // total
 	north_start  => 'l',        #   11    int32_t north_start;      // Northing of first track point
 	east_start   => 'l',        #   15    int32_t east_start;       // Easting of first track point
 	temp_k_start => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
-	depth_start  => 'l',        #   21    int32_t depth_start;      // depth of first track point
+	depth_start  => 'V',        #   21    uint32_t depth_start;     // depth of first track point in cm
 	north_end    => 'l',        #   25    int32_t north_end;        // Northing of last track point
 	east_end     => 'l',        #   29    int32_t east_end;         // Easting of last track point
 	temp_k_end   => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
-	depth_end    => 'l',        #   35    int32_t depth_end;        // depth of last track point
+	depth_end    => 'V',        #   35    uint32_t depth_end;       // depth of last track point in cm
 	color        => 'c',        #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
 	name         => 'Z16',      #   40    char name[16];            // name of track, string not terminated
 	u1           => 'C',        #   56    char j;                   // unknown, never 0 in my files, always 0 according to parsefsh
@@ -385,11 +383,11 @@ sub encodeMTA  # create an MTA
 		# north_start  => 'l',        #   11    int32_t north_start;      // Northing of first track point
 		# east_start   => 'l',        #   15    int32_t east_start;       // Easting of first track point
 		# temp_start   => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
-		# depth_start  => 'l',        #   21    int32_t depth_start;      // depth of first track point
+		# depth_start  => 'V',        #   21    uint32_t depth_start;     // depth of first track point in cm
 		# north_end    => 'l',        #   25    int32_t north_end;        // Northing of last track point
 		# east_end     => 'l',        #   29    int32_t east_end;         // Easting of last track point
 		# temp_end     => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
-		# depth_end    => 'l',        #   35    int32_t depth_end;        // depth of last track point
+		# depth_end    => 'V',        #   35    uint32_t depth_end;       // depth of last track point in cm
 		# color        => 'c',        #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
 		# name         => 'Z16',      #   40    char name[16];            // name of track, string not terminated
 		# u1           => 'C',        #   56    char j;                   // unknown, never 0 in my files, always 0 according to parsefsh
@@ -465,11 +463,11 @@ sub encodeMTA  # create an MTA
 		north_start  => $north_start,	# => 'l',        #   11    int32_t north_start;      // Northing of first track point
 		east_start   => $east_start,	# => 'l',        #   15    int32_t east_start;       // Easting of first track point
 		temp_k_start => $temp_k_start,	# => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
-		depth_start  => $depth_start,	# => 'l',        #   21    int32_t depth_start;      // depth of first track point
+		depth_start  => $depth_start,	# => 'V',        #   21    uint32_t depth_start;     // depth of first track point in cm
 		north_end    => $north_end,		# => 'l',        #   25    int32_t north_end;        // Northing of last track point
 		east_end     => $east_end,		# => 'l',        #   29    int32_t east_end;         // Easting of last track point
 		temp_k_end   => $temp_k_end,	# => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
-		depth_end    => $depth_end,		# => 'l',        #   35    int32_t depth_end;        // depth of last track point
+		depth_end    => $depth_end,		# => 'V',        #   35    uint32_t depth_end;       // depth of last track point in cm
 		color        => $rec->{color},	# => 'c',        #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
 		name         => $name,			# => 'Z16',      #   40    char name[16];            // name of track, string not terminated
 		u1           => 204,	# 204 for mtas in my ARCHIVE.FSH			# => 'C',        #   56    char j;                   // unknown, never 0 in my files, always 0 according to parsefsh
@@ -503,7 +501,7 @@ my $WPT_FIELD_SPECS = [             # typedef struct fsh_wpt_data; total length 
 	k1_0x12     => 'A12',       #   16   char d[12];         		// 12x \0
 	sym         => 'C',         #   28  char sym;           		// probably symbol
 	temp_k      => 'S',         #   29  uint16_t tempr;     		// temperature in Kelvin * 100
-	depth       => 'l',         #   31  int32_t depth;      		// depth in cm
+	depth       => 'V',         #   31  uint32_t depth;     		// depth in cm
 	time        => 'L',         #   35  uint32_t timeofday;  		// time of day in seconds
 	date        => 'S',         #   39  uint16_t date;       		// days since 1.1.1970
 	k2_0        => 'C',         #   41  char i;             		// unknown, always 0

@@ -176,11 +176,11 @@ PROBE 2a
 #						north_start  => 'l',        #   11    int32_t north_start;      // Northing of first track point
 #						east_start   => 'l',        #   15    int32_t east_start;       // Easting of first track point
 #						temp_start   => 'S',        #   19    uint16_t tempr_start;     // temperature of first track point
-#						depth_start  => 'l',        #   21    int32_t depth_start;      // depth of first track point
+#						depth_start  => 'V',        #   21    uint32_t depth_start;     // depth of first track point in cm
 #						north_end    => 'l',        #   25    int32_t north_end;        // Northing of last track point
 #						east_end     => 'l',        #   29    int32_t east_end;         // Easting of last track point
 #						temp_end     => 'S',        #   33    uint16_t tempr_end;       // temperature last track point
-#						depth_end    => 'l',        #   35    int32_t depth_end;        // depth of last track point
+#						depth_end    => 'V',        #   35    uint32_t depth_end;       // depth of last track point in cm
 #						color        => 'c',        #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
 #						name         => 'Z16',      #   40    char name[16];            // name of track, string not terminated
 #
@@ -236,8 +236,7 @@ PROBE 2a
 #				{
 #					int32_t north, east; // prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
 #					uint16_t tempr;      // temperature in Kelvin * 100
-#					int16_t depth;       // depth in cm
-#					int16_t c;           // unknown, always 0
+#					uint32_t depth;      // depth in cm
 #				}
 #
 #			4b99a506 ad4a84c5 00000000 0000

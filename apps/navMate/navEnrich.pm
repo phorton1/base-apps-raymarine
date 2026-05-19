@@ -433,10 +433,11 @@ sub _readField
 sub _isPresent
 {
 	# Per-field sentinel rules:
-	#   depth  -- the int16 sentinel is exactly -1 ("no reading").  Any
-	#             other value (including 0 and other negatives) is treated
-	#             as a real reading; this matches Patrick's data
-	#             ("depth === -1 is the sentinel value, not depth < 0").
+	#   depth  -- the uint32 sentinel is 0xFFFFFFFF (4294967295), "no reading".
+	#             Legacy DB rows from the pre-uint32-fix era may carry -1
+	#             stored from the old int16 decode path; treat that as the
+	#             same sentinel.  Any other value (including 0) is treated
+	#             as a real reading.
 	#   temp_k -- uint16 sentinel is 0xFFFF (65535); 0 is also not a
 	#             physical Kelvin*100 reading so treat as absent.
 	#   ts     -- defined and truthy (epoch second).
@@ -446,7 +447,7 @@ sub _isPresent
 	if ($field eq 'depth')
 	{
 		my $n = $val + 0;
-		return ($n == -1) ? 0 : 1;
+		return ($n == -1 || $n == 0xFFFFFFFF) ? 0 : 1;
 	}
 	if ($field eq 'temp_k')
 	{

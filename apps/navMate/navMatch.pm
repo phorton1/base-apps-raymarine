@@ -1376,7 +1376,7 @@ sub enumerateFshCandidates
 			my $cand_bbox = bboxOfPoints($pts);
 			next if !$cand_bbox;
 			next if !bboxOverlaps($cand_bbox, $padded_bbox);
-			# FSH track points carry `depth` (int16 cm) and `temp_k` (uint16
+			# FSH track points carry `depth` (uint32 cm) and `temp_k` (uint16
 			# Kelvin*100) per BLK_TRK decode -- not the navMate-DB column
 			# names depth_cm / temp_k.  Match the flag check to the actual
 			# field names produced by FSH::fshBlocks::decodeTRK.
@@ -1550,7 +1550,7 @@ sub enumerateE80Candidates
 			my $cand_bbox = bboxOfPoints($pts);
 			next if !$cand_bbox;
 			next if !bboxOverlaps($cand_bbox, $padded_bbox);
-			# E80 TRACK points carry `depth` (signed cm) and `temp_k`
+			# E80 TRACK points carry `depth` (uint32 cm) and `temp_k`
 			# (uint16 Kelvin*100) per b_records.pm point layout -- not
 			# the navMate-DB column names depth_cm / temp_k.
 			my $has_depth = 0;

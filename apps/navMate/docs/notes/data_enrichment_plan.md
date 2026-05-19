@@ -46,12 +46,15 @@ Track point timestamps are NOT present in FSH. BLK_TRK has no per-point ts.
 BLK_MTA has no track-level timestamps either. The code comments confirm this:
 "Odd that nothing on a track has a date-time".
 
-FSH sentinel values (UNVERIFIED): depth=-1 (int32) and temp_k=65535 (uint16)
-appear to mean "no reading" -- inferred from logical impossibility (negative
-depth, 655K temperature) and 0xFFFF fill pattern. The zero lat/lon sentinel
-for track points IS confirmed by code. The waypoint depth/temp sentinels have
-not been cross-checked against known waypoints or source documentation. Treat
-as suspected until verified.
+FSH sentinel values (UNVERIFIED): depth=0xFFFFFFFF (uint32 all-ones) and
+temp_k=65535 (uint16) appear to mean "no reading" -- inferred from logical
+impossibility (uint32 max depth ~42949 km, 655K temperature) and 0xFFFF
+fill pattern. The zero lat/lon sentinel for track points IS confirmed by code.
+The waypoint depth/temp sentinels have not been cross-checked against known
+waypoints or source documentation. Treat as suspected until verified. Note:
+depth was previously documented here as `int32 -1`; this was correct under
+the old signed decode and corresponds to the same bytes (`FF FF FF FF`)
+under the corrected uint32 decode.
 
 ### Stream B -- GPS Archive (.gdb files, C:/dat/Tracks)
 

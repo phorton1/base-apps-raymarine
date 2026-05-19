@@ -128,11 +128,18 @@ from the E80 and are never remapped.
 temp_start(2) depth_start(4) north_end(4) east_end(4) temp_end(2)
 depth_end(4) color(1) name(16, not null-terminated)`
 
+`depth_start` and `depth_end` are `uint32_t` in centimeters; parsefsh
+labels them `int32_t`. See
+[Advances Beyond parsefsh](#advances-beyond-parsefsh).
+
 In FSH files from the real E80, `u1` (byte 56) is always 204 - not zero as
 the parsefsh documentation claims.
 
 **BLK_TRK** contains a header (8 bytes: `a(4) cnt(2) b(2)`) followed by
-`cnt` track points, each 14 bytes: `north(4) east(4) tempr(2) depth(2) c(2)`.
+`cnt` track points, each 14 bytes: `north(4) east(4) tempr(2) depth(4)`.
+`depth` is a `uint32_t` in centimeters. See
+[Advances Beyond parsefsh](#advances-beyond-parsefsh) for the correction
+from parsefsh's `int16_t depth; int16_t c` layout.
 
 Track segment separators are represented as `ffffffff ffffffff ffffffff ffff`
 (a 14-byte run of 0xff bytes) in the track point stream.
@@ -240,6 +247,43 @@ parsefsh documents byte 56 of `fsh_track_meta` (field `j`) as "always 0". In act
 E80 `ARCHIVE.FSH` files this byte is always **204** (0xCC). A writer that outputs 0
 will not match E80 output.
 
+**Track point - depth is `uint32_t`, not `int16_t` + `int16_t c`** *(structural correction)*
+
+parsefsh's `fsh_track_point` declares track-point depth as `int16_t depth` followed
+by an `int16_t c` field labeled "unknown, always 0". This is incorrect on both counts:
+
+- `depth` is **unsigned**, not signed. There is no negative depth on a Raymarine
+  E80 - the stored value is a magnitude in centimeters.
+- The 2 bytes immediately following depth are not a separate field. They form the
+  upper 16 bits of a single `uint32_t depth` covering offsets 10..13 of the 14-byte
+  point record.
+
+Empirically confirmed via two teensyBoat depth sweeps against an E80:
+
+- A first sweep using SeaTalk-delivered depths up to 6500 ft (the ST wire ceiling)
+  recorded a 6500 ft point as the byte pattern `c=3, depth=1512` under the parsefsh
+  decode, where `3 x 65536 + 1512 = 198120 cm` = 6500 ft exactly. The "always 0"
+  label on `c` was sampling bias: no track in the existing test corpus had exceeded
+  65535 cm (~2150 ft), so the upper word always happened to be zero.
+
+- A second sweep, with depths delivered via NMEA 2000 (PGN 128267) rather than
+  SeaTalk, covered 7000, 10000, 15000, 30000, 36000, 100000, and 1000000 ft. Every
+  value stored exactly under the corrected `uint32_t` decode, with no E80-side
+  saturation observed even at one million feet (`depth_cm = 30480000`, ~305 km).
+  The uint32 cm field's theoretical maximum is ~42949 km, so the storage format is
+  effectively unbounded for any plausible water depth. SeaTalk's 6553.5 ft ceiling
+  was purely a wire-format bottleneck, not a device-internal limit.
+
+The same correction applies to BLK_MTA's `depth_start` and `depth_end`: both are
+`uint32_t` cm, not `int32_t` cm as inherited from parsefsh.
+
+The original parsefsh signed-`int16` decode produces apparently-negative track
+depths for any real depth in the 1075-2150 ft range (a uint16 value with bit 15
+set is read as a negative int16). With this correction those points decode to
+their true positive magnitudes; points exceeding 2150 ft, which previously
+appeared as low positive values modulo 65536 cm, decode correctly using the full
+uint32.
+
 **FSH writer** *(new capability)*
 
 This is the first known FSH writer. parsefsh is read-only. The writer constructs valid
@@ -247,9 +291,10 @@ flob structure, pads to minimum file size (16 flobs / 1 MB), and uses BLK_ILL (`
 as a flob terminator. Written files contain only active blocks; there is no support for
 in-place update of an existing FSH file.
 
-*Known gap:* The inverse coordinate transform (lat/lon -> Mercator northing/easting,
-required for encoding track points) uses a linear approximation rather than the correct
-ellipsoidal inverse. Read-back coordinates will not round-trip exactly.
+Both directions of the lat/lon <-> Mercator northing/easting transform use the WGS84
+ellipsoidal Mercator formula. The forward (lat/lon -> northing/easting) is analytic;
+the inverse (northing/easting -> lat/lon) iterates to a tolerance of 1.5e-8 radians.
+Coordinates round-trip to within sub-meter precision.
 
 ## License
 

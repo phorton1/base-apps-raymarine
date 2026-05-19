@@ -74,7 +74,7 @@ my $WP_REC_SPECS = [
 	k1_0x12     => [ 2,		12,		'H24',  ],     #  16  char d[12];         		// 12x \0
 	sym         => [ 0,		1,		'C',    ],     #  28  char sym;           		// probably symbol
 	temp_k      => [ 0,		2,		'S',    ],     #  29  uint16_t tempr;     		// temperature in Kelvin * 100
-	depth       => [ 0,		4,		'l',    ],     #  31  int32_t depth;      		// depth in cm
+	depth       => [ 0,		4,		'V',    ],     #  31  uint32_t depth;     		// depth in cm
 	time        => [ 0,		4,		'L',    ],     #  35  uint32_t timeofday;  		// time of day in seconds
 	date        => [ 0,		2,		'S',    ],     #  39  uint16_t date;       		// days since 1.1.1970
 	k2_0        => [ 2,		1,		'C',    ],     #  41  char i;             		// unknown, always 0
@@ -188,10 +188,10 @@ sub outputDistance
 }
 
 sub outputDepth
-	# signed? depth in centimeters
+	# unsigned depth in centimeters
 {
 	my ($value) = @_;
-	my $hex = unpack('H*',pack('l',$value));
+	my $hex = unpack('H*',pack('V',$value));
 	return sprintf "($hex) FEET = %0.2f",($value/100)*$FEET_PER_METER;
 }
 
@@ -794,11 +794,11 @@ my $MTA_REC_SPECS = [
 	north_start  => [ 0,	4,		'l',     ],   #   11    int32_t north_start;      // Northing of first track point
 	east_start   => [ 0,	4,		'l',     ],   #   15    int32_t east_start;       // Easting of first track point
 	temp_k_start => [ 0,	2,		'S',     ],   #   19    uint16_t tempr_start;     // temperature of first track point
-	depth_start  => [ 0,	4,		'l',     ],   #   21    int32_t depth_start;      // depth of first track point
+	depth_start  => [ 0,	4,		'V',     ],   #   21    uint32_t depth_start;     // depth of first track point in cm
 	north_end    => [ 0,	4,		'l',     ],   #   25    int32_t north_end;        // Northing of last track point
 	east_end     => [ 0,	4,		'l',     ],   #   29    int32_t east_end;         // Easting of last track point
 	temp_k_end   => [ 0,	2,		'S',     ],   #   33    uint16_t tempr_end;       // temperature last track point
-	depth_end    => [ 0,	4,		'l',     ],   #   35    int32_t depth_end;        // depth of last track point
+	depth_end    => [ 0,	4,		'V',     ],   #   35    uint32_t depth_end;       // depth of last track point in cm
 	color        => [ 0,	1,		'c',     ],   #   39    char col;                 /* track color: 0 - red, 1 - yellow, 2 - green, 3 -#blue, 4 - magenta, 5 - black */
 	name         => [ 0,	16,		'Z16',   ],   #   40    char name[16];            // name of track, string not terminated
 	u1           => [ 1,	1,		'C',     ],   #   56    char j;                   // unknown, never 0 in my files, always 0 according to parsefsh
@@ -815,10 +815,9 @@ my $TRACK_HEADER_SPECS = [
 my $TRACK_PT_SIZE = 14;
 my $TRACK_PT_SPECS = [
 	north		=> [ 0,		4,		'l',	],	#  0	int32_t north 		// prescaled (FSH_LAT_SCALE) northing and easting (ellipsoid Mercator)
-	east		=> [ 0,		4,		'l',	],	#  4 	int33_t east
+	east		=> [ 0,		4,		'l',	],	#  4 	int32_t east
 	temp_k		=> [ 0,		2,		'v',	],	#  8	uint16_t tempr;      // temperature in Kelvin * 100
-	depth		=> [ 0,		2,		'v',	],	# 10	int16_t depth;       // depth in cm
-	c			=> [ 0,		2,		'v',	],	# 12	int16_t c;           // unknown, always 0
+	depth		=> [ 0,		4,		'V',	],	# 10	uint32_t depth;      // depth in cm
 ];
 
 
