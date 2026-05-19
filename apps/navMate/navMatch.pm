@@ -13,82 +13,89 @@
 #
 # Scoring algorithm
 # -----------------
-# Tracks/routes are scored with Subsequence Dynamic Time Warping (DTW)
-# under a Sakoe-Chiba band.  The label has two orthogonal axes:
+# Cascade of two distinct algorithms answering two distinct questions:
 #
-#   tier    -- MEDIAN per-step cost decides which family:
-#              median <= EXACT_DEG, ~no warping -> 'exact' (same trip, 1:1 alignment)
-#              median <= EXACT_DEG, warping     -> 'match' (same shape, different sample rate)
-#              median >  EXACT_DEG              -> 'near'  (same channel, different recording)
-#              Median (not mean) so that a few high-cost chord-corner
-#              cells don't pull a same-trip pair into the 'near' tier.
-#              "~no warping" tolerates a small absolute count of
-#              horizontal/vertical steps (decimation isn't deterministic
-#              across nearly-identical tracks; allow a tiny tolerance).
+#   Stage 1 -- EXACT pass: "do these two recordings share source data?"
+#   Stage 2 -- DTW fallback: "do these recordings trace the same shape?"
 #
-#   pattern -- shape of the unmatched portions on each side, by point count:
-#              full     -- 0 trim on both sides
-#              trimmed  -- small trim on both sides (symmetric agreement
-#                          on what to keep)
-#              subset   -- small subj trim, large cand trim (subject is a
-#                          sub-section of candidate)
-#              superset -- large subj trim, small cand trim
-#              partial  -- large trim on both sides with a middle match
+# Stage 1 (_exactPass) is hash-based and runs on RAW point arrays.  It
+# searches for the longest contiguous run of 1:1 aligned cells under one
+# of two specific predicates per cell:
 #
-# A 'full' pattern collapses to just the tier name ('exact' / 'match' /
-# 'near'); other patterns suffix the tier:  'exact-trimmed',
-# 'match-subset', 'near-partial', etc.  15 labels total plus 'none'.
+#   no-shift  -- subj and cand within EXACT_DEG (byte-identical or
+#                precision-rounded)
+#   lat-shift -- subj and cand within EXACT_DEG in lon, with dlat
+#                matching the known 2011-era LAT_SHIFT_DEG magnitude
+#                (within SHIFT_TOLERANCE_DEG)
 #
-# Stage by stage:
+# Both predicates are tested per cell; each maintains its own run set;
+# the longest run across both wins.  The two predicate bands are
+# disjoint, so a cell matches at most one of them.  No global "offset
+# detection" phase -- arbitrary offsets aren't a thing in this domain,
+# only the specific lat-shift bug is, and it's handled by the second
+# predicate at no extra cost.
 #
-#   1. Bobbing decimation -- consecutive points within ~2 m (anchor
-#      bobbing) collapse to a single representative.  Anchor bobbing
-#      can be 88% of a recorded track's points and almost 0% of its
-#      path length; carrying it into DTW catastrophically distorts band
-#      sizing when the two sides preserve different amounts of bobbing.
-#   2. bbox prefilter (cheap eliminator).
-#   3. Constant-offset detection -- the lat_shift class seen in 2011-era
-#      Michelle data resolves cleanly to an exact match if the median
-#      (delta-lat, delta-lon) offset across seed-matches is applied.
-#      Detected internally; no separate user-visible label.
-#   4. Per-point path-length weights -- each point gets half(prev gap) +
-#      half(next gap).  After decimation these are mostly uniform; the
-#      weighting still pays off when one side has a denser under-way
-#      sampling than the other.
-#   5. DP over an N x M grid, banded around the rescaled diagonal
-#      (j ~ i * M / N).  Free start on row 0 or col 0, free end on
-#      the last row or last col -- the "subsequence" variant that lets
-#      the matched window be a sub-range of either side.  Cell cost is
-#      point-to-point distance in lat/lon space (with segment refinement
-#      for sample-rate mismatches), with raw distance > DTW_PRUNE_DEG pruned to
-#      +inf so the path can propagate past compression-induced chord
-#      gaps.  Vertical/horizontal moves carry STEP_PENALTY so that
-#      segment refinement doesn't flip the walkback away from a true
-#      1:1 alignment in same-rate cases.
-#   6. Walkback from the best end cell finds [i_start, i_end, j_start,
-#      j_end] plus warp pattern statistics.
-#   7. _classifyDTW picks the tier (from avg step cost), picks the
-#      pattern (from trim sizes), composes the label, and computes a
-#      path-length-WEIGHTED coverage score on the decimated points.
+# Substantial exact runs are statistically infeasible to produce from
+# independent recordings -- so when found, it's a confirmation of data
+# lineage (one track is a copy, derivative, or trim of the other's
+# source recording).  When such a run exists, _classifyExact reports
+# an EXACT-tier result and the pipeline is done; no DTW work needed.
 #
-# Waypoints use a simple exact-only test: distance <= EXACT_DEG is 'exact';
-# otherwise 'none'.  There is no per-waypoint bbox concept.
+# Stage 2 (_decimateBobbing + _subsequenceDTW + _classifyDTW) only runs
+# when Stage 1 declined to commit.  It decimates anchor-bobbing clusters,
+# runs Subsequence DTW under a Sakoe-Chiba band, walks back the best
+# alignment path, and classifies the result as MATCH (median per-cell
+# cost <= EXACT_DEG) or NEAR (median above).
 #
-# Reverse-direction matching and the gap-pattern 'exact-gapped' label
-# are reserved in the label vocabulary but not emitted by this iteration
-# (see project memory winfind_future_items.md for the toolbar checkbox
-# that re-runs with reverse enabled).
+# Output schema (returned by both stages):
 #
-# Return shape (stable across iterations, consumed by winFind and future
-# enrichment actions):
+#   tier    -- 'exact' | 'match' | 'near' | 'none'
+#              exact: substantial 1:1 sub-meter run found (data lineage)
+#              match: median per-cell cost <= EXACT_DEG (same trip)
+#              near:  median above EXACT_DEG (same channel, different recording)
 #
-#   {
-#     label          => one of the strings above,
-#     score          => 0.0 .. 1.0 (path-length-weighted coverage, averaged),
-#     fwd_match      => weighted subj-side coverage of matched window,
-#     rev_match      => weighted cand-side coverage of matched window,
-#     matched_window => [subj_start, subj_end, cand_start, cand_end],
-#   }
+#   shape   -- relationship between the leftover portions on each side:
+#              full     -- both sides fully inside the matched portion
+#              subset   -- subject fully matched, candidate has leftover
+#              superset -- candidate fully matched, subject has leftover
+#              trimmed  -- small leftovers on both sides (MATCH/NEAR only)
+#              partial  -- significant leftovers on both sides (MATCH/NEAR only)
+#              anomaly  -- EXACT with non-trivial leftover on both sides
+#                          (statistically odd; surfaced for investigation)
+#
+#   quality -- 0.0..1.0 (MATCH/NEAR only): fraction of cells in the
+#              matched range whose per-step cost is sub-meter.  1.0 means
+#              every step within the matched portion is at exact-quality;
+#              lower numbers reflect chord-corner / sampling residual.
+#              Not meaningful for EXACT (always 1.0 by construction).
+#
+#   subj_coverage -- 0.0..1.0: fraction of subject's path-point count
+#              inside the matched window.  Always reported.  The
+#              load-bearing number when the user is asking "how much
+#              of MY track is contained in this candidate?"
+#
+#   cand_coverage -- 0.0..1.0: fraction of candidate's path-point count
+#              inside the matched window.  Always reported.  Tells the
+#              user "how much of this candidate I'm seeing -- is the
+#              candidate basically all match, or is it a much bigger
+#              track of which I matched a small piece?"
+#
+#   matched_window -- [subj_start, subj_end, cand_start, cand_end] in
+#                     ORIGINAL track-point indices.  For Stage 2, the
+#                     index map carried by decimated points lets us
+#                     translate the DTW window back to raw indices.
+#
+#   counts -- { subj_before, subj_in_match, subj_after,
+#              cand_before, cand_in_match, cand_after } -- the six
+#              point-count regions of the comparison, in original space.
+#              Sums: subj_before + subj_in_match + subj_after = N (subject's
+#              original point count).  Same for candidate.  Useful for
+#              callers that want to display the structural breakdown
+#              directly without interpreting tier/shape.
+#
+# Waypoints: scoreWaypointPair returns tier='exact'/shape='full' when
+# the two points are within EXACT_DEG, else 'none'.  No bbox or warping
+# concepts apply to a single point.
 
 package navMatch;
 use strict;
@@ -125,20 +132,33 @@ BEGIN
 #              same-trip tier and the discriminator between `exact` /
 #              `match` and `near`.
 # BBOX_PAD_DEG used only to pad candidate-enumeration bbox prefilters.
-# DTW_PRUNE_DEG used only inside _subsequenceDTW to mark a cell as
-#              unreachable.  Looser than BBOX_PAD_DEG so the DP can
-#              propagate past compression-induced chord gaps where
-#              a chord-error briefly exceeds the bbox-padding scale.
+# DTW_PRUNE_DEG is the cheap OUTER prune in _subsequenceDTW: cells
+#              whose raw point-to-point distance exceeds this are
+#              skipped without computing segment refinement.  Set wide
+#              (~2 km) so it only eliminates obviously irrelevant cells,
+#              not legitimate sparse-track cells where point-to-point
+#              is dominated by sampling-phase offset rather than real
+#              divergence (Pythagoras's other leg).
+# DTW_SEG_PRUNE_DEG is the FINE prune AFTER segment refinement.  Cells
+#              whose perpendicular-to-the-curve distance still exceeds
+#              this (~111 m) represent genuine geographic divergence,
+#              not sampling-phase noise.  This is the prune that
+#              distinguishes "curves diverge here" from "samples are
+#              out of phase here."
 # STEP_PENALTY tiny additive penalty on vertical/horizontal DP moves.
 #              Breaks ties in favor of diagonal (1:1) when segment-
 #              refinement makes off-diagonal cells numerically as cheap
 #              as diagonal cells in same-rate cases.
 use constant {
-	EXACT_DEG     => 0.000005,    # ~0.55 m -- coord-conversion precision
-	BBOX_PAD_DEG  => 0.0005,      # ~55 m   -- bbox prefilter padding
-	DTW_PRUNE_DEG => 0.005,       # ~555 m  -- DP cell-distance cutoff
-	STEP_PENALTY  => 0.0000005,   # ~5.5 cm -- diagonal-bias tiebreaker
-	BOBBING_DEG   => 0.000018,    # ~2 m    -- bobbing decimation threshold
+	EXACT_DEG           => 0.000005,    # ~0.55 m  -- coord-conversion precision
+	BBOX_PAD_DEG        => 0.0005,      # ~55 m    -- bbox prefilter padding
+	DTW_PRUNE_DEG       => 0.02,        # ~2.2 km  -- DP cheap outer prune (point-to-point)
+	DTW_SEG_PRUNE_DEG   => 0.001,       # ~111 m   -- DP fine prune on point-to-segment distance
+	STEP_PENALTY        => 0.0000005,   # ~5.5 cm  -- diagonal-bias tiebreaker
+	BOBBING_DEG         => 0.000018,    # ~2 m     -- bobbing decimation threshold
+	EXACT_MIN_RUN       => 10,          # min consecutive 1:1 cells to call it EXACT
+	LAT_SHIFT_DEG       => 0.0000327,   # ~3.6 m  -- known 2011-era systematic lat-only offset
+	SHIFT_TOLERANCE_DEG => 0.00001,     # ~1.1 m  -- tolerance around the shift magnitude
 };
 my $INF = 1e18;
 
@@ -215,11 +235,13 @@ sub scoreWaypointPair
 	if ($d <= EXACT_DEG)
 	{
 		return {
-			label          => 'exact',
-			score          => 1.0,
-			fwd_match      => 1,
-			rev_match      => 1,
+			tier           => 'exact',
+			shape          => 'full',
+			quality        => undef,
+			subj_coverage  => 1.0,
+			cand_coverage  => 1.0,
 			matched_window => undef,
+			counts         => undef,
 			distance_deg   => $d,
 		};
 	}
@@ -233,58 +255,71 @@ sub scoreWaypointPair
 
 sub scoreLineStringPair
 {
-	# Subject and candidate are arrays of { lat, lon, ... } point hashes.
-	# Subsequence DTW under a Sakoe-Chiba band; see top-of-file comment.
+	# Cascade scorer.  Two distinct algorithms answering two distinct
+	# questions, in sequence:
+	#
+	#   1. EXACT pass -- "do these two recordings share source data?"
+	#      Hash-based scan for a substantial contiguous run of 1:1
+	#      sub-meter aligned points.  Operates on raw points (no
+	#      decimation needed -- bobbing in same-source data is exactly
+	#      aligned too).  Fast: O(N + M) with a small constant.
+	#      If found, classify as EXACT-{full,subset,superset,anomaly}
+	#      and we're done.
+	#
+	#   2. DTW fallback -- "do these two recordings trace the same
+	#      shape, allowing for sampling differences?"  Bobbing-decimated
+	#      DTW with all the warping machinery.  Only runs when the exact
+	#      pass declined to commit.  Returns MATCH (median sub-meter
+	#      cost) or NEAR (median above) with the shape pattern.
+	#
+	# The exact pass is fast precisely because it's looking for something
+	# that almost never happens by accident.  Two independent recordings
+	# of the same trip on the same device will not produce a substantial
+	# run of sub-meter coincident cells -- GPS noise alone defeats that.
+	# So when exact fires, it's confirming data lineage, not similarity.
 
 	my ($subj_pts, $cand_pts) = @_;
 	return _empty_result() if !$subj_pts || !@$subj_pts;
 	return _empty_result() if !$cand_pts || !@$cand_pts;
 
-	# 1.  Bobbing decimation.  Tracks recorded by chartplotters typically
-	# include long anchor-bobbing clusters (88% of points in track 1 of
-	# our test data were inside ~30 m of anchorage).  Decimating these
-	# down to single representative points before DTW does three things
-	# at once: drops grid size by 5-10x (perf), fixes Sakoe-Chiba band
-	# sizing (slope no longer wildly distorted by asymmetric bobbing
-	# between subject and candidate), and removes the source of avg-
-	# step-cost inflation that was pushing same-trip pairs into the
-	# 'near' tier when one side preserved bobbing and the other didn't.
-	$subj_pts = _decimateBobbing($subj_pts);
-	$cand_pts = _decimateBobbing($cand_pts);
-
 	my $n = scalar @$subj_pts;
 	my $m = scalar @$cand_pts;
 	return _empty_result() if $n < 2 || $m < 2;
-	return _empty_result() if $n * $m > DTW_MAX_CELLS;
 
-	# 2. Bbox prefilter.
+	# Bbox prefilter (applies to both passes).
 	my $sb = bboxOfPoints($subj_pts);
 	my $cb = bboxOfPoints($cand_pts);
 	return _empty_result() if !bboxOverlaps($sb, $cb);
 
-	# 3. Constant-offset detection.  Resolves the lat_shift class to an
-	# in-tolerance match by subtracting the median (dlat, dlon) when the
-	# offset is meaningful.  When the offset is too small to matter the
-	# helper returns (0, 0) and we proceed unmodified.
-	my ($off_lat, $off_lon) = _detectConstantOffset($subj_pts, $cand_pts);
+	# Stage 1: exact pass.  Handles both byte-identical / precision-
+	# rounded data (no-shift predicate) and the specific 2011-era
+	# Michelle lat-shift case (shift predicate, +- LAT_SHIFT_DEG).
+	# No general offset detection -- a global "what's the median
+	# offset between these tracks" heuristic was biased by sampling
+	# anchor bobbing and produced phantom offsets.
+	my $exact = _exactPass($subj_pts, $cand_pts);
+	if ($exact)
+	{
+		return _classifyExact($exact, $n, $m);
+	}
 
-	# 4.  Per-point path-length weights, on the decimated points.  After
-	# decimation these are roughly uniform; weights still flow through
-	# because they handle any residual sample-density mismatch the
-	# decimation didn't level out (e.g., a candidate that's denser than
-	# subject within the under-way region).
-	my $subj_weights = _computePointWeights($subj_pts);
-	my $cand_weights = _computePointWeights($cand_pts);
+	# Stage 2: DTW fallback.  Decimate, run DTW, classify by tier x shape.
+	# No constant-offset adjustment at this stage -- DTW just runs on
+	# raw decimated coordinates.  Lat-shifted tracks should have been
+	# caught upstream by the exact pass's shift predicate; if a track
+	# is lat-shifted AND shape-mismatched it will land in 'near' here,
+	# which is an honest classification given the structural cost.
+	my $subj_dec = _decimateBobbing($subj_pts);
+	my $cand_dec = _decimateBobbing($cand_pts);
+	my $nd = scalar @$subj_dec;
+	my $md = scalar @$cand_dec;
+	return _empty_result() if $nd < 2 || $md < 2;
+	return _empty_result() if $nd * $md > DTW_MAX_CELLS;
 
-	# 5.  Subsequence DTW with band + distance prune, walkback.
-	my $dtw = _subsequenceDTW($subj_pts, $cand_pts, $off_lat, $off_lon);
+	my $dtw = _subsequenceDTW($subj_dec, $cand_dec, 0, 0);
 	return _empty_result() if !$dtw;
 
-	# 6.  Classify (tier x pattern) and compute weighted score.  Note:
-	# matched_window indices are in DECIMATED-point space, not original
-	# track_point positions.  Acceptable for v2; future enrichment work
-	# will need a back-mapping (see winfind_future_items.md).
-	return _classifyDTW($dtw, $n, $m, $subj_weights, $cand_weights);
+	return _classifyDTW($dtw, $nd, $md, $n, $m, $subj_dec, $cand_dec);
 }
 
 
@@ -295,19 +330,35 @@ sub _decimateBobbing
 	# when it's at least BOBBING_DEG (~2 m) from the most recently kept
 	# point.  First and last points are always preserved.
 	#
-	# This filter has nothing to do with GPS quality or smoothing -- it
-	# only addresses the structural problem that DTW alignment of two
-	# tracks differs catastrophically when one preserves anchor bobbing
-	# and the other doesn't.  At 0.3 kt and a typical 5-second sample
-	# interval, samples are 0.75 m apart -- below threshold.  At drift-
-	# sailing speed (~2 kt) samples are ~5 m apart -- well above.
+	# Returns a parallel array of POINT CLONES, each with an added
+	# `_orig_idx` field carrying its index in the input array.  The
+	# clones (vs storing originals plus a parallel index array) keep the
+	# DTW reader code unchanged -- it still reads $pts->[$j]{lat} etc.
+	# -- while letting the classifier map matched_window indices back
+	# to original-point space.
+	#
+	# Caveat: this decimation has a known fragility -- the "last kept
+	# point" reference can flip a single keep/skip decision when a
+	# distance straddles 2 m, and that decision then re-anchors all
+	# subsequent comparisons.  Two near-identical tracks can decimate
+	# to slightly different counts.  A motion-based replacement
+	# (heading-coherence / displacement-over-path-length) would be
+	# robust to this and is on the future-work list.
 
 	my ($pts) = @_;
 	my $n = scalar @$pts;
-	return [@$pts] if $n < 3;
+	if ($n < 3)
+	{
+		my @dup;
+		for (my $i = 0; $i < $n; $i++)
+		{
+			push @dup, { %{$pts->[$i]}, _orig_idx => $i };
+		}
+		return \@dup;
+	}
 
 	my @keep;
-	push @keep, $pts->[0];
+	push @keep, { %{$pts->[0]}, _orig_idx => 0 };
 	my $last_lat = $pts->[0]{lat} // 0;
 	my $last_lon = $pts->[0]{lon} // 0;
 	my $thresh_sq = BOBBING_DEG * BOBBING_DEG;
@@ -319,61 +370,262 @@ sub _decimateBobbing
 		my $d2 = $dlat * $dlat + $dlon * $dlon;
 		if ($d2 >= $thresh_sq)
 		{
-			push @keep, $pts->[$i];
+			push @keep, { %{$pts->[$i]}, _orig_idx => $i };
 			$last_lat = $pts->[$i]{lat} // 0;
 			$last_lon = $pts->[$i]{lon} // 0;
 		}
 	}
-	push @keep, $pts->[$n - 1];
+	push @keep, { %{$pts->[$n - 1]}, _orig_idx => $n - 1 };
 	return \@keep;
 }
 
 
-sub _computePointWeights
+sub _exactPass
 {
-	# Path-length-integral weight for each point: half the distance to its
-	# previous neighbor plus half the distance to its next neighbor.  Sum
-	# over all points = total recorded path length.  Anchor-bobbing
-	# clusters contribute near-zero weight per point; under-way samples
-	# contribute their inter-sample distance.  Out-and-back trips are
-	# handled correctly (it's a path-length integral, not a displacement).
+	# Hash-based search for the longest contiguous run of 1:1 aligned
+	# cells between subject and candidate.  Each (subj[i], cand[j]) pair
+	# is tested against TWO predicates per cell:
 	#
-	# Distances are in degrees -- same scalar units as the DTW costs.
-	# Endpoints get just one half-gap (the side they have).
+	#   no-shift: sqrt(dlat^2 + dlon^2) <= EXACT_DEG
+	#             Byte-identical / precision-rounded data.  Most common.
+	#
+	#   lat-shift: |dlon| <= EXACT_DEG  AND
+	#              abs(|dlat| - LAT_SHIFT_DEG) <= SHIFT_TOLERANCE_DEG
+	#             The specific 2011-era Michelle case: a systematic
+	#             ~3.6 m lat-only offset that originated in a buggy
+	#             north-east-to-lat-lon implementation.  Tolerance
+	#             absorbs the small latitude-dependent variation that
+	#             bug can produce; the two predicate bands don't overlap
+	#             so a cell only matches at most one of them.
+	#
+	# Each predicate maintains its own run set.  A run extends when the
+	# previous (i-1, j-1) cell matched under the SAME predicate; the
+	# two predicates do not cross-extend.  At end of walk, the longest
+	# run across both predicates wins.
+	#
+	# Returns hash { i_start, i_end, j_start, j_end, length, mode }
+	# (mode = 'noshift' | 'latshift') when a run of >= EXACT_MIN_RUN
+	# is found; undef otherwise.
+	#
+	# Performance: O((N + M) * average_bin_density).  Walks subject
+	# once.  No global offset detection -- the two predicates are
+	# applied independently per cell, so a track that's the byte-
+	# identical case vs one that's the lat-shift case both fall out
+	# naturally without a pre-computed "what's the offset" step.
 
-	my ($pts) = @_;
-	my $n = scalar @$pts;
-	my @w = (0) x $n;
-	return \@w if $n < 2;
+	my ($subj_pts, $cand_pts) = @_;
+	my $n = scalar @$subj_pts;
+	my $m = scalar @$cand_pts;
 
-	# Precompute gap[i] = distance from pts[i] to pts[i+1].
-	my @gap;
-	$#gap = $n - 2;
-	for (my $i = 0; $i < $n - 1; $i++)
+	my $bin_size = EXACT_DEG;
+	my $exact     = EXACT_DEG;
+	my $exact_sq  = $exact * $exact;
+	my $shift_mag = LAT_SHIFT_DEG;
+	my $shift_tol = SHIFT_TOLERANCE_DEG;
+
+	# Build candidate bin index for the no-shift predicate.
+	my %cand_hash;
+	my @cand_lat;
+	my @cand_lon;
+	for (my $j = 0; $j < $m; $j++)
 	{
-		my $dlat = ($pts->[$i+1]{lat} // 0) - ($pts->[$i]{lat} // 0);
-		my $dlon = ($pts->[$i+1]{lon} // 0) - ($pts->[$i]{lon} // 0);
-		$gap[$i] = sqrt($dlat * $dlat + $dlon * $dlon);
+		my $lat = $cand_pts->[$j]{lat} // 0;
+		my $lon = $cand_pts->[$j]{lon} // 0;
+		$cand_lat[$j] = $lat;
+		$cand_lon[$j] = $lon;
+		my $key = int($lat / $bin_size) . ':' . int($lon / $bin_size);
+		push @{$cand_hash{$key}}, $j;
 	}
 
-	$w[0]      = $gap[0] / 2;
-	$w[$n - 1] = $gap[$n - 2] / 2;
-	for (my $i = 1; $i < $n - 1; $i++)
+	# Two independent run sets, one per predicate.
+	my %active_no;
+	my %active_sh;
+	my $best;
+
+	for (my $i = 0; $i < $n; $i++)
 	{
-		$w[$i] = ($gap[$i - 1] + $gap[$i]) / 2;
+		my $slat = $subj_pts->[$i]{lat} // 0;
+		my $slon = $subj_pts->[$i]{lon} // 0;
+		my $bl   = int($slat / $bin_size);
+		my $bn   = int($slon / $bin_size);
+
+		my %new_no;
+		my %new_sh;
+
+		# Gather candidate j's in the 3x3 bin neighborhood for the
+		# no-shift predicate.  The lat-shift predicate uses the SAME
+		# bins because the shift magnitude is ~3.6 m and bin size is
+		# 0.55 m -- a lat-shifted match has its candidate point in a
+		# bin shifted by ~7 cells from the subject's bin in lat.  We
+		# need to look in those shifted bins too.  Cleanest: build the
+		# candidate-lookup list once per subject point, then test each
+		# candidate against both predicates.
+		my @candidates;
+		for my $dl (-1, 0, 1)
+		{
+			for my $dn (-1, 0, 1)
+			{
+				my $key = ($bl + $dl) . ':' . ($bn + $dn);
+				push @candidates, @{$cand_hash{$key}} if $cand_hash{$key};
+			}
+		}
+		# Also gather candidates in the bin neighborhood SHIFTED by the
+		# known lat-shift magnitude (both signs), to catch lat-shift
+		# matches whose candidate sits in a different lat-bin.
+		my $shift_bins = int($shift_mag / $bin_size + 0.5);
+		for my $sign (-1, 1)
+		{
+			my $shifted_bl = $bl + $sign * $shift_bins;
+			for my $dl (-1, 0, 1)
+			{
+				for my $dn (-1, 0, 1)
+				{
+					my $key = ($shifted_bl + $dl) . ':' . ($bn + $dn);
+					push @candidates, @{$cand_hash{$key}} if $cand_hash{$key};
+				}
+			}
+		}
+
+		# Dedup -- a cand index may appear in both neighborhoods if the
+		# shift is small.  We don't want to score it twice in run
+		# tracking.
+		my %seen;
+		for my $j (@candidates)
+		{
+			next if $seen{$j}++;
+
+			my $dlat = $slat - $cand_lat[$j];
+			my $dlon = $slon - $cand_lon[$j];
+
+			# No-shift predicate.
+			if ($dlat * $dlat + $dlon * $dlon <= $exact_sq)
+			{
+				my $prev = $active_no{$j - 1};
+				my $run;
+				if ($prev) { $run = [$prev->[0], $prev->[1], $prev->[2] + 1]; }
+				else       { $run = [$i, $j, 1]; }
+				my $existing = $new_no{$j};
+				if (!$existing || $run->[2] > $existing->[2])
+				{
+					$new_no{$j} = $run;
+				}
+				if (!$best || $run->[2] > $best->{length})
+				{
+					$best = {
+						i_start => $run->[0],
+						i_end   => $i,
+						j_start => $run->[1],
+						j_end   => $j,
+						length  => $run->[2],
+						mode    => 'noshift',
+					};
+				}
+			}
+			# Lat-shift predicate.  Disjoint band from no-shift, so a
+			# cell can't fire both.
+			elsif (abs($dlon) <= $exact
+			    && abs(abs($dlat) - $shift_mag) <= $shift_tol)
+			{
+				my $prev = $active_sh{$j - 1};
+				my $run;
+				if ($prev) { $run = [$prev->[0], $prev->[1], $prev->[2] + 1]; }
+				else       { $run = [$i, $j, 1]; }
+				my $existing = $new_sh{$j};
+				if (!$existing || $run->[2] > $existing->[2])
+				{
+					$new_sh{$j} = $run;
+				}
+				if (!$best || $run->[2] > $best->{length})
+				{
+					$best = {
+						i_start => $run->[0],
+						i_end   => $i,
+						j_start => $run->[1],
+						j_end   => $j,
+						length  => $run->[2],
+						mode    => 'latshift',
+					};
+				}
+			}
+		}
+
+		%active_no = %new_no;
+		%active_sh = %new_sh;
 	}
-	return \@w;
+
+	return undef if !$best;
+	return undef if $best->{length} < EXACT_MIN_RUN;
+	return $best;
+}
+
+
+sub _classifyExact
+{
+	# Build the result hash for an EXACT-tier match.  The shape derives
+	# from which side has leftover points outside the matched run.
+	#
+	# Per Patrick's framing, EXACT can only legitimately produce three
+	# shapes:
+	#
+	#   full     -- both sides fully contained in the matched run
+	#   subset   -- subject fully matched, candidate has leftover (any side)
+	#   superset -- candidate fully matched, subject has leftover (any side)
+	#   anomaly  -- both have non-trivial leftover.  Statistically very
+	#               unlikely from any normal source -- almost certainly
+	#               indicates a data anomaly (mid-track edit, double-
+	#               compression-and-download, etc.) rather than a real
+	#               track relationship.  Surfaced as 'anomaly' so the
+	#               user can investigate rather than silently treating
+	#               it as a normal subset/superset.
+
+	my ($ex, $n, $m) = @_;
+
+	my $subj_before = $ex->{i_start};
+	my $subj_in    = $ex->{i_end} - $ex->{i_start} + 1;
+	my $subj_after  = $n - 1 - $ex->{i_end};
+	my $cand_before = $ex->{j_start};
+	my $cand_in    = $ex->{j_end} - $ex->{j_start} + 1;
+	my $cand_after  = $m - 1 - $ex->{j_end};
+
+	my $subj_outside = $subj_before + $subj_after;
+	my $cand_outside = $cand_before + $cand_after;
+
+	my $shape;
+	if ($subj_outside == 0 && $cand_outside == 0)  { $shape = 'full'     }
+	elsif ($subj_outside == 0)                      { $shape = 'subset'   }
+	elsif ($cand_outside == 0)                      { $shape = 'superset' }
+	else                                            { $shape = 'anomaly'  }
+
+	return {
+		tier           => 'exact',
+		shape          => $shape,
+		quality        => undef,        # not meaningful for exact
+		subj_coverage  => ($n > 0) ? ($subj_in / $n) : 0,
+		cand_coverage  => ($m > 0) ? ($cand_in / $m) : 0,
+		matched_window => [$ex->{i_start}, $ex->{i_end},
+		                   $ex->{j_start}, $ex->{j_end}],
+		counts         => {
+			subj_before   => $subj_before,
+			subj_in_match => $subj_in,
+			subj_after    => $subj_after,
+			cand_before   => $cand_before,
+			cand_in_match => $cand_in,
+			cand_after    => $cand_after,
+		},
+	};
 }
 
 
 sub _empty_result
 {
 	return {
-		label          => 'none',
-		score          => 0,
-		fwd_match      => 0,
-		rev_match      => 0,
+		tier           => 'none',
+		shape          => undef,
+		quality        => undef,
+		subj_coverage  => 0,
+		cand_coverage  => 0,
 		matched_window => undef,
+		counts         => undef,
 	};
 }
 
@@ -381,77 +633,6 @@ sub _empty_result
 #---------------------------------
 # DTW machinery (private)
 #---------------------------------
-
-sub _detectConstantOffset
-{
-	# Sample up to K subject points evenly across the subject.  For each,
-	# find the nearest candidate point within BBOX_PAD_DEG and record the
-	# (dlat, dlon) pair.  The MEDIAN of those pairs, if it is itself larger
-	# than EXACT_DEG/2 in magnitude, is returned as the offset to apply to
-	# candidate coordinates during DP.  Median (not mean) so that a few
-	# non-matching seeds don't pull the offset off the constant.  Returns
-	# (0, 0) when no meaningful offset is detected.
-	my ($a_pts, $b_pts) = @_;
-	my $n_a = scalar @$a_pts;
-	my $n_b = scalar @$b_pts;
-	return (0, 0) if $n_a < 2 || $n_b < 2;
-
-	my $K = 20;
-	$K = $n_a if $n_a < $K;
-	my $denom = $K > 1 ? $K - 1 : 1;
-	my $near = BBOX_PAD_DEG;
-	my $near_sq = $near * $near;
-
-	my @d_lats;
-	my @d_lons;
-	for (my $k = 0; $k < $K; $k++)
-	{
-		my $i = int($k * ($n_a - 1) / $denom);
-		my $alat = $a_pts->[$i]{lat} // 0;
-		my $alon = $a_pts->[$i]{lon} // 0;
-		my $best_d2   = $near_sq + 1;
-		my $best_dlat = 0;
-		my $best_dlon = 0;
-		for my $b (@$b_pts)
-		{
-			my $dlat = ($b->{lat} // 0) - $alat;
-			next if abs($dlat) > $near;
-			my $dlon = ($b->{lon} // 0) - $alon;
-			next if abs($dlon) > $near;
-			my $d2 = $dlat * $dlat + $dlon * $dlon;
-			if ($d2 < $best_d2)
-			{
-				$best_d2   = $d2;
-				$best_dlat = $dlat;
-				$best_dlon = $dlon;
-			}
-		}
-		if ($best_d2 <= $near_sq)
-		{
-			push @d_lats, $best_dlat;
-			push @d_lons, $best_dlon;
-		}
-	}
-
-	return (0, 0) if scalar(@d_lats) < 5;
-
-	@d_lats = sort { $a <=> $b } @d_lats;
-	@d_lons = sort { $a <=> $b } @d_lons;
-	my $med_lat = $d_lats[int(@d_lats / 2)];
-	my $med_lon = $d_lons[int(@d_lons / 2)];
-
-	my $half_exact = EXACT_DEG / 2;
-	if (abs($med_lat) < $half_exact && abs($med_lon) < $half_exact)
-	{
-		return (0, 0);
-	}
-	# We will SUBTRACT the offset from candidate coords during DP, so
-	# return the offset to add to candidate to align it with subject:
-	# subj ~ cand + offset  =>  offset = subj - cand = -(cand - subj) = -median
-	# Median was computed as (cand - subj); flip the sign.
-	return (-$med_lat, -$med_lon);
-}
-
 
 sub _pointToSegmentDistance
 {
@@ -577,13 +758,21 @@ sub _subsequenceDTW
 			}
 			my $d = sqrt($d2);
 
-			# Refine cell cost with point-to-segment when point-to-point
-			# is loose -- this is what makes sample-rate-mismatched
-			# alignment possible.  We consider the segment ending at
-			# cand[j] (handles dense-candidate / sparse-subject) and the
-			# segment ending at subj[i] (handles dense-subject / sparse-
-			# candidate).  Both directions; the DP picks whichever side
-			# warps to fit.
+			# Refine cell cost with point-to-segment.  This is the load-
+			# bearing measurement for two-curve closeness when tracks are
+			# sparse samples of a continuous path: point-to-point distance
+			# conflates real divergence (deviation perpendicular to the
+			# curve) with sampling phase mismatch (along-curve offset
+			# between subj's and cand's sampling moments).  Pythagoras:
+			# point_to_point^2 = perpendicular^2 + along_curve^2.  Only
+			# the perpendicular component is meaningful for "do these
+			# trace the same path."
+			#
+			# Two segment directions:
+			#   cand seg (cand[j-1] -> cand[j]): subj[i] to cand's polyline
+			#   subj seg (subj[i-1] -> subj[i]): cand[j] to subj's polyline
+			# Min of the two (and the raw point-to-point) is the refined
+			# cell cost.
 			if ($d > EXACT_DEG)
 			{
 				if ($j > 0)
@@ -602,6 +791,21 @@ sub _subsequenceDTW
 						$a_lat[$i],   $a_lon[$i]);
 					$d = $ds if $ds < $d;
 				}
+			}
+
+			# Inner prune: cells whose REFINED distance is still large
+			# represent genuine geographic divergence between the two
+			# curves, not sampling-phase artifacts.  This prune at
+			# DTW_SEG_PRUNE_DEG (~111 m) is what distinguishes "the
+			# curves diverge here" from "the samples are out of phase
+			# here."  Without it, all sparse-track cells whose point-
+			# to-point distance was within DTW_PRUNE_DEG would enter
+			# the DP at high cost, polluting median/avg measurements.
+			if ($d > DTW_SEG_PRUNE_DEG)
+			{
+				$D[$idx]  = $INF;
+				$TB[$idx] = -1;
+				next;
 			}
 
 			my $best_pred = $INF;
@@ -781,30 +985,39 @@ sub _walkbackDTW
 
 sub _classifyDTW
 {
-	# Compose a label from two orthogonal axes:
+	# Classify the DTW alignment into the (match | near) tier with a
+	# shape and a quality percentage.
 	#
-	#   tier    = MEDIAN per-step cost <= EXACT_DEG => same-trip family
-	#             within same-trip, ~no warping  => 'exact'
-	#             within same-trip, has warping  => 'match'
-	#             median above EXACT_DEG         => 'near'
+	# tier:
+	#   match -- median per-step cost <= EXACT_DEG.  Most cells along
+	#            the matched path are sub-meter aligned; chord-corner
+	#            outliers from compression are tolerated.
+	#   near  -- median above EXACT_DEG.  Curves are geographically
+	#            close but not coincident.  Distinguishes "same channel,
+	#            different recording" from genuine same-trip matches.
 	#
-	#   pattern = unmatched-trim shape on each side, by POINT count:
-	#             full     -- 0 trim on both sides
-	#             trimmed  -- small trim on both sides (symmetric)
-	#             subset   -- small subj trim, large cand trim (subject is a
-	#                         sub-section of candidate)
-	#             superset -- large subj trim, small cand trim
-	#             partial  -- large trim on both sides with a middle match
+	# Note: 'exact' tier is NOT produced by DTW.  It's produced by the
+	# exact-pass cascade upstream of this function.  By the time we
+	# reach DTW, the exact pass already declined to commit -- either
+	# there's no substantial 1:1 sub-meter run or the warping in the
+	# best alignment makes a 1:1 framing wrong.
 	#
-	# "Small" trim is <= 5 points OR <= 5% of that side, whichever is larger.
-	# 'full' collapses to the bare tier name ('exact' / 'match' / 'near');
-	# the other patterns suffix the tier with '-trimmed', '-subset', etc.
+	# shape (point-count-trim pattern, in ORIGINAL track-point space):
+	#   full     -- both ends matched on both sides
+	#   trimmed  -- small unmatched portions on both sides
+	#   subset   -- subject fully matched, candidate has significant
+	#               leftover (subject is a sub-section of candidate)
+	#   superset -- candidate fully matched, subject has significant
+	#               leftover (candidate is a sub-section of subject)
+	#   partial  -- both sides have significant unmatched portions with
+	#               a middle match
 	#
-	# Score is PATH-LENGTH-WEIGHTED coverage on the decimated points --
-	# what fraction of each side's under-way length is inside the matched
-	# window.
+	# quality: fraction of cells in the matched range whose per-step
+	# cost is <= EXACT_DEG.  1.0 = every step sub-meter (effectively
+	# exact-quality within the matched portion); lower numbers indicate
+	# how much chord/sampling residual the alignment carries.
 
-	my ($dtw, $n, $m, $subj_weights, $cand_weights) = @_;
+	my ($dtw, $nd, $md, $n_orig, $m_orig, $subj_dec, $cand_dec) = @_;
 	return _empty_result() if !$dtw;
 
 	my $i_start = $dtw->{i_start};
@@ -812,98 +1025,79 @@ sub _classifyDTW
 	my $j_start = $dtw->{j_start};
 	my $j_end   = $dtw->{j_end};
 
-	# Tier decision: MEDIAN step cost.  Median (not mean) so that a small
-	# number of high-cost cells (chord-corner residuals between a
-	# compressed track and its raw counterpart) don't pull the
-	# discriminator above EXACT_DEG when the majority of cells along the
-	# matched path are well-aligned.
-	#
-	#   median <= EXACT_DEG, ~no warping -> 'exact' (same trip, 1:1)
-	#   median <= EXACT_DEG, warping     -> 'match' (same shape, different sample rate)
-	#   median >  EXACT_DEG              -> 'near'  (same channel, different recording)
-	#
-	# "~no warping" tolerates a small number of horizontal/vertical steps:
-	# decimation isn't deterministic across nearly-identical tracks (the
-	# 2 m threshold can flip individual keep/skip decisions when the
-	# precision delta straddles it), so a 354-vs-355 alignment is still
-	# semantically 'exact' even though the DP introduced one warp step.
-
+	# Median step cost decides tier (match vs near).
 	my $L = scalar @{$dtw->{steps}};
 	my @step_costs = map { $_->{cost} } @{$dtw->{steps}};
 	my @sorted_costs = sort { $a <=> $b } @step_costs;
 	my $median_step = ($L > 0) ? $sorted_costs[int(@sorted_costs / 2)] : $INF;
+	my $tier = ($median_step <= EXACT_DEG) ? 'match' : 'near';
 
-	my $tier;
-	if ($median_step <= EXACT_DEG)
+	# Quality = fraction of cells at sub-meter alignment.
+	my $sub_meter = 0;
+	for my $c (@step_costs) { $sub_meter++ if $c <= EXACT_DEG; }
+	my $quality = ($L > 0) ? ($sub_meter / $L) : 0;
+
+	# Map matched_window from decimated index space back to original
+	# track-point indices.  The decimated point hashes carry _orig_idx
+	# placed there by _decimateBobbing.  This makes trim counts and
+	# shape semantics reflect the actual recorded tracks, not the
+	# decimation artifacts.
+	my $orig_i_start = $subj_dec->[$i_start]{_orig_idx};
+	my $orig_i_end   = $subj_dec->[$i_end]  {_orig_idx};
+	my $orig_j_start = $cand_dec->[$j_start]{_orig_idx};
+	my $orig_j_end   = $cand_dec->[$j_end]  {_orig_idx};
+
+	my $subj_before = $orig_i_start;
+	my $subj_in     = $orig_i_end - $orig_i_start + 1;
+	my $subj_after  = $n_orig - 1 - $orig_i_end;
+	my $cand_before = $orig_j_start;
+	my $cand_in     = $orig_j_end - $orig_j_start + 1;
+	my $cand_after  = $m_orig - 1 - $orig_j_end;
+	my $subj_outside = $subj_before + $subj_after;
+	my $cand_outside = $cand_before + $cand_after;
+
+	# "Small outside" = <= 5 points OR <= 5% of the original side.
+	my $small_subj = ($subj_outside <= 5 || $subj_outside <= 0.05 * $n_orig);
+	my $small_cand = ($cand_outside <= 5 || $cand_outside <= 0.05 * $m_orig);
+
+	my $shape;
+	if ($subj_outside == 0 && $cand_outside == 0)
 	{
-		my $warp_count = $dtw->{n_horiz} + $dtw->{n_vert};
-		my $tiny_warp = ($warp_count <= 5 || $warp_count <= 0.05 * $L);
-		$tier = $tiny_warp ? 'exact' : 'match';
+		$shape = 'full';
 	}
-	else
+	elsif ($small_subj && $small_cand)
 	{
-		$tier = 'near';
-	}
-
-	# Pattern decision: point-count trim sizes.
-	my $subj_trim = $i_start + ($n - 1 - $i_end);
-	my $cand_trim = $j_start + ($m - 1 - $j_end);
-	my $small_subj = ($subj_trim <= 5 || $subj_trim <= 0.05 * $n);
-	my $small_cand = ($cand_trim <= 5 || $cand_trim <= 0.05 * $m);
-
-	my $pattern;
-	if ($small_subj && $small_cand)
-	{
-		$pattern = ($subj_trim == 0 && $cand_trim == 0) ? 'full' : 'trimmed';
+		$shape = 'trimmed';
 	}
 	elsif ($small_subj && !$small_cand)
 	{
-		$pattern = 'subset';
+		$shape = 'subset';
 	}
 	elsif (!$small_subj && $small_cand)
 	{
-		$pattern = 'superset';
+		$shape = 'superset';
 	}
 	else
 	{
-		$pattern = 'partial';
+		$shape = 'partial';
 	}
-
-	my $label = ($pattern eq 'full') ? $tier : "$tier-$pattern";
-
-	# Weighted score: sum-of-weights inside matched window over total weight.
-	# Falls back to point-count coverage when weights are unavailable.
-	my ($fwd, $rev);
-	if ($subj_weights && $cand_weights)
-	{
-		my $subj_total = 0; $subj_total += $_ for @$subj_weights;
-		my $cand_total = 0; $cand_total += $_ for @$cand_weights;
-		my $subj_matched = 0;
-		for (my $i = $i_start; $i <= $i_end; $i++)
-		{
-			$subj_matched += $subj_weights->[$i];
-		}
-		my $cand_matched = 0;
-		for (my $j = $j_start; $j <= $j_end; $j++)
-		{
-			$cand_matched += $cand_weights->[$j];
-		}
-		$fwd = ($subj_total > 0) ? ($subj_matched / $subj_total) : 0;
-		$rev = ($cand_total > 0) ? ($cand_matched / $cand_total) : 0;
-	}
-	else
-	{
-		$fwd = ($i_end - $i_start + 1) / $n;
-		$rev = ($j_end - $j_start + 1) / $m;
-	}
-	my $score = ($fwd + $rev) / 2;
 
 	return {
-		label          => $label,
-		score          => $score,
-		fwd_match      => $fwd,
-		rev_match      => $rev,
-		matched_window => [$i_start, $i_end, $j_start, $j_end],
+		tier           => $tier,
+		shape          => $shape,
+		quality        => $quality,
+		subj_coverage  => ($n_orig > 0) ? ($subj_in / $n_orig) : 0,
+		cand_coverage  => ($m_orig > 0) ? ($cand_in / $m_orig) : 0,
+		matched_window => [$orig_i_start, $orig_i_end,
+		                   $orig_j_start, $orig_j_end],
+		counts         => {
+			subj_before   => $subj_before,
+			subj_in_match => $subj_in,
+			subj_after    => $subj_after,
+			cand_before   => $cand_before,
+			cand_in_match => $cand_in,
+			cand_after    => $cand_after,
+		},
 	};
 }
 

@@ -145,14 +145,17 @@ sub new
 	my $hdr_panel = Wx::Panel->new($panel, -1);
 	$hdr_panel->SetBackgroundColour(Wx::Colour->new(220, 220, 220));
 	my $hbox = Wx::BoxSizer->new(wxHORIZONTAL);
-	_addHeaderCell($hdr_panel, $hbox, 'Vis',   34);
-	_addHeaderCell($hdr_panel, $hbox, 'Color', 34);
-	_addHeaderCell($hdr_panel, $hbox, 'Src',   40);
-	_addHeaderCell($hdr_panel, $hbox, 'Label', 70);
-	_addHeaderCell($hdr_panel, $hbox, 'Score', 55);
-	_addHeaderCell($hdr_panel, $hbox, 'npts',  50);
-	_addHeaderCell($hdr_panel, $hbox, 'Path',  300);
-	_addHeaderCell($hdr_panel, $hbox, 'Name',  300);
+	_addHeaderCell($hdr_panel, $hbox, 'Vis',     34);
+	_addHeaderCell($hdr_panel, $hbox, 'Color',   34);
+	_addHeaderCell($hdr_panel, $hbox, 'Src',     40);
+	_addHeaderCell($hdr_panel, $hbox, 'Tier',    40);
+	_addHeaderCell($hdr_panel, $hbox, 'Shape',   65);
+	_addHeaderCell($hdr_panel, $hbox, 'Subj%',   45);
+	_addHeaderCell($hdr_panel, $hbox, 'Cand%',   45);
+	_addHeaderCell($hdr_panel, $hbox, 'Qual',    40);
+	_addHeaderCell($hdr_panel, $hbox, 'npts',    50);
+	_addHeaderCell($hdr_panel, $hbox, 'Path',    300);
+	_addHeaderCell($hdr_panel, $hbox, 'Name',    300);
 	$hdr_panel->SetSizer($hbox);
 	$vbox->Add($hdr_panel, 0, wxEXPAND);
 
@@ -282,19 +285,32 @@ sub _doRefresh
 		{
 			$result = navMatch::scoreLineStringPair($args->{points}, $cand->{points});
 		}
-		next if $result->{label} eq 'none';
-		# Hide low-coverage near-* rows: anything below 10% in the near
-		# tier is noise, not signal.  Exact-tier and match-tier results
-		# of any coverage stay in (a trimmed-end exact match could
-		# legitimately score low).
-		next if $result->{label} =~ /^near\b/
-		     && ($result->{score} // 0) < 0.10;
+		next if !$result->{tier} || $result->{tier} eq 'none';
+		# Filter near-tier results by COVERAGE, not quality.  Genuine
+		# same-trip-different-device matches have low quality (GPS
+		# noise > EXACT_DEG everywhere) but high coverage (the whole
+		# trip aligned end-to-end on both sides) -- we want to see
+		# those.  Geographic-accident matches have low coverage on
+		# both sides -- those are noise.  Filter only when BOTH sides
+		# show < 10% coverage; if either side has substantial coverage
+		# (subset/superset relationship), surface the row.
+		if ($result->{tier} eq 'near')
+		{
+			my $best_cov = ($result->{subj_coverage} // 0);
+			$best_cov = $result->{cand_coverage}
+				if ($result->{cand_coverage} // 0) > $best_cov;
+			next if $best_cov < 0.10;
+		}
 		$cand->{_match} = $result;
 		push @scored, $cand;
 	}
 
-	# Sort descending by score.
-	@scored = sort { $b->{_match}{score} <=> $a->{_match}{score} } @scored;
+	# Sort: tier rank descending (exact > match > near), then by quality
+	# within match/near, then by coverage extent.  EXACT ties broken by
+	# matched-run length (longer = more substantial).
+	@scored = sort {
+		_sortKey($b->{_match}) <=> _sortKey($a->{_match})
+	} @scored;
 
 	$this->_populate(\@scored);
 	$this->{_status_text}->SetLabel(scalar(@scored) . ' candidate(s)');
@@ -373,22 +389,37 @@ sub _addRow
 		wxDefaultPosition, [40, -1]),
 		0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
 
-	# Match label split into Kind (exact/match/near) + Extent (blank for
-	# 'full', else trimmed/subset/superset/partial).  Two columns so the
-	# axis you care about scanning -- "is this an exact one?" -- isn't
-	# buried inside a wider per-row string.
-	my ($kind, $extent) = winFind::_splitMatchLabel($cand->{_match}{label});
-	$hbox->Add(Wx::StaticText->new($row, -1, $kind,
-		wxDefaultPosition, [45, -1]),
+	# Five fields from the scorer:
+	#   Tier   -- exact / match / near
+	#   Shape  -- full / subset / superset / trimmed / partial / anomaly
+	#             (blank when shape == 'full' so the eye reads bare tier)
+	#   Subj % -- fraction of subject's path inside the matched window
+	#   Cand % -- fraction of candidate's path inside the matched window
+	#   Qual % -- fraction of matched cells aligned at coord precision
+	#             (blank for EXACT -- always 100% by construction)
+	my $m = $cand->{_match};
+	my $tier  = $m->{tier}  // '';
+	my $shape = ($m->{shape} && $m->{shape} ne 'full') ? $m->{shape} : '';
+	my $subj_pct = sprintf('%.0f%%', ($m->{subj_coverage} // 0) * 100);
+	my $cand_pct = sprintf('%.0f%%', ($m->{cand_coverage} // 0) * 100);
+	my $qual = ($tier eq 'exact' || !defined $m->{quality})
+		? ''
+		: sprintf('%.0f%%', $m->{quality} * 100);
+
+	$hbox->Add(Wx::StaticText->new($row, -1, $tier,
+		wxDefaultPosition, [40, -1]),
 		0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
-	$hbox->Add(Wx::StaticText->new($row, -1, $extent,
+	$hbox->Add(Wx::StaticText->new($row, -1, $shape,
 		wxDefaultPosition, [65, -1]),
 		0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
-
-	# Score (percentage)
-	my $score_pct = sprintf('%.0f%%', ($cand->{_match}{score} // 0) * 100);
-	$hbox->Add(Wx::StaticText->new($row, -1, $score_pct,
-		wxDefaultPosition, [55, -1]),
+	$hbox->Add(Wx::StaticText->new($row, -1, $subj_pct,
+		wxDefaultPosition, [45, -1]),
+		0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
+	$hbox->Add(Wx::StaticText->new($row, -1, $cand_pct,
+		wxDefaultPosition, [45, -1]),
+		0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
+	$hbox->Add(Wx::StaticText->new($row, -1, $qual,
+		wxDefaultPosition, [40, -1]),
 		0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
 
 	# npts
@@ -425,24 +456,38 @@ sub _addRow
 # helpers: label split, visibility lookup, color asymmetry, swatch paint
 #---------------------------------
 
-sub _splitMatchLabel
+sub _sortKey
 {
-	# navMatch label vocabulary: 'exact' / 'match' / 'near', optionally
-	# suffixed with -trimmed / -subset / -superset / -partial.  Split into
-	# the two orthogonal axes for separate columns.  Bare tier name means
-	# 'full' extent -- return empty string for that column.
-	my ($label) = @_;
-	return ('', '') if !defined $label;
-	return ('', '') if $label eq '';
-	return ('', '') if $label eq 'none';
-	my $dash = index($label, '-');
-	if ($dash < 0)
-	{
-		return ($label, '');
-	}
-	my $kind   = substr($label, 0, $dash);
-	my $extent = substr($label, $dash + 1);
-	return ($kind, $extent);
+	# Compute a single numeric sort key from a match result.  Higher =
+	# better.  Encodes:
+	#   1. tier rank (exact > match > near) -- primary axis
+	#   2. max(subj_coverage, cand_coverage) -- the load-bearing
+	#      coverage number, since either side hitting 100% means an
+	#      important relationship (full / subset / superset)
+	#   3. quality as a tiebreaker for match/near
+	#
+	# Returns a number in a band per tier so cross-tier ordering is
+	# stable regardless of within-tier ties.
+	my ($r) = @_;
+	return -1 if !$r || !$r->{tier} || $r->{tier} eq 'none';
+
+	my $tier_base = 0;
+	if    ($r->{tier} eq 'exact') { $tier_base = 30 }
+	elsif ($r->{tier} eq 'match') { $tier_base = 20 }
+	else                          { $tier_base = 10 }   # near
+
+	# Higher of the two coverages -- scaled into [0, 0.99) so it can't
+	# cross tier boundaries.
+	my $best_cov = ($r->{subj_coverage} // 0);
+	$best_cov = $r->{cand_coverage}
+		if ($r->{cand_coverage} // 0) > $best_cov;
+	my $cov_score = $best_cov * 0.99;
+
+	# Quality refinement.  Tiny scale -- only enough to break exact
+	# coverage ties within a tier.
+	my $qual = (defined $r->{quality}) ? $r->{quality} * 0.001 : 0;
+
+	return $tier_base + $cov_score + $qual;
 }
 
 
