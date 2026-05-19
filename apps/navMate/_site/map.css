@@ -16,6 +16,20 @@ html, body { margin: 0; padding: 0; height: 100%; }
     min-width: 16em;
 }
 
+#nm-depth {
+    position: absolute;
+    bottom: 4px;
+    left: 8px;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.65);
+    color: #6ec1ff;
+    font: 11px/1.4 monospace;
+    padding: 1px 8px;
+    border-radius: 3px;
+    pointer-events: none;
+    min-width: 16em;
+}
+
 .leaflet-container        { cursor: default  !important; }
 .leaflet-grab             { cursor: default  !important; }
 .leaflet-dragging .leaflet-grab { cursor: default !important; }

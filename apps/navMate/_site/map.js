@@ -42,21 +42,33 @@
 // fsh with different colors and geometries -- they coexist on the map as
 // distinct features.  prevRenderedUuids stores "source:uuid" strings.
 
-// ---- Google Maps satellite base + Esri labels overlay ----
+// ---- Google Maps base layers + Esri labels overlay ----
 
-const imageryLayer = L.tileLayer(
-    'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}&key=AIzaSyCApJ-27s7aNpIplcjaIbMsRcvWz42ZjR4',
-    {
-        subdomains: ['0','1','2','3'],
-        attribution: '&copy; Google',
-        maxNativeZoom: 20,
-        maxZoom: 22,
-    }
-);
+function googleLayer(lyrs) {
+    return L.tileLayer(
+        'https://mt{s}.google.com/vt/lyrs=' + lyrs + '&x={x}&y={y}&z={z}&key=AIzaSyCApJ-27s7aNpIplcjaIbMsRcvWz42ZjR4',
+        {
+            subdomains: ['0','1','2','3'],
+            attribution: '&copy; Google',
+            maxNativeZoom: 20,
+            maxZoom: 22,
+        }
+    );
+}
+const imageryLayer = googleLayer('s');    // satellite
+const hybridLayer  = googleLayer('y');    // mixed: satellite + roads/labels
+const terrainLayer = googleLayer('p');    // terrain with roads
+
 const labelsLayer = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
     { attribution: 'Labels &copy; Esri', maxNativeZoom: 19, maxZoom: 22 }
 );
+
+const gebcoLayer = L.tileLayer.wms('https://wms.gebco.net/mapserv?', {
+    layers:      'GEBCO_LATEST',
+    format:      'image/png',
+    attribution: 'Bathymetry &copy; GEBCO',
+});
 
 // ---- Map init ----
 
@@ -69,6 +81,34 @@ const map = L.map('map', {
 });
 map.setView([9.35, -82.25], 8);
 
+// Sentinel layer for the "Live depth" overlay-checkbox.  Carries no tiles;
+// presence on the map is what enables GEBCO-depth-at-cursor queries.
+const depthLiveSentinel = L.layerGroup();
+let depthLiveEnabled = false;
+map.on('overlayadd',    e => { if (e.layer === depthLiveSentinel) depthLiveEnabled = true; });
+map.on('overlayremove', e => { if (e.layer === depthLiveSentinel) { depthLiveEnabled = false; depthDiv.textContent = ''; } });
+
+const layerControl = L.control.layers({
+    'Satellite':         imageryLayer,
+    'Mixed (hybrid)':    hybridLayer,
+    'Terrain':           terrainLayer,
+    'GEBCO bathymetry':  gebcoLayer,
+}, {
+    'Live depth (GEBCO)': depthLiveSentinel,
+}, { collapsed: true }).addTo(map);
+
+// Hide the info box while the user is interacting with the layer control --
+// they share the top-right corner and the info box otherwise covers the
+// expanded layer-control panel.
+{
+    const lcEl = layerControl.getContainer();
+    if (lcEl) {
+        const infoEl = document.getElementById('nm-info');
+        lcEl.addEventListener('mouseenter', () => { if (infoEl) infoEl.style.visibility = 'hidden'; });
+        lcEl.addEventListener('mouseleave', () => { if (infoEl) infoEl.style.visibility = ''; });
+    }
+}
+
 // ---- Cursor coordinates ----
 
 function toDDM(dd, isLat) {
@@ -80,13 +120,88 @@ function toDDM(dd, isLat) {
 }
 
 const coordsDiv = document.getElementById('nm-coords');
+const depthDiv  = document.getElementById('nm-depth');
+
+// ---- GEBCO depth-at-cursor (live only when checkbox + GEBCO base both active) ----
+//
+// GEBCO's WMS GetFeatureInfo returns the elevation in meters (negative for
+// below sea level).  Cells are ~450 m; snapping cursor lat/lon to that grid
+// + caching means each unique cell is fetched at most once per session.
+// Debounce avoids firing while the cursor is in motion.
+
+const GEBCO_SNAP_DEG     = 0.004;   // ~450 m at equator -- matches GEBCO grid
+const DEPTH_DEBOUNCE_MS  = 250;
+const depthCache = new Map();
+let depthFetchTimer = null;
+let depthFetchSeq   = 0;            // race-guard: ignore stale responses
+
+function snapGebcoLatLon(lat, lon) {
+    return [Math.round(lat / GEBCO_SNAP_DEG) * GEBCO_SNAP_DEG,
+            Math.round(lon / GEBCO_SNAP_DEG) * GEBCO_SNAP_DEG];
+}
+
+async function fetchGebcoDepth(snapLat, snapLon) {
+    const key = snapLat.toFixed(4) + ',' + snapLon.toFixed(4);
+    if (depthCache.has(key)) return depthCache.get(key);
+    const half = GEBCO_SNAP_DEG / 2;
+    const params = new URLSearchParams({
+        SERVICE:      'WMS',
+        VERSION:      '1.3.0',
+        REQUEST:      'GetFeatureInfo',
+        LAYERS:       'GEBCO_LATEST_2',     // queryable flat-image layer
+        QUERY_LAYERS: 'GEBCO_LATEST_2',
+        CRS:          'EPSG:4326',
+        BBOX:         (snapLat - half) + ',' + (snapLon - half) + ',' +
+                      (snapLat + half) + ',' + (snapLon + half),
+        WIDTH:        '2',
+        HEIGHT:       '2',
+        I:            '1',
+        J:            '1',
+        INFO_FORMAT:  'text/plain',         // GEBCO doesn't offer JSON
+    });
+    let elev = null;
+    try {
+        const res  = await fetch('https://wms.gebco.net/mapserv?' + params.toString());
+        const text = await res.text();
+        const m = text.match(/value_list\s*=\s*'(-?\d+(?:\.\d+)?)'/);
+        if (m) elev = parseFloat(m[1]);
+    } catch (err) { /* leave elev as null */ }
+    depthCache.set(key, elev);
+    return elev;
+}
+
+function maybeQueueDepthQuery(lat, lng) {
+    if (!depthLiveEnabled || !map.hasLayer(gebcoLayer)) return;
+    clearTimeout(depthFetchTimer);
+    const mySeq = ++depthFetchSeq;
+    depthFetchTimer = setTimeout(async () => {
+        const [sLat, sLon] = snapGebcoLatLon(lat, lng);
+        const elev = await fetchGebcoDepth(sLat, sLon);
+        if (mySeq !== depthFetchSeq) return;     // newer query superseded us
+        if (elev == null) {
+            depthDiv.textContent = '(no GEBCO data)';
+        } else if (elev >= 0) {
+            depthDiv.textContent = elev.toFixed(0) + ' m above sea level';
+        } else {
+            const m  = (-elev).toFixed(0);
+            const ft = (-elev * 3.28084).toFixed(0);
+            depthDiv.textContent = m + ' m   (' + ft + ' ft)';
+        }
+    }, DEPTH_DEBOUNCE_MS);
+}
+
 map.on('mousemove', e => {
     const lat = e.latlng.lat, lng = e.latlng.lng;
     coordsDiv.textContent =
         toDDM(lat, true) + '  ' + toDDM(lng, false) + '\n' +
         lat.toFixed(5)   + '  ' + lng.toFixed(5);
+    maybeQueueDepthQuery(lat, lng);
 });
-map.on('mouseout', () => { coordsDiv.textContent = ''; });
+map.on('mouseout', () => {
+    coordsDiv.textContent = '';
+    depthDiv.textContent  = '';
+    clearTimeout(depthFetchTimer);
+});
 
 // ---- Render layer ----
 
@@ -146,7 +261,7 @@ new OverlayControl().addTo(map);
 
 
 const TS_FIELDS = new Set(['created_ts', 'ts_start', 'ts_end']);
-const SKIP_FIELDS = new Set(['obj_type', 'name', 'rp_names', 'data_source']);
+const SKIP_FIELDS = new Set(['obj_type', 'name', 'rp_names', 'data_source', 'depth_cm', 'rp_uuids']);
 const TYPE_ABBREV = { waypoint: 'WP', route: 'Route', track: 'TRK' };
 
 function escHtml(s) {
@@ -367,7 +482,14 @@ async function renderAll(geojson)
             if (!geom.coordinates.length) continue;
             const isSentinel = ([lat, lon]) => Math.abs(lat) < 0.01 && Math.abs(lon) < 0.01;
             const rawPts = geom.coordinates.map(([lon, lat]) => [lat, lon]);
-            const coords = rawPts.filter(pt => !isSentinel(pt));
+            const rawDepths = Array.isArray(props.depth_cm) ? props.depth_cm : [];
+            const coords = [];
+            const depths = [];
+            for (let i = 0; i < rawPts.length; i++) {
+                if (isSentinel(rawPts[i])) continue;
+                coords.push(rawPts[i]);
+                depths.push(i < rawDepths.length ? rawDepths[i] : null);
+            }
             let lineCoords = coords;
             if (rawPts.length !== coords.length) {
                 lineCoords = [];
@@ -393,12 +515,13 @@ async function renderAll(geojson)
                 line.on('mousemove', e => {
                     if (editMode) return;
                     const idx = nearestPointIdx(coords, e.latlng);
-                    showInfo(props, 'point ' + (idx + 1) + ' / ' + total);
+                    const d = depths[idx];
+                    const dStr = (d == null) ? '--' : (d / 30.48).toFixed(1) + ' ft';
+                    showInfo(props, 'point ' + (idx + 1) + ' / ' + total + ' — ' + dStr);
                 });
                 line.on('mouseout', () => {
                     if (editSubject && editSubject.layer === line) return;
                     line.setStyle({ color: color });
-                    hideInfo();
                 });
                 if (isEditable) {
                     line.on('click', function(e) {
