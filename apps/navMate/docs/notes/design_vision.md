@@ -38,32 +38,6 @@ interdependent - treat as one design session, not five separate tasks:
 
 
 
-### [winDatabase multi-editor]
-
-Batch-edit capability for the winDatabase editor when multiple items are
-selected. No code yet - design only. Entangled with [Rework operations
-system]; hold for that design session. The context-menu shortcut approach
-("Set Color...", "Set Comment..." actions) remains the lower-complexity
-alternative worth considering first.
-
-**Use cases:** change color, comment, or wp_type across a multi-selection.
-Name and lat/lon deliberately excluded - no useful batch semantic.
-
-**Key design decisions from inventory multi-editor (reference impl):**
-- Mixed-value state: placeholder text "(Multiple Values)" in text fields -
-  not a color discriminator. Blank/gray is insufficient.
-- Changed indicator: field background color shows which fields have been
-  touched and will be written on save.
-- Only touched fields are written - the core contract. Requires per-field
-  dirty tracking separate from the global editor dirty flag.
-- `Pub::Database::update_record` accepts sparse input hashes, so the DB
-  layer will not stomp untouched fields.
-
-**Open question - color swatch:** "(Multiple Values)" placeholder text
-doesn't translate to a color swatch. Hatched/striped swatch? Disabled
-swatch + adjacent text label? "Pick..." button still active? No decision yet.
-
-
 ### [Leaflet zoom declutter]
 
 Wire `map.on('zoomend', rerender)` and add per-type zoom minimums inside
@@ -199,5 +173,72 @@ Deferred. Not ready to open this can of worms yet -- documenting that the can ex
 that the bracket-system removal solved a different (testing-layer) problem while
 leaving this user-facing one open, and that the v1 entry point is small and
 self-contained when the time comes.
+
+
+### [local GEBCO depth server]
+
+**Status:** The Leaflet bathymetric overlay using the GEBCO WMS is in
+place (initial commit `f7fc69b`), including the live depth-at-cursor
+readout with per-point HTTP fetch + caching.  This entry remains valid
+as a future direction -- replacing the third-party WMS dependency with
+a self-hosted depth server for speed and offline operation.
+
+Replace the current dependency on `wms.gebco.net` for the
+"live depth at cursor" readout in the Leaflet view with a small local
+HTTP endpoint backed by a GEBCO grid file kept on disk.
+
+**Motivation.**  Live cursor depth via WMS `GetFeatureInfo` is functional
+but laggy (one transatlantic round-trip per query, debounced) and depends
+on a free third-party service we shouldn't lean on for production use.
+A local server makes the readout effectively instant and lets navMate run
+fully offline for depth lookups.
+
+**Asset already in place.**
+`C:/dat/Tracks/GEBCO_2026.zip` -- the unzipped grid is a single NetCDF4
+(HDF5) file, ~7 GB, `int16` elevation in meters, 43200 rows x 86400 cols,
+WGS84, pixel-centre registered, 15 arc-second spacing (~460 m/cell at the
+equator).  The data inside the file is effectively uncompressed and
+contiguous.
+
+**Path.**
+
+1.  Unzip `GEBCO_2026.zip` into `C:/dat/Tracks/GEBCO_2026/` (or wherever)
+    when the work actually begins.
+2.  One-time convert the `.nc` to a flat little-endian `int16` binary
+    (~7.46 GB, ~1 MB smaller than the `.nc` because the HDF5 wrapper is
+    dropped).  No new Perl modules needed -- use `h5dump --binary=LE` from
+    the standalone HDF Group download, or any one-off tool that can read
+    NetCDF4.
+3.  Add a `/api/gebco?lat=X&lon=Y` endpoint to navMate's HTTP server.
+    Cell lookup is `row = floor((lat + 90) * 240)`,
+    `col = floor((lon + 180) * 240)`,
+    `offset = (row * 86400 + col) * 2`.  `sysopen` + `sysseek` + `sysread`
+    on the flat binary; `unpack('s<', ...)` to a signed 16-bit metres value.
+    The OS page cache handles repeat queries to the same region for free.
+4.  Point the Leaflet frontend at `/api/gebco` instead of `wms.gebco.net`
+    and drop the in-browser cache (it becomes redundant when the local
+    server is already microseconds-per-query).
+5.  The GEBCO WMS base layer for *visual* bathymetry overlay can stay as
+    today -- they only run the network when the user actively switches the
+    base layer to GEBCO.  The local server is purely for the point-query
+    readout.
+
+**Vintage rollover.**  GEBCO publishes a new grid roughly yearly.  The
+filename carries the vintage (`GEBCO_2026.bin`, `GEBCO_2027.bin`, ...).
+The server config points at whichever vintage is current; older vintages
+can coexist on disk for comparison or be deleted.  Re-converting takes
+minutes; re-downloading takes ~1-2 hours.
+
+**Attribution.**  Public domain, but a credit line should appear with the
+depth readout: *"GEBCO Compilation Group (2026) GEBCO 2026 Grid"*.  Drop
+it into the existing `#nm-depth` element or the Leaflet attribution
+corner.
+
+**TID grid (optional, deferred).**  GEBCO also publishes a single-byte-per-cell
+"Type Identifier" grid that flags which cells are real soundings vs.
+interpolated/satellite-derived.  Could be served at `/api/gebco/tid` from
+a parallel ~3.7 GB binary.  Useful when judging whether a track-vs-grid
+discrepancy indicates a real anomaly or just thin upstream data; not
+needed for the first cut.
 
 

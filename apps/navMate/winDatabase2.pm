@@ -29,6 +29,7 @@ use n_utils;
 use navPrefs;
 use navServer;
 use navOps qw(buildContextMenu onContextMenuCommand);
+use winRename qw($CTX_CMD_RENAME isRenameHomogeneous onRenameDB);
 use nmResources;
 use gpsImport qw(import_gps_file find_gpsbabel);
 use navMatch;
@@ -41,7 +42,7 @@ use winMultiEditor;
 our ($CTX_CMD_SHOW_MAP, $CTX_CMD_HIDE_MAP, $CTX_CMD_DELETE,
      $CTX_CMD_NEW_BRANCH, $CTX_CMD_NEW_GROUP,
      $CTX_CMD_IMPORT_GPS, $CTX_CMD_IMPORT_KML, $CTX_CMD_EXPORT_KML,
-     $CTX_CMD_FIND_THIS, $CTX_CMD_BATCH_EDIT);
+     $CTX_CMD_FIND_THIS, $CTX_CMD_MULTI_EDIT);
 
 # File-scoped state.  %rendered_uuids is `our` because winDatabase.pm's
 # _onSave checks it to know whether an edited object is currently on
@@ -690,7 +691,7 @@ sub _buildContextMenu
 	my $menu      = buildContextMenu('database', $right_click_node, @nodes);
 	my $node_type = $right_click_node->{type} // '';
 
-	# Batch Edit appears when 2+ eligible (waypoint/route/track) items are
+	# Multi Edit appears when 2+ eligible (waypoint/route/track) items are
 	# in the current selection.  See apps/navMate/docs/winMultiEditor.md.
 	my $n_eligible = 0;
 	for my $n (@nodes)
@@ -702,7 +703,16 @@ sub _buildContextMenu
 	if ($n_eligible >= 2)
 	{
 		$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
-		$menu->Append($CTX_CMD_BATCH_EDIT, "Batch Edit ($n_eligible items)...");
+		$menu->Append($CTX_CMD_MULTI_EDIT, "Multi Edit ($n_eligible items)...");
+	}
+
+	# Rename... appears when the current selection is a homogeneous set
+	# of waypoints, routes, tracks, or groups.  Single item is OK -- the
+	# pattern engine handles N=1 too.
+	if (isRenameHomogeneous('database', @nodes))
+	{
+		$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
+		$menu->Append($CTX_CMD_RENAME, 'Rename...');
 	}
 
 	if ($node_type ne 'root')
@@ -756,11 +766,119 @@ sub _onNmOpsCmd
 }
 
 
-sub _onBatchEdit
+sub _onRename
 {
 	my ($this, $event) = @_;
 	my @nodes = @{$this->{_context_nodes} // []};
-	my $result = winMultiEditor::openForSelection($this, \@nodes);
+	onRenameDB($this, @nodes);
+}
+
+
+sub _dbDescriptor
+	# Descriptor passed to winMultiEditor for DB-source multi-edits.
+	# See apps/navMate/docs/winMultiEditor.md.
+{
+	return {
+		fetch       => \&_dbFetch,
+		commit      => \&_dbCommit,
+		color_row   => 'abgr',
+		has_wp_type => 1,
+		has_sym     => 0,
+		comment_max => undef,
+	};
+}
+
+
+sub _dbFetch
+{
+	my ($items) = @_;
+	my $dbh = connectDB();
+	return if !$dbh;
+	for my $it (@$items)
+	{
+		my $ot = $it->{obj_type};
+		my $rec;
+		if ($ot eq 'waypoint')
+		{
+			$rec = $dbh->get_record(
+				"SELECT color, comment, wp_type FROM waypoints WHERE uuid=?",
+				[$it->{uuid}]);
+		}
+		elsif ($ot eq 'route')
+		{
+			$rec = $dbh->get_record(
+				"SELECT color, comment FROM routes WHERE uuid=?",
+				[$it->{uuid}]);
+		}
+		elsif ($ot eq 'track')
+		{
+			$rec = $dbh->get_record(
+				"SELECT color FROM tracks WHERE uuid=?",
+				[$it->{uuid}]);
+		}
+		$rec //= {};
+		$it->{color}   = $rec->{color};
+		$it->{comment} = $rec->{comment} if exists $rec->{comment};
+		$it->{wp_type} = $rec->{wp_type} if exists $rec->{wp_type};
+	}
+	disconnectDB($dbh);
+}
+
+
+sub _dbCommit
+{
+	my ($items, $changes) = @_;
+	my $dbh = connectDB();
+	if (!$dbh)
+	{
+		warning(0, 0, "winMultiEditor: no DB connection");
+		return [];
+	}
+	my @touched;
+	$dbh->do('BEGIN TRANSACTION', []);
+	eval
+	{
+		for my $it (@$items)
+		{
+			my $ot = $it->{obj_type};
+			my $table = $ot eq 'waypoint' ? 'waypoints'
+			          : $ot eq 'route'    ? 'routes'
+			          : $ot eq 'track'    ? 'tracks'
+			          : next;
+			my %dirty;
+			$dirty{color} = $changes->{color} if exists $changes->{color};
+			if (exists $changes->{comment} && $ot ne 'track')
+			{
+				$dirty{comment} = $changes->{comment};
+			}
+			if (exists $changes->{wp_type} && $ot eq 'waypoint')
+			{
+				$dirty{wp_type} = $changes->{wp_type};
+			}
+			next if !%dirty;
+			$dbh->update_record($table, \%dirty, 'uuid', $it->{uuid}, 1);
+			push @touched, $it->{uuid};
+		}
+	};
+	my $err = $@;
+	if ($err)
+	{
+		$dbh->do('ROLLBACK', []);
+		warning(0, 0, "winMultiEditor: multi-edit commit failed: $err");
+		disconnectDB($dbh);
+		return [];
+	}
+	$dbh->do('COMMIT', []);
+	disconnectDB($dbh);
+	return \@touched;
+}
+
+
+sub _onMultiEdit
+{
+	my ($this, $event) = @_;
+	my @nodes = @{$this->{_context_nodes} // []};
+	my $result = winMultiEditor::openForSelection($this, \@nodes, _dbDescriptor());
 	return if !$result || !ref($result) || !@$result;
 
 	# Re-push any committed item that was on the Leaflet map so the

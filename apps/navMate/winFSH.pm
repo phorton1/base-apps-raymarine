@@ -42,7 +42,7 @@ use Wx::Event qw(
 	EVT_SIZE);
 use Pub::Utils qw(display warning error);
 use Pub::WX::Window;
-use apps::raymarine::FSH::fshUtils qw(fshDateTimeToStr);
+use apps::raymarine::FSH::fshUtils qw(fshDateTimeToStr $FSH_MAX_COMMENT);
 use apps::raymarine::NET::a_utils;
 use navFSH;
 use navServer qw(addRenderFeatures removeRenderFeatures openMapBrowser isBrowserConnected);
@@ -54,17 +54,20 @@ use navPrefs;
 use nmResources;
 use navClipboard;
 use navOps qw(buildContextMenu onContextMenuCommand);
+use winRename qw($CTX_CMD_RENAME isRenameHomogeneous onRenameFSH);
 use navMatch;
 use winFind;
+use winMultiEditor;
 use base 'winTreeBase';
 
 my $dbg_wfsh = 0;
 
 # Context-menu command IDs (parallel to winE80/winDatabase).
 # Same numeric values so the IDs are interchangeable across panels.
-my $CTX_CMD_SHOW_MAP  = 10560;
-my $CTX_CMD_HIDE_MAP  = 10561;
-my $CTX_CMD_FIND_THIS = 10570;
+my $CTX_CMD_SHOW_MAP   = 10560;
+my $CTX_CMD_HIDE_MAP   = 10561;
+my $CTX_CMD_FIND_THIS  = 10570;
+my $CTX_CMD_MULTI_EDIT = 10571;
 
 
 sub new
@@ -226,9 +229,11 @@ sub new
 	EVT_TREE_SEL_CHANGED($this, $this->{tree}, \&onTreeSelect);
 	EVT_TREE_ITEM_RIGHT_CLICK($this, $this->{tree}, \&onTreeRightClick);
 	EVT_TREE_ITEM_ACTIVATED($this, $this->{tree}, \&_onTreeActivated);
-	EVT_MENU($this, $CTX_CMD_SHOW_MAP,  \&_onShowMap);
-	EVT_MENU($this, $CTX_CMD_HIDE_MAP,  \&_onHideMap);
-	EVT_MENU($this, $CTX_CMD_FIND_THIS, \&_onFindThis);
+	EVT_MENU($this, $CTX_CMD_SHOW_MAP,   \&_onShowMap);
+	EVT_MENU($this, $CTX_CMD_HIDE_MAP,   \&_onHideMap);
+	EVT_MENU($this, $CTX_CMD_FIND_THIS,  \&_onFindThis);
+	EVT_MENU($this, $CTX_CMD_MULTI_EDIT, \&_onMultiEdit);
+	EVT_MENU($this, $CTX_CMD_RENAME,    \&_onRename);
 	# Capture all navOps context-menu IDs (Copy=10200..PUSH_FSH=10251).
 	# Same range pattern as winE80/winDatabase keeps the panel dispatch
 	# parallel; see winE80.pm:_onNmOpsCmd for the matching handler.
@@ -1073,6 +1078,29 @@ sub _buildContextMenu
 
 	my $menu = buildContextMenu('fsh', $right_click_node, @nodes);
 
+	# Rename... appears when the current selection is a homogeneous set
+	# of waypoints, routes, tracks, or groups.  Single item is OK -- the
+	# pattern engine handles N=1 too.
+	if (isRenameHomogeneous('fsh', @nodes))
+	{
+		$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
+		$menu->Append($CTX_CMD_RENAME, 'Rename...');
+	}
+
+	# Multi Edit appears when 2+ eligible (waypoint/route/track) items are
+	# in the current selection.  See apps/navMate/docs/winMultiEditor.md.
+	my $n_eligible = 0;
+	for my $n (@nodes)
+	{
+		my $t = $n->{type} // '';
+		$n_eligible++ if $t eq 'waypoint' || $t eq 'route' || $t eq 'track';
+	}
+	if ($n_eligible >= 2)
+	{
+		$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
+		$menu->Append($CTX_CMD_MULTI_EDIT, "Multi Edit ($n_eligible items)...");
+	}
+
 	# Append winFSH-local Show/Hide on Map for non-root nodes.  Keeps
 	# the existing visibility commands available regardless of what
 	# navOps offers.
@@ -1101,6 +1129,176 @@ sub _onNmOpsCmd
 	my $right_click = $this->{_right_click_node} // {};
 	my @nodes       = @{$this->{_context_nodes} // []};
 	onContextMenuCommand($cmd_id, 'fsh', $right_click, $this->{tree}, @nodes);
+}
+
+
+sub _onRename
+{
+	my ($this, $event) = @_;
+	my @nodes = @{$this->{_context_nodes} // []};
+	onRenameFSH($this, @nodes);
+}
+
+
+#---------------------------------
+# Multi-editor
+#---------------------------------
+
+sub _fshDescriptor
+	# Descriptor passed to winMultiEditor for FSH-source multi-edits.
+	# See apps/navMate/docs/winMultiEditor.md.  Distinct from winDatabase
+	# in three ways: color is stored as a palette index (no ABGR ever),
+	# wp_type does not exist (suppressed), sym is editable on waypoints,
+	# and comment length is hard-rejected past FSH_MAX_COMMENT.
+{
+	return {
+		fetch       => \&_fshFetch,
+		commit      => \&_fshCommit,
+		color_row   => 'palette_index',
+		has_wp_type => 0,
+		has_sym     => 1,
+		comment_max => $FSH_MAX_COMMENT,
+	};
+}
+
+
+sub _fshWpMap
+	# Build a uuid -> waypoint record map covering both standalone
+	# waypoints and those nested inside groups.  Used by fetch / commit /
+	# rerender to look up a wp by uuid without re-walking groups each time.
+{
+	my ($db) = @_;
+	my %wp_map;
+	for my $u (keys %{$db->{waypoints} // {}})
+	{
+		$wp_map{$u} = $db->{waypoints}{$u};
+	}
+	for my $g (values %{$db->{groups} // {}})
+	{
+		for my $wp (@{$g->{wpts} // []})
+		{
+			$wp_map{$wp->{uuid}} = $wp if $wp->{uuid};
+		}
+	}
+	return \%wp_map;
+}
+
+
+sub _fshFetch
+{
+	my ($items) = @_;
+	my $db = $navFSH::fsh_db;
+	return if !$db;
+	my $wp_map = _fshWpMap($db);
+	for my $it (@$items)
+	{
+		my $ot = $it->{obj_type};
+		my $rec;
+		if    ($ot eq 'waypoint') { $rec = $wp_map->{$it->{uuid}}; }
+		elsif ($ot eq 'route')    { $rec = $db->{routes}{$it->{uuid}}; }
+		elsif ($ot eq 'track')    { $rec = $db->{tracks}{$it->{uuid}}; }
+		next if !$rec;
+		$it->{color} = defined($rec->{color}) ? ($rec->{color} + 0) : 0;
+		if ($ot eq 'waypoint')
+		{
+			$it->{comment} = $rec->{comment} // '';
+			$it->{sym}     = defined($rec->{sym}) ? ($rec->{sym} + 0) : 0;
+		}
+		elsif ($ot eq 'route')
+		{
+			$it->{comment} = $rec->{comment} // '';
+		}
+	}
+}
+
+
+sub _fshCommit
+{
+	my ($items, $changes) = @_;
+	my $db = $navFSH::fsh_db;
+	return [] if !$db;
+	my $wp_map = _fshWpMap($db);
+	my @touched;
+	for my $it (@$items)
+	{
+		my $ot = $it->{obj_type};
+		my $rec;
+		if    ($ot eq 'waypoint') { $rec = $wp_map->{$it->{uuid}}; }
+		elsif ($ot eq 'route')    { $rec = $db->{routes}{$it->{uuid}}; }
+		elsif ($ot eq 'track')    { $rec = $db->{tracks}{$it->{uuid}}; }
+		next if !$rec;
+		my $dirty = 0;
+		if (exists $changes->{color})
+		{
+			$rec->{color} = $changes->{color} + 0;
+			$dirty = 1;
+		}
+		if (exists $changes->{comment} && $ot ne 'track')
+		{
+			$rec->{comment} = $changes->{comment};
+			$dirty = 1;
+		}
+		if (exists $changes->{sym} && $ot eq 'waypoint')
+		{
+			$rec->{sym} = $changes->{sym} + 0;
+			$dirty = 1;
+		}
+		push @touched, $it->{uuid} if $dirty;
+	}
+	return \@touched;
+}
+
+
+sub _onMultiEdit
+{
+	my ($this, $event) = @_;
+	my @nodes = @{$this->{_context_nodes} // []};
+	my $result = winMultiEditor::openForSelection($this, \@nodes, _fshDescriptor());
+	return if !$result || !ref($result) || !@$result;
+
+	my $db = $navFSH::fsh_db;
+	return if !$db;
+	my $wp_map = _fshWpMap($db);
+
+	# Re-render any touched-and-visible items.  Mirrors the single-item
+	# winFSH _onSave pattern: remove the stale feature, build a fresh
+	# one, push it back.  Items hidden on the map are skipped here; their
+	# visibility toggle will rebuild from the mutated record on demand.
+	my @to_render;
+	for my $uuid (@$result)
+	{
+		next if !getFSHVisible($uuid);
+		if (my $wp = $wp_map->{$uuid})
+		{
+			push @to_render, ['waypoint', $uuid, $wp];
+		}
+		elsif (my $r = $db->{routes}{$uuid})
+		{
+			push @to_render, ['route', $uuid, $r];
+		}
+		elsif (my $t = $db->{tracks}{$uuid})
+		{
+			push @to_render, ['track', $uuid, $t];
+		}
+	}
+	if (@to_render)
+	{
+		my @uuids = map { $_->[1] } @to_render;
+		removeRenderFeatures('fsh', \@uuids);
+		my @feats;
+		for my $r (@to_render)
+		{
+			my ($ot, $uuid, $rec) = @$r;
+			my $f;
+			if    ($ot eq 'waypoint') { $f = $this->_buildWpFeature($uuid, $rec); }
+			elsif ($ot eq 'route')    { $f = $this->_buildRouteFeature($uuid, $rec); }
+			elsif ($ot eq 'track')    { $f = $this->_buildTrackFeature($uuid, $rec); }
+			push @feats, $f if $f;
+		}
+		addRenderFeatures(\@feats) if @feats;
+	}
+
+	navFSH::markDirty();
 }
 
 

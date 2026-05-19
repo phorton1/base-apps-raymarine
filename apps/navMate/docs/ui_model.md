@@ -36,9 +36,21 @@ FSH archives. Each tree drives the same Leaflet canvas via per-source visibility
 state.
 
 The context-operations layer (copy / cut / paste / push / new / delete) is wired
-into winDatabase and winE80 via `navClipboard.pm` and `navOps.pm`. winFSH currently
-exposes only Show / Hide on Map in its context menu; full clipboard integration
-is pending.
+into all three trees via `navClipboard.pm` and `navOps.pm`; each panel passes
+its own source string (`'database'` / `'e80'` / `'fsh'`) when building the menu.
+winFSH is a first-class navOps spoke -- the same Delete / New / Copy+Cut /
+Push / Paste blocks appear there with FSH-side semantics implemented in
+`navOps::navOpsFSH`.
+
+Multi-item operations on homogeneous or eligible selections are surfaced by
+two cross-tree dialogs:
+
+- **Multi Edit** (`winMultiEditor.pm`) -- batch-edit shared properties (color,
+  comment, type/sym) across a 2+ selection in winDatabase or winFSH. See
+  [winMultiEditor](winMultiEditor.md) for the descriptor-driven design.
+- **Rename...** (`winRename.pm`) -- pattern-with-`{N}`-token serial rename
+  across a homogeneous waypoint/route/track/group selection in winDatabase
+  or winFSH. Spoke-local; bypasses navOps deliberately.
 
 ---
 
@@ -162,6 +174,21 @@ when every selected E80 item has a counterpart already in the database.
 six paste variants and their behaviour are summarised in
 [Context Operations -- Clipboard Layer](#context-operations---clipboard-layer)
 below.
+
+#### Rename and Multi Edit
+
+Two multi-item dialogs appear below the navOps block when the selection
+qualifies:
+
+- **Rename...** -- shown when `winRename::isRenameHomogeneous('database', @nodes)`
+  reports a homogeneous waypoint / route / track / group selection.  Pattern
+  with a `{N}` token plus pad-digits / start-index produces a serially-numbered
+  new name per item.  DB writes go through the standard `navDB` update path
+  (no preflight; the DB is deliberately unconstrained).
+- **Multi Edit (N items)...** -- shown when the selection contains 2+ eligible
+  waypoint / route / track items.  Opens `winMultiEditor` with the DB descriptor
+  (ABGR color with Custom + Pick..., wp_type for waypoints, no comment limit).
+  Commits run inside one SQLite transaction.  See [winMultiEditor](winMultiEditor.md).
 
 #### Map and Import/Export Commands
 
@@ -363,18 +390,45 @@ The root node displays the loaded filename (basename only). The Groups / Routes
 
 ### Editor Panel
 
-Waypoint nodes are editable in memory: Name, Comment, Lat, Lon, Sym, Color
-(route color index), Depth, Temp, Date, Time. Changes are written into
-`$navFSH::fsh_db` and persisted only when the user issues FSH -> Save File or
-Save File As.
+Tree nodes are editable in memory; changes are written into `$navFSH::fsh_db`
+and persisted only when the user issues FSH -> Save File or Save File As
+(`navFSH::markDirty` flags the document and prefixes the root label with `*`).
+Field visibility is type-driven, parallel to winDatabase / winE80:
+
+| Node type | Visible rows |
+|---|---|
+| Waypoint | name, comment, lat, lon, sym, color, depth, temp, date, time |
+| Group    | name |
+| Route    | name, comment, color |
+| Track    | name, color |
+
+**Color** in winFSH is stored as a packed palette index (0..N), not as ABGR.
+The Choice offers only the named E80 palette; the swatch is a read-only paint
+computed from the selected index.  No Custom entry, no Pick... button, no
+ABGR exposure in any FSH-context UI -- distinct from the winDatabase /
+winE80 color editors that work in ABGR end-to-end.  **Sym** for waypoints
+uses the full `WPICON_TABLE` (0..N).
+
+FSH transport limits are enforced at write time: name <= 15 chars
+(`$FSH_MAX_NAME`), comment <= 31 chars (`$FSH_MAX_COMMENT`).
 
 ### Context Menu
 
-Currently a stub: right-click on any non-root node offers only **Show on Map**
-and **Hide on Map**. Full clipboard integration (copy / cut / paste / push /
-delete) is pending; when it lands, winFSH will plug into the same
-`navOps::buildContextMenu` machinery as winDatabase / winE80 with `'fsh'` as
-the panel argument.
+winFSH is a first-class navOps spoke. `navOps::buildContextMenu('fsh', ...)`
+provides the same **Delete / New / Copy+Cut / Push / Paste** blocks as
+winDatabase / winE80 (FSH-side semantics live in `navOps::navOpsFSH`). On top
+of the navOps block, `winFSH::_buildContextMenu` appends:
+
+- **Rename...** -- pattern-with-`{N}` serial rename, gated by
+  `winRename::isRenameHomogeneous('fsh', @nodes)` on a homogeneous
+  waypoint / route / track / group selection (N=1 allowed; the rename engine
+  also handles single items).
+- **Multi Edit (N items)...** -- when the selection contains 2+ eligible
+  waypoint / route / track items.  Opens `winMultiEditor` with the FSH
+  descriptor (palette-index color, sym for waypoints, comment hard-rejected
+  past 31 chars).  See [winMultiEditor](winMultiEditor.md).
+- **Show on Map / Hide on Map** -- any non-root node.
+- **Find This...** -- waypoint / track / route only.
 
 ### Visibility
 
