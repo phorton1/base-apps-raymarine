@@ -20,6 +20,7 @@ use Exporter 'import';
 use POSIX qw(mktime);
 use XML::Simple qw(:strict);
 use Pub::Utils qw(display warning error);
+use n_defs;
 use navDB;
 
 our @EXPORT = qw(import_gps_file find_gpsbabel);
@@ -107,19 +108,12 @@ sub _parse_gpx_text
 }
 
 
-sub _max_item_pos
+sub _leaf_name
 {
-	my ($dbh, $coll_uuid) = @_;
-	my $rec = $dbh->get_record(qq{
-		SELECT MAX(max_p) AS p FROM (
-			SELECT MAX(position) AS max_p FROM waypoints WHERE collection_uuid=?
-			UNION ALL
-			SELECT MAX(position) AS max_p FROM routes    WHERE collection_uuid=?
-			UNION ALL
-			SELECT MAX(position) AS max_p FROM tracks    WHERE collection_uuid=?
-		) t},
-		[$coll_uuid, $coll_uuid, $coll_uuid]);
-	return $rec ? ($rec->{p} // 0) : 0;
+	my ($file_path) = @_;
+	my $base = (split /[\/\\]/, $file_path)[-1];
+	$base =~ s/\.(gpx|gdb)$//i;
+	return $base;
 }
 
 
@@ -171,50 +165,42 @@ sub import_gps_file
 		return { error => "Failed to parse GPX from $file_path" };
 	}
 
-	my ($n_tracks, $n_wpts, $n_routes) = (0, 0, 0);
-	my $pos = _max_item_pos($dbh, $coll_uuid);
+	my @waypoints = @{$parsed->{waypoints}};
+	my @routes    = @{$parsed->{routes}};
+	my @tracks    = @{$parsed->{tracks}};
 
-	for my $trk (@{$parsed->{tracks}})
+	my $leaf = _leaf_name($file_path);
+	my $file_branch = insertCollection($dbh, $leaf, $coll_uuid, $NODE_TYPE_BRANCH, '');
+	return { error => "Failed to create file branch '$leaf'" } if !$file_branch;
+
+	my $groups_branch;
+	if (@waypoints || @routes)
 	{
-		$pos += 1;
-		my @pts   = @{$trk->{points}};
-		my @times = sort { $a <=> $b } grep { defined $_ } map { $_->{ts} } @pts;
-		my $ts_start  = $times[0];
-		my $ts_end    = $times[-1];
-		my $ts_source = defined $ts_start ? 'gdb' : 'import';
-		my $uuid = insertTrack($dbh,
-			name            => $trk->{name},
-			ts_start        => $ts_start // 0,
-			ts_end          => $ts_end,
-			ts_source       => $ts_source,
-			point_count     => scalar @pts,
-			collection_uuid => $coll_uuid,
-			position        => $pos);
-		insertTrackPoints($dbh, $uuid, \@pts);
-		$n_tracks++;
+		$groups_branch = insertCollection($dbh, 'Groups', $file_branch, $NODE_TYPE_BRANCH, '');
 	}
 
-	for my $wpt (@{$parsed->{waypoints}})
+	if (@waypoints)
 	{
-		$pos += 1;
-		my $uuid = insertWaypoint($dbh,
-			name            => $wpt->{name},
-			lat             => $wpt->{lat},
-			lon             => $wpt->{lon},
-			comment         => $wpt->{comment},
-			created_ts      => $wpt->{ts} // 0,
-			ts_source       => defined($wpt->{ts}) ? 'gdb' : 'import',
-			source          => undef,
-			collection_uuid => $coll_uuid,
-			position        => $pos);
-		$n_wpts++;
+		my $my_wpts = insertCollection($dbh, 'My Waypoints', $groups_branch, $NODE_TYPE_GROUP, '');
+		for my $wpt (@waypoints)
+		{
+			insertWaypoint($dbh,
+				name            => $wpt->{name},
+				lat             => $wpt->{lat},
+				lon             => $wpt->{lon},
+				comment         => $wpt->{comment},
+				created_ts      => $wpt->{ts} // 0,
+				ts_source       => defined($wpt->{ts}) ? 'gdb' : 'import',
+				source          => undef,
+				collection_uuid => $my_wpts);
+		}
 	}
 
-	for my $rte (@{$parsed->{routes}})
+	my @route_groups;
+	for my $rte (@routes)
 	{
-		$pos += 1;
-		my $route_uuid = insertRoute($dbh, $rte->{name}, undef, '', $coll_uuid, $pos);
-		my $rp_pos = 0;
+		my $rg = insertCollection($dbh, $rte->{name}, $groups_branch, $NODE_TYPE_GROUP, '');
+		my @wp_uuids;
 		for my $pt (@{$rte->{points}})
 		{
 			my $wp_uuid = insertWaypoint($dbh,
@@ -225,16 +211,54 @@ sub import_gps_file
 				created_ts      => 0,
 				ts_source       => 'import',
 				source          => undef,
-				collection_uuid => $coll_uuid,
-				position        => $pos + 0.001 * $rp_pos);
-			appendRouteWaypoint($dbh, $route_uuid, $wp_uuid, $rp_pos);
-			$rp_pos++;
+				collection_uuid => $rg);
+			push @wp_uuids, $wp_uuid;
 		}
-		$n_routes++;
+		push @route_groups, { route => $rte, wp_uuids => \@wp_uuids };
 	}
 
-	display(0,0,"gpsImport: imported $n_tracks tracks, $n_wpts waypoints, $n_routes routes from $file_path");
-	return { tracks => $n_tracks, waypoints => $n_wpts, routes => $n_routes };
+	if (@routes)
+	{
+		my $routes_branch = insertCollection($dbh, 'Routes', $file_branch, $NODE_TYPE_BRANCH, '');
+		for my $rg (@route_groups)
+		{
+			my $rte = $rg->{route};
+			my $route_uuid = insertRoute($dbh, $rte->{name}, undef, '', $routes_branch);
+			my $rp_pos = 0;
+			for my $wp_uuid (@{$rg->{wp_uuids}})
+			{
+				appendRouteWaypoint($dbh, $route_uuid, $wp_uuid, $rp_pos);
+				$rp_pos++;
+			}
+		}
+	}
+
+	if (@tracks)
+	{
+		my $tracks_branch = insertCollection($dbh, 'Tracks', $file_branch, $NODE_TYPE_BRANCH, '');
+		for my $trk (@tracks)
+		{
+			my @pts   = @{$trk->{points}};
+			my @times = sort { $a <=> $b } grep { defined $_ } map { $_->{ts} } @pts;
+			my $ts_start  = $times[0];
+			my $ts_end    = $times[-1];
+			my $ts_source = defined $ts_start ? 'gdb' : 'import';
+			my $uuid = insertTrack($dbh,
+				name            => $trk->{name},
+				ts_start        => $ts_start // 0,
+				ts_end          => $ts_end,
+				ts_source       => $ts_source,
+				point_count     => scalar @pts,
+				collection_uuid => $tracks_branch);
+			insertTrackPoints($dbh, $uuid, \@pts);
+		}
+	}
+
+	my $n_wpts   = scalar @waypoints;
+	my $n_routes = scalar @routes;
+	my $n_tracks = scalar @tracks;
+	display(0,0,"gpsImport: imported $n_tracks tracks, $n_wpts waypoints, $n_routes routes into branch '$leaf' from $file_path");
+	return { tracks => $n_tracks, waypoints => $n_wpts, routes => $n_routes, branch => $leaf };
 }
 
 1;

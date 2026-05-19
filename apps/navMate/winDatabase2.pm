@@ -968,7 +968,8 @@ sub _onImportGPS
 		return;
 	}
 
-	my $msg = "Imported from " . (split /[\/\\]/, $path)[-1] . ":\n"
+	my $msg = "Imported from " . (split /[\/\\]/, $path)[-1]
+		. " into branch '$result->{branch}':\n"
 		. "  Tracks:    $result->{tracks}\n"
 		. "  Waypoints: $result->{waypoints}\n"
 		. "  Routes:    $result->{routes}";
