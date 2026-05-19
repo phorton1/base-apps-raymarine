@@ -691,7 +691,7 @@ sub insertRoute
 	my $uuid = newUUID($dbh);
 	$dbh->do(
 		"INSERT INTO routes (uuid, name, color, comment, collection_uuid, position) VALUES (?,?,?,?,?,?)",
-		[$uuid, $name, $color // 0, $comment // '', $collection_uuid, $position]);
+		[$uuid, $name, $color, $comment // '', $collection_uuid, $position]);
 	return $uuid;
 }
 
@@ -703,7 +703,7 @@ sub insertRouteUUID
 		if !defined $position;
 	$dbh->do(
 		"INSERT INTO routes (uuid, name, color, comment, collection_uuid, position) VALUES (?,?,?,?,?,?)",
-		[$uuid, $name, $color // 0, $comment // '', $collection_uuid, $position]);
+		[$uuid, $name, $color, $comment // '', $collection_uuid, $position]);
 	return $uuid;
 }
 
@@ -713,7 +713,7 @@ sub updateRoute
 	my ($dbh, $uuid, $name, $color, $comment) = @_;
 	$dbh->do(
 		"UPDATE routes SET name=?, color=?, comment=? WHERE uuid=?",
-		[$name, $color // 0, $comment // '', $uuid]);
+		[$name, $color, $comment // '', $uuid]);
 	return 1;
 }
 
@@ -750,7 +750,7 @@ sub insertTrack
 		VALUES (?,?,?,?,?,?,?,?,?,?)},
 		[$uuid,
 		$a{name},
-		$a{color}          // 0,
+		$a{color},
 		$a{ts_start}       // 0,
 		$a{ts_end},
 		$a{ts_source},
