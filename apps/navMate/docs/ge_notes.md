@@ -9,7 +9,9 @@
 **[Spoke Contract](navOps_spoke_contract.md)** --
 **[KML Specification](kml_specification.md)** --
 **GE Notes** --
-**[Testing](testing.md)**
+**[Testing](testing.md)** --
+**[winFSH](winFSH.md)** --
+**[winMultiEditor](winMultiEditor.md)**
 
 Folders: **[Raymarine](../../../docs/readme.md)** --
 **[NET](../../../NET/docs/readme.md)** --
