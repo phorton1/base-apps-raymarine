@@ -111,6 +111,13 @@ sub _nodeKey
     return 'my_waypoints'                          if $t eq 'my_waypoints';
     return "rp:$node->{route_uuid}:$node->{uuid}" if $t eq 'route_point';
     return "trackgrp:$node->{prefix}"              if $t eq 'track_group';
+    # Pane header rows (Database / E80 / FSH banner at the top of each
+    # tree) use type='root' with data.uuid=undef.  Give them a stable
+    # key so _captureFirstVisibleInto can record them when they're the
+    # topmost visible item -- otherwise the undef key bails out of
+    # _walkRestoreFirstVisible and the viewport drifts.
+    my $banner_name = ($node->{data} // {})->{name};
+    return 'root:' . ($banner_name // 'header')   if $t eq 'root';
     # winDatabase nodes carry their uuid inside data; E80/FSH carry it
     # at top level.  The fallback handles both.
     return $node->{uuid} // ($node->{data} // {})->{uuid};
@@ -229,6 +236,78 @@ sub _walkRestoreSelected
         _walkRestoreSelected($tree, $child, $selected);
         ($child, $cookie) = $tree->GetNextChild($item, $cookie);
     }
+}
+
+
+#---------------------------------
+# tree state - scroll viewport (first visible item)
+#---------------------------------
+# refresh() does a full DeleteAllItems+rebuild, resetting scroll to 0.
+# _walkRestoreExpanded's Expand() calls and _walkRestoreSelected's
+# SelectItem() calls each scroll the viewport to wherever the last-touched
+# item lands, which is rarely where the user was looking. To hold the
+# viewport steady we capture the node key of the topmost visible item
+# before the rebuild and EnsureVisible() it afterward.
+
+sub _captureFirstVisibleInto
+{
+    # Walk down from the topmost visible item until we find one with a
+    # non-undef _nodeKey.  The 'root' banner type is now keyed (above),
+    # but the defensive walk also guards against any future node type
+    # that lacks a key handler -- without it, an undef key on the
+    # topmost visible item silently disables scroll restoration.
+    my ($this) = @_;
+    my $tree = $this->{tree};
+    $this->{_first_visible_key} = undef;
+
+    my $item = $tree->GetFirstVisibleItem();
+    while ($item && $item->IsOk())
+    {
+        my $d = $tree->GetItemData($item);
+        if ($d)
+        {
+            my $node = $d->GetData();
+            if (ref $node eq 'HASH')
+            {
+                my $k = _nodeKey($node);
+                if (defined $k)
+                {
+                    $this->{_first_visible_key} = $k;
+                    return;
+                }
+            }
+        }
+        $item = $tree->GetNextVisible($item);
+    }
+}
+
+
+sub _walkRestoreFirstVisible
+{
+    my ($tree, $item, $key) = @_;
+    return 0 if !defined $key;
+    return 0 if !($item && $item->IsOk());
+    my $d = $tree->GetItemData($item);
+    if ($d)
+    {
+        my $node = $d->GetData();
+        if (ref $node eq 'HASH')
+        {
+            my $k = _nodeKey($node);
+            if ($k && $k eq $key)
+            {
+                $tree->EnsureVisible($item);
+                return 1;
+            }
+        }
+    }
+    my ($child, $cookie) = $tree->GetFirstChild($item);
+    while ($child && $child->IsOk())
+    {
+        return 1 if _walkRestoreFirstVisible($tree, $child, $key);
+        ($child, $cookie) = $tree->GetNextChild($item, $cookie);
+    }
+    return 0;
 }
 
 

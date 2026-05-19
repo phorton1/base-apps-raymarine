@@ -301,6 +301,7 @@ sub refresh
 	{
 		$this->_captureExpandedInto();
 		$this->_captureSelectedInto();
+		$this->_captureFirstVisibleInto();
 	}
 	_buildAndRestore($this);
 	_applyCutStyle($this);
@@ -348,6 +349,7 @@ sub _buildAndRestore
 	winTreeBase::_walkRestoreExpanded($tree, $root, $this->{_expanded_keys});
 	winTreeBase::_walkRestoreSelected($tree, $root, $this->{_selected_keys});
 	winTreeBase::_walkRestoreStateImages($this, $tree, $root);
+	winTreeBase::_walkRestoreFirstVisible($tree, $root, $this->{_first_visible_key});
 	$this->_syncLeafletAfterRebuild();
 }
 

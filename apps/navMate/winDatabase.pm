@@ -477,6 +477,7 @@ sub _loadTopLevel
 	# our own Freeze/Thaw here still covers the restoration.
 	winTreeBase::_walkRestoreExpanded($tree, $root, $this->{_expanded_keys});
 	winTreeBase::_walkRestoreSelected($tree, $root, $this->{_selected_keys});
+	winTreeBase::_walkRestoreFirstVisible($tree, $root, $this->{_first_visible_key});
 	$tree->Thaw();
 }
 
@@ -497,6 +498,7 @@ sub refresh
 		{
 			$this->_captureExpandedInto();
 			$this->_captureSelectedInto();
+			$this->_captureFirstVisibleInto();
 		}
 		_clearEditor($this);
 		$this->{detail}->SetValue('');

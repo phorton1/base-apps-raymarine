@@ -358,6 +358,7 @@ sub refresh
 	{
 		$this->_captureExpandedInto();
 		$this->_captureSelectedInto();
+		$this->_captureFirstVisibleInto();
 	}
 	_buildAndRestore($this);
 }
@@ -408,6 +409,7 @@ sub _buildAndRestore
 	$tree->Expand($root);
 	winTreeBase::_walkRestoreExpanded($tree, $root, $this->{_expanded_keys});
 	winTreeBase::_walkRestoreSelected($tree, $root, $this->{_selected_keys});
+	winTreeBase::_walkRestoreFirstVisible($tree, $root, $this->{_first_visible_key});
 }
 
 
