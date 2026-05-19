@@ -33,6 +33,7 @@ use nmResources;
 use gpsImport qw(import_gps_file find_gpsbabel);
 use navMatch;
 use winFind;
+use winMultiEditor;
 
 # winDatabase.pm declares these CTX_CMD_* IDs with `our`.  Re-declared
 # here (no assignment) so `use strict` resolves the unqualified
@@ -40,7 +41,7 @@ use winFind;
 our ($CTX_CMD_SHOW_MAP, $CTX_CMD_HIDE_MAP, $CTX_CMD_DELETE,
      $CTX_CMD_NEW_BRANCH, $CTX_CMD_NEW_GROUP,
      $CTX_CMD_IMPORT_GPS, $CTX_CMD_IMPORT_KML, $CTX_CMD_EXPORT_KML,
-     $CTX_CMD_FIND_THIS);
+     $CTX_CMD_FIND_THIS, $CTX_CMD_BATCH_EDIT);
 
 # File-scoped state.  %rendered_uuids is `our` because winDatabase.pm's
 # _onSave checks it to know whether an edited object is currently on
@@ -672,6 +673,21 @@ sub _buildContextMenu
 	my $menu      = buildContextMenu('database', $right_click_node, @nodes);
 	my $node_type = $right_click_node->{type} // '';
 
+	# Batch Edit appears when 2+ eligible (waypoint/route/track) items are
+	# in the current selection.  See apps/navMate/docs/winMultiEditor.md.
+	my $n_eligible = 0;
+	for my $n (@nodes)
+	{
+		next if ($n->{type} // '') ne 'object';
+		my $ot = ($n->{data} // {})->{obj_type} // '';
+		$n_eligible++ if $ot eq 'waypoint' || $ot eq 'route' || $ot eq 'track';
+	}
+	if ($n_eligible >= 2)
+	{
+		$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
+		$menu->Append($CTX_CMD_BATCH_EDIT, "Batch Edit ($n_eligible items)...");
+	}
+
 	if ($node_type ne 'root')
 	{
 		$menu->AppendSeparator() if $menu->GetMenuItemCount() > 0;
@@ -720,6 +736,36 @@ sub _onNmOpsCmd
 	my @nodes       = @{$this->{_context_nodes} // []};
 	onContextMenuCommand($cmd_id, 'database', $right_click, $this->{tree}, @nodes);
 	_applyCutStyle($this);
+}
+
+
+sub _onBatchEdit
+{
+	my ($this, $event) = @_;
+	my @nodes = @{$this->{_context_nodes} // []};
+	my $result = winMultiEditor::openForSelection($this, \@nodes);
+	return if !$result || !ref($result) || !@$result;
+
+	# Re-push any committed item that was on the Leaflet map so the
+	# fresh color/etc. renders immediately.
+	my $dbh = connectDB();
+	if ($dbh)
+	{
+		for my $uuid (@$result)
+		{
+			next if !$rendered_uuids{$uuid};
+			my $rec = $dbh->get_record(
+				"SELECT 'waypoint' AS obj_type FROM waypoints WHERE uuid=? "
+				. "UNION SELECT 'route' FROM routes WHERE uuid=? "
+				. "UNION SELECT 'track' FROM tracks WHERE uuid=?",
+				[$uuid, $uuid, $uuid]);
+			next if !$rec;
+			_pullFromLeaflet($this, $uuid);
+			_pushObjToLeaflet($dbh, $this, { uuid => $uuid, obj_type => $rec->{obj_type} });
+		}
+		disconnectDB($dbh);
+	}
+	$this->refresh();
 }
 
 

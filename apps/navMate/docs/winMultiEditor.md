@@ -54,17 +54,26 @@ appears.
 | Field    | Waypoint | Route | Track |
 |----------|----------|-------|-------|
 | color    | yes      | yes   | yes   |
-| comment  | yes      | yes   | yes   |
+| comment  | yes      | yes   | -     |
 | wp_type  | yes      | -     | -     |
-| sym      | yes      | -     | -     |
 
 Excluded from batch edit: `name`, `lat`, `lon`, `ts_start`, `ts_end`,
 `ts_source`, `point_count`, point data, `source`, `position`, parent
 collection.
 
+The `sym` E80 symbol is intentionally not surfaced: the navMate
+`waypoints` schema has no `sym` column.  `sym` is an E80/FSH boundary
+concept and would belong to a winMultiEditor counterpart targeting
+those spokes, not the navMate DB.
+
+The `tracks` schema has no `comment` column either; comment is a
+waypoint/route concern.  In a mixed-type selection that includes
+tracks, the comment row's applies-to scope excludes the tracks.
+
 In a mixed-type selection, fields with limited applicability
-(`wp_type`, `sym`) appear in the dialog with their row scope shown.
-Only the rows applicable to a given item are written for that item.
+(`wp_type`, `comment`) appear in the dialog with their row scope
+shown.  Only the rows applicable to a given item are written for that
+item.
 
 ## Dialog Mechanics
 
@@ -103,7 +112,7 @@ The right-side tag mirrors the placeholder for visual consistency:
 `(multi N)` while differing, `(N items)` once the user has committed
 to a new value or accepted a shared starting value.
 
-### Color, wp_type, sym (enumerated)
+### Color, wp_type (enumerated)
 
 These fields have no meaningful empty state.  A merely "changed"
 control implies commit; an unchanged control implies no change.
@@ -113,11 +122,11 @@ The `(multi N)` state must be visually distinct from any real value:
 - **color**: a greyed/hatched/empty swatch.  Cannot be a real grey
   swatch, since picking grey is a legitimate user choice.  Picking
   any real color commits it.
-- **wp_type, sym**: a synthetic `(multi)` entry preselected at the
-  top of the dropdown, distinct from any real enum value AND from
-  the existing `custom` entry (which is itself a real selectable
-  value, not the multi-state).  Selecting any real value commits
-  it; leaving the dropdown on `(multi)` writes nothing.
+- **wp_type**: a synthetic `(multi)` entry preselected at the top of
+  the dropdown, distinct from any real enum value AND from the
+  existing `Custom` entry on the color dropdown (which is a real
+  selectable value, not the multi-state).  Selecting any real value
+  commits it; leaving the dropdown on `(multi)` writes nothing.
 
 ## Update Plumbing
 

@@ -87,6 +87,26 @@ the object arrives (explicit user action, paste-new, import, etc.) -- it was sim
 never stored.  Treat all c_db objects uniformly.
 
 
+### [add comment column to tracks]
+The `tracks` schema currently has no `comment` column because the E80 protocol
+carries no track comment field.  A navMate-side comment would not round-trip
+through the E80 (transport-side limitation, accept silently), but it WOULD
+round-trip through KML (`<description>` on a `<Placemark>`) and through native
+.navmate exports.  Useful for annotating tracks with voyage notes, conditions,
+or matcher-pipeline observations.
+
+Schema change:
+- Add `comment TEXT DEFAULT ''` to the tracks table definition in `navDB.pm`.
+- Add the `ALTER TABLE tracks ADD COLUMN comment TEXT DEFAULT ''` migration.
+- Bump `$SCHEMA_VERSION` in `n_defs.pm` (per `feedback_schema_version.md`).
+- Surface in the single-item editor (`winDatabase.pm` track branch of
+  `_loadEditor` / `_onSave`).
+- `winMultiEditor` will automatically pick it up: the comment row's
+  applies-to-tracks gate just needs to flip true.
+- Update KML export/import to carry the new field; confirm import does not
+  clobber when the source KML lacks `<description>`.
+
+
 ### [fish out available track depth and temperature info]
 In fshConvert -> kml, which I used to get many of my tracks, I did not export <ExtendedData> elements (at all, and still do not)
 for track depths and temps.  They might have existed in my many years of tracks unbeknownst to me.

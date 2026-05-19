@@ -65,6 +65,7 @@ our $CTX_CMD_IMPORT_GPS = 10565;
 our $CTX_CMD_IMPORT_KML = 10566;
 our $CTX_CMD_EXPORT_KML = 10567;
 our $CTX_CMD_FIND_THIS  = 10570;
+our $CTX_CMD_BATCH_EDIT = 10571;
 
 # Declared and populated in winDatabase2.pm by the Leaflet sync code.
 # Re-declared here (no assignment) so `use strict` resolves the
@@ -239,6 +240,7 @@ sub new
 	EVT_MENU($this, $CTX_CMD_IMPORT_KML, \&_onImportKML);
 	EVT_MENU($this, $CTX_CMD_EXPORT_KML, \&_onExportKML);
 	EVT_MENU($this, $CTX_CMD_FIND_THIS,  \&_onFindThis);
+	EVT_MENU($this, $CTX_CMD_BATCH_EDIT, \&_onBatchEdit);
 	EVT_MENU_RANGE($this, 10200, 10299,  \&_onNmOpsCmd);
 	EVT_TEXT($this,   $this->{ed_name},    $this->can('_onFieldChanged'));
 	EVT_TEXT($this,   $this->{ed_comment}, $this->can('_onFieldChanged'));
