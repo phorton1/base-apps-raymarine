@@ -1011,13 +1011,15 @@ sub _onImportGPS
 		? 'GPS files (*.gpx;*.gdb)|*.gpx;*.gdb|GPX files (*.gpx)|*.gpx|All files (*.*)|*.*'
 		: 'GPX files (*.gpx)|*.gpx|All files (*.*)|*.*';
 
-	my $dlg = Wx::FileDialog->new($this, 'Import GPS file', '', '', $wildcard, wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+	my $default_dir = readConfig('gps_dir') || '';
+	my $dlg = Wx::FileDialog->new($this, 'Import GPS file', $default_dir, '', $wildcard, wxFD_OPEN | wxFD_FILE_MUST_EXIST);
 	if ($dlg->ShowModal() != wxID_OK)
 	{
 		$dlg->Destroy();
 		return;
 	}
 	my $path = $dlg->GetPath();
+	writeConfig('gps_dir', $dlg->GetDirectory());
 	$dlg->Destroy();
 	return unless $path;
 
