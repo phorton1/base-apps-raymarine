@@ -42,7 +42,7 @@
 # legacy magenta "===== <op> STARTED / FINISHED =====" markers
 # emitted by dispatchNavOpsCommand bracket the operation in the log.
 
-package navOps;
+package navOps;	# continued ...
 use strict;
 use warnings;
 use threads;

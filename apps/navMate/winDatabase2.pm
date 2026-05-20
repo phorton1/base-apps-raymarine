@@ -11,7 +11,7 @@
 #   - Import / export + new branch / new group
 #   - Show/hide map menu
 
-package winDatabase;
+package winDatabase;	# continued ...
 use strict;
 use warnings;
 use threads;

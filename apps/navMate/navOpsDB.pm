@@ -5,7 +5,7 @@
 # Database-side operations for navMate context menu.
 # Continues as package navOps (loaded via require from navOps.pm).
 
-package navOps;
+package navOps;	# continued ...
 use strict;
 use warnings;
 use Wx qw(:everything);
