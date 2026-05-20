@@ -9,7 +9,7 @@ own context here.
 ## Next
 
 [remove database track ts_start and ts_end times]
-
+- make sure they're not used in phorton.com building process
 
 
 

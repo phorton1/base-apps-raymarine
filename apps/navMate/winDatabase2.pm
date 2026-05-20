@@ -857,6 +857,18 @@ sub _dbCommit
 			{
 				$dirty{sym} = $changes->{sym};
 			}
+			# Per-item conservative forward-map: when the user changed
+			# wp_type but NOT sym, items whose snapshot pair was mapped
+			# get their sym auto-updated to the new wp_type's default.
+			# Off-map items keep their hand-set sym.
+			if ($ot eq 'waypoint'
+				&& exists $changes->{wp_type}
+				&& !exists $changes->{sym}
+				&& isMapped($it->{wp_type}, $it->{sym}))
+			{
+				my $auto = symForWpType($changes->{wp_type});
+				$dirty{sym} = $auto if defined $auto;
+			}
 			next if !%dirty;
 			$dbh->update_record($table, \%dirty, 'uuid', $it->{uuid}, 1);
 			push @touched, $it->{uuid};

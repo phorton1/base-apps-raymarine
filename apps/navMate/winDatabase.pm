@@ -164,8 +164,10 @@ sub new
 	$this->{ed_lbl_wp_type} = Wx::StaticText->new($right_panel, -1, 'Type',
 		[$ED_MARGIN, $ey->(4)], [$ED_LABEL_W, $ED_CTRL_H]);
 	$this->{ed_wp_type} = Wx::Choice->new($right_panel, -1,
-		[$ED_CTRL_X, $ey->(4)], [-1, $ED_CTRL_H],
+		[$ED_CTRL_X, $ey->(4)], [120, $ED_CTRL_H],
 		[@WP_TYPE_NAMES]);
+	$this->{ed_wp_type_mapped} = Wx::StaticText->new($right_panel, -1, '',
+		[$ED_CTRL_X + 120 + 8, $ey->(4) + 4], [90, $ED_CTRL_H]);
 
 	$this->{ed_lbl_sym} = Wx::StaticText->new($right_panel, -1, 'Sym',
 		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
@@ -199,7 +201,7 @@ sub new
 		comment => [ 'ed_lbl_comment', 'ed_comment',      []                                ],
 		lat     => [ 'ed_lbl_lat',     'ed_lat',          ['ed_lat_ddm']                    ],
 		lon     => [ 'ed_lbl_lon',     'ed_lon',          ['ed_lon_ddm']                    ],
-		wp_type => [ 'ed_lbl_wp_type', 'ed_wp_type',      []                                ],
+		wp_type => [ 'ed_lbl_wp_type', 'ed_wp_type',      ['ed_wp_type_mapped']             ],
 		sym     => [ 'ed_lbl_sym',     'ed_sym',          []                                ],
 		color   => [ 'ed_lbl_color',   'ed_e80_color',    ['ed_color_swatch', 'ed_pick_btn'] ],
 		depth   => [ 'ed_lbl_depth',   'ed_depth',        ['ed_depth_unit']                 ],
@@ -257,8 +259,8 @@ sub new
 	EVT_TEXT($this,   $this->{ed_lat},     $this->can('_onLatEdit'));
 	EVT_TEXT($this,   $this->{ed_lon},     $this->can('_onLonEdit'));
 	EVT_TEXT($this,   $this->{ed_depth},   $this->can('_onFieldChanged'));
-	EVT_CHOICE($this, $this->{ed_wp_type}, $this->can('_onFieldChanged'));
-	EVT_CHOICE($this, $this->{ed_sym},     $this->can('_onFieldChanged'));
+	EVT_CHOICE($this, $this->{ed_wp_type}, \&_onWpTypeChoiceChanged);
+	EVT_CHOICE($this, $this->{ed_sym},     \&_onSymChoiceChanged);
 	EVT_CHOICE($this, $this->{ed_e80_color}, \&_onE80ColorChoice);
 	EVT_BUTTON($this,   $this->{ed_save},    \&_onSave);
 	EVT_BUTTON($this,   $this->{ed_pick_btn}, \&_onColorPick);
@@ -1075,6 +1077,15 @@ sub _loadEditor
 		$this->{ed_sym}->SetSelection($sym);
 	}
 
+	# Mapness predicate -- only meaningful when both Choices are shown
+	# (i.e. waypoint editor).  Tracked as current state, re-evaluated
+	# after every Choice change.  Drives the live wp_type->sym forward
+	# map: if mapped, changing wp_type updates sym in place.
+	$this->{_mapped} = ($show_wptype && $show_sym)
+		? isMapped($data->{wp_type}, $data->{sym})
+		: 0;
+	_updateMappedIndicator($this);
+
 	_setColorSwatch($this, $data->{color}) if $show_color;
 
 	if ($show_depth)
@@ -1179,6 +1190,51 @@ sub _onE80ColorChoice
 	_setColorSwatch($this, $E80_ROUTE_COLOR_ABGR[$sel]);
 	$this->{_editor_dirty} = 1;
 	$this->{ed_save}->Enable(1);
+}
+
+
+sub _onWpTypeChoiceChanged
+	# Live forward-map: if the current pair was mapped, follow wp_type
+	# to its mapped sym in place.  Off-map leaves sym alone -- the
+	# absence of a sym shift is itself the "not mapped" indicator,
+	# along with the ed_wp_type_mapped text label.
+{
+	my ($this, $event) = @_;
+	return if $this->{_loading_editor};
+	my $new_wp_type = $this->{ed_wp_type}->GetSelection();
+	if ($this->{_mapped})
+	{
+		my $new_sym = symForWpType($new_wp_type);
+		$this->{ed_sym}->SetSelection($new_sym) if defined $new_sym;
+	}
+	my $cur_sym = $this->{ed_sym}->GetSelection();
+	$this->{_mapped} = isMapped($new_wp_type, $cur_sym);
+	_updateMappedIndicator($this);
+	$this->{_editor_dirty} = 1;
+	$this->{ed_save}->Enable(1);
+}
+
+
+sub _onSymChoiceChanged
+	# Sym change never touches wp_type (DB editor case).  Just recompute
+	# mapness from the new pair.
+{
+	my ($this, $event) = @_;
+	return if $this->{_loading_editor};
+	my $cur_wp_type = $this->{ed_wp_type}->GetSelection();
+	my $cur_sym     = $this->{ed_sym}->GetSelection();
+	$this->{_mapped} = isMapped($cur_wp_type, $cur_sym);
+	_updateMappedIndicator($this);
+	$this->{_editor_dirty} = 1;
+	$this->{ed_save}->Enable(1);
+}
+
+
+sub _updateMappedIndicator
+{
+	my ($this) = @_;
+	return if !$this->{ed_wp_type_mapped};
+	$this->{ed_wp_type_mapped}->SetLabel($this->{_mapped} ? 'mapped' : 'not-mapped');
 }
 
 

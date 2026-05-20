@@ -561,7 +561,7 @@ sub _newFSHWaypoint
 		comment => $comment,
 		lat     => $lat,
 		lon     => $lon,
-		sym     => 0,
+		sym     => symForWpType($WP_TYPE_NAV) // 0,
 		date    => 0,
 		time    => 0,
 	});

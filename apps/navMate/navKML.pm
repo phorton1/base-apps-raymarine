@@ -199,8 +199,10 @@ sub _exportWaypoint
 	$s .= "$pad  <name>" . _esc($wp->{name}) . "</name>\n";
 	$s .= "$pad  <styleUrl>#$sid</styleUrl>\n";
 	$s .= _extData("$pad  ",
-		nm_uuid => $wp->{uuid},
-		nm_type => 'waypoint',
+		nm_uuid    => $wp->{uuid},
+		nm_type    => 'waypoint',
+		nm_wp_type => $wp->{wp_type} // $WP_TYPE_NAV,
+		nm_sym     => $wp->{sym}     // 0,
 		($wp->{temp_k} ? (temp_k => $wp->{temp_k}) : ()));
 	$s .= "$pad  <Point>\n";
 	$s .= "$pad    <coordinates>$wp->{lon},$wp->{lat},0</coordinates>\n";
@@ -570,11 +572,21 @@ sub _importWaypoint
 		}
 		else
 		{
-			my $wp_type = ($name =~ /^\d+$/) ? $WP_TYPE_SOUNDING : $WP_TYPE_NAV;
+			# Round-trip preferences (only present when this KML was
+			# emitted by navMate itself): explicit nm_wp_type and
+			# nm_sym override the name-numeric heuristic.  When absent,
+			# the write-boundary default-sym rule (navDB) fills sym
+			# from the mapping for the chosen wp_type.
+			my $wp_type = defined $ext->{nm_wp_type}
+				? ($ext->{nm_wp_type} + 0)
+				: (($name =~ /^\d+$/) ? $WP_TYPE_SOUNDING : $WP_TYPE_NAV);
+			my %sym_arg = defined $ext->{nm_sym}
+				? (sym => $ext->{nm_sym} + 0) : ();
 			insertWaypoint($dbh,
 				uuid            => $nm_uuid,
 				name            => $name,
 				wp_type         => $wp_type,
+				%sym_arg,
 				lat             => $lat + 0,
 				lon             => $lon + 0,
 				color           => $color,
@@ -586,10 +598,15 @@ sub _importWaypoint
 	}
 	else
 	{
-		my $wp_type = ($name =~ /^\d+$/) ? $WP_TYPE_SOUNDING : $WP_TYPE_NAV;
+		my $wp_type = defined $ext->{nm_wp_type}
+			? ($ext->{nm_wp_type} + 0)
+			: (($name =~ /^\d+$/) ? $WP_TYPE_SOUNDING : $WP_TYPE_NAV);
+		my %sym_arg = defined $ext->{nm_sym}
+			? (sym => $ext->{nm_sym} + 0) : ();
 		insertWaypoint($dbh,
 			name            => $name,
 			wp_type         => $wp_type,
+			%sym_arg,
 			lat             => $lat + 0,
 			lon             => $lon + 0,
 			color           => $color,

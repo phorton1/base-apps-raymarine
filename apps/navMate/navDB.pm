@@ -67,6 +67,9 @@ BEGIN
 		insertRouteUUID
 		updateRoute
 		clearRouteWaypoints
+		symForWpType
+		wpTypeForSym
+		isMapped
 		moveWaypoint
 		moveCollection
 		moveRoute
@@ -442,10 +445,68 @@ sub openDB
 		warning(0,0,"schema_version advisory: DB has $stored, code expects $SCHEMA_VERSION");
 	}
 
+	loadSymMap($dbh);
+
 	display(0,0,"navDB::openDB ok (schema $stored)");
 	$db_ready = 1;
 	$dbh->disconnect();
 	return 1;
+}
+
+
+#---------------------------------
+# wp_type <-> sym mapping helpers
+#---------------------------------
+# %_mapped_syms is the cached in-effect {wp_type_int => sym_int} mapping
+# read from key_values.wp_mapped_syms at openDB.  Until the Remapping
+# phase adds a dialog that mutates the row, the cache is load-once.
+#
+# Forward: symForWpType($wp_type) -> sym_int (mapped default for the type)
+# Reverse: wpTypeForSym($sym)     -> wp_type_int or undef (first match)
+# Predicate: isMapped($wp_type, $sym) -> true iff the pair matches the
+#            current mapping.  Used by spoke->hub MODIFY and by the
+#            single-editor live forward-map.
+
+my %_mapped_syms;
+
+sub loadSymMap
+{
+	my ($dbh) = @_;
+	%_mapped_syms = ();
+	my $rec = $dbh->get_record("SELECT value FROM key_values WHERE key='wp_mapped_syms'");
+	return if !$rec || !defined $rec->{value};
+	my $h = my_decode_json($rec->{value});
+	return if ref($h) ne 'HASH';
+	for my $k (keys %$h)
+	{
+		$_mapped_syms{$k + 0} = $h->{$k} + 0;
+	}
+}
+
+sub symForWpType
+{
+	my ($wp_type) = @_;
+	return undef if !defined $wp_type;
+	return $_mapped_syms{$wp_type};
+}
+
+sub wpTypeForSym
+{
+	my ($sym) = @_;
+	return undef if !defined $sym;
+	for my $wt (sort { $a <=> $b } keys %_mapped_syms)
+	{
+		return $wt if $_mapped_syms{$wt} == $sym;
+	}
+	return undef;
+}
+
+sub isMapped
+{
+	my ($wp_type, $sym) = @_;
+	return 0 if !defined $wp_type || !defined $sym;
+	my $mapped = symForWpType($wp_type);
+	return defined($mapped) && $mapped == $sym ? 1 : 0;
 }
 
 
@@ -573,8 +634,13 @@ sub _initKeyValues
 		[$SCHEMA_VERSION]);
 	$dbh->do("INSERT OR IGNORE INTO key_values (key, value) VALUES ('uuid_counter', '0')");
 	$dbh->do("INSERT OR IGNORE INTO key_values (key, value) VALUES ('fsh_uuid_counter', '0')");
-	$dbh->do("INSERT OR IGNORE INTO key_values (key, value) VALUES ('wp_default_syms', ?)",
+	$dbh->do("INSERT OR IGNORE INTO key_values (key, value) VALUES ('wp_mapped_syms', ?)",
 		[my_encode_json(\%WP_DEFAULT_SYMS)]);
+	# Phase 2.5 rename: wp_default_syms -> wp_mapped_syms.  The row holds
+	# the in-effect mapping (editable later via the Remapping dialog),
+	# not the constant defaults -- those live in %WP_DEFAULT_SYMS.
+	# Idempotent: no-op on fresh DBs; cleans up DBs seeded under the old key.
+	$dbh->do("DELETE FROM key_values WHERE key='wp_default_syms'", []);
 }
 
 
@@ -726,7 +792,7 @@ sub insertWaypoint
 		$a{lat},
 		$a{lon},
 		$a{wp_type}         // $WP_TYPE_NAV,
-		$a{sym}             // 0,
+		$a{sym}             // symForWpType($a{wp_type} // $WP_TYPE_NAV) // 0,
 		$a{color},
 		$a{depth_cm}        // 0,
 		$a{temp_k}          || undef,
@@ -752,7 +818,7 @@ sub updateWaypoint
 		$a{lat},
 		$a{lon},
 		$a{wp_type}  // $WP_TYPE_NAV,
-		$a{sym}      // 0,
+		$a{sym}      // symForWpType($a{wp_type} // $WP_TYPE_NAV) // 0,
 		$a{color},
 		$a{depth_cm} // 0,
 		$a{temp_k}   || undef,

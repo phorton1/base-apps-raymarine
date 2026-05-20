@@ -124,12 +124,17 @@ sub _insertFreshWaypoint
 	my ($dbh, $coll_uuid, $wp, $source, $position) = @_;
 	my $ts     = $wp->{created_ts} // $wp->{ts} // time();
 	my $ts_src = ($source eq 'e80' || $source eq 'fsh') ? 'e80' : ($wp->{ts_source} // 'user');
+	my $sym    = $wp->{sym} // 0;
+	# Reverse-map: spoke records carry sym but no wp_type.  Derive it
+	# from the mapping if the source didn't supply one.
+	my $wp_type = $wp->{wp_type} // wpTypeForSym($sym) // $WP_TYPE_NAV;
 	return insertWaypoint($dbh,
 		name            => $wp->{name}    // '',
 		comment         => $wp->{comment} // '',
 		lat             => $wp->{lat},
 		lon             => $wp->{lon},
-		wp_type         => $wp->{wp_type} // $WP_TYPE_NAV,
+		wp_type         => $wp_type,
+		sym             => $sym,
 		color           => $wp->{color},
 		depth_cm        => $wp->{depth_cm} // $wp->{depth} // 0,
 		created_ts      => $ts,
@@ -156,6 +161,10 @@ sub _pasteOneWaypointToDB
 
 	my $ts     = $wp->{created_ts} // $wp->{ts} // time();
 	my $ts_src = ($source eq 'e80' || $source eq 'fsh') ? 'e80' : ($wp->{ts_source} // 'user');
+	my $sym    = $wp->{sym} // 0;
+	# Reverse-map: spoke records carry sym but no wp_type.  Derive it
+	# from the mapping if the source didn't supply one.
+	my $new_wp_type = $wp->{wp_type} // wpTypeForSym($sym) // $WP_TYPE_NAV;
 
 	my $existing = getWaypoint($dbh, $uuid);
 
@@ -167,7 +176,8 @@ sub _pasteOneWaypointToDB
 			comment         => $wp->{comment} // '',
 			lat             => $wp->{lat},
 			lon             => $wp->{lon},
-			wp_type         => $wp->{wp_type} // $WP_TYPE_NAV,
+			wp_type         => $new_wp_type,
+			sym             => $sym,
 			color           => $wp->{color},
 			depth_cm        => $wp->{depth_cm} // $wp->{depth} // 0,
 			created_ts      => $ts,
@@ -181,12 +191,22 @@ sub _pasteOneWaypointToDB
 
 	if (($source eq 'e80' || $source eq 'fsh'))
 	{
+		# MODIFY: spoke pushes sym, DB owns wp_type unless it was in
+		# sync with the mapping.  Mapped + reverse-resolvable -> follow
+		# sym to a new wp_type.  Off-map or unresolved -> keep wp_type.
+		my $wp_type_final = $existing->{wp_type};
+		if (isMapped($existing->{wp_type}, $existing->{sym}))
+		{
+			my $reverse = wpTypeForSym($sym);
+			$wp_type_final = $reverse if defined $reverse;
+		}
 		updateWaypoint($dbh, $uuid,
 			name       => $wp->{name}    // '',
 			comment    => $wp->{comment} // '',
 			lat        => $wp->{lat},
 			lon        => $wp->{lon},
-			wp_type    => $wp->{wp_type} // $WP_TYPE_NAV,
+			wp_type    => $wp_type_final,
+			sym        => $sym,
 			color      => $wp->{color},
 			depth_cm   => $wp->{depth_cm} // $wp->{depth} // 0,
 			created_ts => $ts,
@@ -218,12 +238,15 @@ sub _pasteOneWaypointToDB
 
 	if ($action eq 'replace' || $action eq 'replace_all')
 	{
+		# DB->DB replace: source carries both wp_type and sym; pass
+		# through directly (no reverse-map -- both ends know the schema).
 		updateWaypoint($dbh, $uuid,
 			name       => $wp->{name}    // '',
 			comment    => $wp->{comment} // '',
 			lat        => $wp->{lat},
 			lon        => $wp->{lon},
 			wp_type    => $wp->{wp_type} // $WP_TYPE_NAV,
+			sym        => $wp->{sym}     // 0,
 			color      => $wp->{color},
 			depth_cm   => $wp->{depth_cm} // $wp->{depth} // 0,
 			created_ts => $ts,
@@ -1361,12 +1384,23 @@ sub _pushFromE80
 			my $wp  = $item->{data} // {};
 			my $rec = getWaypoint($dbh, $uuid);
 			next if !$rec;
+			# MODIFY: spoke pushes sym; if DB row was in sync with the
+			# mapping, follow sym to a new wp_type when reverse-map
+			# resolves.  Otherwise wp_type stays as hand-edited.
+			my $sym_new = $wp->{sym} // $rec->{sym};
+			my $wp_type_new = $rec->{wp_type} // $WP_TYPE_NAV;
+			if (isMapped($rec->{wp_type}, $rec->{sym}))
+			{
+				my $reverse = wpTypeForSym($sym_new);
+				$wp_type_new = $reverse if defined $reverse;
+			}
 			updateWaypoint($dbh, $uuid,
 				name       => $wp->{name}    // '',
 				comment    => $wp->{comment} // '',
 				lat        => $wp->{lat},
 				lon        => $wp->{lon},
-				wp_type    => $rec->{wp_type}  // $WP_TYPE_NAV,
+				wp_type    => $wp_type_new,
+				sym        => $sym_new,
 				color      => $rec->{color},
 				depth_cm   => $wp->{depth_cm} // $wp->{depth} // 0,
 				created_ts => $wp->{created_ts} // $wp->{ts} // $rec->{created_ts},
@@ -1405,12 +1439,21 @@ sub _pushFromE80
 				next if !$mu;
 				my $mrec = getWaypoint($dbh, $mu);
 				next if !$mrec;
+				# MODIFY: same as the waypoint branch above.
+				my $sym_new = $md->{sym} // $mrec->{sym};
+				my $wp_type_new = $mrec->{wp_type} // $WP_TYPE_NAV;
+				if (isMapped($mrec->{wp_type}, $mrec->{sym}))
+				{
+					my $reverse = wpTypeForSym($sym_new);
+					$wp_type_new = $reverse if defined $reverse;
+				}
 				updateWaypoint($dbh, $mu,
 					name       => $md->{name}    // '',
 					comment    => $md->{comment} // '',
 					lat        => $md->{lat},
 					lon        => $md->{lon},
-					wp_type    => $mrec->{wp_type}  // $WP_TYPE_NAV,
+					wp_type    => $wp_type_new,
+					sym        => $sym_new,
 					color      => $mrec->{color},
 					depth_cm   => $md->{depth_cm} // $md->{depth} // 0,
 					created_ts => $md->{created_ts} // $md->{ts} // $mrec->{created_ts},
