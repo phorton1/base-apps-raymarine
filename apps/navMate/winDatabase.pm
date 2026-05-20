@@ -39,6 +39,7 @@ use Pub::Utils qw(display warning error);
 use Pub::WX::AppConfig qw(readConfig writeConfig);
 use Pub::WX::Window;
 use Pub::WX::Menu;
+use apps::raymarine::NET::a_utils;
 use navDB;
 use navVisibility qw(getDbVisible setDbVisible);
 use navOutline;
@@ -164,7 +165,13 @@ sub new
 		[$ED_MARGIN, $ey->(4)], [$ED_LABEL_W, $ED_CTRL_H]);
 	$this->{ed_wp_type} = Wx::Choice->new($right_panel, -1,
 		[$ED_CTRL_X, $ey->(4)], [-1, $ED_CTRL_H],
-		['nav', 'label', 'sounding']);
+		[@WP_TYPE_NAMES]);
+
+	$this->{ed_lbl_sym} = Wx::StaticText->new($right_panel, -1, 'Sym',
+		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
+	$this->{ed_sym} = Wx::Choice->new($right_panel, -1,
+		[$ED_CTRL_X, $ey->(5)], [-1, $ED_CTRL_H],
+		[map { sprintf('%2d - %s', $_, $E80_SYMS[$_]) } 0..$#E80_SYMS]);
 
 	# color row: E80 named-color choice (primary) + swatch + Pick button
 	$this->{ed_lbl_color} = Wx::StaticText->new($right_panel, -1, 'Color',
@@ -193,6 +200,7 @@ sub new
 		lat     => [ 'ed_lbl_lat',     'ed_lat',          ['ed_lat_ddm']                    ],
 		lon     => [ 'ed_lbl_lon',     'ed_lon',          ['ed_lon_ddm']                    ],
 		wp_type => [ 'ed_lbl_wp_type', 'ed_wp_type',      []                                ],
+		sym     => [ 'ed_lbl_sym',     'ed_sym',          []                                ],
 		color   => [ 'ed_lbl_color',   'ed_e80_color',    ['ed_color_swatch', 'ed_pick_btn'] ],
 		depth   => [ 'ed_lbl_depth',   'ed_depth',        ['ed_depth_unit']                 ],
 	};
@@ -250,6 +258,7 @@ sub new
 	EVT_TEXT($this,   $this->{ed_lon},     $this->can('_onLonEdit'));
 	EVT_TEXT($this,   $this->{ed_depth},   $this->can('_onFieldChanged'));
 	EVT_CHOICE($this, $this->{ed_wp_type}, $this->can('_onFieldChanged'));
+	EVT_CHOICE($this, $this->{ed_sym},     $this->can('_onFieldChanged'));
 	EVT_CHOICE($this, $this->{ed_e80_color}, \&_onE80ColorChoice);
 	EVT_BUTTON($this,   $this->{ed_save},    \&_onSave);
 	EVT_BUTTON($this,   $this->{ed_pick_btn}, \&_onColorPick);
@@ -709,16 +718,14 @@ sub onTreeSelect
 sub _fmt
 {
 	my ($label, $value) = @_;
-	return sprintf("%-18s%s\n", "$label:", $value // '');
+	return sprintf("  %-16s = %s\n", $label, $value // '');
 }
 
 
 sub _fmt_ts
 {
 	my ($ts) = @_;
-	return $ts
-		? strftime("%Y-%m-%d %H:%M UTC", gmtime($ts))
-		: '(none)';
+	return tsText($ts);
 }
 
 
@@ -755,14 +762,10 @@ sub _showObject
 	if ($obj_stub->{obj_type} eq 'track')
 	{
 		my $t = getTrack($dbh, $obj_stub->{uuid});
-		my $ts_start = $t->{ts_start}
-			? strftime("%Y-%m-%d %H:%M UTC", gmtime($t->{ts_start}))
-			: '(none)';
-		my $ts_end = $t->{ts_end}
-			? strftime("%Y-%m-%d %H:%M UTC", gmtime($t->{ts_end}))
-			: '(none)';
+		my $ts_start = tsText($t->{ts_start});
+		my $ts_end   = tsText($t->{ts_end});
 		$text .= _fmt('uuid',            ($t->{uuid} // '') . '  {mta_uuid}');
-		$text .= _fmt('companion_uuid',  $t->{companion_uuid}) if $t->{companion_uuid};
+		$text .= _fmt('companion_uuid', ($t->{companion_uuid} // '(none)') . '  {trk_uuid}');
 		$text .= _fmt('name',            $t->{name});
 		$text .= _fmt('comment',         $t->{comment});
 		$text .= _fmt('color',           $t->{color});
@@ -776,41 +779,21 @@ sub _showObject
 		$text .= _fmt('created_ts',      _fmt_ts($t->{created_ts}));
 		$text .= _fmt('modified_ts',     _fmt_ts($t->{modified_ts}));
 		my $pts = getTrackPoints($dbh, $t->{uuid});
-		if (@$pts)
-		{
-			$text .= "\n";
-			for my $i (0 .. $#$pts)
-			{
-				my $pt   = $pts->[$i];
-				my $d_ft = ($pt->{depth_cm} // 0) ? sprintf('%.1fft', $pt->{depth_cm} / 30.48) : '-';
-				my $t_f  = ($pt->{temp_k}   // 0) ? sprintf('%.1fF', ($pt->{temp_k} / 100 - 273) * 9 / 5 + 32) : '-';
-				my $ts_s = ($pt->{ts} // 0) ? strftime("%Y-%m-%d %H:%M:%S UTC", gmtime($pt->{ts})) : '-';
-				$text .= sprintf("  %2d  %9.6f  %10.6f  %7s  %6s  %s\n",
-					$i + 1, $pt->{lat} // 0, $pt->{lon} // 0, $d_ft, $t_f, $ts_s);
-			}
-		}
+		$text .= "\n" . trackPointsText($pts, with_datetime => 1) if @$pts;
 	}
 	elsif ($obj_stub->{obj_type} eq 'waypoint')
 	{
-		my $w = getWaypoint($dbh, $obj_stub->{uuid});
-		my $ts = $w->{created_ts}
-			? strftime("%Y-%m-%d %H:%M UTC", gmtime($w->{created_ts}))
-			: '(none)';
+		my $w  = getWaypoint($dbh, $obj_stub->{uuid});
+		my $ts = tsText($w->{created_ts});
 		$text .= _fmt('uuid',            $w->{uuid});
 		$text .= _fmt('name',            $w->{name});
 		$text .= _fmt('comment',         $w->{comment});
-		$text .= _fmt('lat',             formatLatLon($w->{lat}, 1));
-		$text .= _fmt('lon',             formatLatLon($w->{lon}, 0));
-		my $wpt_n    = $w->{wp_type} // 0;
-		my $wpt_name = $WP_TYPE_NAMES[$wpt_n] // '?';
-		my $sym_n    = $w->{sym} // 0;
-		my $sym_name = $apps::raymarine::NET::a_utils::E80_SYMS[$sym_n] // '?';
-		$text .= _fmt('wp_type',         "$wpt_n ($wpt_name)");
-		$text .= _fmt('sym',             "$sym_n ($sym_name)");
+		$text .= latLonLineText($w->{lat}, $w->{lon}, kw => 16);
+		$text .= _fmt('wp_type',         wpTypeText($w->{wp_type}));
+		$text .= _fmt('sym',             symText($w->{sym}));
 		$text .= _fmt('color',           $w->{color});
-		$text .= _fmt('depth_cm',        $w->{depth_cm});
-		$text .= _fmt('temp_k', sprintf('%d  (%.1f F)', $w->{temp_k}, ($w->{temp_k} / 100 - 273) * 9 / 5 + 32))
-			if $w->{temp_k};
+		$text .= _fmt('depth',           depthText($w->{depth_cm})) if $w->{depth_cm};
+		$text .= _fmt('temp_k',          tempKText($w->{temp_k}))   if $w->{temp_k};
 		$text .= _fmt('created_ts',      $ts);
 		$text .= _fmt('ts_source',       $w->{ts_source});
 		$text .= _fmt('source',          $w->{source});
@@ -826,19 +809,13 @@ sub _showObject
 		$text .= _fmt('name',            $r->{name});
 		$text .= _fmt('comment',         $r->{comment});
 		$text .= _fmt('color',           $r->{color});
+		$text .= _fmt('points',          scalar @$wps);
 		$text .= _fmt('collection_uuid', $r->{collection_uuid});
 		$text .= _fmt('position',        $r->{position});
 		$text .= _fmt('source',          $r->{source});
 		$text .= _fmt('created_ts',      _fmt_ts($r->{created_ts}));
 		$text .= _fmt('modified_ts',     _fmt_ts($r->{modified_ts}));
-		$text .= "\n";
-		for my $i (0 .. $#$wps)
-		{
-			my $wp = $wps->[$i];
-			$text .= sprintf("  %2d. %s\n", $i + 1, $wp->{name} // '');
-			$text .= sprintf("      %s\n", formatLatLon($wp->{lat}, 1));
-			$text .= sprintf("      %s\n", formatLatLon($wp->{lon}, 0));
-		}
+		$text .= "\n" . routePointsText($wps) if @$wps;
 	}
 
 	$this->{detail}->SetValue($text);
@@ -856,6 +833,7 @@ sub _showRoutePoint
 	$text .= _fmt('name',       $wp->{name});
 	$text .= _fmt('lat',        formatLatLon($wp->{lat} // 0, 1));
 	$text .= _fmt('lon',        formatLatLon($wp->{lon} // 0, 0));
+	$this->{ed_title}->SetLabel('Route Point');
 	$this->{detail}->SetValue($text);
 }
 
@@ -1031,12 +1009,14 @@ sub _loadEditor
 
 	my $show_name    = ($type eq 'collection' || $type eq 'object');
 	my $show_comment = ($type eq 'collection'
-		|| $obj_type eq 'waypoint' || $obj_type eq 'route');
+		|| $obj_type eq 'waypoint' || $obj_type eq 'route' || $obj_type eq 'track');
 	my $show_latlon  = ($obj_type eq 'waypoint');
 	my $show_wptype  = ($obj_type eq 'waypoint');
+	my $show_sym     = ($obj_type eq 'waypoint');
 	my $show_color    = ($obj_type eq 'waypoint'
 		|| $obj_type eq 'route' || $obj_type eq 'track');
-	my $show_e80_color = ($obj_type eq 'route' || $obj_type eq 'track');
+	my $show_e80_color = ($obj_type eq 'waypoint'
+		|| $obj_type eq 'route' || $obj_type eq 'track');
 	my $show_depth    = ($obj_type eq 'waypoint');
 
 	my $data;
@@ -1063,12 +1043,10 @@ sub _loadEditor
 	push @fields, 'lat'     if $show_latlon;
 	push @fields, 'lon'     if $show_latlon;
 	push @fields, 'wp_type' if $show_wptype;
+	push @fields, 'sym'     if $show_sym;
 	push @fields, 'color'   if $show_color;
 	push @fields, 'depth'   if $show_depth;
 	$this->_layoutEditor( \@fields);
-	# ed_e80_color is a companion of 'color' but is hidden for waypoints
-	# (route/track use the named-color choice; waypoint uses Pick... only).
-	$this->{ed_e80_color}->Show(0) if !$show_e80_color;
 
 	$this->{_loading_editor} = 1;
 
@@ -1086,10 +1064,15 @@ sub _loadEditor
 	if ($show_wptype)
 	{
 		my $wp_type = $data->{wp_type} // $WP_TYPE_NAV;
-		my $idx = $wp_type == $WP_TYPE_LABEL    ? 1
-		        : $wp_type == $WP_TYPE_SOUNDING ? 2
-		        :                                 0;
-		$this->{ed_wp_type}->SetSelection($idx);
+		$wp_type = $WP_TYPE_NAV if $wp_type < 0 || $wp_type > $#WP_TYPE_NAMES;
+		$this->{ed_wp_type}->SetSelection($wp_type);
+	}
+
+	if ($show_sym)
+	{
+		my $sym = $data->{sym} // 0;
+		$sym = 0 if $sym < 0 || $sym > $#E80_SYMS;
+		$this->{ed_sym}->SetSelection($sym);
 	}
 
 	_setColorSwatch($this, $data->{color}) if $show_color;
@@ -1227,8 +1210,12 @@ sub _onSave
 			warning(0, 0, "invalid lat/lon - save aborted");
 			return;
 		}
-		my @types   = ($WP_TYPE_NAV, $WP_TYPE_LABEL, $WP_TYPE_SOUNDING);
-		my $wp_type = $types[$this->{ed_wp_type}->GetSelection()] // $WP_TYPE_NAV;
+		# Choice indices align 1:1 with $WP_TYPE_* int constants (0..8)
+		# since @WP_TYPE_NAMES is indexed by them.
+		my $wp_type = $this->{ed_wp_type}->GetSelection();
+		$wp_type = $WP_TYPE_NAV if $wp_type < 0 || $wp_type > $#WP_TYPE_NAMES;
+		my $sym = $this->{ed_sym}->GetSelection();
+		$sym = 0 if $sym < 0 || $sym > $#E80_SYMS;
 		my $depth_str = $this->{ed_depth}->GetValue();
 		my $depth_cm  = 0;
 		if ($depth_str ne '')
@@ -1243,6 +1230,7 @@ sub _onSave
 			lat        => $lat,
 			lon        => $lon,
 			wp_type    => $wp_type,
+			sym        => $sym,
 			color      => $this->{_edit_color},
 			depth_cm   => $depth_cm,
 			created_ts => $w->{created_ts},
@@ -1258,8 +1246,11 @@ sub _onSave
 	}
 	elsif ($type eq 'object' && $obj_type eq 'track')
 	{
-		$dbh->do("UPDATE tracks SET name=?, color=? WHERE uuid=?",
-			[$this->{ed_name}->GetValue(), $this->{_edit_color}, $uuid]);
+		$dbh->do("UPDATE tracks SET name=?, comment=?, color=? WHERE uuid=?",
+			[$this->{ed_name}->GetValue(),
+			 $this->{ed_comment}->GetValue() // '',
+			 $this->{_edit_color},
+			 $uuid]);
 	}
 
 	if ($type eq 'object' && $rendered_uuids{$uuid})

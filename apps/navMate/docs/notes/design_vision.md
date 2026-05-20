@@ -13,28 +13,14 @@ with any waypoints that are missing by uuid, but also complicated with regards
 to determine where to place the waypoints within either heiarchy.  Additionally
 on the E80 it is a distinctly two step process.
 
+
+
+
 ### [item ordering UI]
 
 Drag/Drop UI for reordering items in winDatabase based on implmented
 navOperations operators.
 
-
-### [winE80 / Leaflet integration cluster]
-
-A cluster of related future work around displaying E80-native items in the
-Leaflet map with matching editor and visibility UI. These items are
-interdependent - treat as one design session, not five separate tasks:
-
-1. **Separate Leaflet layer for E80 items** - a Leaflet mode or layer set
-   that shows the winE80 database (E80-native items) distinctly from
-   navMate DB items.
-
-2. **Non-persistent visibility checkboxes on E80 items** - similar to the
-   winDatabase visibility UI, but for E80 items; session-only, not stored
-   to the navMate DB.
-
-3. **Editors for E80 items** - similar to the editors in winDatabase,
-   applied to the E80 item set.
 
 
 
@@ -54,10 +40,74 @@ GE does real-time collision-based decluttering; this is a simpler zoom-gate
 that approximates the same result without that complexity.
 
 
+
+
+
 ### [navMate preferences dialog]
 
 - navMate DB location
 - keybindings to command functions (a whole concept of its own)
+
+
+
+
+
+## data versioning, color scheme, and synchronization
+
+
+There is no kml <ExtendedData> per track point.
+Embedding <gx:SimpleArrayData> inside a <gx:Track> is dangerous: GE probably silently discards it.
+
+
+### [db_version increment wiring]
+
+`db_version`, `e80_version`, and `kml_version` columns are in schema 9.0 on
+`waypoints`, `routes`, and `tracks` (not on `collections` or `route_waypoints`).
+Columns carry correct defaults; increment logic is not yet wired.
+
+**db_version** - bumped on every navMate edit (UPDATE). Starts at 1 on INSERT.
+
+**e80_version** - NULL = never synced. Set to `db_version` at time of a successful
+upload or download. Version numbers are not stored on the E80 hardware. At connect
+time, `e80_version` is initialized from a token encoded in the E80 `comment` field
+(encoding TBD - pending E80 character-set and comment-length-limit verification).
+A waypoint arriving from the E80 with no token has `e80_version = 0`. When
+`e80_version < db_version` the object has been locally edited since last sync;
+when `e80_version > db_version` the E80 has a newer version - detectable via
+MODIFY events live, or via comment-token mismatch at startup (magenta display state).
+
+**kml_version** - NULL = never exported via versioned KML. Set to `db_version`
+at time of export.
+
+**Transport columns in core tables** - a deliberate choice. The alternative
+junction table `sync_state(object_uuid, transport, db_version_at_sync)` was
+rejected in favor of simplicity given the small, slow-moving transport list.
+
+**Wiring deferred** - all increment logic belongs in a dedicated session when
+the sync feature is ready to implement. See `[db_version increment wiring]` in todo.md.
+
+
+### [synchronization color scheme]
+Between winDatabase and winE80 highlight common "same" items in bold blue,
+"older items" in bold magenta, and newer items in "bold green" via inter-window
+analaysis.
+
+
+### [synchronization operations]
+Implement "sync->E80" and "sync<-DB" menu commands to synchronize
+out of date items in one-step directional manner.  These may be very
+similar but subtly different to the degree that any uuids showing up
+on the E80 should probably be considered "new" items, colored appropriately
+and downloaded to the database on a synch operation.
+
+
+
+
+
+
+
+
+
 
 
 ### [Progress-dialog accuracy / E80 quiescence detection]
@@ -173,6 +223,10 @@ Deferred. Not ready to open this can of worms yet -- documenting that the can ex
 that the bracket-system removal solved a different (testing-layer) problem while
 leaving this user-facing one open, and that the v1 entry point is small and
 self-contained when the time comes.
+
+
+
+
 
 
 ### [local GEBCO depth server]

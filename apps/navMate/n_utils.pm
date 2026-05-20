@@ -8,8 +8,10 @@ use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(time);
+use POSIX qw(strftime);
 use Pub::Utils;
 use n_defs;
+use apps::raymarine::NET::a_utils qw(northEastToLatLon @E80_SYMS);
 
 
 BEGIN
@@ -21,6 +23,16 @@ BEGIN
 		makeFSHUUID
 		parseLatLon
 		formatLatLon
+		latLonLineText
+		northEastLineText
+		symText
+		wpTypeText
+		depthText
+		tempKText
+		tsText
+		trackPointsText
+		routePointsText
+		uuidRefText
 		@E80_ROUTE_COLOR_ABGR
 		@E80_ROUTE_COLOR_NAMES
 		abgrToE80Index
@@ -187,6 +199,161 @@ sub abgrToE80Index
 
 my %_e80_exact_color = map { $_ => 1 } @E80_ROUTE_COLOR_ABGR;
 sub isExactE80Color { $_e80_exact_color{lc($_[0] // '')} ? 1 : 0 }
+
+
+#---------------------------------
+# info-text helpers
+#---------------------------------
+# Convergence layer used by winDatabase / winFSH / winE80 info panels.
+# Each returns the formatted "value" portion -- callers wrap with their
+# own "<key> = " prefix via sprintf / _fmt.
+
+sub latLonLineText
+	# Two-line block: "  lat = DD (DDM)\n  lon = DD (DDM)\n"
+	# Caller-supplied indent (default 2 spaces) and key width.
+{
+	my ($lat, $lon, %opts) = @_;
+	my $indent = $opts{indent} // '  ';
+	my $kw     = $opts{kw}     // 12;
+	return sprintf("%s%-${kw}s = %s\n%s%-${kw}s = %s\n",
+		$indent, 'lat', formatLatLon($lat // 0, 1),
+		$indent, 'lon', formatLatLon($lon // 0, 0));
+}
+
+
+sub northEastLineText
+	# Two-line block showing raw N/E ints AND the lat/lon they round-trip
+	# back to (diagnostic for Mercator precision delta).  nkey/ekey
+	# default to 'north'/'east' but can be set to 'north_start'/'east_end'
+	# etc. when an MTA record carries pair-suffixed fields.
+{
+	my ($north, $east, %opts) = @_;
+	my $indent = $opts{indent} // '  ';
+	my $kw     = $opts{kw}     // 12;
+	my $nkey   = $opts{nkey}   // 'north';
+	my $ekey   = $opts{ekey}   // 'east';
+	my $c = northEastToLatLon($north // 0, $east // 0);
+	return sprintf("%s%-${kw}s = %-12d -> %s\n%s%-${kw}s = %-12d -> %s\n",
+		$indent, $nkey, $north // 0, formatLatLon($c->{lat} + 0, 1),
+		$indent, $ekey, $east  // 0, formatLatLon($c->{lon} + 0, 0));
+}
+
+
+sub symText
+{
+	my ($sym) = @_;
+	$sym //= 0;
+	my $name = $E80_SYMS[$sym] // '?';
+	return "$sym ($name)";
+}
+
+
+sub wpTypeText
+{
+	my ($wt) = @_;
+	$wt //= 0;
+	my $name = $WP_TYPE_NAMES[$wt] // '?';
+	return "$wt ($name)";
+}
+
+
+sub depthText
+	# Accepts depth in cm; renders "N cm  (X.X ft)".
+{
+	my ($cm) = @_;
+	$cm //= 0;
+	return sprintf('%d cm  (%.1f ft)', $cm, $cm / 30.48);
+}
+
+
+sub tempKText
+	# Accepts Kelvin * 100; renders "N  (X.X F)".
+{
+	my ($tk) = @_;
+	$tk //= 0;
+	return sprintf('%d  (%.1f F)', $tk, ($tk / 100 - 273) * 9 / 5 + 32);
+}
+
+
+sub tsText
+	# Unix epoch seconds -> "YYYY-MM-DD HH:MM UTC" or "(none)".
+{
+	my ($ts) = @_;
+	return $ts ? strftime("%Y-%m-%d %H:%M UTC", gmtime($ts)) : '(none)';
+}
+
+
+sub trackPointsText
+	# Renders an indexed table of trackpoints.  Each point may carry
+	# {lat, lon, depth_cm OR depth, temp_k, ts} -- depth and ts are
+	# optional.  with_datetime=1 adds a trailing UTC timestamp column
+	# (only the DB carries per-point ts).
+{
+	my ($points, %opts) = @_;
+	return '' if !$points || !@$points;
+	my $with_dt = $opts{with_datetime} ? 1 : 0;
+	my $text = '';
+	for my $i (0 .. $#$points)
+	{
+		my $pt   = $points->[$i];
+		my $lat  = ($pt->{lat} // 0) + 0;
+		my $lon  = ($pt->{lon} // 0) + 0;
+		# (0,0) treated as a sentinel (FSH zero-zero filler) -- depth/temp
+		# blanked out to match the visual "no real data" cue.
+		my $sentinel = ($lat == 0 && $lon == 0) ? 1 : 0;
+		my $d_cm = $pt->{depth_cm} // $pt->{depth} // 0;
+		my $d_ft = (!$sentinel && $d_cm) ? sprintf('%.1fft', $d_cm / 30.48) : '-';
+		my $t_f  = (!$sentinel && ($pt->{temp_k} // 0))
+			? sprintf('%.1fF', ($pt->{temp_k} / 100 - 273) * 9 / 5 + 32)
+			: '-';
+		my $dt = '';
+		if ($with_dt)
+		{
+			$dt = (!$sentinel && ($pt->{ts} // 0))
+				? '  ' . strftime("%Y-%m-%d %H:%M:%S UTC", gmtime($pt->{ts}))
+				: '  -';
+		}
+		$text .= sprintf("  %3d  %9.6f  %10.6f  %8s  %6s%s\n",
+			$i + 1, $lat, $lon, $d_ft, $t_f, $dt);
+	}
+	return $text;
+}
+
+
+sub routePointsText
+	# Renders a list of route waypoints with their per-point geometry.
+	# Each point may carry {name, lat, lon, bearing, legLength, totLength}.
+	# bearing/legLength/totLength are present on E80/FSH route geometry
+	# records and absent in the DB; rendered conditionally.
+{
+	my ($points) = @_;
+	return '' if !$points || !@$points;
+	my $text = '';
+	for my $i (0 .. $#$points)
+	{
+		my $pt = $points->[$i];
+		$text .= sprintf("  %2d. %s\n", $i + 1, $pt->{name} // '');
+		$text .= sprintf("      lat       = %s\n", formatLatLon($pt->{lat} // 0, 1));
+		$text .= sprintf("      lon       = %s\n", formatLatLon($pt->{lon} // 0, 0));
+		$text .= sprintf("      bearing   = %.1f deg\n",
+			($pt->{bearing} / 10000) * (180 / 3.14159265358979))
+			if defined $pt->{bearing};
+		$text .= sprintf("      legLength = %d m\n", $pt->{legLength}) if defined $pt->{legLength};
+		$text .= sprintf("      totLength = %d m\n", $pt->{totLength}) if defined $pt->{totLength};
+	}
+	return $text;
+}
+
+
+sub uuidRefText
+	# Render a UUID with optional name resolution.  $resolver is a
+	# coderef taking the UUID and returning a descriptive string
+	# (e.g. 'group "Foo"') or undef when not found.
+{
+	my ($uuid, $resolver) = @_;
+	my $ref = $resolver ? $resolver->($uuid) : undef;
+	return $ref ? "$uuid = $ref" : $uuid;
+}
 
 
 1;

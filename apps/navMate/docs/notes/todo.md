@@ -8,104 +8,14 @@ own context here.
 
 ## Next
 
-
-### [db_version increment wiring]
-
-`db_version`, `e80_version`, and `kml_version` columns are in schema 9.0 on
-`waypoints`, `routes`, and `tracks` (not on `collections` or `route_waypoints`).
-Columns carry correct defaults; increment logic is not yet wired.
-
-**db_version** - bumped on every navMate edit (UPDATE). Starts at 1 on INSERT.
-
-**e80_version** - NULL = never synced. Set to `db_version` at time of a successful
-upload or download. Version numbers are not stored on the E80 hardware. At connect
-time, `e80_version` is initialized from a token encoded in the E80 `comment` field
-(encoding TBD - pending E80 character-set and comment-length-limit verification).
-A waypoint arriving from the E80 with no token has `e80_version = 0`. When
-`e80_version < db_version` the object has been locally edited since last sync;
-when `e80_version > db_version` the E80 has a newer version - detectable via
-MODIFY events live, or via comment-token mismatch at startup (magenta display state).
-
-**kml_version** - NULL = never exported via versioned KML. Set to `db_version`
-at time of export.
-
-**Transport columns in core tables** - a deliberate choice. The alternative
-junction table `sync_state(object_uuid, transport, db_version_at_sync)` was
-rejected in favor of simplicity given the small, slow-moving transport list.
-
-**Wiring deferred** - all increment logic belongs in a dedicated session when
-the sync feature is ready to implement. See `[db_version increment wiring]` in todo.md.
+[remove database track ts_start and ts_end times]
 
 
-### [synchronization color scheme]
-Between winDatabase and winE80 highlight common "same" items in bold blue,
-"older items" in bold magenta, and newer items in "bold green" via inter-window
-analaysis.
-
-### [synchronization operations]
-Implement "sync->E80" and "sync<-DB" menu commands to synchronize
-out of date items in one-step directional manner.  These may be very
-similar but subtly different to the degree that any uuids showing up
-on the E80 should probably be considered "new" items, colored appropriately
-and downloaded to the database on a synch operation.
-
-Claudes comments:
-
-The GE step may drop the extended data. Google Earth doesn't faithfully round-trip custom <ExtendedData> per track point when
-you export back out. If you add depth/temp as <gx:SimpleArrayData> inside a <gx:Track>, GE probably silently discards it on
-re-export. You might be better skipping GE entirely — go directly from fshConvert output to a navMate-readable format, bypassing   the navMate.kml/GE path.
-
-The deduplication problem is the real work. The ARCHIVE.FSH tracks likely already exist in navMate (imported earlier without
-depth/temp). After a re-import you'd need to match new-with-depth vs old-without-depth by position sequence (not name, since
-names may differ), transfer the depth/temp column values, and then delete the duplicates. That matching logic isn't trivial —
-track points need to align geometrically within some tolerance.
-
-The data might be sparse. Depth and temp are only non-zero in the FSH points where the E80 actually had a sensor reading at that
- moment, which (as you just confirmed) depends on the heading-change timing. Many points may still come out as zero even after
-recovery.
-
-The shortcut worth considering: since you have the ARCHIVE.FSH and the FSH reader (fshBlocks.pm) already confirmed working, you
-could write a direct FSH→navMate track_points injector that reads the FSH points, matches them to existing navMate tracks by
-lat/lon proximity, and just updates the depth_cm/temp_k columns — no KML, no GE, no re-import.
-
-Worth doing? Almost certainly yes if those tracks span 2008–2016 with actual sonar running. Want to start with a read of what's
-actually in ARCHIVE.FSH track points depth/temp wise before committing to the pipeline?
 
 
 
 ## Soon
 
-
-
-
-### [add comment column to tracks]
-The `tracks` schema currently has no `comment` column because the E80 protocol
-carries no track comment field.  A navMate-side comment would not round-trip
-through the E80 (transport-side limitation, accept silently), but it WOULD
-round-trip through KML (`<description>` on a `<Placemark>`) and through native
-.navmate exports.  Useful for annotating tracks with voyage notes, conditions,
-or matcher-pipeline observations.
-
-Schema change:
-- Add `comment TEXT DEFAULT ''` to the tracks table definition in `navDB.pm`.
-- Add the `ALTER TABLE tracks ADD COLUMN comment TEXT DEFAULT ''` migration.
-- Bump `$SCHEMA_VERSION` in `n_defs.pm` (per `feedback_schema_version.md`).
-- Surface in the single-item editor (`winDatabase.pm` track branch of
-  `_loadEditor` / `_onSave`).
-- `winMultiEditor` will automatically pick it up: the comment row's
-  applies-to-tracks gate just needs to flip true.
-- Update KML export/import to carry the new field; confirm import does not
-  clobber when the source KML lacks `<description>`.
-
-
-### [fish out available track depth and temperature info]
-In fshConvert -> kml, which I used to get many of my tracks, I did not export <ExtendedData> elements (at all, and still do not)
-for track depths and temps.  They might have existed in my many years of tracks unbeknownst to me.
-I have the ability to recover some of them from the E80 tracks in my sole remaining ARCHIVE.FSH if
-I modify the genKML.pm in fshConvert, re-export the ARCHIVE to GE via fshConvert, and then
-export it from GE to navMate.kml, modify oneTimeImport.pm accordingly, do another oneTimeImport,
-and then dig those duplicated tracks out of oldE80 and place them where possible in the rest of
-the navMate database.
 
 
 ### [sort database collecton context menu command]
@@ -130,65 +40,8 @@ that case.
 
 
 
-### [winDatabase reordering UX]
-Add reorder capability to winDatabase for items in the navMate database.
-Scope is narrow: navMate DB reordering only -- no E80 sync or visibility
-tie-in. Schema 10.0 added `position REAL` to collections, waypoints, routes,
-and tracks; the storage foundation is in place. UI implementation needed.
-See `[item ordering UI]` in design_vision.md for design context.
-
-### [WPMGR post-delete GET_ITEM error fix]
-Known fix - see open_bugs.md. One-liner in the GET_ITEM/waitReply failure
-path for 'mod_item' commands.
-
-
-
-
----
-
-## Later
-
-
-### [Item 11 cut timing]
-Design decision: currently a DB waypoint is deleted at cut time, not deferred
-until paste succeeds. If the paste never happens (blocked, error, or user
-abandons the clipboard), the WP is permanently gone from DB - a data-loss risk.
-
-Options:
-- **A** - Defer DB deletion to paste-success. Clipboard stores a "pending
-  delete" flag. Safest; requires refactoring the CUT path in navOpsDB.pm.
-- **B** - Disallow D-CT-DB in the UI menu. Force user to delete explicitly
-  only after confirming paste succeeded.
-- **C** - Accept and document: cut = delete, paste = re-create. User
-  responsibility to not abandon a cut clipboard.
-
-Affects: navOpsDB.pm (`_cutDatabaseWaypoint`), navOps.pm (doCut).
-
-### [wp_type semantics after operations]
-The `wp_type` field (sounding / label / nav) was assigned by the original
-oneTimeImport and reflects the source character of each waypoint. Open design
-question: does wp_type stay stable across operations, or should it shift?
-
-Specific concern: if a waypoint is used as a route point it is hard to imagine
-a sounding or label playing that role - nav seems like the only sensible
-route-point type. But it is unclear whether wp_type should be coerced on paste
-into a route, or left alone and treated as display metadata only.
-
-A second angle: wp_type may interact with the navOperations scheme in ways not
-yet designed - e.g. filtering what can be pasted where, or affecting how items
-are rendered in the tree. No decision yet; capture here before the question
-gets lost. Resolve before any work that touches wp_type assignment at paste time.
-
----
-
 ## Ongoing
-
-### [Doc hierarchy pruning]
-After the navOps scheme redesign is complete, a severe pruning pass is
-needed: context_menu.md, context_menu_testplan.md, last_testrun.md,
-and large portions of the runbook, implementation.md, and architecture.md
-will need to be rewritten or retired. Primary Claude must explicitly
-authorize this pass - do not begin until instructed.
 
 ### [oldE80 archaeology]
 Patrick-managed. Full checklist in `docs/notes/oldE80-Fixup.md`.
+

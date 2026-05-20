@@ -783,7 +783,7 @@ sub _dbDescriptor
 		commit      => \&_dbCommit,
 		color_row   => 'abgr',
 		has_wp_type => 1,
-		has_sym     => 0,
+		has_sym     => 1,
 		comment_max => undef,
 	};
 }
@@ -801,7 +801,7 @@ sub _dbFetch
 		if ($ot eq 'waypoint')
 		{
 			$rec = $dbh->get_record(
-				"SELECT color, comment, wp_type FROM waypoints WHERE uuid=?",
+				"SELECT color, comment, wp_type, sym FROM waypoints WHERE uuid=?",
 				[$it->{uuid}]);
 		}
 		elsif ($ot eq 'route')
@@ -813,13 +813,14 @@ sub _dbFetch
 		elsif ($ot eq 'track')
 		{
 			$rec = $dbh->get_record(
-				"SELECT color FROM tracks WHERE uuid=?",
+				"SELECT color, comment FROM tracks WHERE uuid=?",
 				[$it->{uuid}]);
 		}
 		$rec //= {};
 		$it->{color}   = $rec->{color};
 		$it->{comment} = $rec->{comment} if exists $rec->{comment};
 		$it->{wp_type} = $rec->{wp_type} if exists $rec->{wp_type};
+		$it->{sym}     = $rec->{sym}     if exists $rec->{sym};
 	}
 	disconnectDB($dbh);
 }
@@ -847,13 +848,14 @@ sub _dbCommit
 			          : next;
 			my %dirty;
 			$dirty{color} = $changes->{color} if exists $changes->{color};
-			if (exists $changes->{comment} && $ot ne 'track')
-			{
-				$dirty{comment} = $changes->{comment};
-			}
+			$dirty{comment} = $changes->{comment} if exists $changes->{comment};
 			if (exists $changes->{wp_type} && $ot eq 'waypoint')
 			{
 				$dirty{wp_type} = $changes->{wp_type};
+			}
+			if (exists $changes->{sym} && $ot eq 'waypoint')
+			{
+				$dirty{sym} = $changes->{sym};
 			}
 			next if !%dirty;
 			$dbh->update_record($table, \%dirty, 'uuid', $it->{uuid}, 1);

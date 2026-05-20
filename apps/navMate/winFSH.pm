@@ -484,14 +484,16 @@ sub _buildRoutes
 		my $route_item = $tree->AppendItem($hdr, "$r->{name} ($n pts)", -1, -1,
 			Wx::TreeItemData->new({ type => 'route', uuid => $uuid, data => $r }));
 
-		for my $wp (@$wpts)
+		for my $i (0 .. $#$wpts)
 		{
+			my $wp    = $wpts->[$i];
 			my $label = $wp->{name} // $wp->{uuid} // '?';
 			$tree->AppendItem($route_item, $label, -1, -1,
 				Wx::TreeItemData->new({
 					type       => 'route_point',
 					uuid       => $wp->{uuid},
 					route_uuid => $uuid,
+					position   => $i + 1,
 					data       => $wp,
 				}));
 		}
@@ -628,12 +630,14 @@ sub onTreeSelect
 	elsif ($type eq 'my_waypoints')
 	{
 		$this->_clearEditor();
+		$this->{ed_title}->SetLabel('My Waypoints');
 		$text = "Standalone waypoints (BLK_WPT) not assigned to any named group.";
 	}
 	elsif ($type eq 'route_point' && $node->{data})
 	{
 		$this->_clearEditor();
-		$text = _fshWaypointText($node);
+		$this->{ed_title}->SetLabel('Route Point');
+		$text = _fshRoutePointText($node);
 	}
 	elsif ($type eq 'waypoint' && $node->{data})
 	{
@@ -647,8 +651,8 @@ sub onTreeSelect
 		$this->_loadEditor($node);
 		my $grp  = $node->{data};
 		my $wpts = $grp->{wpts} // [];
-		$text  = "Group: $grp->{name}\n";
-		$text .= sprintf("  %-12s = %s\n", 'uuid', $node->{uuid}) if $node->{uuid};
+		$text .= sprintf("  %-12s = %s\n", 'uuid',      $node->{uuid}) if $node->{uuid};
+		$text .= sprintf("  %-12s = %s\n", 'name',      $grp->{name} // '');
 		$text .= sprintf("  %-12s = %d\n", 'waypoints', scalar @$wpts);
 	}
 	elsif ($type eq 'route' && $node->{data})
@@ -668,36 +672,40 @@ sub onTreeSelect
 }
 
 
+sub _fshRoutePointText
+	# Minimal route-point view: just the ordered reference + the WP's
+	# name and lat/lon for quick orientation.  Mirrors winDatabase's
+	# _showRoutePoint -- avoids dumping the full referenced waypoint.
+{
+	my ($node) = @_;
+	my $wp   = $node->{data} // {};
+	my $text = '';
+	$text .= sprintf("  %-12s = %s\n", 'position',   $node->{position}   // '');
+	$text .= sprintf("  %-12s = %s\n", 'route_uuid', $node->{route_uuid} // '');
+	$text .= sprintf("  %-12s = %s\n", 'uuid',       $node->{uuid}       // '');
+	$text .= sprintf("  %-12s = %s\n", 'name',       $wp->{name}         // '');
+	$text .= latLonLineText($wp->{lat}, $wp->{lon}) if defined $wp->{lat} && defined $wp->{lon};
+	return $text;
+}
+
+
 sub _fshWaypointText
 {
 	my ($node) = @_;
 	my $wp   = $node->{data};
-	my $text = "\nWaypoint\n";
+	my $text = '';
 	$text .= sprintf("  %-12s = %s\n", 'uuid',    $node->{uuid} // '') if $node->{uuid};
 	$text .= sprintf("  %-12s = %s\n", 'name',    $wp->{name}    // '');
 	$text .= sprintf("  %-12s = %s\n", 'comment', $wp->{comment} // '') if $wp->{comment};
-	$text .= sprintf("  %-12s = %.6f\n", 'lat',   $wp->{lat}  // 0);
-	$text .= sprintf("  %-12s = %.6f\n", 'lon',   $wp->{lon}  // 0);
-	if (defined $wp->{sym})
-	{
-		my $sn = $apps::raymarine::NET::a_utils::E80_SYMS[$wp->{sym}] // '?';
-		$text .= sprintf("  %-12s = %d  (%s)\n", 'sym', $wp->{sym}, $sn);
-	}
-	if ($wp->{depth})
-	{
-		my $d_ft = sprintf('%.1f ft', $wp->{depth} / 30.48);
-		$text .= sprintf("  %-12s = %d cm  (%s)\n", 'depth', $wp->{depth}, $d_ft);
-	}
-	if ($wp->{temp_k})
-	{
-		my $t_f = sprintf('%.1f F', ($wp->{temp_k} / 100 - 273) * 9 / 5 + 32);
-		$text .= sprintf("  %-12s = %d  (%s)\n", 'temp_k', $wp->{temp_k}, $t_f);
-	}
-	if ($wp->{date} || $wp->{time})
-	{
-		$text .= sprintf("  %-12s = %s\n", 'datetime',
-			fshDateTimeToStr($wp->{date} // 0, $wp->{time} // 0));
-	}
+	$text .= latLonLineText($wp->{lat}, $wp->{lon});
+	$text .= northEastLineText($wp->{north}, $wp->{east})
+		if defined $wp->{north} && defined $wp->{east};
+	$text .= sprintf("  %-12s = %s\n", 'sym',     symText($wp->{sym}))    if defined $wp->{sym};
+	$text .= sprintf("  %-12s = %s\n", 'depth',   depthText($wp->{depth})) if $wp->{depth};
+	$text .= sprintf("  %-12s = %s\n", 'temp_k',  tempKText($wp->{temp_k})) if $wp->{temp_k};
+	$text .= sprintf("  %-12s = %s\n", 'datetime',
+			fshDateTimeToStr($wp->{date} // 0, $wp->{time} // 0))
+		if $wp->{date} || $wp->{time};
 	return $text;
 }
 
@@ -707,22 +715,13 @@ sub _fshRouteText
 	my ($node) = @_;
 	my $r    = $node->{data};
 	my $wpts = $r->{wpts} // [];
-	my $text = "\nRoute\n";
+	my $text = '';
 	$text .= sprintf("  %-12s = %s\n", 'uuid',    $node->{uuid} // '') if $node->{uuid};
 	$text .= sprintf("  %-12s = %s\n", 'name',    $r->{name}    // '');
 	$text .= sprintf("  %-12s = %s\n", 'comment', $r->{comment} // '') if $r->{comment};
 	$text .= sprintf("  %-12s = %d\n", 'color',   $r->{color}   // 0)  if defined $r->{color};
 	$text .= sprintf("  %-12s = %d\n", 'points',  scalar @$wpts);
-	if (@$wpts)
-	{
-		$text .= "\n";
-		for my $i (0 .. $#$wpts)
-		{
-			my $wp = $wpts->[$i];
-			$text .= sprintf("  %2d  %9.6f  %10.6f  %s\n",
-				$i + 1, $wp->{lat} // 0, $wp->{lon} // 0, $wp->{name} // '');
-		}
-	}
+	$text .= "\n" . routePointsText($wpts) if @$wpts;
 	return $text;
 }
 
@@ -733,30 +732,29 @@ sub _fshTrackText
 	my $track  = $node->{data};
 	my $points = ref $track->{points} eq 'ARRAY' ? $track->{points} : [];
 	my $pts    = $track->{cnt} // scalar @$points;
-	my $text   = "Track:  $track->{name}\n";
-	$text .= "UUID:     $track->{mta_uuid}  {mta_uuid}\n" if $track->{mta_uuid};
-	$text .= "trk_uuid: $track->{trk_uuid}\n" if $track->{trk_uuid};
-	$text .= "Points: $pts\n";
-	$text .= "Color:  $track->{color}\n" if defined $track->{color};
-	if (@$points)
-	{
-		$text .= "\n";
-		for my $i (0 .. $#$points)
-		{
-			my $pt          = $points->[$i];
-			my $lat         = ($pt->{lat} // 0) + 0;
-			my $lon         = ($pt->{lon} // 0) + 0;
-			my $is_sentinel = ($lat == 0 && $lon == 0);
-			my $d_ft = $is_sentinel ? '-'
-					 : ($pt->{depth} // 0) ? sprintf('%.1fft', $pt->{depth} / 30.48)
-					 : '-';
-			my $t_f  = $is_sentinel ? '-'
-					 : ($pt->{temp_k} // 0) ? sprintf('%.1fF', ($pt->{temp_k} / 100 - 273) * 9 / 5 + 32)
-					 : '-';
-			$text .= sprintf("  %2d  %9.6f  %10.6f  %7s  %s\n",
-				$i + 1, $lat, $lon, $d_ft, $t_f);
-		}
-	}
+	my $text   = '';
+	$text .= sprintf("  %-12s = %s\n", 'mta_uuid', $track->{mta_uuid}) if $track->{mta_uuid};
+	$text .= sprintf("  %-12s = %s\n", 'trk_uuid', $track->{trk_uuid}) if $track->{trk_uuid};
+	$text .= sprintf("  %-12s = %s\n", 'name',     $track->{name}     // '');
+	$text .= sprintf("  %-12s = %d\n", 'points',   $pts);
+	$text .= sprintf("  %-12s = %s\n", 'color',    $track->{color})   if defined $track->{color};
+	$text .= sprintf("  %-12s = %d m  (%.1f km)\n", 'length', $track->{length}, $track->{length} / 1000)
+		if defined $track->{length};
+	$text .= northEastLineText($track->{north_start}, $track->{east_start},
+			nkey => 'north_start', ekey => 'east_start')
+		if defined $track->{north_start} && defined $track->{east_start};
+	$text .= sprintf("  %-12s = %s\n", 'depth_start',  depthText($track->{depth_start}))
+		if $track->{depth_start};
+	$text .= sprintf("  %-12s = %s\n", 'temp_k_start', tempKText($track->{temp_k_start}))
+		if $track->{temp_k_start};
+	$text .= northEastLineText($track->{north_end}, $track->{east_end},
+			nkey => 'north_end', ekey => 'east_end')
+		if defined $track->{north_end} && defined $track->{east_end};
+	$text .= sprintf("  %-12s = %s\n", 'depth_end',  depthText($track->{depth_end}))
+		if $track->{depth_end};
+	$text .= sprintf("  %-12s = %s\n", 'temp_k_end', tempKText($track->{temp_k_end}))
+		if $track->{temp_k_end};
+	$text .= "\n" . trackPointsText($points) if @$points;
 	return $text;
 }
 

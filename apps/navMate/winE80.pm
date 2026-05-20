@@ -43,7 +43,7 @@ use Wx::Event qw(
 	EVT_SIZE);
 use Pub::Utils qw(display warning error);
 use Pub::WX::Window;
-use apps::raymarine::NET::b_records qw(wpmgrRecordToText);
+use apps::raymarine::FSH::fshUtils qw(fshDateTimeToStr);
 use apps::raymarine::NET::c_RAYDP;
 use n_defs;
 use n_utils;
@@ -373,19 +373,18 @@ sub _buildGroups
 	my $hdr = $tree->AppendItem($root, 'Groups', -1, -1,
 		Wx::TreeItemData->new({ type => 'header', kind => 'groups' }));
 
-	# My Waypoints -- synthesized, always first
-	if (@ungrouped)
+	# My Waypoints -- synthesized, always first.  Created unconditionally
+	# so it remains a valid navOps paste target even when E80 has zero
+	# ungrouped waypoints (parallels winFSH).
+	my $n     = scalar @ungrouped;
+	my $label = $n ? "My Waypoints ($n)" : 'My Waypoints';
+	my $mw    = $tree->AppendItem($hdr, $label, -1, -1,
+		Wx::TreeItemData->new({ type => 'my_waypoints' }));
+	for my $uuid (@ungrouped)
 	{
-		my $n = scalar @ungrouped;
-		my $mw = $tree->AppendItem($hdr, "My Waypoints ($n)", -1, -1,
-			Wx::TreeItemData->new({ type => 'my_waypoints' }));
-
-		for my $uuid (@ungrouped)
-		{
-			my $wp = $wps->{$uuid};
-			$tree->AppendItem($mw, $wp->{name} // $uuid, -1, -1,
-				Wx::TreeItemData->new({ type => 'waypoint', uuid => $uuid, data => $wp }));
-		}
+		my $wp = $wps->{$uuid};
+		$tree->AppendItem($mw, $wp->{name} // $uuid, -1, -1,
+			Wx::TreeItemData->new({ type => 'waypoint', uuid => $uuid, data => $wp }));
 	}
 
 	# named groups, sorted by name
@@ -431,15 +430,18 @@ sub _buildRoutes
 		my $route_item = $tree->AppendItem($hdr, "$r->{name} ($n pts)", -1, -1,
 			Wx::TreeItemData->new({ type => 'route', uuid => $uuid, data => $r }));
 
-		for my $wp_uuid (@{$r->{uuids} // []})
+		my $route_uuids = $r->{uuids} // [];
+		for my $i (0 .. $#$route_uuids)
 		{
-			my $wp    = $wps->{$wp_uuid};
-			my $label = $wp ? ($wp->{name} // $wp_uuid) : "($wp_uuid)";
+			my $wp_uuid = $route_uuids->[$i];
+			my $wp      = $wps->{$wp_uuid};
+			my $label   = $wp ? ($wp->{name} // $wp_uuid) : "($wp_uuid)";
 			$tree->AppendItem($route_item, $label, -1, -1,
 				Wx::TreeItemData->new({
 					type       => 'route_point',
 					uuid       => $wp_uuid,
 					route_uuid => $uuid,
+					position   => $i + 1,
 					data       => $wp,
 				}));
 		}
@@ -497,6 +499,22 @@ sub onTreeSelect
 	my $wpmgr = $raydp ? $raydp->findImplementedService('WPMGR') : undef;
 	my $text  = '';
 
+	# Resolver for trailing waypoint-record UUIDs (back-references to
+	# groups/routes/waypoints this object belongs to).  Just shows a
+	# descriptive string if it matches; otherwise returns undef and the
+	# raw UUID stands alone.
+	my $resolver = sub {
+		my ($u) = @_;
+		return undef if !$wpmgr;
+		my $g = $wpmgr->{groups}{$u};
+		return 'group "' . ($g->{name} // '') . '"' if $g;
+		my $r = $wpmgr->{routes}{$u};
+		return 'route "' . ($r->{name} // '') . '"' if $r;
+		my $w = $wpmgr->{waypoints}{$u};
+		return 'waypoint "' . ($w->{name} // '') . '"' if $w;
+		return undef;
+	};
+
 	if ($type eq 'header')
 	{
 		$this->_clearEditor();
@@ -505,59 +523,38 @@ sub onTreeSelect
 	elsif ($type eq 'my_waypoints')
 	{
 		$this->_clearEditor();
+		$this->{ed_title}->SetLabel('My Waypoints');
 		$text = "Synthesized node: waypoints not assigned to any named group.";
 	}
 	elsif ($type eq 'route_point' && $node->{data})
 	{
 		$this->_clearEditor();
-		$text = wpmgrRecordToText($node->{data}, 'WAYPOINT', 2, 0, undef, $wpmgr);
-		$text = sprintf("  %-10s = %s\n", 'uuid', $node->{uuid}) . $text if $node->{uuid};
+		$this->{ed_title}->SetLabel('Route Point');
+		$text = _e80RoutePointText($node);
 	}
 	elsif ($type eq 'waypoint' && $node->{data})
 	{
 		$this->{_edit_item} = $item;
 		$this->_loadEditor($node);
-		$text = wpmgrRecordToText($node->{data}, 'WAYPOINT', 2, 0, undef, $wpmgr);
-		$text = sprintf("  %-10s = %s\n", 'uuid', $node->{uuid}) . $text if $node->{uuid};
+		$text = _e80WaypointText($node, $resolver);
 	}
 	elsif ($type eq 'group' && $node->{data})
 	{
 		$this->{_edit_item} = $item;
 		$this->_loadEditor($node);
-		$text = wpmgrRecordToText($node->{data}, 'GROUP', 2, 0, undef, $wpmgr);
-		$text = sprintf("  %-10s = %s\n", 'uuid', $node->{uuid}) . $text if $node->{uuid};
+		$text = _e80GroupText($node, $wpmgr);
 	}
 	elsif ($type eq 'route' && $node->{data})
 	{
 		$this->{_edit_item} = $item;
 		$this->_loadEditor($node);
-		$text = wpmgrRecordToText($node->{data}, 'ROUTE', 2, 0, undef, $wpmgr);
-		$text = sprintf("  %-10s = %s\n", 'uuid', $node->{uuid}) . $text if $node->{uuid};
+		$text = _e80RouteText($node, $wpmgr);
 	}
 	elsif ($type eq 'track' && $node->{data})
 	{
 		$this->{_edit_item} = $item;
 		$this->_loadEditor($node);
-		my $track = $node->{data};
-		my $pts   = $track->{cnt1} // (ref $track->{points} ? scalar @{$track->{points}} : 0);
-		$text  = "Track:  $track->{name}\n";
-		$text .= "UUID:     $node->{uuid}  {mta_uuid}\n";
-		$text .= "trk_uuid: $track->{trk_uuid}\n" if $track->{trk_uuid};
-		$text .= "Points: $pts\n";
-		$text .= "Color:  $track->{color}\n" if defined $track->{color};
-		my $point_list = ref $track->{points} eq 'ARRAY' ? $track->{points} : [];
-		if (@$point_list)
-		{
-			$text .= "\n";
-			for my $i (0 .. $#$point_list)
-			{
-				my $pt   = $point_list->[$i];
-				my $d_ft = ($pt->{depth} // 0) ? sprintf('%.1fft', $pt->{depth} / 30.48) : '-';
-				my $t_f  = ($pt->{temp_k} // 0) ? sprintf('%.1fF', ($pt->{temp_k} / 100 - 273) * 9 / 5 + 32) : '-';
-				$text .= sprintf("  %2d  %9.6f  %10.6f  %7s  %s\n",
-					$i + 1, ($pt->{lat} // 0) + 0, ($pt->{lon} // 0) + 0, $d_ft, $t_f);
-			}
-		}
+		$text = _e80TrackText($node);
 	}
 	else
 	{
@@ -565,6 +562,165 @@ sub onTreeSelect
 	}
 
 	$this->{detail}->SetValue($text);
+}
+
+
+sub _e80RoutePointText
+	# Minimal route-point view; mirrors winDatabase's _showRoutePoint.
+{
+	my ($node) = @_;
+	my $wp   = $node->{data} // {};
+	my $text = '';
+	$text .= sprintf("  %-12s = %s\n", 'position',   $node->{position}   // '');
+	$text .= sprintf("  %-12s = %s\n", 'route_uuid', $node->{route_uuid} // '');
+	$text .= sprintf("  %-12s = %s\n", 'uuid',       $node->{uuid}       // '');
+	$text .= sprintf("  %-12s = %s\n", 'name',       $wp->{name}         // '');
+	$text .= latLonLineText($wp->{lat}, $wp->{lon}) if defined $wp->{lat} && defined $wp->{lon};
+	return $text;
+}
+
+
+sub _e80WaypointText
+{
+	my ($node, $resolver) = @_;
+	my $wp   = $node->{data};
+	my $text = '';
+	$text .= sprintf("  %-12s = %s\n", 'uuid',    $node->{uuid} // '') if $node->{uuid};
+	$text .= sprintf("  %-12s = %s\n", 'name',    $wp->{name}    // '');
+	$text .= sprintf("  %-12s = %s\n", 'comment', $wp->{comment} // '') if $wp->{comment};
+	$text .= latLonLineText($wp->{lat}, $wp->{lon});
+	$text .= northEastLineText($wp->{north}, $wp->{east})
+		if defined $wp->{north} && defined $wp->{east};
+	$text .= sprintf("  %-12s = %s\n", 'sym',     symText($wp->{sym}))    if defined $wp->{sym};
+	$text .= sprintf("  %-12s = %s\n", 'depth',   depthText($wp->{depth})) if $wp->{depth};
+	$text .= sprintf("  %-12s = %s\n", 'temp_k',  tempKText($wp->{temp_k})) if $wp->{temp_k};
+	$text .= sprintf("  %-12s = %s\n", 'datetime',
+			fshDateTimeToStr($wp->{date} // 0, $wp->{time} // 0))
+		if $wp->{date} || $wp->{time};
+
+	# Trailing UUID back-references: groups/routes this waypoint is a
+	# member of (E80-only; FSH stores membership one-way).  Sometimes
+	# self-referential, not consistently maintained -- just show them.
+	my $uuids = $wp->{uuids} // [];
+	if (@$uuids)
+	{
+		$text .= "\n  Member of:\n";
+		for my $u (@$uuids)
+		{
+			$text .= '    ' . uuidRefText($u, $resolver) . "\n";
+		}
+	}
+	return $text;
+}
+
+
+sub _e80GroupText
+{
+	my ($node, $wpmgr) = @_;
+	my $g    = $node->{data};
+	my $uuids = $g->{uuids} // [];
+	my $text = '';
+	$text .= sprintf("  %-12s = %s\n", 'uuid',    $node->{uuid} // '') if $node->{uuid};
+	$text .= sprintf("  %-12s = %s\n", 'name',    $g->{name}    // '');
+	$text .= sprintf("  %-12s = %s\n", 'comment', $g->{comment} // '') if $g->{comment};
+	$text .= sprintf("  %-12s = %d\n", 'waypoints', scalar @$uuids);
+	if (@$uuids && $wpmgr)
+	{
+		my @wpts;
+		for my $u (@$uuids)
+		{
+			my $w = $wpmgr->{waypoints}{$u};
+			push @wpts, {
+				name => $w ? ($w->{name} // '') : '(unknown)',
+				lat  => $w ? $w->{lat} : 0,
+				lon  => $w ? $w->{lon} : 0,
+			};
+		}
+		$text .= "\n" . routePointsText(\@wpts);
+	}
+	return $text;
+}
+
+
+sub _e80RouteText
+{
+	my ($node, $wpmgr) = @_;
+	my $r      = $node->{data};
+	my $uuids  = $r->{uuids}  // [];
+	my $points = $r->{points} // [];
+	my $text   = '';
+	$text .= sprintf("  %-12s = %s\n", 'uuid',     $node->{uuid} // '') if $node->{uuid};
+	$text .= sprintf("  %-12s = %s\n", 'name',     $r->{name}    // '');
+	$text .= sprintf("  %-12s = %s\n", 'comment',  $r->{comment} // '') if $r->{comment};
+	$text .= sprintf("  %-12s = %d\n", 'color',    $r->{color}   // 0)  if defined $r->{color};
+	$text .= sprintf("  %-12s = %d\n", 'points',   scalar @$uuids);
+	$text .= sprintf("  %-12s = %d m\n", 'distance', $r->{distance}) if defined $r->{distance};
+	if (defined $r->{lat_start} && defined $r->{lon_start})
+	{
+		$text .= sprintf("  %-12s = %s\n", 'start_lat', formatLatLon($r->{lat_start} / 1e7, 1));
+		$text .= sprintf("  %-12s = %s\n", 'start_lon', formatLatLon($r->{lon_start} / 1e7, 0));
+	}
+	if (defined $r->{lat_end} && defined $r->{lon_end})
+	{
+		$text .= sprintf("  %-12s = %s\n", 'end_lat',   formatLatLon($r->{lat_end} / 1e7, 1));
+		$text .= sprintf("  %-12s = %s\n", 'end_lon',   formatLatLon($r->{lon_end} / 1e7, 0));
+	}
+
+	# Merge member-WP info (uuid -> wpmgr lookup for name/lat/lon) with
+	# the per-point geometry record (bearing/legLength/totLength).
+	if (@$uuids)
+	{
+		my @merged;
+		for my $i (0 .. $#$uuids)
+		{
+			my $u = $uuids->[$i];
+			my $w = $wpmgr ? $wpmgr->{waypoints}{$u} : undef;
+			my $p = $points->[$i] // {};
+			push @merged, {
+				name      => $w ? ($w->{name} // '') : '(unknown)',
+				lat       => $w ? $w->{lat} : 0,
+				lon       => $w ? $w->{lon} : 0,
+				bearing   => $p->{bearing},
+				legLength => $p->{legLength},
+				totLength => $p->{totLength},
+			};
+		}
+		$text .= "\n" . routePointsText(\@merged);
+	}
+	return $text;
+}
+
+
+sub _e80TrackText
+{
+	my ($node) = @_;
+	my $track  = $node->{data};
+	my $points = ref $track->{points} eq 'ARRAY' ? $track->{points} : [];
+	my $pts    = $track->{cnt1} // scalar @$points;
+	my $text   = '';
+	$text .= sprintf("  %-12s = %s\n", 'mta_uuid', $node->{uuid}    // '') if $node->{uuid};
+	$text .= sprintf("  %-12s = %s\n", 'trk_uuid', $track->{trk_uuid}) if $track->{trk_uuid};
+	$text .= sprintf("  %-12s = %s\n", 'name',     $track->{name}     // '');
+	$text .= sprintf("  %-12s = %d\n", 'points',   $pts);
+	$text .= sprintf("  %-12s = %s\n", 'color',    $track->{color})   if defined $track->{color};
+	$text .= sprintf("  %-12s = %d m  (%.1f km)\n", 'length', $track->{length}, $track->{length} / 1000)
+		if defined $track->{length};
+	$text .= northEastLineText($track->{north_start}, $track->{east_start},
+			nkey => 'north_start', ekey => 'east_start')
+		if defined $track->{north_start} && defined $track->{east_start};
+	$text .= sprintf("  %-12s = %s\n", 'depth_start',  depthText($track->{depth_start}))
+		if $track->{depth_start};
+	$text .= sprintf("  %-12s = %s\n", 'temp_k_start', tempKText($track->{temp_k_start}))
+		if $track->{temp_k_start};
+	$text .= northEastLineText($track->{north_end}, $track->{east_end},
+			nkey => 'north_end', ekey => 'east_end')
+		if defined $track->{north_end} && defined $track->{east_end};
+	$text .= sprintf("  %-12s = %s\n", 'depth_end',  depthText($track->{depth_end}))
+		if $track->{depth_end};
+	$text .= sprintf("  %-12s = %s\n", 'temp_k_end', tempKText($track->{temp_k_end}))
+		if $track->{temp_k_end};
+	$text .= "\n" . trackPointsText($points) if @$points;
+	return $text;
 }
 
 

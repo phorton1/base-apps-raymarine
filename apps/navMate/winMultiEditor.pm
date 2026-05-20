@@ -200,7 +200,7 @@ sub new
 {
 	my ($class, $parent, $items, $descriptor) = @_;
 
-	my @com_items = grep { $_->{obj_type} ne 'track'    } @$items;
+	my @com_items = @$items;
 	my @wp_items  = grep { $_->{obj_type} eq 'waypoint' } @$items;
 
 	# ----- Per-type counts for title --------------------------------
@@ -446,8 +446,8 @@ sub _buildWpTypeRow
 	my ($this, $y, $n_wp, $wp_type_shared, $tag_x) = @_;
 	Wx::StaticText->new($this, -1, 'Type', [$LBL_X, $y + 4], [$LBL_W, 20]);
 
-	my @wp_types  = ($WP_TYPE_NAV, $WP_TYPE_LABEL, $WP_TYPE_SOUNDING);
-	my @wp_labels = ('nav',         'label',        'sounding');
+	my @wp_types  = (0 .. $#WP_TYPE_NAMES);
+	my @wp_labels = @WP_TYPE_NAMES;
 	my @entries   = @wp_labels;
 	unshift @entries, $MULTI_LABEL if !defined $wp_type_shared;
 
