@@ -516,7 +516,7 @@ async function renderAll(geojson)
                     if (editMode) return;
                     const idx = nearestPointIdx(coords, e.latlng);
                     const d = depths[idx];
-                    const dStr = (d == null) ? '--' : (d / 30.48).toFixed(1) + ' ft';
+                    const dStr = d ? (d / 30.48).toFixed(1) + ' ft' : '--';
                     showInfo(props, 'point ' + (idx + 1) + ' / ' + total + ' — ' + dStr);
                 });
                 line.on('mouseout', () => {
