@@ -66,7 +66,48 @@ BEGIN
 		$wx_color_light_grey
 		$wx_color_medium_grey
 
-		@WPICON_TABLE
+		@E80_SYMS
+
+		$E80_SYM_X
+		$E80_SYM_CIRCLE
+		$E80_SYM_SQUARE
+		$E80_SYM_TRIANGLE
+		$E80_SYM_DIAMOND
+		$E80_SYM_SHADED_DIAMOND
+		$E80_SYM_ANCHOR
+		$E80_SYM_SKULL
+		$E80_SYM_SQUARE_X
+		$E80_SYM_TRIANGLE_I
+		$E80_SYM_DOWN_TRI_T
+		$E80_SYM_CIRCLE_M
+		$E80_SYM_BUOY
+		$E80_SYM_SAILBOAT
+		$E80_SYM_SHIPWRECK
+		$E80_SYM_COCKTAIL
+		$E80_SYM_SWIMMER
+		$E80_SYM_EXCLAMATION
+		$E80_SYM_CLOUD
+		$E80_SYM_TREE
+		$E80_SYM_REEF
+		$E80_SYM_WEEDS
+		$E80_SYM_DIVE_FLAG
+		$E80_SYM_BLUE_FLAG
+		$E80_SYM_BIG_FISH
+		$E80_SYM_FISH
+		$E80_SYM_FISH_STAR
+		$E80_SYM_FISH_TWO_STAR
+		$E80_SYM_FISH_THREE_STAR
+		$E80_SYM_TWO_FISH
+		$E80_SYM_SWORDFISH
+		$E80_SYM_DOLPHIN
+		$E80_SYM_SHARK
+		$E80_SYM_LOBSTER
+		$E80_SYM_SPORTFISHEER
+		$E80_SYM_TRAWLER
+		$E80_SYM_MAN_OVERBOARD
+		$E80_SYM_CIRCLE_S
+		$E80_SYM_CIRCLE_N
+		$E80_SYM_BIG_RED_SQUARE
 
 		$appClientName
 
@@ -165,48 +206,89 @@ our $wx_color_medium_grey   = Wx::Colour->new(0xC0, 0xC0, 0xC0);
 # RNS allows selection of 0..39 but displays 36..39 same as it does with 3 square.
 # RNS displays them differently ; see table comments
 
-our @WPICON_TABLE = (
-      'X',                #  0
-      'CIRCLE',           #  1 - square in square on RNS
-      'SQUARE',           #  2
-      'TRIANGLE',         #  3 - points up
-      'DIAMOND',          #  4
-      'SHADED_DIAMOND',   #  5 - like a compass rose
-      'ANCHOR',           #  6 - black on RNS
-      'SKULL',            #  7 - skull & crosbones, RNS=black
-      'SQUARE_X',         #  8 - square with X iin it
-      'TRIANGLE_I',       #  9 - tri up with i inside
-      'DOWN_TRI T',       # 10 - tri down with a T inside
-      'CIRCLE_M',         # 11 - RNS MOB small circle
-      'BUOY',             # 12 - looks like a buoy or simiar
-      'SAILBOAT',         # 13 - blue on RNS
-      'SHIPWRECK',        # 14
-      'COCKTAIL',         # 15
-      'SWIMMER',          # 16 - barely distinguishable
-      'EXCLAMATION',      # 17 - circle with excl mark; red filled on RNS
-      'CLOUD',            # 18 - cloud with rain falling
-      'TREE',             # 19 - with squiggly line
-      'REEF',             # 20 - fish swimming through weeds
-      'WEEDS',            # 21
-      'DIVE_FLAG',        # 22
-      'BLUE_FLAG',        # 23 - International Dive Flag
-      'BIG FISH',         # 24 - blue on RNS
-      'FISH',             # 25
-      'FISH_STAR',        # 26
-      'FISH_TWO_STAR',    # 27
-      'FISH THREE_STAR',  # 28
-      'TWO_FISH',         # 29
-      'SWORDFISH',        # 30
-      'DOLPHIN',          # 31
-      'SHARK',            # 32
-      'LOBSTER',          # 33 - black on RNS
-      'SPORTFISHEER',     # 34 - RNS Sportfisher
-      'TRAWLER',          # 35 - RNS Trawler
-      'MAN_OVERBOARD',    # 36 - person in water waving arms
-      'CIRCLE_S',         # 37
-      'CIRCLE_N',         # 38
-      'BIG_RED_SQUARE',   # 39
-  );
+our $E80_SYM_X               =  0;
+our $E80_SYM_CIRCLE          =  1;  # square in square on RNS
+our $E80_SYM_SQUARE          =  2;
+our $E80_SYM_TRIANGLE        =  3;  # points up
+our $E80_SYM_DIAMOND         =  4;
+our $E80_SYM_SHADED_DIAMOND  =  5;  # like a compass rose
+our $E80_SYM_ANCHOR          =  6;  # black on RNS
+our $E80_SYM_SKULL           =  7;  # skull & crosbones, RNS=black
+our $E80_SYM_SQUARE_X        =  8;  # square with X in it
+our $E80_SYM_TRIANGLE_I      =  9;  # tri up with i inside
+our $E80_SYM_DOWN_TRI_T      = 10;  # tri down with a T inside
+our $E80_SYM_CIRCLE_M        = 11;  # RNS MOB small circle
+our $E80_SYM_BUOY            = 12;  # looks like a buoy or similar
+our $E80_SYM_SAILBOAT        = 13;  # blue on RNS
+our $E80_SYM_SHIPWRECK       = 14;
+our $E80_SYM_COCKTAIL        = 15;
+our $E80_SYM_SWIMMER         = 16;  # barely distinguishable
+our $E80_SYM_EXCLAMATION     = 17;  # circle with excl mark; red filled on RNS
+our $E80_SYM_CLOUD           = 18;  # cloud with rain falling
+our $E80_SYM_TREE            = 19;  # with squiggly line
+our $E80_SYM_REEF            = 20;  # fish swimming through weeds
+our $E80_SYM_WEEDS           = 21;
+our $E80_SYM_DIVE_FLAG       = 22;
+our $E80_SYM_BLUE_FLAG       = 23;  # International Dive Flag
+our $E80_SYM_BIG_FISH        = 24;  # blue on RNS
+our $E80_SYM_FISH            = 25;
+our $E80_SYM_FISH_STAR       = 26;
+our $E80_SYM_FISH_TWO_STAR   = 27;
+our $E80_SYM_FISH_THREE_STAR = 28;
+our $E80_SYM_TWO_FISH        = 29;
+our $E80_SYM_SWORDFISH       = 30;
+our $E80_SYM_DOLPHIN         = 31;
+our $E80_SYM_SHARK           = 32;
+our $E80_SYM_LOBSTER         = 33;  # black on RNS
+our $E80_SYM_SPORTFISHEER    = 34;  # RNS Sportfisher
+our $E80_SYM_TRAWLER         = 35;  # RNS Trawler
+our $E80_SYM_MAN_OVERBOARD   = 36;  # person in water waving arms
+our $E80_SYM_CIRCLE_S        = 37;
+our $E80_SYM_CIRCLE_N        = 38;
+our $E80_SYM_BIG_RED_SQUARE  = 39;
+
+our @E80_SYMS = (
+    'X',                #  0
+    'CIRCLE',           #  1
+    'SQUARE',           #  2
+    'TRIANGLE',         #  3
+    'DIAMOND',          #  4
+    'SHADED_DIAMOND',   #  5
+    'ANCHOR',           #  6
+    'SKULL',            #  7
+    'SQUARE_X',         #  8
+    'TRIANGLE_I',       #  9
+    'DOWN_TRI_T',       # 10
+    'CIRCLE_M',         # 11
+    'BUOY',             # 12
+    'SAILBOAT',         # 13
+    'SHIPWRECK',        # 14
+    'COCKTAIL',         # 15
+    'SWIMMER',          # 16
+    'EXCLAMATION',      # 17
+    'CLOUD',            # 18
+    'TREE',             # 19
+    'REEF',             # 20
+    'WEEDS',            # 21
+    'DIVE_FLAG',        # 22
+    'BLUE_FLAG',        # 23
+    'BIG_FISH',         # 24
+    'FISH',             # 25
+    'FISH_STAR',        # 26
+    'FISH_TWO_STAR',    # 27
+    'FISH_THREE_STAR',  # 28
+    'TWO_FISH',         # 29
+    'SWORDFISH',        # 30
+    'DOLPHIN',          # 31
+    'SHARK',            # 32
+    'LOBSTER',          # 33
+    'SPORTFISHEER',     # 34
+    'TRAWLER',          # 35
+    'MAN_OVERBOARD',    # 36
+    'CIRCLE_S',         # 37
+    'CIRCLE_N',         # 38
+    'BIG_RED_SQUARE',   # 39
+);
 
 
 

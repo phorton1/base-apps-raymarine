@@ -42,6 +42,18 @@
 // fsh with different colors and geometries -- they coexist on the map as
 // distinct features.  prevRenderedUuids stores "source:uuid" strings.
 
+// ---- wp_type enum (mirrors apps/navMate/n_defs.pm) ----
+
+const WP_TYPE_NAV       = 0;
+const WP_TYPE_ROUTE_PT  = 1;
+const WP_TYPE_SOUNDING  = 2;
+const WP_TYPE_LABEL     = 3;
+const WP_TYPE_HAZARD    = 4;
+const WP_TYPE_SHIPWRECK = 5;
+const WP_TYPE_FISH      = 6;
+const WP_TYPE_DIVING    = 7;
+const WP_TYPE_POI       = 8;
+
 // ---- Google Maps base layers + Esri labels overlay ----
 
 function googleLayer(lyrs) {
@@ -423,15 +435,15 @@ async function renderAll(geojson)
 
         if (geom.type === 'Point') {
             const [lon, lat] = geom.coordinates;
-            const wpType  = props.wp_type || 'nav';
-            const isNavWp = (wpType !== 'label' && wpType !== 'sounding');
+            const wpType  = (props.wp_type != null) ? props.wp_type : WP_TYPE_NAV;
+            const isNavWp = (wpType !== WP_TYPE_LABEL && wpType !== WP_TYPE_SOUNDING);
 
-            if (wpType === 'label'    && !isLabels())              continue;
-            if (wpType === 'sounding' && !isSoundings())           continue;
-            if (isNavWp               && !isWPs() && !isWpNames()) continue;
+            if (wpType === WP_TYPE_LABEL    && !isLabels())              continue;
+            if (wpType === WP_TYPE_SOUNDING && !isSoundings())           continue;
+            if (isNavWp                     && !isWPs() && !isWpNames()) continue;
 
             let m;
-            if (wpType === 'label') {
+            if (wpType === WP_TYPE_LABEL) {
                 const displayName = (props.name || '').replace(/~.*$/, '');
                 m = L.marker([lat, lon], {
                     icon: L.divIcon({
@@ -441,7 +453,7 @@ async function renderAll(geojson)
                         iconAnchor: [0, 8],
                     })
                 });
-            } else if (wpType === 'sounding') {
+            } else if (wpType === WP_TYPE_SOUNDING) {
                 const shallow = props.depth_cm > 0 && props.depth_cm < 183;
                 m = L.marker([lat, lon], {
                     icon: L.divIcon({

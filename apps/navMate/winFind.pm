@@ -623,7 +623,7 @@ sub _buildFeatureForLeaflet
 				name        => $cand->{name} // '',
 				obj_type    => 'waypoint',
 				data_source => $source,
-				wp_type     => $cand->{wp_type} // 'nav',
+				wp_type     => $cand->{wp_type} // $WP_TYPE_NAV,
 				color       => $color_abgr,
 				lat         => $cand->{lat} + 0,
 				lon         => $cand->{lon} + 0,

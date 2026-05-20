@@ -120,7 +120,8 @@ my $db_def = {
 		"comment         TEXT DEFAULT ''",
 		"lat             REAL NOT NULL",
 		"lon             REAL NOT NULL",
-		"wp_type         TEXT NOT NULL DEFAULT 'nav'",
+		"wp_type         INTEGER NOT NULL DEFAULT 0",
+		"sym             INTEGER NOT NULL DEFAULT 0",
 		"color           TEXT",
 		"depth_cm        INTEGER DEFAULT 0",
 		"temp_k          INTEGER DEFAULT NULL",
@@ -160,6 +161,7 @@ my $db_def = {
 	tracks => [
 		"uuid            TEXT PRIMARY KEY",
 		"name            TEXT NOT NULL",
+		"comment         TEXT DEFAULT ''",
 		"color           TEXT DEFAULT NULL",
 		"ts_start        INTEGER NOT NULL",
 		"ts_end          INTEGER",
@@ -340,6 +342,84 @@ sub openDB
 		warning(0,0,"navDB::openDB migration to 11.3 complete");
 	}
 
+	if ($stored eq '11.3')
+	{
+		warning(0,0,"navDB::openDB migrating schema 11.3 -> 12.0");
+
+		# tracks.comment: simple ALTER
+		$dbh->do("ALTER TABLE tracks ADD COLUMN comment TEXT DEFAULT ''", []);
+
+		# waypoints: wp_type TEXT -> INTEGER, add sym INTEGER seeded from
+		# the existing wp_type mapping.  SQLite cannot ALTER COLUMN TYPE,
+		# so we rebuild the table.  Classification priority:
+		#   1) any waypoint referenced in route_waypoints -> ROUTE_PT.
+		#      Route membership wins.
+		#   2) prior wp_type string -> int per $WP_TYPE_* in n_defs.pm
+		#      ('nav', 'sounding', 'label') with sym = %WP_DEFAULT_SYMS
+		#      lookup.
+		#   3) anything else -> NAV.
+		$dbh->do("DROP TRIGGER IF EXISTS waypoints_insert_ts", []);
+		$dbh->do("DROP TRIGGER IF EXISTS waypoints_update_ts", []);
+
+		$dbh->do(qq{
+			CREATE TABLE waypoints_new (
+				uuid            TEXT PRIMARY KEY,
+				name            TEXT NOT NULL,
+				comment         TEXT DEFAULT '',
+				lat             REAL NOT NULL,
+				lon             REAL NOT NULL,
+				wp_type         INTEGER NOT NULL DEFAULT 0,
+				sym             INTEGER NOT NULL DEFAULT 0,
+				color           TEXT,
+				depth_cm        INTEGER DEFAULT 0,
+				temp_k          INTEGER DEFAULT NULL,
+				created_ts      INTEGER NOT NULL,
+				ts_source       TEXT NOT NULL,
+				source          TEXT,
+				collection_uuid TEXT NOT NULL,
+				db_version      INTEGER NOT NULL DEFAULT 1,
+				e80_version     INTEGER,
+				kml_version     INTEGER,
+				position        REAL    NOT NULL DEFAULT 0,
+				modified_ts     INTEGER
+			)
+		}, []);
+
+		$dbh->do(qq{
+			INSERT INTO waypoints_new
+				(uuid, name, comment, lat, lon, wp_type, sym, color,
+				 depth_cm, temp_k, created_ts, ts_source, source,
+				 collection_uuid, db_version, e80_version, kml_version,
+				 position, modified_ts)
+			SELECT uuid, name, comment, lat, lon,
+				CASE
+					WHEN uuid IN (SELECT wp_uuid FROM route_waypoints) THEN $WP_TYPE_ROUTE_PT
+					WHEN wp_type = 'nav'      THEN $WP_TYPE_NAV
+					WHEN wp_type = 'sounding' THEN $WP_TYPE_SOUNDING
+					WHEN wp_type = 'label'    THEN $WP_TYPE_LABEL
+					ELSE $WP_TYPE_NAV
+				END,
+				CASE
+					WHEN uuid IN (SELECT wp_uuid FROM route_waypoints) THEN $WP_DEFAULT_SYMS{$WP_TYPE_ROUTE_PT}
+					WHEN wp_type = 'nav'      THEN $WP_DEFAULT_SYMS{$WP_TYPE_NAV}
+					WHEN wp_type = 'sounding' THEN $WP_DEFAULT_SYMS{$WP_TYPE_SOUNDING}
+					WHEN wp_type = 'label'    THEN $WP_DEFAULT_SYMS{$WP_TYPE_LABEL}
+					ELSE $WP_DEFAULT_SYMS{$WP_TYPE_NAV}
+				END,
+				color, depth_cm, temp_k, created_ts, ts_source, source,
+				collection_uuid, db_version, e80_version, kml_version,
+				position, modified_ts
+			FROM waypoints
+		}, []);
+
+		$dbh->do("DROP TABLE waypoints", []);
+		$dbh->do("ALTER TABLE waypoints_new RENAME TO waypoints", []);
+
+		$dbh->do("UPDATE key_values SET value='12.0' WHERE key='schema_version'", []);
+		$stored = '12.0';
+		warning(0,0,"navDB::openDB migration to 12.0 complete");
+	}
+
 	# Provenance triggers: auto-populate created_ts and modified_ts.
 	# Idempotent (CREATE TRIGGER IF NOT EXISTS); runs every openDB so
 	# fresh DBs and migrated DBs both end up with the triggers active.
@@ -493,6 +573,8 @@ sub _initKeyValues
 		[$SCHEMA_VERSION]);
 	$dbh->do("INSERT OR IGNORE INTO key_values (key, value) VALUES ('uuid_counter', '0')");
 	$dbh->do("INSERT OR IGNORE INTO key_values (key, value) VALUES ('fsh_uuid_counter', '0')");
+	$dbh->do("INSERT OR IGNORE INTO key_values (key, value) VALUES ('wp_default_syms', ?)",
+		[my_encode_json(\%WP_DEFAULT_SYMS)]);
 }
 
 
@@ -635,15 +717,16 @@ sub insertWaypoint
 		if !defined $position;
 	$dbh->do(qq{
 		INSERT INTO waypoints
-			(uuid, name, comment, lat, lon, wp_type, color, depth_cm, temp_k,
+			(uuid, name, comment, lat, lon, wp_type, sym, color, depth_cm, temp_k,
 			 created_ts, ts_source, source, collection_uuid, position)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)},
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)},
 		[$uuid,
 		$a{name},
 		$a{comment}         // '',
 		$a{lat},
 		$a{lon},
 		$a{wp_type}         // $WP_TYPE_NAV,
+		$a{sym}             // 0,
 		$a{color},
 		$a{depth_cm}        // 0,
 		$a{temp_k}          || undef,
@@ -661,7 +744,7 @@ sub updateWaypoint
 	my ($dbh, $uuid, %a) = @_;
 	$dbh->do(qq{
 		UPDATE waypoints SET
-			name=?, comment=?, lat=?, lon=?, wp_type=?, color=?,
+			name=?, comment=?, lat=?, lon=?, wp_type=?, sym=?, color=?,
 			depth_cm=?, temp_k=?, created_ts=?, ts_source=?, source=?
 		WHERE uuid=?},
 		[$a{name},
@@ -669,6 +752,7 @@ sub updateWaypoint
 		$a{lat},
 		$a{lon},
 		$a{wp_type}  // $WP_TYPE_NAV,
+		$a{sym}      // 0,
 		$a{color},
 		$a{depth_cm} // 0,
 		$a{temp_k}   || undef,
@@ -950,7 +1034,7 @@ sub getCollectionObjects
 	my ($dbh, $coll_uuid) = @_;
 	my @objects;
 	my $wps = $dbh->get_records(
-		"SELECT uuid, name, 'waypoint' AS obj_type, lat, lon, wp_type, color
+		"SELECT uuid, name, 'waypoint' AS obj_type, lat, lon, wp_type, sym, color
 		 FROM waypoints WHERE collection_uuid=? ORDER BY position",
 		[$coll_uuid]);
 	push @objects, @$wps;
@@ -1003,7 +1087,7 @@ sub getTrack
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, color, ts_start, ts_end, ts_source, point_count, collection_uuid, position, companion_uuid, source, created_ts, modified_ts FROM tracks WHERE uuid=?",
+		"SELECT uuid, name, comment, color, ts_start, ts_end, ts_source, point_count, collection_uuid, position, companion_uuid, source, created_ts, modified_ts FROM tracks WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -1016,7 +1100,7 @@ sub getWaypoint
 {
 	my ($dbh, $uuid) = @_;
 	return $dbh->get_record(
-		"SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm, temp_k, created_ts, ts_source, source, collection_uuid, position, modified_ts FROM waypoints WHERE uuid=?",
+		"SELECT uuid, name, comment, lat, lon, wp_type, sym, color, depth_cm, temp_k, created_ts, ts_source, source, collection_uuid, position, modified_ts FROM waypoints WHERE uuid=?",
 		[$uuid]);
 }
 
@@ -1065,7 +1149,7 @@ sub getCollectionWRGTs
 		)
 	};
 	my $wps = $dbh->get_records(
-		$cte . "SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm,
+		$cte . "SELECT uuid, name, comment, lat, lon, wp_type, sym, color, depth_cm,
 		        created_ts, ts_source, source, collection_uuid
 		        FROM waypoints WHERE collection_uuid IN (SELECT uuid FROM tree)",
 		[$uuid]);
@@ -1197,7 +1281,7 @@ sub getAllVisibleFeatures
 {
 	my ($dbh) = @_;
 	my $all_wps = $dbh->get_records(
-		"SELECT uuid, name, comment, lat, lon, wp_type, color, depth_cm,
+		"SELECT uuid, name, comment, lat, lon, wp_type, sym, color, depth_cm,
 		 created_ts, ts_source, source, collection_uuid
 		 FROM waypoints", []);
 	my $wps = [grep { getDbVisible($_->{uuid}) } @{$all_wps // []}];
@@ -1590,8 +1674,8 @@ sub promoteNavWaypoints
 	my $wps = $dbh->get_records(
 		$cte . "SELECT uuid, lat, lon FROM waypoints
 		        WHERE collection_uuid IN (SELECT uuid FROM tree)
-		        AND wp_type = 'label'",
-		[$top_uuid]);
+		        AND wp_type = ?",
+		[$top_uuid, $WP_TYPE_LABEL]);
 	return 0 if !@$wps;
 
 	my $route_rows = $dbh->get_records(
@@ -1629,7 +1713,7 @@ sub promoteNavWaypoints
 		}
 		if ($is_nav)
 		{
-			$dbh->do("UPDATE waypoints SET wp_type='nav' WHERE uuid=?", [$wp->{uuid}]);
+			$dbh->do("UPDATE waypoints SET wp_type=? WHERE uuid=?", [$WP_TYPE_NAV, $wp->{uuid}]);
 			$promoted++;
 		}
 	}
@@ -1913,7 +1997,7 @@ sub getContainerChildren
 	if (defined $container_uuid)
 	{
 		my $wps = $dbh->get_records(
-			"SELECT uuid, name, 'waypoint' AS obj_type, lat, lon, wp_type, color, position
+			"SELECT uuid, name, 'waypoint' AS obj_type, lat, lon, wp_type, sym, color, position
 			 FROM waypoints WHERE collection_uuid=?",
 			[$container_uuid]);
 		for my $row (@$wps)

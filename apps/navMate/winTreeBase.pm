@@ -1048,7 +1048,7 @@ sub _buildWpFeature
             name        => $wp->{name}    // '',
             obj_type    => 'waypoint',
             data_source => $this->_wpDataSource(),
-            wp_type     => $wp->{wp_type} // 'nav',
+            wp_type     => $wp->{wp_type} // $WP_TYPE_NAV,
             color       => $this->_wpColor($wp),
             lat         => $lat,
             lon         => $lon,

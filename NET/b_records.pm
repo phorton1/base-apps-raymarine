@@ -278,6 +278,7 @@ sub wpmgrRecordToText
 				$extra = outputDistance($val) if $key eq 'distance' || $key =~ /length/i;
 				$extra = outputDepth($val) if $key eq 'depth';
 				$extra = outputBearing($val) if $key eq 'bearing';
+				$extra = $E80_SYMS[$val] // '?' if $key eq 'sym';
 
 				$text .= addOutput($pad,$key,$val,$extra);
 			}

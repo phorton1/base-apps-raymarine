@@ -115,6 +115,7 @@ package navMatch;
 use strict;
 use warnings;
 use Pub::Utils qw(display warning error);
+use n_defs;
 use navDB;
 use navFSH;
 use apps::raymarine::NET::c_RAYDP;
@@ -1161,7 +1162,7 @@ sub _classifyDTW
 #   has_ts         -- 1 if any point/record carries a real timestamp
 #   has_depth      -- 1 if any point carries non-zero depth_cm
 #   has_temp_k     -- 1 if any point carries non-zero temp_k (and not 65535)
-#   wp_type        -- 'nav' | 'label' | 'sounding' (waypoints only)
+#   wp_type        -- integer enum: 0=nav | 3=label | 2=sounding (waypoints only)
 
 
 sub enumerateDbCandidates
@@ -1212,7 +1213,7 @@ sub enumerateDbCandidates
 				has_ts         => ($r->{created_ts} && (($r->{ts_source} // '') ne 'nav')) ? 1 : 0,
 				has_depth      => ($r->{depth_cm} // 0) > 0 ? 1 : 0,
 				has_temp_k     => ($r->{temp_k}   // 0) > 0 ? 1 : 0,
-				wp_type        => $r->{wp_type} // 'nav',
+				wp_type        => $r->{wp_type} // $WP_TYPE_NAV,
 			};
 		}
 	}

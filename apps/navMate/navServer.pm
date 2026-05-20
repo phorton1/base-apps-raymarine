@@ -270,7 +270,7 @@ sub handle_request
 		my ($colls,  $e1) = navDB::rawQuery($dbh,
 			"SELECT uuid, name, parent_uuid, node_type, position, source, created_ts, modified_ts FROM collections ORDER BY name");
 		my ($wps,    $e2) = navDB::rawQuery($dbh,
-			"SELECT uuid, name, collection_uuid, wp_type, color, db_version, e80_version, kml_version, position, source, created_ts, modified_ts FROM waypoints ORDER BY name");
+			"SELECT uuid, name, collection_uuid, wp_type, sym, color, db_version, e80_version, kml_version, position, source, created_ts, modified_ts FROM waypoints ORDER BY name");
 		my ($routes, $e3) = navDB::rawQuery($dbh,
 			"SELECT uuid, name, collection_uuid, color, db_version, e80_version, kml_version, position, source, created_ts, modified_ts FROM routes ORDER BY name");
 		my ($rtwps,  $e4) = navDB::rawQuery($dbh,

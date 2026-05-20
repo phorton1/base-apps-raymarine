@@ -164,7 +164,7 @@ sub new
 		[$ED_MARGIN, $ey->(4)], [$ED_LABEL_W, $ED_CTRL_H]);
 	$this->{ed_wp_type} = Wx::Choice->new($right_panel, -1,
 		[$ED_CTRL_X, $ey->(4)], [-1, $ED_CTRL_H],
-		[$WP_TYPE_NAV, $WP_TYPE_LABEL, $WP_TYPE_SOUNDING]);
+		['nav', 'label', 'sounding']);
 
 	# color row: E80 named-color choice (primary) + swatch + Pick button
 	$this->{ed_lbl_color} = Wx::StaticText->new($right_panel, -1, 'Color',
@@ -764,6 +764,7 @@ sub _showObject
 		$text .= _fmt('uuid',            ($t->{uuid} // '') . '  {mta_uuid}');
 		$text .= _fmt('companion_uuid',  $t->{companion_uuid}) if $t->{companion_uuid};
 		$text .= _fmt('name',            $t->{name});
+		$text .= _fmt('comment',         $t->{comment});
 		$text .= _fmt('color',           $t->{color});
 		$text .= _fmt('ts_start',        $ts_start);
 		$text .= _fmt('ts_end',          $ts_end);
@@ -800,7 +801,12 @@ sub _showObject
 		$text .= _fmt('comment',         $w->{comment});
 		$text .= _fmt('lat',             formatLatLon($w->{lat}, 1));
 		$text .= _fmt('lon',             formatLatLon($w->{lon}, 0));
-		$text .= _fmt('wp_type',         $w->{wp_type});
+		my $wpt_n    = $w->{wp_type} // 0;
+		my $wpt_name = $WP_TYPE_NAMES[$wpt_n] // '?';
+		my $sym_n    = $w->{sym} // 0;
+		my $sym_name = $apps::raymarine::NET::a_utils::E80_SYMS[$sym_n] // '?';
+		$text .= _fmt('wp_type',         "$wpt_n ($wpt_name)");
+		$text .= _fmt('sym',             "$sym_n ($sym_name)");
 		$text .= _fmt('color',           $w->{color});
 		$text .= _fmt('depth_cm',        $w->{depth_cm});
 		$text .= _fmt('temp_k', sprintf('%d  (%.1f F)', $w->{temp_k}, ($w->{temp_k} / 100 - 273) * 9 / 5 + 32))
@@ -1080,9 +1086,9 @@ sub _loadEditor
 	if ($show_wptype)
 	{
 		my $wp_type = $data->{wp_type} // $WP_TYPE_NAV;
-		my $idx = $wp_type eq $WP_TYPE_LABEL    ? 1
-		        : $wp_type eq $WP_TYPE_SOUNDING  ? 2
-		        :                                  0;
+		my $idx = $wp_type == $WP_TYPE_LABEL    ? 1
+		        : $wp_type == $WP_TYPE_SOUNDING ? 2
+		        :                                 0;
 		$this->{ed_wp_type}->SetSelection($idx);
 	}
 

@@ -147,8 +147,8 @@ sub new
 		[$ED_MARGIN, $ey->(4)], [$ED_LABEL_W, $ED_CTRL_H]);
 	$this->{ed_sym} = Wx::Choice->new($right_panel, -1,
 		[$ED_CTRL_X, $ey->(4)], [-1, $ED_CTRL_H],
-		[map { sprintf('%2d - %s', $_, $apps::raymarine::NET::a_utils::WPICON_TABLE[$_]) }
-		 0..$#apps::raymarine::NET::a_utils::WPICON_TABLE]);
+		[map { sprintf('%2d - %s', $_, $apps::raymarine::NET::a_utils::E80_SYMS[$_]) }
+		 0..$#apps::raymarine::NET::a_utils::E80_SYMS]);
 
 	$this->{ed_lbl_color} = Wx::StaticText->new($right_panel, -1, 'Color',
 		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);

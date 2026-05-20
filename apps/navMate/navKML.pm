@@ -191,7 +191,7 @@ sub _exportWaypoint
 	my ($dbh, $wp, $depth, $styles) = @_;
 	my $pad   = '  ' x $depth;
 	my $color = _wpExportColor($dbh, $wp);
-	my $stype = ($wp->{wp_type} eq $WP_TYPE_NAV) ? 'nav' : 'label';
+	my $stype = ($wp->{wp_type} == $WP_TYPE_NAV) ? 'nav' : 'label';
 	my $sid   = _styleId($stype, $color);
 	$styles->{$sid} //= _buildStyle($stype, $color);
 
@@ -348,7 +348,7 @@ sub _extData
 sub _wpExportColor
 {
 	my ($dbh, $wp) = @_;
-	if ($wp->{wp_type} eq $WP_TYPE_SOUNDING)
+	if ($wp->{wp_type} == $WP_TYPE_SOUNDING)
 	{
 		my $full  = getWaypoint($dbh, $wp->{uuid});
 		my $depth = $full ? ($full->{depth_cm} // 0) : 0;

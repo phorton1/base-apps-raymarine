@@ -242,7 +242,7 @@ sub new
 	my $comment_shared = $show_comment
 		? _sharedValue([map { $_->{comment} // '' } @com_items]) : undef;
 	my $wp_type_shared = $show_wp_type
-		? _sharedValue([map { $_->{wp_type} // '' } @wp_items]) : undef;
+		? _sharedValue([map { $_->{wp_type} // $WP_TYPE_NAV } @wp_items]) : undef;
 	my $sym_shared     = $show_sym
 		? _sharedValue([map { defined($_->{sym}) ? ($_->{sym} + 0) : undef } @wp_items]) : undef;
 
@@ -446,8 +446,9 @@ sub _buildWpTypeRow
 	my ($this, $y, $n_wp, $wp_type_shared, $tag_x) = @_;
 	Wx::StaticText->new($this, -1, 'Type', [$LBL_X, $y + 4], [$LBL_W, 20]);
 
-	my @wp_types = ($WP_TYPE_NAV, $WP_TYPE_LABEL, $WP_TYPE_SOUNDING);
-	my @entries  = @wp_types;
+	my @wp_types  = ($WP_TYPE_NAV, $WP_TYPE_LABEL, $WP_TYPE_SOUNDING);
+	my @wp_labels = ('nav',         'label',        'sounding');
+	my @entries   = @wp_labels;
 	unshift @entries, $MULTI_LABEL if !defined $wp_type_shared;
 
 	$this->{cho_wp_type} = Wx::Choice->new($this, -1,
@@ -464,7 +465,7 @@ sub _buildWpTypeRow
 		my $idx = 0;
 		for my $i (0 .. $#wp_types)
 		{
-			$idx = $i if $wp_types[$i] eq $wp_type_shared;
+			$idx = $i if $wp_types[$i] == $wp_type_shared;
 		}
 		$this->{cho_wp_type}->SetSelection($idx);
 	}
@@ -484,8 +485,8 @@ sub _buildSymRow
 
 	my @sym_labels = map {
 		sprintf('%2d - %s', $_,
-			$apps::raymarine::NET::a_utils::WPICON_TABLE[$_])
-	} 0 .. $#apps::raymarine::NET::a_utils::WPICON_TABLE;
+			$apps::raymarine::NET::a_utils::E80_SYMS[$_])
+	} 0 .. $#apps::raymarine::NET::a_utils::E80_SYMS;
 	my @entries = @sym_labels;
 	unshift @entries, $MULTI_LABEL if !defined $sym_shared;
 
