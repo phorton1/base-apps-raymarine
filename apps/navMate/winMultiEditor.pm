@@ -484,7 +484,7 @@ sub _buildSymRow
 
 	my @sym_labels = map {
 		sprintf('%2d - %s', $_,
-			$apps::raymarine::NET::a_utils::WPICON_TABLE[$_][0])
+			$apps::raymarine::NET::a_utils::WPICON_TABLE[$_])
 	} 0 .. $#apps::raymarine::NET::a_utils::WPICON_TABLE;
 	my @entries = @sym_labels;
 	unshift @entries, $MULTI_LABEL if !defined $sym_shared;

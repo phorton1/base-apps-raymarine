@@ -8,11 +8,6 @@ own context here.
 
 ## Next
 
-### [continue module comments] - please add a  "# continued ..." comment to the
-navOps "continuation modules" (navOpsDB, navOpsE80, etc) and any other "continuation modules"
-in this project that dont have such a comment. Also add this to your global perl memory
-anytime you create or refactor into a new continuation module.
-
 
 ### [db_version increment wiring]
 
@@ -80,11 +75,7 @@ actually in ARCHIVE.FSH track points depth/temp wise before committing to the pi
 
 ## Soon
 
-### [add created_ts and source to all object tables]
-Collections, groups, routes, and tracks should have `created_ts` and `source` columns,
-the same as waypoints.  The data is always available at creation time regardless of how
-the object arrives (explicit user action, paste-new, import, etc.) -- it was simply
-never stored.  Treat all c_db objects uniformly.
+
 
 
 ### [add comment column to tracks]

@@ -67,7 +67,6 @@ BEGIN
 		$wx_color_medium_grey
 
 		@WPICON_TABLE
-		%WPICON_BY_NAME
 
 		$appClientName
 
@@ -165,58 +164,49 @@ our $wx_color_medium_grey   = Wx::Colour->new(0xC0, 0xC0, 0xC0);
 # E80 only allows selection of 0..35 but disiplays 36..39 distinctly.
 # RNS allows selection of 0..39 but displays 36..39 same as it does with 3 square.
 # RNS displays them differently ; see table comments
-#
-# Structure: [ NAME, USEFUL, DESCRIPTION ]
-#   NAME:    uppercase display label
-#   USEFUL:  1 = distinct and meaningful for navMate UI
-#            0 = indistinct or not meaningful
-#   DESC:    additional detail for UI display ('' if none)
 
 our @WPICON_TABLE = (
-	# [ name,                          useful, description                ]  # sym
-	[ 'X',                              1, ''                             ],  #  0
-	[ 'CIRCLE',                         1, 'square in square on RNS'      ],  #  1
-	[ 'SQUARE',                         1, ''                             ],  #  2
-	[ 'UP TRIANGLE',                    1, ''                             ],  #  3
-	[ 'DIAMOND',                        1, ''                             ],  #  4
-	[ 'SHADED DIAMOND',                 1, 'like a compass rose'          ],  #  5
-	[ 'ANCHOR',                         1, 'black on RNS'                 ],  #  6
-	[ 'SKULL AND CROSSBONES',           1, 'black on RNS'                 ],  #  7
-	[ 'SQUARE WITH X',                  1, ''                             ],  #  8
-	[ 'UP TRIANGLE THING',              1, 'something inside'             ],  #  9
-	[ 'DOWN TRIANGLE WITH T',           1, ''                             ],  # 10
-	[ 'CIRCLE WITH M',                  1, 'RNS MOB small circle'         ],  # 11
-	[ 'ROUNDED FILLED UP TRIANGLE',     1, ''                             ],  # 12
-	[ 'SAILBOAT',                       1, 'blue on RNS'                  ],  # 13
-	[ 'SHIPWRECK',                      1, ''                             ],  # 14
-	[ 'COCKTAIL',                       1, ''                             ],  # 15
-	[ 'SWIMMER',                        0, 'barely distinguishable'       ],  # 16
-	[ 'CIRCLE WITH EXCLAMATION MARK',   1, 'red filled ATTENTION on RNS'  ],  # 17
-	[ 'CLOUD WITH RAIN',                0, ''                             ],  # 18
-	[ 'TREE WITH SQUIGGLY LINE',        0, ''                             ],  # 19
-	[ 'FISH SWIMMING THROUGH WEEDS',    0, ''                             ],  # 20
-	[ 'WEEDS',                          0, ''                             ],  # 21
-	[ 'DIVE FLAG',                      1, ''                             ],  # 22
-	[ 'WHITE AND BLUE FLAG',            1, 'International Dive Flag'      ],  # 23
-	[ 'BIG FISH',                       1, 'blue on RNS'                  ],  # 24
-	[ 'FISH',                           1, ''                             ],  # 25
-	[ 'FISH WITH ONE STAR',             1, ''                             ],  # 26
-	[ 'FISH WITH TWO STARS',            1, ''                             ],  # 27
-	[ 'FISH WITH THREE STARS',          1, ''                             ],  # 28
-	[ 'TWO FISH',                       1, ''                             ],  # 29
-	[ 'SWORDFISH',                      1, ''                             ],  # 30
-	[ 'DOLPHIN',                        1, ''                             ],  # 31
-	[ 'SHARK',                          1, ''                             ],  # 32
-	[ 'LOBSTER',                        0, 'black on RNS'                 ],  # 33
-	[ 'SHIP TYPE 1',                    0, 'RNS Sportfisher'              ],  # 34
-	[ 'SHIP TYPE 2',                    0, 'RNS Trawler'                  ],  # 35
-	[ 'MAN OVERBOARD',                  1, 'person in water waving arms'  ],  # 36
-	[ 'CIRCLE WITH S',                  1, ''                             ],  # 37
-	[ 'CIRCLE WITH N',                  1, ''                             ],  # 38
-	[ 'WHITE FILLED RED SQUARE',        1, ''                             ],  # 39
-);
-
-our %WPICON_BY_NAME = map { $WPICON_TABLE[$_][0] => $_ } 0..$#WPICON_TABLE;
+      'X',                #  0
+      'CIRCLE',           #  1 - square in square on RNS
+      'SQUARE',           #  2
+      'TRIANGLE',         #  3 - points up
+      'DIAMOND',          #  4
+      'SHADED_DIAMOND',   #  5 - like a compass rose
+      'ANCHOR',           #  6 - black on RNS
+      'SKULL',            #  7 - skull & crosbones, RNS=black
+      'SQUARE_X',         #  8 - square with X iin it
+      'TRIANGLE_I',       #  9 - tri up with i inside
+      'DOWN_TRI T',       # 10 - tri down with a T inside
+      'CIRCLE_M',         # 11 - RNS MOB small circle
+      'BUOY',             # 12 - looks like a buoy or simiar
+      'SAILBOAT',         # 13 - blue on RNS
+      'SHIPWRECK',        # 14
+      'COCKTAIL',         # 15
+      'SWIMMER',          # 16 - barely distinguishable
+      'EXCLAMATION',      # 17 - circle with excl mark; red filled on RNS
+      'CLOUD',            # 18 - cloud with rain falling
+      'TREE',             # 19 - with squiggly line
+      'REEF',             # 20 - fish swimming through weeds
+      'WEEDS',            # 21
+      'DIVE_FLAG',        # 22
+      'BLUE_FLAG',        # 23 - International Dive Flag
+      'BIG FISH',         # 24 - blue on RNS
+      'FISH',             # 25
+      'FISH_STAR',        # 26
+      'FISH_TWO_STAR',    # 27
+      'FISH THREE_STAR',  # 28
+      'TWO_FISH',         # 29
+      'SWORDFISH',        # 30
+      'DOLPHIN',          # 31
+      'SHARK',            # 32
+      'LOBSTER',          # 33 - black on RNS
+      'SPORTFISHEER',     # 34 - RNS Sportfisher
+      'TRAWLER',          # 35 - RNS Trawler
+      'MAN_OVERBOARD',    # 36 - person in water waving arms
+      'CIRCLE_S',         # 37
+      'CIRCLE_N',         # 38
+      'BIG_RED_SQUARE',   # 39
+  );
 
 
 
