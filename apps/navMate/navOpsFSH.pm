@@ -361,7 +361,8 @@ sub _deleteFSHGroupsAndWPs
 		my @members = keys %{$db->{waypoints} // {}};
 		if (!@members)
 		{
-			okDialog($tree, "FSH My Waypoints is empty.", "Delete Group + Waypoints");
+			my $msg = "FSH My Waypoints is empty.";
+			$nmDialogs::suppress_confirm ? warning(0, 0, $msg) : okDialog($tree, $msg, "Delete Group + Waypoints");
 			return;
 		}
 		# Route-membership check across all standalones.

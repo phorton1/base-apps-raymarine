@@ -137,6 +137,9 @@ All exported features carry navMate metadata in `<ExtendedData>`:
 | `nm_uuid` | all features | navMate UUID of the object |
 | `nm_type` | all features | Object type (see table below) |
 | `nm_ref` | route-member waypoints only | `1` = route-waypoint reference, not the canonical instance |
+| `nm_wp_type` | waypoints | INTEGER 0..8; `wp_type` round-trip (schema 12.0). Absent in foreign KMLs (Google Earth, hand-edited); import falls back to the name-numeric heuristic when absent. |
+| `nm_sym` | waypoints | INTEGER 0..39; `sym` round-trip (schema 12.0). Absent in foreign KMLs; import lets the write-boundary default-sym rule fill it from `wp_type`. |
+| `temp_k` | waypoints with non-zero `temp_k` only | Water temperature x 100 Kelvin |
 
 `nm_type` values:
 
@@ -175,12 +178,21 @@ directly to the Folder nesting hierarchy.
   <ExtendedData>
     <Data name="nm_uuid"><value>4e01...</value></Data>
     <Data name="nm_type"><value>waypoint</value></Data>
+    <Data name="nm_wp_type"><value>0</value></Data>
+    <Data name="nm_sym"><value>2</value></Data>
   </ExtendedData>
   <Point>
     <coordinates>lon,lat,0</coordinates>
   </Point>
 </Placemark>
 ```
+
+`nm_wp_type` and `nm_sym` make the waypoint round-trip lossless through KML:
+exporting a `wp_type=fish / sym=FISH` waypoint and re-importing it (against
+a different DB, or after the original was deleted) preserves both fields.
+Foreign KMLs without these tags fall through the existing name-numeric
+heuristic (`name =~ /^\d+$/ -> sounding, else nav`) plus the write-boundary
+default-sym rule for `sym`.
 
 ### Routes -> Folders
 
@@ -256,9 +268,9 @@ On re-import, `nm_uuid` is the primary identity key:
 
 | Condition | Action |
 |-----------|--------|
-| `nm_uuid` in DB, no `nm_ref` | Update name, color, parent collection from KML |
+| `nm_uuid` in DB, no `nm_ref` | Update name, lat/lon, color, parent collection from KML. **`wp_type` and `sym` are preserved from the DB** -- KML does not override hub-canonical fields for existing waypoints. (Same asymmetry as the spoke->hub MODIFY path: existing DB rows keep their wp_type/sym; KML re-import touches only name/lat/lon/color.) |
 | `nm_uuid` in DB, `nm_ref=1` | Append to `route_waypoints`; do not create or update waypoint record |
-| `nm_uuid` absent from DB | Create new record with fresh UUID |
+| `nm_uuid` absent from DB | Create new record with fresh UUID. `wp_type` from `nm_wp_type` if present, else name-numeric heuristic. `sym` from `nm_sym` if present, else filled from `symForWpType(wp_type)` via the write-boundary default. |
 | Same `nm_uuid` twice, neither has `nm_ref` | Normalization error - flag and skip second occurrence |
 
 ### Track geometry on re-import

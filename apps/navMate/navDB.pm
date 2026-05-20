@@ -67,6 +67,7 @@ BEGIN
 		insertRouteUUID
 		updateRoute
 		clearRouteWaypoints
+		loadSymMap
 		symForWpType
 		wpTypeForSym
 		isMapped

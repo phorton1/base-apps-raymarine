@@ -8,8 +8,11 @@ use strict;
 use warnings;
 use threads;
 use threads::shared;
+use File::Basename;
+use Wx qw(:everything);
 use Pub::WX::Resources;
 use Pub::WX::AppConfig;
+use apps::raymarine::NET::a_utils qw(@E80_SYMS);
 
 
 BEGIN
@@ -18,6 +21,9 @@ BEGIN
 	our @EXPORT = qw(
 		$appName
 		$resources
+
+		symBitmap
+		makeSymComboBox
 
 		$WIN_DATABASE
 		$WIN_E80
@@ -41,6 +47,8 @@ BEGIN
 		$COMMAND_REVERT_DB
 		$COMMAND_COMMIT_DB
 		$COMMAND_COMPACT_DB_POSITIONS
+		$COMMAND_SYM_MAPPING
+		$COMMAND_FORCE_SYM_RESET
 
 		$WIN_FSH
 		$COMMAND_NEW_FSH
@@ -79,6 +87,9 @@ our $COMMAND_RESTORE_SELECTION	= 10074;
 our $COMMAND_REVERT_DB			= 10091;
 our $COMMAND_COMMIT_DB			= 10092;
 our $COMMAND_COMPACT_DB_POSITIONS = 10093;
+
+our $COMMAND_SYM_MAPPING		= 10094;
+our $COMMAND_FORCE_SYM_RESET	= 10095;
 
 our $COMMAND_NEW_FSH			= 10080;
 our $COMMAND_OPEN_FSH_FILE		= 10081;
@@ -127,6 +138,8 @@ my $command_data = {
 	$COMMAND_REVERT_DB			=> ['Revert',				'Revert navMate.db to last git-committed version'],
 	$COMMAND_COMMIT_DB			=> ['Commit',				'Commit navMate.db to git with a message'],
 	$COMMAND_COMPACT_DB_POSITIONS => ['Compact Positions',	'Renumber every container\'s child positions to 1.0, 2.0, 3.0...'],
+	$COMMAND_SYM_MAPPING		=> ['Waypoint Sym Mapping...',	'View and edit the wp_type -> sym mapping; conservative update of mapped waypoints'],
+	$COMMAND_FORCE_SYM_RESET	=> ['Force Reset Syms by Type...', 'Force every waypoint of a chosen wp_type to its mapped sym, overwriting hand-set syms'],
 };
 
 
@@ -191,7 +204,8 @@ my $fsh_menu = [
 ];
 
 my $utils_menu = [
-	$COMMAND_IMPORT_KML,
+	$COMMAND_SYM_MAPPING,
+	$COMMAND_FORCE_SYM_RESET,
 ];
 
 
@@ -206,6 +220,64 @@ $resources = { %$resources,
 	fsh_menu                 => $fsh_menu,
 	utils_menu               => $utils_menu,
 };
+
+
+#-------------------------------------------------------------------------
+# sym icon helpers
+#-------------------------------------------------------------------------
+# clean*.png assets live alongside this file in sym_catalog/.  Bitmaps
+# are loaded on demand and cached.  symBitmap returns undef on out-of-
+# range index; makeSymComboBox builds a Wx::BitmapComboBox populated
+# with all 40 syms (text + icon).  An optional $multi_label prepends
+# a "(multi)" style entry for the multi-editor's mixed-selection case.
+
+my %_sym_bitmaps;
+my $_sym_catalog_dir;
+my $_blank_bm;
+
+sub _symCatalogDir
+{
+	if (!defined $_sym_catalog_dir)
+	{
+		my $here = __FILE__;
+		$_sym_catalog_dir = dirname($here) . '/sym_catalog';
+	}
+	return $_sym_catalog_dir;
+}
+
+sub symBitmap
+{
+	my ($i) = @_;
+	return undef if !defined $i || $i < 0 || $i > $#E80_SYMS;
+	return $_sym_bitmaps{$i} if exists $_sym_bitmaps{$i};
+	my $path = sprintf('%s/clean%02d.png', _symCatalogDir(), $i);
+	$_sym_bitmaps{$i} = Wx::Bitmap->new($path, wxBITMAP_TYPE_PNG);
+	return $_sym_bitmaps{$i};
+}
+
+sub _blankBitmap
+{
+	$_blank_bm //= Wx::Bitmap->new(20, 20);
+	return $_blank_bm;
+}
+
+sub makeSymComboBox
+{
+	my ($parent, $pos, $size, $multi_label) = @_;
+	my $cb = Wx::BitmapComboBox->new($parent, -1, '',
+		$pos  // wxDefaultPosition,
+		$size // wxDefaultSize,
+		[], wxCB_READONLY);
+	if (defined $multi_label)
+	{
+		$cb->Append($multi_label, _blankBitmap());
+	}
+	for my $i (0 .. $#E80_SYMS)
+	{
+		$cb->Append(sprintf('%2d - %s', $i, $E80_SYMS[$i]), symBitmap($i) // _blankBitmap());
+	}
+	return $cb;
+}
 
 
 1;

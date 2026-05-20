@@ -292,7 +292,8 @@ sub _deleteE80GroupsAndWPs
         my @members = map { $_->{uuid} } @{_treeChildNodes($tree, $mw[0])};
         if (!@members)
         {
-            okDialog($tree, "My Waypoints is empty.", "Delete Group + Waypoints");
+            my $msg = "My Waypoints is empty.";
+            $nmDialogs::suppress_confirm ? warning(0, 0, $msg) : okDialog($tree, $msg, "Delete Group + Waypoints");
             return;
         }
         if (grep { _e80WPRoutes($wpmgr, $_) } @members)

@@ -56,8 +56,8 @@ that supplies fetch/commit closures and capability flags:
     }
 
 - `winDatabase` builds an `abgr` descriptor with `has_wp_type=1`,
-  `has_sym=0`, no comment limit.  Commit writes via `Pub::Database
-  ::update_record` inside a single SQLite transaction.
+  `has_sym=1` (schema 12.0), no comment limit.  Commit writes via
+  `Pub::Database::update_record` inside a single SQLite transaction.
 - `winFSH` builds a `palette_index` descriptor with `has_wp_type=0`,
   `has_sym=1`, `comment_max=$FSH_MAX_COMMENT` (31).  Commit mutates
   records in `$navFSH::fsh_db` in place, then the caller invokes
@@ -81,24 +81,27 @@ appears.
 | Field    | Waypoint | Route | Track | DB  | FSH |
 |----------|----------|-------|-------|-----|-----|
 | color    | yes      | yes   | yes   | yes | yes |
-| comment  | yes      | yes   | -     | yes | yes |
+| comment  | yes      | yes   | yes (DB only) | yes | yes (no track-comment field on FSH wire) |
 | wp_type  | yes      | -     | -     | yes | -   |
-| sym      | yes      | -     | -     | -   | yes |
+| sym      | yes      | -     | -     | yes | yes |
 
 Excluded from multi-edit: `name`, `lat`, `lon`, `ts_start`, `ts_end`,
 `ts_source`, `point_count`, point data, `source`, `position`, parent
 collection.
 
-`wp_type` and `sym` are mirror-image per-spoke fields:
+`wp_type` is a navMate-only concept: an INTEGER enum over 9 values
+(`@WP_TYPE_NAMES`: nav / route_pt / sounding / label / hazard /
+shipwreck / fish / diving / poi). E80 and FSH wire records have no
+equivalent field; at the spoke boundary `wp_type` is derived from
+`sym` via the current mapping (`navDB::wpTypeForSym`).
 
-- `wp_type` (`nav` / `label` / `sounding`) exists only on the navMate
-  `waypoints` table; FSH has no equivalent.
-- `sym` (icon index 0..N from `WPICON_TABLE`) is an FSH (and E80)
-  field; the navMate DB has no `sym` column.
+`sym` is the E80 wire-protocol symbol index (0..39, indexing into
+`@E80_SYMS` in `NET/a_utils.pm`). Present on DB / FSH / E80 records.
 
-The `tracks` table / record has no `comment` field on either spoke.
-In a mixed-type selection that includes tracks, the comment row's
-applies-to scope excludes the tracks.
+`tracks` on the FSH wire have no `comment` field, but `tracks.comment`
+exists in the DB (schema 12.0) and can be multi-edited via the DB
+descriptor. The dialog's comment row applies to whichever items in the
+selection have a comment-capable record (excluding FSH tracks).
 
 The layout shows only the rows that apply to the current selection
 (top-down, no gaps).  Within a row, controls pack left-to-right with
@@ -160,7 +163,22 @@ The `(multi N)` state is visually distinct from any real value:
 - **wp_type / sym**: a synthetic `(multi)` entry preselected at the
   top of the dropdown, distinct from any real enum value.  Selecting
   any real value commits it; leaving the dropdown on `(multi)`
-  writes nothing.
+  writes nothing. `sym` is a `Wx::BitmapComboBox` (via
+  `nmResources::makeSymComboBox`) with icons from
+  `apps/navMate/sym_catalog/clean*.png`; the dialog uses
+  `EVT_COMBOBOX` for the dirty-tracking binding.
+
+### Conservative per-item forward-map (DB descriptor)
+
+When the user changed `wp_type` in the dialog and **did not** touch
+`sym`, the DB descriptor's `commit` runs a per-item conservative
+forward-map: each item's pre-edit snapshot is checked with
+`navDB::isMapped(old_wp_type, old_sym)`; **mapped** items get
+`sym` auto-updated in their dirty set to the new mapped default;
+**off-map** (hand-set) items keep their existing sym. This mirrors the
+single-editor's live forward-map but runs per item at commit time
+rather than live in the UI. If both `wp_type` and `sym` were dirty,
+the user's explicit choices on both win and no auto-update fires.
 
 ### Comment validation (hard reject)
 

@@ -29,6 +29,7 @@ use Wx::Event qw(
 	EVT_TEXT
 	EVT_BUTTON
 	EVT_CHOICE
+	EVT_COMBOBOX
 	EVT_CHECKBOX
 	EVT_LEFT_DOWN
 	EVT_KEY_DOWN
@@ -171,9 +172,8 @@ sub new
 
 	$this->{ed_lbl_sym} = Wx::StaticText->new($right_panel, -1, 'Sym',
 		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_sym} = Wx::Choice->new($right_panel, -1,
-		[$ED_CTRL_X, $ey->(5)], [-1, $ED_CTRL_H],
-		[map { sprintf('%2d - %s', $_, $E80_SYMS[$_]) } 0..$#E80_SYMS]);
+	$this->{ed_sym} = makeSymComboBox($right_panel,
+		[$ED_CTRL_X, $ey->(5)], [240, $ED_CTRL_H]);
 
 	# color row: E80 named-color choice (primary) + swatch + Pick button
 	$this->{ed_lbl_color} = Wx::StaticText->new($right_panel, -1, 'Color',
@@ -259,8 +259,8 @@ sub new
 	EVT_TEXT($this,   $this->{ed_lat},     $this->can('_onLatEdit'));
 	EVT_TEXT($this,   $this->{ed_lon},     $this->can('_onLonEdit'));
 	EVT_TEXT($this,   $this->{ed_depth},   $this->can('_onFieldChanged'));
-	EVT_CHOICE($this, $this->{ed_wp_type}, \&_onWpTypeChoiceChanged);
-	EVT_CHOICE($this, $this->{ed_sym},     \&_onSymChoiceChanged);
+	EVT_CHOICE($this,   $this->{ed_wp_type}, \&_onWpTypeChoiceChanged);
+	EVT_COMBOBOX($this, $this->{ed_sym},     \&_onSymChoiceChanged);
 	EVT_CHOICE($this, $this->{ed_e80_color}, \&_onE80ColorChoice);
 	EVT_BUTTON($this,   $this->{ed_save},    \&_onSave);
 	EVT_BUTTON($this,   $this->{ed_pick_btn}, \&_onColorPick);

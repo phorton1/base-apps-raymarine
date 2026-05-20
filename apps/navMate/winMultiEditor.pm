@@ -36,6 +36,7 @@ use Wx qw(:everything);
 use Wx::Event qw(
 	EVT_BUTTON
 	EVT_CHOICE
+	EVT_COMBOBOX
 	EVT_TEXT);
 use Pub::Utils qw(display warning error);
 use n_defs;
@@ -45,6 +46,7 @@ use n_utils qw(
 	abgrToE80Index
 	isExactE80Color);
 use apps::raymarine::NET::a_utils;
+use nmResources qw(makeSymComboBox);
 use base 'Wx::Dialog';
 
 
@@ -483,15 +485,9 @@ sub _buildSymRow
 	my ($this, $y, $n_wp, $sym_shared, $tag_x) = @_;
 	Wx::StaticText->new($this, -1, 'Sym', [$LBL_X, $y + 4], [$LBL_W, 20]);
 
-	my @sym_labels = map {
-		sprintf('%2d - %s', $_,
-			$apps::raymarine::NET::a_utils::E80_SYMS[$_])
-	} 0 .. $#apps::raymarine::NET::a_utils::E80_SYMS;
-	my @entries = @sym_labels;
-	unshift @entries, $MULTI_LABEL if !defined $sym_shared;
-
-	$this->{cho_sym} = Wx::Choice->new($this, -1,
-		[$CTRL_X, $y], [$SYM_CHOICE_W, 22], \@entries);
+	$this->{cho_sym} = makeSymComboBox($this,
+		[$CTRL_X, $y], [$SYM_CHOICE_W, 22],
+		defined($sym_shared) ? undef : $MULTI_LABEL);
 	$this->{tag_sym} = Wx::StaticText->new($this, -1,
 		_tagText($sym_shared, $n_wp), [$tag_x, $y + 4], [$TAG_W, 20]);
 
@@ -506,7 +502,7 @@ sub _buildSymRow
 	{
 		$this->{cho_sym}->SetSelection(0);
 	}
-	EVT_CHOICE($this, $this->{cho_sym},
+	EVT_COMBOBOX($this, $this->{cho_sym},
 		sub { $_[0]->{_sym_dirty} = 1 });
 }
 

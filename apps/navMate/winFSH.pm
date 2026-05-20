@@ -37,6 +37,7 @@ use Wx::Event qw(
 	EVT_TEXT
 	EVT_BUTTON
 	EVT_CHOICE
+	EVT_COMBOBOX
 	EVT_CHECKBOX
 	EVT_DATE_CHANGED
 	EVT_SIZE);
@@ -152,10 +153,8 @@ sub new
 
 	$this->{ed_lbl_sym} = Wx::StaticText->new($right_panel, -1, 'Sym',
 		[$ED_MARGIN, $ey->(4)], [$ED_LABEL_W, $ED_CTRL_H]);
-	$this->{ed_sym} = Wx::Choice->new($right_panel, -1,
-		[$ED_CTRL_X, $ey->(4)], [-1, $ED_CTRL_H],
-		[map { sprintf('%2d - %s', $_, $apps::raymarine::NET::a_utils::E80_SYMS[$_]) }
-		 0..$#apps::raymarine::NET::a_utils::E80_SYMS]);
+	$this->{ed_sym} = makeSymComboBox($right_panel,
+		[$ED_CTRL_X, $ey->(4)], [240, $ED_CTRL_H]);
 
 	$this->{ed_lbl_color} = Wx::StaticText->new($right_panel, -1, 'Color',
 		[$ED_MARGIN, $ey->(5)], [$ED_LABEL_W, $ED_CTRL_H]);
@@ -243,7 +242,7 @@ sub new
 	EVT_TEXT($this,         $this->{ed_comment},       $this->can('_onFieldChanged'));
 	EVT_TEXT($this,         $this->{ed_lat},           $this->can('_onLatEdit'));
 	EVT_TEXT($this,         $this->{ed_lon},           $this->can('_onLonEdit'));
-	EVT_CHOICE($this,       $this->{ed_sym},           $this->can('_onFieldChanged'));
+	EVT_COMBOBOX($this,     $this->{ed_sym},           $this->can('_onFieldChanged'));
 	EVT_CHOICE($this,       $this->{ed_color_choice},  \&_onColorChoice);
 	EVT_TEXT($this,         $this->{ed_depth},         $this->can('_onFieldChanged'));
 	EVT_TEXT($this,         $this->{ed_temp},          $this->can('_onFieldChanged'));

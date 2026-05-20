@@ -596,6 +596,11 @@ group with that name in the database must reject or remap it.
 
 On the E80 side, My Waypoints cannot be dissolved; only DELETE_GROUP_WPS applies to it.
 
+In winE80's tree, the My Waypoints node is rendered unconditionally as the first child
+of the Groups header -- even when the E80 currently has zero ungrouped waypoints -- so
+it remains a valid navOps paste target at all times. This parallels winFSH's My
+Waypoints handling.
+
 When downloading from the E80's My Waypoints node, the contents arrive as individual
 ungrouped waypoints in the target DB collection. No group is created; the name is not used.
 

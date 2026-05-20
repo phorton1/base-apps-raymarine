@@ -118,7 +118,8 @@ waypoints (
   comment           TEXT DEFAULT '',
   lat               REAL NOT NULL,       -- degrees WGS84
   lon               REAL NOT NULL,       -- degrees WGS84
-  wp_type           TEXT NOT NULL DEFAULT 'nav',  -- see Waypoint Types
+  wp_type           INTEGER NOT NULL DEFAULT 0,  -- enum; see Waypoint Types (schema 12.0)
+  sym               INTEGER NOT NULL DEFAULT 0,  -- 0..39 E80 wire symbol (schema 12.0); see Sym
   color             TEXT DEFAULT NULL,   -- aabbggrr hex (GE byte order); NULL = type default
   depth_cm          INTEGER DEFAULT 0,   -- non-zero only for sounding waypoints
   temp_k            INTEGER DEFAULT NULL,-- water temperature x 100 Kelvin (schema 11.2); NULL = no data
@@ -136,13 +137,53 @@ waypoints (
 
 ### Waypoint Types
 
-`wp_type` determines how a waypoint is rendered and what its `name` field means:
+`wp_type` is an INTEGER enum (schema 12.0). The 9 values, their constant names in
+`apps/navMate/n_defs.pm`, and their default `sym` from `%WP_DEFAULT_SYMS` (the
+seed mapping; the in-effect mapping lives in `key_values.wp_mapped_syms` and is
+editable via Utils -> Waypoint Sym Mapping...):
 
-| wp_type | Meaning | Rendering | name field |
-|---------|---------|-----------|------------|
-| `'nav'` | Navigation waypoint - anchorage, marina, landmark, track endpoint | Hollow colored circle; name in popup | Meaningful place name |
-| `'label'` | Geographic text label - non-navigable area reference, scene annotation | Text at coordinate; no circle | Display text (may have `~` suffix or `~Date` suffix) |
-| `'sounding'` | Depth measurement | Depth number at coordinate; red if `depth_cm < 200` (~6 ft) | Integer depth in feet |
+| Int | Constant | Display name | Default sym | Sym name |
+|---|---|---|---|---|
+| 0 | `$WP_TYPE_NAV`       | `nav`       | 2  | SQUARE    |
+| 1 | `$WP_TYPE_ROUTE_PT`  | `route_pt`  | 4  | DIAMOND   |
+| 2 | `$WP_TYPE_SOUNDING`  | `sounding`  | 37 | CIRCLE_S  |
+| 3 | `$WP_TYPE_LABEL`     | `label`     | 38 | CIRCLE_N  |
+| 4 | `$WP_TYPE_HAZARD`    | `hazard`    | 7  | SKULL     |
+| 5 | `$WP_TYPE_SHIPWRECK` | `shipwreck` | 14 | SHIPWRECK |
+| 6 | `$WP_TYPE_FISH`      | `fish`      | 25 | FISH      |
+| 7 | `$WP_TYPE_DIVING`    | `diving`    | 23 | BLUE_FLAG |
+| 8 | `$WP_TYPE_POI`       | `poi`       | 1  | CIRCLE    |
+
+Display-string lookup uses `@WP_TYPE_NAMES` indexed by wp_type int.
+
+`wp_type` is a navMate-only concept. E80 and FSH wire records have no equivalent
+field; only the `sym` carries through to the spokes. At spoke->hub PASTE_NEW the
+incoming sym reverse-maps to a wp_type via `wpTypeForSym` (the spoke contract
+defines the full rule; see [Spoke Contract](navOps_spoke_contract.md)).
+
+### Sym
+
+`sym` (schema 12.0) is the E80 wire-protocol symbol index, 0..39, indexing into
+`@E80_SYMS` in `NET/a_utils.pm` (formerly `@WPICON_TABLE`). The 40 entries are
+displayed by the E80 firmware; navMate stores the index, the icon catalog lives
+in `apps/navMate/sym_catalog/clean*.png` for UI display.
+
+The `wp_type -> sym` mapping is **not** hardcoded in navMate. It is JSON-encoded
+in `key_values.wp_mapped_syms` and seeded at `openDB` from `%WP_DEFAULT_SYMS` if
+the row is absent. The Conservative dialog (Utils -> Waypoint Sym Mapping...)
+edits the mapping with a conservative DB sweep: changing a `wp_type`'s mapped sym
+updates all waypoints that were `isMapped(wp_type, sym)` at the start of the edit;
+off-map (hand-set) syms are preserved. The Force command (Utils -> Force Reset
+Syms by Type...) overrides all hand-set syms for a single wp_type back to the
+mapped default. The runtime helpers `loadSymMap` / `symForWpType` / `wpTypeForSym`
+/ `isMapped` in `navDB.pm` are the canonical vocabulary.
+
+`navDB::insertWaypoint` / `updateWaypoint` apply a write-boundary rule: if the
+caller supplies `wp_type` but no `sym`, `sym` is filled from `symForWpType($wp_type)`.
+Most callers therefore stop caring about `sym` for default-wp_type waypoints;
+explicit `sym` still wins when passed.
+
+### Other waypoint fields
 
 Tilde (`~`) suffixes in `name` carry additional semantics for `label` waypoints
 (see KML Import Rules below).
@@ -197,9 +238,10 @@ FSH/E80 boundary. Existing rows imported before schema 11.1 have `companion_uuid
 tracks (
   uuid              TEXT PRIMARY KEY,    -- identity UUID (= mta_uuid at FSH/E80 boundary)
   name              TEXT NOT NULL,
+  comment           TEXT DEFAULT '',     -- editable in winDatabase track editor (schema 12.0)
   color             TEXT DEFAULT NULL,   -- aabbggrr hex (GE byte order)
-  ts_start          INTEGER NOT NULL,    -- never NULL; may be import time if no source timestamp
-  ts_end            INTEGER,
+  ts_start          INTEGER NOT NULL,    -- derived summary; removal candidate (no consumers)
+  ts_end            INTEGER,             -- derived summary; removal candidate (no consumers)
   ts_source         TEXT NOT NULL,       -- see Timestamp Sources
   point_count       INTEGER,
   collection_uuid   TEXT NOT NULL REFERENCES collections(uuid),
@@ -245,9 +287,10 @@ Initial entries:
 
 | key | Purpose |
 |-----|---------|
-| `schema_version` | Current value `'11.3'`; `openDB` in `navDB.pm` migrates known prior versions in place |
+| `schema_version` | Current value `'12.0'`; `openDB` in `navDB.pm` migrates known prior versions in place |
 | `uuid_counter` | Integer; persistent counter for navMate UUID generation (bytes 4-5 of the UUID) |
 | `fsh_uuid_counter` | Integer; persistent counter for FSH-flavored UUID generation (`newFSHUUID`) |
+| `wp_mapped_syms` | JSON-encoded `{wp_type_int: sym_int}` mapping in effect (schema 12.0). Seeded from `%WP_DEFAULT_SYMS` at first `openDB`; editable via Utils -> Waypoint Sym Mapping... The Remapping dialog enforces uniqueness (each sym maps to at most one wp_type). Cached in memory as `%_mapped_syms` by `navDB::loadSymMap`, called from `openDB`. |
 
 The `uuid_counter` entry is incremented atomically within the same transaction as
 each new object INSERT, ensuring the counter and the database objects it identifies
@@ -432,17 +475,37 @@ navMate operates fully - browse, edit, organize - with no transport active. The 
 Transports are optional, user-activated concerns, not permanent connections
 navMate depends on.
 
+## Schema 12 Migration
+
+`openDB` in `navDB.pm` carries the 11.3 -> 12.0 migration in place:
+
+- `waypoints.wp_type`: TEXT -> INTEGER. Values mapped: `'nav'->0`, `'sounding'->2`,
+  `'label'->3`, anything else -> 0.
+- `waypoints.sym`: new INTEGER NOT NULL. Backfilled from the wp_type at migration
+  time using `%WP_DEFAULT_SYMS` (the seed mapping).
+- **Route-member classification**: any waypoint referenced in `route_waypoints`
+  is reclassified to `$WP_TYPE_ROUTE_PT` (1) / `$E80_SYM_DIAMOND` (4) regardless
+  of its prior string. Route membership wins over the prior wp_type.
+- `tracks.comment`: new TEXT DEFAULT ''.
+- `key_values.wp_mapped_syms`: seeded.
+
+SQLite cannot `ALTER COLUMN TYPE`, so the migration rebuilds the `waypoints`
+table (CREATE NEW + INSERT...SELECT + DROP OLD + RENAME) under one transaction.
+Triggers are recreated on the renamed table by `_createTriggers` at the end of
+`openDB`.
+
 ## Data Migration
 
-The initial database was populated from a Google Earth export by `navOneTimeImport.pm`.
-The migration is substantially complete. `navOneTimeImport.pm` is retained as a
-fallback should subsequent changes to the original GE source data require re-import.
+The initial database was populated from a Google Earth export by
+`navOneTimeImport.pm`. That migration is complete, and the file is slated for
+removal in a separate commit after Schema 12 has been verified end-to-end.
+The Utils -> OneTimeImportKML menu entry has already been removed.
 
-navMate is intended to be the primary UX for managing navigation data, but key
-editing tooling - tree node ordering and generalized property editors - is not yet
-built. Until that tooling exists, the GE/KML round-trip workflow remains a
-practical editing path alongside the application. `navKML.pm` handles all ongoing
-KML import/export operations.
+navMate is the primary UX for managing navigation data. The DB is canonical; KML
+round-trip via Google Earth remains a practical secondary path (full wp_type and
+sym round-trip via `nm_wp_type` and `nm_sym` ExtendedData -- see
+[KML Specification](kml_specification.md)). `navKML.pm` handles all ongoing KML
+import/export operations.
 
 ---
 

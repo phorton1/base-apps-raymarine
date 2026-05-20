@@ -170,18 +170,24 @@ Start-Sleep 8
 
 ---
 
-### Test 10a -- Re-upload IsolatedWP1 (if absent)
+### Test 10a -- Ensure at least one ungrouped WP on E80 (precondition for 10b)
+
+If [IsolatedWP1] is already on E80, the precondition holds and this is a PASS without firing anything. If absent, upload it and confirm it landed.
 
 ```powershell
-# Skip if /api/db waypoints already contains ce4e43181f01b3ae
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.10a" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
-Start-Sleep 5
+$db = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
+$present = $db.waypoints.PSObject.Properties | Where-Object { $_.Name -eq 'ce4e43181f01b3ae' }
+if (-not $present)
+{
+    curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.10a" | Out-Null
+    curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
+    Start-Sleep 1
+    curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+    Start-Sleep 5
+}
 ```
 
-**Pass:** at least one ungrouped WP on E80. NOT_RUN if [E80_WP] already present from Test 1.
+**Pass:** at least one ungrouped WP on E80 after this step, whether by upload or already present. **Fail:** still no ungrouped WP.
 
 ---
 
@@ -344,16 +350,22 @@ Start-Sleep 10
 
 ---
 
-### Test 16a -- Delete all E80 routes (if same-named present)
+### Test 16a -- Ensure E80 routes empty (precondition for 16b's fresh-UUID paste)
+
+If `/api/db` routes is already empty, the precondition holds and this is a PASS without firing anything. Otherwise delete-all-routes and confirm.
 
 ```powershell
-# Run only if /api/db routes contains a "Popa" route at this point
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.16a" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10223" | Out-Null
-Start-Sleep 6
+$db = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
+$count = @($db.routes.PSObject.Properties).Count
+if ($count -gt 0)
+{
+    curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.16a" | Out-Null
+    curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10223" | Out-Null
+    Start-Sleep 6
+}
 ```
 
-**Pass:** `/api/db` routes empty. NOT_RUN if routes were already empty.
+**Pass:** `/api/db` routes empty after this step, whether by delete-all or already empty. **Fail:** routes still present.
 
 ---
 
@@ -519,7 +531,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_
 Start-Sleep 5
 ```
 
-**Pass:** `/api/db` returns empty E80 (waypoints/groups/routes/tracks all 0). With 0 ungrouped WPs the `my_waypoints` node doesn't exist and the log shows `WARNING: navTest: fire cmd=10222 - no right_click_node set` -- this is the documented no-op path and counts as PASS.
+**Pass:** `/api/db` returns empty E80 (waypoints/groups/routes/tracks all 0). With 0 ungrouped WPs the `my_waypoints` node is still selectable; DELETE_GROUP_WPS dispatches, hits the empty-members guard, logs `WARNING: My Waypoints is empty.`, and returns cleanly under `suppress=1`. DELETE GROUP+WPS STARTED and FINISHED both present. No ProgressDialog. No modal. No IMPL ERROR. Counts as PASS.
 
 ---
 
@@ -644,18 +656,24 @@ Start-Sleep 5
 
 ---
 
-### Test 28a -- Upload IsolatedWP1 to E80 if absent
+### Test 28a -- Ensure IsolatedWP1 on E80 (precondition for 28b/c)
+
+If [IsolatedWP1] is already on E80, the precondition holds and this is a PASS without firing anything. If absent, upload it and confirm it landed.
 
 ```powershell
-# Skip if /api/db waypoints already contains ce4e43181f01b3ae (likely still there from Test 25a)
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.28a" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
-Start-Sleep 5
+$db = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
+$present = $db.waypoints.PSObject.Properties | Where-Object { $_.Name -eq 'ce4e43181f01b3ae' }
+if (-not $present)
+{
+    curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.28a" | Out-Null
+    curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
+    Start-Sleep 1
+    curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+    Start-Sleep 5
+}
 ```
 
-**Pass:** [IsolatedWP1] on E80. NOT_RUN if already present.
+**Pass:** [IsolatedWP1] is on E80 after this step, whether the upload was needed or the WP was already present from a prior step. **Fail:** WP still absent (upload attempted but did not land).
 
 ---
 
@@ -669,7 +687,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=e80&select=ce4e43181f01b3ae&ri
 Start-Sleep 3
 ```
 
-**Pass:** `ERROR - Cannot paste: destination is a descendant of an item in the clipboard`; E80 unchanged.
+**Pass:** `ERROR - Cannot paste at an individual E80 waypoint node -- pick a header or group`; E80 unchanged. (Distinct guard at `navOps.pm` for WP-object-node paste, fires before the descendant check.)
 
 ---
 
@@ -681,7 +699,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=e80&select=ce4e43181f01b3ae&ri
 Start-Sleep 3
 ```
 
-**Pass:** same ERROR; E80 unchanged.
+**Pass:** same ERROR (same WP-object-node guard); E80 unchanged.
 
 ---
 

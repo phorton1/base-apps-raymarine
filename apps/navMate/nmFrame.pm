@@ -34,6 +34,7 @@ use winFSH;
 use winMonitor;
 use navOneTimeImport;
 use navKML;
+use winSymMapping;
 use base qw(Pub::WX::Frame);
 
 my $next_db_instance = 0;
@@ -73,6 +74,8 @@ sub new
 	EVT_MENU($this, $COMMAND_REVERT_DB,			\&onCommand);
 	EVT_MENU($this, $COMMAND_COMMIT_DB,			\&onCommand);
 	EVT_MENU($this, $COMMAND_COMPACT_DB_POSITIONS, \&onCommand);
+	EVT_MENU($this, $COMMAND_SYM_MAPPING,		\&onCommand);
+	EVT_MENU($this, $COMMAND_FORCE_SYM_RESET,	\&onCommand);
 	EVT_MENU($this, $COMMAND_SAVE_OUTLINE,		\&onCommand);
 	EVT_MENU($this, $COMMAND_RESTORE_OUTLINE,	\&onCommand);
 	EVT_MENU($this, $COMMAND_SAVE_SELECTION,	\&onCommand);
@@ -384,6 +387,14 @@ sub onCommand
 	{
 		_doCompactDBPositions($this);
 	}
+	elsif ($id == $COMMAND_SYM_MAPPING)
+	{
+		_doSymMapping($this);
+	}
+	elsif ($id == $COMMAND_FORCE_SYM_RESET)
+	{
+		_doForceSymReset($this);
+	}
 	elsif ($id == $COMMAND_SAVE_OUTLINE)
 	{
 		my $database = $this->_findCurrentDatabasePane();
@@ -629,6 +640,28 @@ sub _doImportKML
 	navOneTimeImport::run();
 	$_->refresh() for $this->_findDatabasePanes();
 	display(0,0,"nmFrame: ImportKML done");
+}
+
+
+sub _doSymMapping
+{
+	my ($this) = @_;
+	my $changed = showSymMappingDialog($this);
+	if ($changed)
+	{
+		$_->refresh() for $this->_findDatabasePanes();
+	}
+}
+
+
+sub _doForceSymReset
+{
+	my ($this) = @_;
+	my $changed = showForceSymResetDialog($this);
+	if ($changed)
+	{
+		$_->refresh() for $this->_findDatabasePanes();
+	}
 }
 
 

@@ -8,9 +8,14 @@ own context here.
 
 ## Next
 
+[leaflet sym-icons] - work pending in leaflet to display the correct symbol
+icon type (all three sources) for waypoints. Pending getting the darned icons
+that match the e80 "sym_catalog" raw pictures we currently are using for the
+app in sym-selection in editors etc.
+
+
 [remove database track ts_start and ts_end times]
 - make sure they're not used in phorton.com building process
-
 
 
 

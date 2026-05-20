@@ -1041,6 +1041,11 @@ sub _buildWpFeature
 {
     my ($this, $uuid, $wp) = @_;
     my ($lat, $lon) = $this->_wpLatLon($wp);
+    # E80/FSH waypoints don't carry a wp_type field on the wire; they
+    # render as NAV teardrops in leaflet today.  Leaflet will switch to
+    # rendering by sym directly once production-quality sym icons land;
+    # at that point wp_type becomes immaterial here.  Sending sym on
+    # the wire now is the prep for that switch.
     return {
         type       => 'Feature',
         properties => {
@@ -1049,6 +1054,7 @@ sub _buildWpFeature
             obj_type    => 'waypoint',
             data_source => $this->_wpDataSource(),
             wp_type     => $wp->{wp_type} // $WP_TYPE_NAV,
+            sym         => $wp->{sym}     // 0,
             color       => $this->_wpColor($wp),
             lat         => $lat,
             lon         => $lon,

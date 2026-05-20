@@ -99,9 +99,11 @@ controls are placed directly on the panel at computed positions - no intermediat
 sub-panels. Name and comment (the long-string controls) resize with the panel.
 
 **Header row:** The **Save** button occupies the upper-left (label column). A
-bold title `StaticText` (displaying "Waypoint", "Route", "Track", "Branch", or
-"Group") sits to its right (ctrl column). A **Visible** three-state checkbox
-(`ed_visible`, `wxCHK_3STATE`) is placed to the right of the title.
+bold title `StaticText` (`ed_title`) sits to its right (ctrl column) displaying
+the record type -- "Waypoint", "Route", "Track", "Branch", "Group", "Route Point",
+or "My Waypoints" (the last two have the Save button disabled). A **Visible**
+three-state checkbox (`ed_visible`, `wxCHK_3STATE`) is placed to the right of
+the title.
 
 **Field rows** are packed top-down by `winTreeBase::_layoutEditor` based on
 node type (declared in each window's `$this->{_ed_field_widgets}` registry):
@@ -109,16 +111,18 @@ node type (declared in each window's `$this->{_ed_field_widgets}` registry):
 | Node type | Visible rows |
 |---|---|
 | Collection | name, comment |
-| Waypoint | name, comment, lat, lon, wp_type, color, depth |
+| Waypoint | name, comment, lat, lon, wp_type, sym, color, depth |
 | Route | name, comment, color |
-| Track | name, color |
-| Route point | none (`_clearEditor`) |
+| Track | name, comment, color |
+| Route point | none (`_clearEditor`; `ed_title` set to "Route Point") |
+| My Waypoints (pseudo) | none (`_clearEditor`; `ed_title` set to "My Waypoints") |
 
 Control details:
 - **name, comment** - plain `TextCtrl`
 - **lat, lon** - `TextCtrl` [110px] with a live DDM `StaticText` label (e.g. `9deg26.142' N`) that updates on every keystroke; `parseLatLon()` accepts DD or DDM with optional leading minus or N/S/E/W suffix
-- **wp_type** - `Wx::Choice` with nav / label / sounding strings
-- **color** - 28x20 swatch `Panel` (`wxSIMPLE_BORDER`) plus "Pick..." `Button`; opens `Wx::ColourDialog`; value round-trips as aabbggrr with alpha byte preserved; `_setColorSwatch()` converts aabbggrr -> `Wx::Colour` for display
+- **wp_type** - `Wx::Choice` over the 9-entry int enum (`@WP_TYPE_NAMES`: nav / route_pt / sounding / label / hazard / shipwreck / fish / diving / poi). A bold `mapped` / `not-mapped` indicator label sits to the right of the Choice and refreshes live on every wp_type or sym change. Changing wp_type when the current pair is mapped triggers a live forward-map: the sym Choice visibly tracks to the new mapping default; off-map pairs leave sym alone. Sym change never touches wp_type in the editor.
+- **sym** - `Wx::BitmapComboBox` built via `nmResources::makeSymComboBox`. 40 entries (text label `"NN - NAME"` + icon loaded from `apps/navMate/sym_catalog/clean*.png`). Width 240px in single editors / 260px in winMultiEditor.
+- **color** - 28x20 swatch `Panel` (`wxSIMPLE_BORDER`) plus an "E80 color" `Wx::Choice` (named-palette) plus "Pick..." `Button`; opens `Wx::ColourDialog`; value round-trips as aabbggrr with alpha byte preserved; `_setColorSwatch()` converts aabbggrr -> `Wx::Colour` for display. The E80 Choice flips to "Custom" when the current value is not an exact E80 palette color, signaling lossy round-trip if pushed to E80.
 - **depth** - `TextCtrl` [70px] plus a static unit label ("ft" or "m") from `$PREF_DEPTH_DISPLAY` (read at panel creation); `depth_cm = 0` displays as empty string; ft<->cm multiply/divide by 30.48, m<->cm multiply/divide by 100
 - **Visible** checkbox - three-state; value loaded from the in-memory visibility state (navMate.json); shown for all node types except route_point
 
@@ -272,7 +276,8 @@ Restore Outline / Convert are enabled only when an FSH file is loaded.
 
 | Command | Description |
 |---|---|
-| OneTimeImportKML | Destructive: prompts for confirmation, then deletes and rebuilds the entire navMate database from the canonical KML source files via `navOneTimeImport::run()` |
+| Waypoint Sym Mapping... | Opens the Conservative dialog (`winSymMapping::showSymMappingDialog`). 9-row editor over `key_values.wp_mapped_syms` with a Reset-to-Defaults button. Save runs uniqueness validation, a preflight count of "mapped waypoints that will follow" vs "off-map waypoints that will be preserved", and a single-transaction update of both the mapping row and any DB waypoints that were in sync. Also the primary "see what the current mapping is" surface. |
+| Force Reset Syms by Type... | Opens the Force dialog (`winSymMapping::showForceSymResetDialog`). One row per wp_type with mapped sym (read-only), live hand-set count, and a per-row [Force] button. Each [Force] resets every waypoint of that wp_type to the mapped sym -- including hand-set ones -- after a per-row confirmation. Dialog stays open between clicks so the user can step through divergent types. |
 
 ---
 
@@ -301,20 +306,29 @@ Tracks (N)
 
 **My Waypoints** is synthesized: there is no UUID for it on the E80. winE80
 constructs it from `$wpmgr->{waypoints}` entries absent from every named group's
-`uuids` list. The `my_waypoints` node has no `uuid` field.
+`uuids` list. The node is **always present** (parallels winFSH) so it remains a
+valid paste target even when E80 has zero ungrouped waypoints. The `my_waypoints`
+node has no `uuid` field.
 
 **Route children** - each route expands to `route_point` nodes, each carrying
-both `uuid` (the waypoint UUID) and `route_uuid` (the parent route).
+`uuid` (the waypoint UUID), `route_uuid` (the parent route), and `position`
+(1-based index within the route).
 
 **Editor panel** - waypoint, group, and route nodes can be edited in place via
 the editor panel's Name (15 char limit), Comment (31 char limit), Lat / Lon,
-Sym (WPICON 0-39), Color (route color index), Depth, Temp, and Date / Time
-controls. Field visibility is type-driven. Save commits the edit to WPMGR via
-the existing wp/route/group APIs; the row is then refreshed on the next idle
-tick.
+Sym (`Wx::BitmapComboBox` with `@E80_SYMS` icons), Color (route color index),
+Depth, Temp, and Date / Time controls. Field visibility is type-driven. Save
+commits the edit to WPMGR via the existing wp/route/group APIs; the row is
+then refreshed on the next idle tick.
 
-**Detail pane** - uses `wpmgrRecordToText($item, 'WAYPOINT'|'GROUP'|'ROUTE', 2, 0, undef, $wpmgr)`,
-which shows all semantic fields and suppresses structural and hex fields.
+**Detail pane** - built locally by `_e80WaypointText` / `_e80GroupText` /
+`_e80RouteText` / `_e80TrackText` / `_e80RoutePointText` in winE80, using the
+shared text helpers in `n_utils.pm` (`latLonLineText`, `northEastLineText`,
+`symText`, `trackPointsText`, `routePointsText`, `uuidRefText`). Waypoint info
+adds a "Member of:" section iterating `$rec->{uuids}` (E80 back-references to
+groups/routes) through a WPMGR-dict resolver. The format converges with winFSH
+and winDatabase. The legacy `wpmgrRecordToText` formatter survives in
+`NET/b_records.pm` for raw protocol debugging from NET-side tools.
 
 **Refresh cycle** - `nmFrame::onIdle` reacts to two signals: an
 `onSessionStart` triggers the full tree rebuild when WPMGR has completed its
@@ -407,7 +421,9 @@ The Choice offers only the named E80 palette; the swatch is a read-only paint
 computed from the selected index.  No Custom entry, no Pick... button, no
 ABGR exposure in any FSH-context UI -- distinct from the winDatabase /
 winE80 color editors that work in ABGR end-to-end.  **Sym** for waypoints
-uses the full `WPICON_TABLE` (0..N).
+is a `Wx::BitmapComboBox` over the full 40-entry `@E80_SYMS` table with icons
+from `apps/navMate/sym_catalog/clean*.png`, built via
+`nmResources::makeSymComboBox`.
 
 FSH transport limits are enforced at write time: name <= 15 chars
 (`$FSH_MAX_NAME`), comment <= 31 chars (`$FSH_MAX_COMMENT`).

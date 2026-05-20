@@ -64,7 +64,10 @@ All clipboard items live in canonical form:
   through `_truncForFSH` / `_truncForE80` at the write seam.
 - **Field set** is the rich union of all spoke fields: name, comment, lat, lon,
   sym, depth (cm), temp_k (K x 100), date (days since epoch), time (sec since
-  midnight), color, route_points / members lists.
+  midnight), color, route_points / members lists. `wp_type` is **hub-only** --
+  it has no representation at any spoke; the boundary derives it from `sym` via
+  the current mapping on inbound, and drops it on outbound (see Hub-Spoke
+  wp_type / sym Boundary below).
 
 The snapshot seam is `_snapshotE80Node` / `_snapshotFSHNode` / `_snapshotDBNode`
 in `navOps.pm`. All three convert from spoke-specific storage to clipboard
@@ -148,6 +151,87 @@ group-embedded). Used by paste pre-flight Step 8 (spoke-wide name
 collision) and by the route-paste-member-WP-exception logic. New spokes
 extend `_spokeNameAndUUIDSets` with a fresh `elsif ($panel eq '<spoke>')`
 branch.
+
+## Hub-Spoke wp_type / sym Boundary
+
+`wp_type` is a navMate-only concept (a 9-value INTEGER enum; see
+[Data Model](data_model.md#waypoint-types)). Spokes carry `sym` (0..39) on the
+wire but no equivalent of `wp_type`. The boundary derives `wp_type` from `sym`
+via the current mapping (`key_values.wp_mapped_syms`, accessed via
+`navDB::symForWpType` / `wpTypeForSym` / `isMapped`).
+
+### Outbound (hub -> spoke)
+
+DB->spoke push paths read `$wp->{sym}` directly from the DB row (Phase 1 added
+the column; the write-boundary in `navDB::insertWaypoint` / `updateWaypoint`
+fills it from the mapping when a caller passes `wp_type` without `sym`).
+`wp_type` itself is dropped at the boundary -- the spoke wire has no field
+for it. Specific sites:
+
+- `navOpsE80::createWaypoint` and `modifyWaypoint` calls in push paths read
+  `$wp->{sym}` from the source row (clipboard or DB), with one fresh-create
+  exception (`_newE80Waypoint`) that uses `symForWpType($WP_TYPE_NAV)` since
+  there's no source row.
+- `navOpsFSH::_buildFSHWpRecord` reads `$clip->{sym}` from the clipboard
+  record; one fresh-create site (`_newFSHWaypoint`) uses
+  `symForWpType($WP_TYPE_NAV)`.
+
+### Inbound: PASTE_NEW (spoke -> new DB row)
+
+`_insertFreshWaypoint` / `_pasteOneWaypointToDB` in `navOpsDB.pm` mint a new
+DB row from a spoke record. The incoming `sym` is preserved as-is; `wp_type`
+is derived via:
+
+```perl
+my $sym = $wp->{sym} // 0;
+my $wp_type = $wp->{wp_type} // wpTypeForSym($sym) // $WP_TYPE_NAV;
+```
+
+If the source carried `wp_type` (DB->DB paste path), it's used directly. For
+spoke sources the reverse-map gives a meaningful classification (sounding,
+shipwreck, fish, etc.) when the spoke `sym` matches a default in the mapping;
+otherwise the row lands as `nav` with the literal `sym`.
+
+### Inbound: MODIFY (spoke -> existing DB row)
+
+`_pushFromE80` in `navOpsDB.pm` (called by both `_pushFromE80` and
+`_pushFromFSH` -- FSH delegates) handles the case where the user pushed an
+edited spoke waypoint back to the hub and the DB row already exists. The
+**`isMapped` predicate** governs:
+
+```perl
+my $sym_new = $wp->{sym} // $rec->{sym};
+my $wp_type_new = $rec->{wp_type};
+if (isMapped($rec->{wp_type}, $rec->{sym})) {
+    my $reverse = wpTypeForSym($sym_new);
+    $wp_type_new = $reverse if defined $reverse;
+}
+```
+
+If the DB row was **in sync** with the mapping at the moment of the push,
+the spoke's new `sym` may shift `wp_type` to the reverse-mapped value
+(when one resolves). If the DB row was **off-map** (a hand-set sym that
+no longer follows the mapping default for its `wp_type`), `wp_type` stays
+put and only `sym` updates -- the spoke is not allowed to overwrite a
+hand-edited DB classification by changing an unrelated sym.
+
+The same predicate / reverse-map pattern applies in the E80/FSH replace
+branch of `_pasteOneWaypointToDB` when the user pastes an E80/FSH waypoint
+over a matching-UUID DB row.
+
+### Where the rule does **not** fire
+
+- **DB editor (single + multi)**: when a user has both `wp_type` and `sym`
+  Choices visible, an explicit edit on one with the other untouched is
+  respected. The single editor's live `wp_type` -> `sym` forward-map runs
+  only when `isMapped` was true at the start of the edit; sym changes never
+  touch `wp_type` regardless. The multi-editor's commit applies the same
+  conservative forward-map per item (mapped items follow, off-map items
+  preserve).
+- **DB->KML existing-UUID re-import**: KML does not override DB `wp_type`
+  or `sym` on a UUID match (matches the spoke MODIFY's "DB-canonical"
+  asymmetry). New UUIDs do reverse-map via `nm_wp_type` / `nm_sym` when
+  present (see [KML Specification](kml_specification.md)).
 
 ## Synchronous vs Asynchronous Spokes
 

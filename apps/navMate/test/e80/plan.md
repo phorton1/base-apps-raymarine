@@ -140,5 +140,5 @@ Tests within this module build state on E80 progressively. The module follows th
 
 - Test 27 (UUID conflict dialog path) requires DB versioning infrastructure that does not exist. Record as `NOT_RUN (db_versioning)`.
 - Tests 22 / 23 (ancestor-wins) require E80 to be empty before Test 22 to verify the fresh-paste path. Tests 21a/b/c provide that cleanup.
-- Test 21c is the documented no-op path -- when E80 has 0 ungrouped WPs, the `my_waypoints` node doesn't exist and the command logs a `no right_click_node set` warning. PASS if /api/db is still empty after.
+- Test 21c is the documented empty-list path -- when E80 has 0 ungrouped WPs, DELETE_GROUP_WPS at `my_waypoints` runs as a real no-op (ProgressDialog STARTED + FINISHED, zero members touched). PASS if /api/db is still empty after.
 - E80 fresh-UUID byte 1 = `0x4e` (navMate-assigned, observed in cycle 19). Earlier docs reference `0x82` (RNS-historical); the new docs use `0x4e` matching observed.

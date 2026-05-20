@@ -100,9 +100,9 @@ Run `test/fsh/runbook.md` from Module Tests onward. Record each test as `fsh.<N>
 
 ---
 
-## Step 5: hub Module (currently stub)
+## Step 5: hub Module
 
-Inter-module reset plus FSH load (same as Step 4 -- hub flows generally require FSH side populated; same suppress-before-load_fsh ordering applies):
+Inter-module reset plus FSH load (hub flows require both spokes populated; same suppress-before-load_fsh ordering applies):
 
 ```powershell
 git -C C:/dat/Rhapsody checkout -- navMate.db
@@ -115,7 +115,7 @@ curl.exe -s "http://localhost:9883/api/test?op=load_fsh&path=C:/base/apps/raymar
 Start-Sleep 3
 ```
 
-Run `test/hub/runbook.md`. As stub, all `NOT_RUN (stub)`.
+Run `test/hub/runbook.md` from Module Tests onward.
 
 ---
 
