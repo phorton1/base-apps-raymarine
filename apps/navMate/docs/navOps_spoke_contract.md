@@ -102,7 +102,7 @@ Per-operation handlers paralleling `navOpsE80.pm`:
 | Paste dispatcher + helpers | `_paste<Spoke>`, `_pasteAllTo<Spoke>`, `_pasteNewAllTo<Spoke>`, `_pasteBeforeAfter<Spoke>` (+ per-type granular helpers) |
 | Push handlers | `_pushTo<Spoke>` (DB -> spoke), `_pushFrom<Spoke>` (spoke -> DB) |
 | Cut helpers | `_cut<Spoke>Waypoint`, `_cut<Spoke>Group`, `_cut<Spoke>Route` (consumed by the paste handlers when the clipboard `cut_flag` is set) |
-| Spoke helpers | `_<spoke>WPGroup`, `_<spoke>WPRoutes`, `_deconflict<Spoke>Name`, `_truncFor<Spoke>`, `_refresh<Spoke>` (latter lives in `navOps.pm` to avoid circular deps; the spoke just calls it) |
+| Spoke helpers | `_<spoke>WPGroup`, `_<spoke>WPRoutes`, `_check<Spoke>NameConflict`, `_truncFor<Spoke>`, `_refresh<Spoke>` (latter lives in `navOps.pm` to avoid circular deps; the spoke just calls it) |
 
 The spoke module's package declaration is `package navOps;` so all handlers
 are reachable as `navOps::_delete<Spoke>(...)` from the central dispatcher
@@ -117,10 +117,13 @@ at the boundary using a `_truncFor<Spoke>` helper that truncates with
 as `$FSH_MAX_NAME` / `$FSH_MAX_COMMENT`, numerically equal to
 `$E80_MAX_NAME` / `$E80_MAX_COMMENT` from `apps/raymarine/NET/a_defs.pm`).
 
-Spokes also enforce per-type name uniqueness within the spoke's namespace
-via `_deconflict<Spoke>Name`. The DB spoke does NOT enforce uniqueness --
-multiple navMate items of the same type may share a name (distinguished by
-UUID).
+Spokes also enforce per-type name uniqueness within the spoke's namespace.
+navMate's primary gate is the preflight in `navOps::_doPaste` /
+`navOps::_doPush` via `_collectNameConflicts` -- see the **No Silent
+Renaming** section below.  Each spoke also runs `_check<Spoke>NameConflict`
+at every create site as a defensive assert (detect-only, never renames).
+The DB spoke does NOT enforce uniqueness -- multiple navMate items of the
+same type may share a name (distinguished by UUID).
 
 ### Lossy-transform pre-flight
 
@@ -232,6 +235,56 @@ over a matching-UUID DB row.
   or `sym` on a UUID match (matches the spoke MODIFY's "DB-canonical"
   asymmetry). New UUIDs do reverse-map via `nm_wp_type` / `nm_sym` when
   present (see [KML Specification](kml_specification.md)).
+
+## No Silent Renaming
+
+E80 and FSH enforce per-spoke uniqueness of waypoint, group, and route
+names within type. The hub (navMate DB) does **not** -- DB rows are
+identified by UUID and may share names freely.
+
+**Policy**: navMate **never** auto-dedups a name at a spoke boundary. Any
+clipboard or push operation whose names would collide with existing spoke
+names, or with each other, is a **hard preflight error**. The user resolves
+the collision in the DB and retries.
+
+### Preflight is the gate
+
+`navOps::_collectNameConflicts` (called by both `_doPaste` and `_doPush`)
+walks the items and collects every collision in one pass:
+
+- **Intra-batch**: a same-typed name (case-insensitive) appearing twice in
+  the clipboard or push set -- including group-member WP names checked
+  against each other and against top-level WPs in the same operation.
+- **Vs-spoke**: a name (case-insensitive) already present on the target
+  spoke at a *different* UUID. Same-UUID skip preserves the in-place
+  update semantics; same-UUID-from-spoke-to-route bypass preserves the
+  WP-already-on-spoke append-to-route case.
+
+All collisions are collected; `_formatNameConflicts` produces a single
+error message listing each one and naming its source (top-level item or
+group member). Per policy, no rename is offered or suggested.
+
+Case-insensitivity matches the spoke's actual enforcement (E80/FSH treat
+`POI` and `poi` as colliding). The lookup hashes from
+`_spokeNameAndUUIDSets` are lc-keyed accordingly.
+
+### Spoke-seam defensive assert
+
+If preflight ever misses a case, each create site at the spoke seam runs
+`_checkE80NameConflict` / `_checkFSHNameConflict` as a defensive assert.
+Detection only -- no rename. On non-undef return, the create site fires
+`error("IMPLEMENTATION ERROR: ... preflight failed to catch")` and aborts
+that one create before any wire send or hash mutation. In a healthy flow,
+this assert is unreachable; it is the regression backstop.
+
+### Standalone "New X" dialogs
+
+The FSH context-menu standalone creates (`_newFSHWaypoint`, `_newFSHGroup`,
+`_newFSHRoute`) have no upstream preflight -- the dialog is the only gate.
+On collision they surface a user-facing message ("FSH already has a
+waypoint named 'X' -- please pick a different name") and the user retries
+with a different name. E80 standalone creates do not pass through a
+navMate-side checker; E80's wire layer rejects the duplicate on its own.
 
 ## Synchronous vs Asynchronous Spokes
 

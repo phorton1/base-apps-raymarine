@@ -851,35 +851,34 @@ user-level type) and are not a mixed waypoints-and-route-points clipboard, no pa
 is offered at this E80 destination. Pre-flight does not abort -- it simply makes no paste
 commands available, leaving Copy, Cut, and Delete as the only menu options.
 
-**Step 7 -- Intra-clipboard name collision check.** Within the effective contents, check
-for duplicate names among items of the same user-level type: waypoints against waypoints,
-routes against routes, groups against groups. If any two items in the effective contents
-share a name within their type, the paste is hard-aborted with a message identifying the
-colliding names. This check is necessary because the navMate database permits multiple
-items of the same type to share a name (distinguished by UUID); the E80 does not. The
-collision cannot be resolved by the paste operation itself -- the user must rename one of
-the items in the database before retrying.
+**Steps 7+8 -- Name-collision preflight (intra-batch + vs-spoke).** Implemented by
+`navOps::_collectNameConflicts`, which runs a single pass over the effective contents
+plus every group's member waypoints, and reports every collision it finds in one
+error message.
 
-For group pastes: member waypoint names are checked across all groups in the effective
-contents. Two member waypoints in different groups that share a name constitute an
-intra-clipboard collision.
+The check is **case-insensitive** -- it matches the spoke's actual uniqueness
+enforcement (E80/FSH treat `POI` and `poi` as colliding). Per the no-silent-rename
+policy, every collision is a hard preflight error; navMate never auto-dedups.
 
-**Step 8 -- E80-wide name collision check.** For each item in the effective contents whose
-UUID does not already exist on the E80, check its name against the complete E80 in-memory
-database for that type. This is a full breadth scan: waypoint names are checked against
-all E80 waypoints regardless of which group they belong to; route names against all E80
-routes; group names against all E80 groups. The E80 enforces name uniqueness per type
-across the entire device.
+**Intra-batch**: a same-typed name appearing twice in the effective contents.
+Group-member WP names participate in the WP-name space and are checked alongside
+top-level waypoints: two member WPs in different groups that share a name, or a
+member WP whose name matches a top-level WP, both constitute intra-batch collisions.
 
-If any item's name is already in use on the E80 by an item with a different UUID, the
-paste is hard-aborted with a message identifying the conflicting item by name and type.
-No auto-rename; no "continue anyway." The user must resolve the name conflict before
-retrying.
+**Vs-spoke**: a clipboard or push name (case-insensitive) already present on the
+target spoke at a *different* UUID. Same-UUID is in-place update -- skipped.
+WP-already-on-spoke pasted at a route or route_point destination is the
+append-to-route case -- also skipped.
 
-For group pastes: group shell names are checked first; a group-level name collision aborts
-before member waypoints are inspected.
+All collisions are collected and reported in a single error message naming each
+collision and its source (top-level item or group member). The user resolves the
+collisions in the DB and retries. No auto-rename; no "continue anyway."
 
-Items passing Steps 7 and 8 have confirmed name safety. UUID-based conflict resolution
+The same `_collectNameConflicts` helper runs at every push path that targets a
+spoke (DB->E80, DB->FSH, E80<->FSH cross-spoke push) so the policy is symmetric
+across paste and push.
+
+Items passing the name-collision preflight have confirmed name safety. UUID-based conflict resolution
 (where the clipboard item's UUID already exists on the E80) is deferred to SS10.10.
 
 ### 10.3 Paste to DB -- collection root or member node

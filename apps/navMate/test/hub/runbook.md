@@ -234,9 +234,9 @@ $fsh_wp_after = @((curl.exe -s "http://localhost:9883/api/fsh" | ConvertFrom-Jso
 Write-Host "FSH WPs before=$fsh_wp_before after=$fsh_wp_after (expect +1)"
 ```
 
-**Pass:** NO ProgressDialog. FSH waypoint count increased by exactly 1. Two records named "Waypoint 25" on FSH (one with `80B2-C48A-5400-D3AE`, one with a fresh UUID). Record `[HUB_FRESH_FSH_WP]` = the new FSH UUID (look up via name match).
+**Pass:** NO ProgressDialog. FSH waypoint count UNCHANGED. Log contains a name-collision ERROR sentinel naming "Waypoint 25" -- preflight blocks the PASTE_NEW because FSH already has a waypoint by that name at a different (about-to-be-minted) UUID. Per the no-silent-rename policy, navMate refuses to mint a `Waypoint 25` second record; the user would resolve by renaming the DB source and retrying. No `[HUB_FRESH_FSH_WP]` is recorded.
 
-**Probe note:** if FAIL with `ERROR - name 'Waypoint 25' already exists on FSH`, that flags name-uniqueness firing on PASTE_NEW (which it should not -- PASTE_NEW always creates fresh; name dup is normal in FSH for fresh-UUID records *unless* the FSH deconflict policy says otherwise. Document actual behavior.)
+**Probe note:** the previous version of this test expected a silent name-dedup (`Waypoint 25` and `Waypoint 25 (2)` coexisting on FSH); under the 2026-05-20 no-silent-rename policy that behavior is gone and the preflight ERROR is the correct outcome.
 
 ---
 
@@ -280,9 +280,9 @@ $fsh_gr_after = @((curl.exe -s "http://localhost:9883/api/fsh" | ConvertFrom-Jso
 Write-Host "FSH groups before=$fsh_gr_before after=$fsh_gr_after (expect +1)"
 ```
 
-**Pass:** NO ProgressDialog. FSH group count +1. New group named "Timiteo" (or deconflicted variant -- FSH enforces name uniqueness per `_deconflictFSHName`) with 6 embedded fresh-UUID members. Record the new group's FSH UUID.
+**Pass:** NO ProgressDialog. FSH group count UNCHANGED. Log contains a name-collision ERROR sentinel naming "Timiteo" -- preflight blocks the PASTE_NEW because FSH already has a `Timiteo` group at a different UUID. (Member-WP names also collide -- the error message lists all collisions. No spoke mutation.) Per the no-silent-rename policy, navMate refuses to mint a second `Timiteo`; the user would rename the DB source and retry.
 
-**Probe note:** if FSH `_deconflictFSHName` renames "Timiteo" -> "Timiteo (2)" or similar, document it. PASS regardless.
+**Probe note:** the previous version of this test tolerated a `Timiteo (2)` rename outcome; under the 2026-05-20 no-silent-rename policy the preflight ERROR is the correct outcome.
 
 ---
 
@@ -305,7 +305,7 @@ $e80_wp_after2 = @((curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Jso
 Write-Host "E80 routes before=$e80_rt_before after=$e80_rt_after (expect +1); WPs before=$e80_wp_before2 after=$e80_wp_after2 (expect unchanged)"
 ```
 
-**Pass:** ProgressDialog 'Paste New' STARTED + FINISHED. E80 routes count +1, WP count unchanged. New route named "Timiteo" (or deconflicted) with 6 points referencing the existing t01..t06 UUIDs. Record `[HUB_FRESH_E80_RT]` = new route UUID.
+**Pass:** NO ProgressDialog. E80 routes count UNCHANGED, WP count unchanged. Log contains a name-collision ERROR sentinel naming "Timiteo" -- preflight blocks the PASTE_NEW because E80 already has a `Timiteo` route at a different (about-to-be-minted) UUID. Per the no-silent-rename policy, navMate refuses to mint a second `Timiteo`; the user would rename the DB source and retry. No `[HUB_FRESH_E80_RT]` is recorded.
 
 ---
 
@@ -501,9 +501,9 @@ Start-Sleep 8
 
 #### Test 20 -- E80->FSH->E80 WP round-trip
 
-Use "Waypoint 14" at `83b2167d3f0037d9` -- on E80 after hub.13 (cut from FSH), no longer on FSH. Clean source for the round-trip: hop 1's same-UUID PASTE lands at a slot FSH doesn't have AND at a name FSH doesn't have, so no UUID-match and no name-collision. Hop 2 PASTE_NEW mints a fresh-UUID record on E80; deconflict will rename it because the source's name still exists on E80.
+Use "Waypoint 14" at `83b2167d3f0037d9` -- on E80 after hub.13 (cut from FSH), no longer on FSH. Hop 1 same-UUID PASTE lands at a slot FSH doesn't have AND at a name FSH doesn't have, so no UUID-match and no name-collision -- hop 1 succeeds. Hop 2 attempts PASTE_NEW FSH -> E80 but the source's name still exists on E80 at the original UUID; per the 2026-05-20 no-silent-rename policy, the preflight blocks the mint and the operation produces a name-collision ERROR with no spoke mutation.
 
-Earlier versions of this test used "Waypoint 10" sourced from hub.9 -- that record's *name* still lives on FSH at a different UUID (the original FSH WP10 at `83B2-167D-3F00-ED99`), so hop 1 hit SS10.2 step 8 (different-UUID name collision) and the round-trip never actually round-tripped. The Waypoint 14 source sidesteps this because hub.13's cut removed the FSH-side record entirely.
+Earlier versions of this test used "Waypoint 10" sourced from hub.9 -- that record's *name* still lives on FSH at a different UUID (the original FSH WP10 at `83B2-167D-3F00-ED99`), so hop 1 hit SS10.2 step 8 (different-UUID name collision) and the round-trip never actually round-tripped. The Waypoint 14 source sidesteps this because hub.13's cut removed the FSH-side record entirely. Hop 2 still error-aborts under the new policy -- this test asserts the preflight, not a successful round-trip.
 
 ```powershell
 $src_uuid = '83b2167d3f0037d9'
@@ -532,7 +532,7 @@ else
     curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
     Start-Sleep 3
 
-    # Hop 2: FSH -> E80 PASTE_NEW (fresh UUID; name deconflicted because source name still on E80)
+    # Hop 2: FSH -> E80 PASTE_NEW.  Source name still on E80; preflight blocks (no rename per policy).
     $u = $src_uuid.ToUpper()
     $fsh_uuid_hop1 = "$($u.Substring(0,4))-$($u.Substring(4,4))-$($u.Substring(8,4))-$($u.Substring(12,4))"
     curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=$fsh_uuid_hop1&cmd=10200" | Out-Null
@@ -559,7 +559,7 @@ else
 }
 ```
 
-**Pass:** Hop 1 = no ProgressDialog (FSH-side, synchronous). Hop 2 = ProgressDialog 'Paste New' STARTED + FINISHED. lat/lon match within 1e-4. Source and destination UUIDs differ. Source still on E80 (PASTE_NEW didn't consume it). No `ERROR -` sentinel. Destination name will be deconflicted (`Waypoint 14 (2)` or similar) because "Waypoint 14" already exists on E80 at the source UUID -- this is expected and is the navMate-canonical PASTE_NEW behavior.
+**Pass:** Hop 1 = no ProgressDialog (FSH-side, synchronous), FSH gains the round-tripped WP at the original UUID. Hop 2 = NO ProgressDialog; preflight blocks before any wire dispatch. Log contains a name-collision ERROR sentinel naming "Waypoint 14" -- E80 already has it at the source UUID, and PASTE_NEW would have minted a duplicate-name fresh-UUID record. E80 waypoint count unchanged across hop 2. No new dst record. Per the 2026-05-20 no-silent-rename policy, this is the correct outcome; the previous expectation of a `Waypoint 14 (2)` rename is gone.
 
 ---
 
@@ -580,7 +580,7 @@ $timiteo_count = @($f.groups.PSObject.Properties | Where-Object { $_.Value.name 
 Write-Host "FSH groups matching 'Timiteo*' count=$timiteo_count (expect >= 2 from earlier tests + this one)"
 ```
 
-**Pass:** NO ProgressDialog. FSH gains a new "Timiteo*" group (deconflicted name). Member WPs reused from existing FSH WPs (no count change in FSH waypoints if all members already there). No ERROR.
+**Pass:** NO ProgressDialog. FSH groups count UNCHANGED -- preflight blocks the PASTE_NEW because FSH already has a `Timiteo` group at a different UUID (and the member-WP names likewise collide). Log contains a name-collision ERROR sentinel naming "Timiteo" (and the colliding members). No FSH mutation. Per the 2026-05-20 no-silent-rename policy, the previous expectation of a `Timiteo*` rename is gone; the preflight ERROR is the correct outcome.
 
 ---
 
@@ -677,13 +677,13 @@ curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&rig
 Start-Sleep 2
 
 $log = curl.exe -s "http://localhost:9883/api/log?since=mark"
-$collided = $log -match "name 'Waypoint 25' already exists" -or $log -match "name-collision" -or $log -match "name conflict"
+$collided = $log -match "FSH operation blocked" -and $log -match "'Waypoint 25'"
 Write-Host "Collision sentinel observed = $collided"
 ```
 
 **Pass:** NO ProgressDialog (guard fires pre-write). FSH state unchanged (no new record at the E80 fresh UUID's FSH-form). Log contains a name-collision ERROR sentinel referencing "Waypoint 25". Neither side mutated.
 
-**Probe note:** if the paste succeeds (creates a fresh-UUID FSH record with name "Waypoint 25" alongside the original), then FSH's `_deconflictFSHName` engaged in PASTE -- that would be a different bug (PASTE should not silently deconflict; PASTE_NEW does).
+**Probe note:** if the paste succeeds (creates a fresh-UUID FSH record with name "Waypoint 25" alongside the original), the no-silent-rename policy has regressed -- both PASTE and PASTE_NEW must preflight-error on a different-UUID name collision; neither should ever silently mint a deduped variant.
 
 ---
 
@@ -743,13 +743,13 @@ else {
     curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
     Start-Sleep 2
     $r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
-    $intra = @($r.lines | Where-Object { $_.text -match "Clipboard contains duplicate|duplicate.*name|intra-clipboard" }).Count
+    $intra = @($r.lines | Where-Object { $_.text -match "FSH operation blocked|intra-clipboard" }).Count
     $err = @($r.lines | Where-Object { $_.text -match "ERROR -|IMPLEMENTATION ERROR" } | Where-Object { $_.text -notmatch "Could not send content" }).Count
     Write-Host "hub.26: name='$dup_name' intra=$intra err=$err"
 }
 ```
 
-**Pass:** NO ProgressDialog. ERROR sentinel `Clipboard contains duplicate waypoint name '$name' -- aborting` (from `navOps.pm:1057`). FSH state unchanged.
+**Pass:** NO ProgressDialog. ERROR sentinel `FSH operation blocked: N name collision(s):` with an `intra-clipboard waypoint name '$dup_name'` entry (from `_collectNameConflicts` / `_formatNameConflicts` in `navOps.pm`). FSH state unchanged. Per the 2026-05-20 no-silent-rename policy, the error replaces the older single-line `Clipboard contains duplicate waypoint name '<name>' -- aborting` sentinel.
 
 **Note:** sourcing from DB is the only way to construct an "intra-clipboard duplicate" clipboard since E80 and FSH enforce per-spoke name uniqueness. Earlier versions of this test tried to source from E80 -- that was a malformed test design (testing an impossible precondition).
 

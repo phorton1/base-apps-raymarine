@@ -1059,63 +1059,26 @@ sub _doPaste
 			}
 		}
 
-		# Step 7: Intra-clipboard name collision
-		my %seen;
-		for my $item (@effective)
+		# Steps 7+8: Name-collision preflight (intra-clipboard + vs-spoke).
+		# Per the no-silent-rename policy, navMate never auto-dedups; any
+		# collision that would cause an E80/FSH wire-rename is a hard
+		# preflight error.  Both checks are case-insensitive (matches the
+		# spoke uniqueness semantics) and walk group members in the same
+		# pass -- a group's member WP names participate in the WP-name
+		# space at the spoke and must be checked alongside top-level WPs.
+		# All conflicts are collected and reported as a single error so
+		# the user can fix them in one DB-edit pass.
+		# For PASTE_NEW, the same-UUID-skip is disabled: PASTE_NEW mints
+		# a fresh UUID at the spoke, so even a same-UUID clipboard item
+		# becomes a new fresh-UUID record that would collide on name.
+		my $is_paste_new = ($cmd_id == $CTX_CMD_PASTE_NEW
+		                 || $cmd_id == $CTX_CMD_PASTE_NEW_BEFORE
+		                 || $cmd_id == $CTX_CMD_PASTE_NEW_AFTER);
+		my @conflicts = _collectNameConflicts(\@effective, $panel, $right_click_node, $is_paste_new);
+		if (@conflicts)
 		{
-			my $t    = $item->{type} // '';
-			my $name = ($item->{data} // {})->{name} // '';
-			my $key  = "$t:$name";
-			if ($seen{$key})
-			{
-				error("Clipboard contains duplicate $t name '$name' -- aborting");
-				return;
-			}
-			$seen{$key} = 1;
-		}
-
-		# Step 8: Spoke-wide name collision.  The *_names hashes are
-		# name -> UUID maps (navMate canonical form).  Skip the collision
-		# when the matching name on the spoke is already at the SAME UUID
-		# as the clipboard item (in-place update / no-op same-UUID round-
-		# trip).  Real collision = same name at a different UUID.  Also
-		# preserves the WP-already-present-as-route-member exception for
-		# WP pastes targeted at a route or route_point destination.
-		my ($spoke_wp_names, $spoke_grp_names, $spoke_rte_names, $spoke_have_uuid)
-			= _spokeNameAndUUIDSets($panel);
-		if ($spoke_wp_names)
-		{
-			for my $item (@effective)
-			{
-				my $t         = $item->{type} // '';
-				my $name      = ($item->{data} // {})->{name} // '';
-				my $clip_uuid = $item->{uuid} // '';
-				next if !$name;
-				if ($t eq 'waypoint' && exists $spoke_wp_names->{$name})
-				{
-					my $exist_uuid = $spoke_wp_names->{$name} // '';
-					next if $exist_uuid eq $clip_uuid;
-					my $dest_type = $right_click_node->{type} // '';
-					next if ($dest_type eq 'route' || $dest_type eq 'route_point')
-					     && $spoke_have_uuid->{$clip_uuid};
-					error(uc($panel) . " already has a waypoint named '$name' -- aborting");
-					return;
-				}
-				if ($t eq 'group' && exists $spoke_grp_names->{$name})
-				{
-					my $exist_uuid = $spoke_grp_names->{$name} // '';
-					next if $exist_uuid eq $clip_uuid;
-					error(uc($panel) . " already has a group named '$name' -- aborting");
-					return;
-				}
-				if ($t eq 'route' && exists $spoke_rte_names->{$name})
-				{
-					my $exist_uuid = $spoke_rte_names->{$name} // '';
-					next if $exist_uuid eq $clip_uuid;
-					error(uc($panel) . " already has a route named '$name' -- aborting");
-					return;
-				}
-			}
+			error(_formatNameConflicts($panel, \@conflicts));
+			return;
 		}
 
 		if (($cb->{source} // '') eq 'database')
@@ -1157,14 +1120,11 @@ sub _doPaste
 sub _spokeNameAndUUIDSets
 {
 	# Returns (\%wp_names, \%grp_names, \%rte_names, \%have_uuid) for the
-	# named spoke.  As of the hub-alpha fix, the *_names hashes are
-	# name -> UUID maps (navMate canonical no-dash form) rather than
-	# name -> 1 presence sets, so the SS10.2 collision check at the call
-	# site can distinguish "same UUID, in-place update" (skip) from
-	# "different UUID, real name collision" (error).  Names that are not
-	# unique on the spoke record one representative UUID; uniqueness is
-	# enforced by the spoke's own deconflict policy so multiplicity here
-	# is an invariant violation, not a normal state.
+	# named spoke.  The *_names hashes are lc(name) -> UUID maps (navMate
+	# canonical no-dash form).  Keys are lower-cased to match the spoke's
+	# case-insensitive uniqueness enforcement -- callers must lc() the
+	# lookup name.  Same-UUID-skip semantics at the call site distinguishes
+	# "in-place update" from a real different-UUID collision.
 	my ($panel) = @_;
 	if ($panel eq 'e80')
 	{
@@ -1174,19 +1134,19 @@ sub _spokeNameAndUUIDSets
 		for my $u (keys %{$wpmgr->{waypoints} // {}})
 		{
 			my $n = $wpmgr->{waypoints}{$u}{name} // '';
-			$wp_names{$n} = $u;
+			$wp_names{lc($n)} = $u;
 		}
 		my %grp_names;
 		for my $u (keys %{$wpmgr->{groups} // {}})
 		{
 			my $n = $wpmgr->{groups}{$u}{name} // '';
-			$grp_names{$n} = $u;
+			$grp_names{lc($n)} = $u;
 		}
 		my %rte_names;
 		for my $u (keys %{$wpmgr->{routes} // {}})
 		{
 			my $n = $wpmgr->{routes}{$u}{name} // '';
-			$rte_names{$n} = $u;
+			$rte_names{lc($n)} = $u;
 		}
 		my %have_uuid = map { $_ => 1 } keys %{$wpmgr->{waypoints} // {}};
 		return (\%wp_names, \%grp_names, \%rte_names, \%have_uuid);
@@ -1202,7 +1162,7 @@ sub _spokeNameAndUUIDSets
 		{
 			my $wp      = $db->{waypoints}{$fsh_uuid};
 			my $nav_uuid = fshToNavUUID($fsh_uuid);
-			$wp_names{$wp->{name} // ''} = $nav_uuid;
+			$wp_names{lc($wp->{name} // '')} = $nav_uuid;
 			$have_uuid{$nav_uuid} = 1;
 		}
 		# Group-embedded WPs (names participate in uniqueness).
@@ -1212,7 +1172,7 @@ sub _spokeNameAndUUIDSets
 			{
 				next if !defined $wp->{name} || !$wp->{uuid};
 				my $nav_uuid = fshToNavUUID($wp->{uuid});
-				$wp_names{$wp->{name}} = $nav_uuid;
+				$wp_names{lc($wp->{name})} = $nav_uuid;
 				$have_uuid{$nav_uuid} = 1;
 			}
 		}
@@ -1220,17 +1180,160 @@ sub _spokeNameAndUUIDSets
 		for my $fsh_uuid (keys %{$db->{groups} // {}})
 		{
 			my $n = $db->{groups}{$fsh_uuid}{name} // '';
-			$grp_names{$n} = fshToNavUUID($fsh_uuid);
+			$grp_names{lc($n)} = fshToNavUUID($fsh_uuid);
 		}
 		my %rte_names;
 		for my $fsh_uuid (keys %{$db->{routes} // {}})
 		{
 			my $n = $db->{routes}{$fsh_uuid}{name} // '';
-			$rte_names{$n} = fshToNavUUID($fsh_uuid);
+			$rte_names{lc($n)} = fshToNavUUID($fsh_uuid);
 		}
 		return (\%wp_names, \%grp_names, \%rte_names, \%have_uuid);
 	}
 	return (undef, undef, undef, undef);
+}
+
+
+#----------------------------------------------------
+# _collectNameConflicts / _formatNameConflicts
+#----------------------------------------------------
+# Name-collision preflight shared by _doPaste and _doPush.  Per the
+# no-silent-rename policy, any collision (intra-batch or vs-spoke,
+# case-insensitive) is a hard error; navMate never auto-dedups.
+# Group members participate in the WP-name space and are walked.
+
+sub _collectNameConflicts
+{
+	# $is_paste_new (optional, default 0): when true, disables the
+	# same-UUID-skip in the vs-spoke check.  PASTE_NEW mints a fresh
+	# spoke UUID, so a clipboard item whose UUID matches a spoke record
+	# still produces a brand-new record at a brand-new UUID with the
+	# same name -- which collides with the original.  Push paths and
+	# regular PASTE leave this false.
+	my ($items, $panel, $right_click_node, $is_paste_new) = @_;
+	$is_paste_new //= 0;
+	my @conflicts;
+
+	# Flatten items to a checkable entry list.  Each entry =
+	#   { type, name, lc_name, uuid, source } -- "source" names the
+	# location in the batch for the error message.
+	my @entries;
+	for my $item (@$items)
+	{
+		my $t = $item->{type} // '';
+		next if $t eq 'track' || $t eq 'branch' || $t eq 'route_point';
+		my $n = ($item->{data} // {})->{name} // '';
+		my $u = $item->{uuid} // '';
+		if ($n ne '')
+		{
+			push @entries, {
+				type    => $t,
+				name    => $n,
+				lc_name => lc($n),
+				uuid    => $u,
+				source  => "$t '$n'",
+			};
+		}
+		if ($t eq 'group')
+		{
+			for my $m (@{$item->{members} // []})
+			{
+				my $mn = ($m->{data} // {})->{name} // '';
+				next if $mn eq '';
+				my $mu = $m->{uuid} // '';
+				push @entries, {
+					type    => 'waypoint',
+					name    => $mn,
+					lc_name => lc($mn),
+					uuid    => $mu,
+					source  => "waypoint '$mn' in group '$n'",
+				};
+			}
+		}
+	}
+
+	# Intra-batch: same (type, lc_name) appearing twice from different
+	# clipboard sources.  Group's own name and a member named the same
+	# don't conflict (different types).
+	{
+		my %seen;
+		for my $e (@entries)
+		{
+			my $key = "$e->{type}:$e->{lc_name}";
+			if (my $first = $seen{$key})
+			{
+				push @conflicts, {
+					kind    => 'intra',
+					type    => $e->{type},
+					name    => $e->{name},
+					where_a => $first->{source},
+					where_b => $e->{source},
+				};
+			}
+			else
+			{
+				$seen{$key} = $e;
+			}
+		}
+	}
+
+	# Vs-spoke: clipboard name matches an existing spoke name at a
+	# different UUID.  Same-UUID = in-place update, skip.
+	my ($spoke_wp_names, $spoke_grp_names, $spoke_rte_names, $spoke_have_uuid)
+		= _spokeNameAndUUIDSets($panel);
+	if ($spoke_wp_names)
+	{
+		my $dest_type = $right_click_node ? ($right_click_node->{type} // '') : '';
+		for my $e (@entries)
+		{
+			my $set = $e->{type} eq 'waypoint' ? $spoke_wp_names
+			        : $e->{type} eq 'group'    ? $spoke_grp_names
+			        : $e->{type} eq 'route'    ? $spoke_rte_names
+			        : undef;
+			next if !$set;
+			my $exist_uuid = $set->{$e->{lc_name}};
+			next if !defined $exist_uuid;
+			# Same-UUID skip is for in-place update / no-op round-trip.
+			# Disabled for PASTE_NEW: the fresh UUID minted at the spoke
+			# would produce a duplicate-name record.
+			next if !$is_paste_new && $exist_uuid eq $e->{uuid};
+			# Route-member bypass: WP already present on spoke and being
+			# referenced into a route destination (paste-only, not PASTE_NEW).
+			next if !$is_paste_new
+			    && $e->{type} eq 'waypoint'
+			    && ($dest_type eq 'route' || $dest_type eq 'route_point')
+			    && $spoke_have_uuid->{$e->{uuid}};
+			push @conflicts, {
+				kind          => 'spoke',
+				type          => $e->{type},
+				name          => $e->{name},
+				where_a       => $e->{source},
+				existing_uuid => $exist_uuid,
+			};
+		}
+	}
+	return @conflicts;
+}
+
+sub _formatNameConflicts
+{
+	my ($panel, $conflicts) = @_;
+	my $spoke = uc($panel);
+	my $n     = scalar @$conflicts;
+	my @lines = ("$spoke operation blocked: $n name collision(s):");
+	for my $c (@$conflicts)
+	{
+		if ($c->{kind} eq 'intra')
+		{
+			push @lines, "  intra-clipboard $c->{type} name '$c->{name}': $c->{where_a} vs $c->{where_b}";
+		}
+		else
+		{
+			push @lines, "  $c->{type} '$c->{name}' (from $c->{where_a}) already on $spoke at UUID $c->{existing_uuid}";
+		}
+	}
+	push @lines, "Per policy, navMate does not auto-rename.  Resolve in the database and retry.";
+	return join("\n", @lines);
 }
 
 
@@ -1286,6 +1389,12 @@ sub _doPush
 			return if !($nmDialogs::suppress_confirm || confirmDialog($tree, $msg, 'Push'));
 			# E80<->FSH share identical name/comment limits + color palette;
 			# no lossy transform check needed.
+			my @push_conflicts = _collectNameConflicts(\@items, 'fsh', $right_click_node);
+			if (@push_conflicts)
+			{
+				error(_formatNameConflicts('fsh', \@push_conflicts));
+				return;
+			}
 			navOps::_pushToFSH($right_click_node, $tree, \@items);
 		}
 		else
@@ -1317,6 +1426,12 @@ sub _doPush
 			my $msg = "Push $n item(s) from FSH to E80?";
 			return if !($nmDialogs::suppress_confirm || confirmDialog($tree, $msg, 'Push'));
 			# E80<->FSH symmetric; no lossy transform check needed.
+			my @push_conflicts = _collectNameConflicts(\@items, 'e80', $right_click_node);
+			if (@push_conflicts)
+			{
+				error(_formatNameConflicts('e80', \@push_conflicts));
+				return;
+			}
 			navOps::_pushToE80($right_click_node, $tree, \@items);
 		}
 		else
@@ -1352,6 +1467,12 @@ sub _doPush
 		if (_hasLossyIssues($db_issues))
 		{
 			return if !nmDialogs::lossyTransformWarning($tree, $db_issues);
+		}
+		my @push_conflicts = _collectNameConflicts(\@db_items, 'fsh', $right_click_node);
+		if (@push_conflicts)
+		{
+			error(_formatNameConflicts('fsh', \@push_conflicts));
+			return;
 		}
 		navOps::_pushToFSH($right_click_node, $tree, \@db_items);
 		return;
@@ -1411,6 +1532,12 @@ sub _doPush
 	if (_hasLossyIssues($db_issues))
 	{
 		return if !nmDialogs::lossyTransformWarning($tree, $db_issues);
+	}
+	my @push_conflicts = _collectNameConflicts(\@db_items, 'e80', $right_click_node);
+	if (@push_conflicts)
+	{
+		error(_formatNameConflicts('e80', \@push_conflicts));
+		return;
 	}
 	navOps::_pushToE80($right_click_node, $tree, \@db_items);
 }

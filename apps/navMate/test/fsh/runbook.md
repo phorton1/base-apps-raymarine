@@ -577,7 +577,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&rig
 Start-Sleep 2
 ```
 
-**Pass:** `ERROR - Clipboard contains duplicate waypoint name '<name>' -- aborting`; no WP named `<name>` lands on FSH.
+**Pass:** ERROR sentinel `FSH operation blocked: N name collision(s):` with an `intra-clipboard waypoint name '<name>'` entry naming the colliding source items, followed by `Per policy, navMate does not auto-rename.  Resolve in the database and retry.`; no IMPL ERROR; no WP named `<name>` lands on FSH.
 
 ---
 
@@ -624,7 +624,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&rig
 Start-Sleep 2
 ```
 
-**Pass:** `ERROR - FSH already has a waypoint named 'BOCAS1' -- aborting` (or analogous) AND only one BOCAS1 on FSH (`CE4E-4318-1F01-B3AE`, the original from fsh.30a). **Fail:** precondition could not be established, OR the sentinel did not fire, OR a second BOCAS1 landed on FSH.
+**Pass:** ERROR sentinel `FSH operation blocked: 1 name collision(s):` with a `waypoint 'BOCAS1' (from waypoint 'BOCAS1') already on FSH at UUID <existing>` entry, followed by `Per policy, navMate does not auto-rename.  Resolve in the database and retry.`; no IMPL ERROR; only one BOCAS1 on FSH (`CE4E-4318-1F01-B3AE`, the original from fsh.30a). **Fail:** precondition could not be established, OR the sentinel did not fire, OR a second BOCAS1 landed on FSH.
 
 ---
 

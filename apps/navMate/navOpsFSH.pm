@@ -31,9 +31,11 @@
 # NAME UNIQUENESS
 # ---------------
 # FSH (like E80) enforces uniqueness of waypoint, group, and route
-# names within type.  _deconflictFSHName picks a non-colliding name
-# when minting; pre-flight in _doPaste catches paste-time collisions
-# via _spokeNameAndUUIDSets in navOps.pm.
+# names within type.  Per the no-silent-rename policy, navMate NEVER
+# auto-renames.  Preflight in navOps::_doPaste / navOps::_doPush is
+# the primary gate via _spokeNameAndUUIDSets in navOps.pm;
+# _checkFSHNameConflict at each create site is the spoke-seam
+# defensive assert that catches preflight regressions.
 #
 # PROGRESS DIALOG
 # ---------------
@@ -107,46 +109,54 @@ sub _fshWPRoutes
 }
 
 
-sub _deconflictFSHName
-	# Pick a name that doesn't collide with existing FSH names in the
-	# requested hash ($hash_name = 'waypoints', 'groups', or 'routes')
-	# or in $pending_names (lc-name keys queued earlier in this paste
-	# pass).  Appends ' (2)', ' (3)', ... and re-checks length after
-	# each append (final name must fit in 15 chars).
+sub _checkFSHNameConflict
+	# Detect a name conflict between $name and the live FSH state
+	# ($hash_name = 'waypoints' (default), 'groups', or 'routes') or any
+	# names already queued this batch in $pending_names.  Case-insensitive
+	# match (mirrors FSH uniqueness enforcement).  For 'waypoints', also
+	# considers group-embedded WP names (they share the WP-name space).
+	#
+	# Per policy, navMate NEVER auto-renames.  Preflight in
+	# navOps::_doPaste / navOps::_doPush is the primary gate; this
+	# spoke-seam check is the defensive assert that catches preflight
+	# regressions before any in-memory mutation.
+	#
+	# Returns undef on no-conflict (and claims the name in $pending_names),
+	# or { name, where => 'spoke'|'pending' } on conflict (and leaves
+	# $pending_names untouched).
 {
 	my ($db, $name, $pending_names, $hash_name) = @_;
 	$hash_name     //= 'waypoints';
 	$pending_names //= {};
 	$name          //= '';
-	my %existing;
-	$existing{lc($_->{name} // '')} = 1 for values %{$db->{$hash_name} // {}};
-	# Group-embedded WP names participate in the global WP-name space.
+	my $lc = lc($name);
+
+	for my $rec (values %{$db->{$hash_name} // {}})
+	{
+		if (lc($rec->{name} // '') eq $lc)
+		{
+			return { name => $name, where => 'spoke', hash => $hash_name };
+		}
+	}
 	if ($hash_name eq 'waypoints')
 	{
 		for my $grp (values %{$db->{groups} // {}})
 		{
 			for my $wp (@{$grp->{wpts} // []})
 			{
-				$existing{lc($wp->{name} // '')} = 1 if defined $wp->{name};
+				if (defined $wp->{name} && lc($wp->{name}) eq $lc)
+				{
+					return { name => $name, where => 'spoke', hash => $hash_name };
+				}
 			}
 		}
 	}
-	my $base      = $name;
-	my $candidate = $base;
-	my $n         = 2;
-	while ($existing{lc($candidate)} || $pending_names->{lc($candidate)})
+	if ($pending_names->{$lc})
 	{
-		$candidate = "$base ($n)";
-		$n++;
-		# Bail if we cannot fit any further suffix within the field limit.
-		last if length($candidate) > $FSH_MAX_NAME && $n > 999;
+		return { name => $name, where => 'pending', hash => $hash_name };
 	}
-	if ($candidate ne $base)
-	{
-		display(0, 0, "_deconflictFSHName: renamed '$base' to '$candidate'");
-	}
-	$pending_names->{lc($candidate)} = 1;
-	return $candidate;
+	$pending_names->{$lc} = 1;
+	return undef;
 }
 
 
@@ -552,9 +562,12 @@ sub _newFSHWaypoint
 	return if !$nav_uuid;
 
 	my %pending_names;
-	my $hash_name = $group_fsh_uid ? 'waypoints' : 'waypoints';
-	my $name_raw  = _deconflictFSHName($db, $data->{name} // '', \%pending_names, $hash_name);
-	my ($name, $comment) = _truncForFSH($name_raw, $data->{comment} // '');
+	if (my $c = _checkFSHNameConflict($db, $data->{name} // '', \%pending_names, 'waypoints'))
+	{
+		error("FSH already has a waypoint named '$c->{name}' -- please pick a different name");
+		return;
+	}
+	my ($name, $comment) = _truncForFSH($data->{name} // '', $data->{comment} // '');
 
 	my $rec = _buildFSHWpRecord({
 		uuid    => $nav_uuid,
@@ -594,8 +607,12 @@ sub _newFSHGroup
 	return if !$nav_uuid;
 
 	my %pending_names;
-	my $name_raw  = _deconflictFSHName($db, $data->{name} // '', \%pending_names, 'groups');
-	my ($name, $unused_cmt) = _truncForFSH($name_raw, '');
+	if (my $c = _checkFSHNameConflict($db, $data->{name} // '', \%pending_names, 'groups'))
+	{
+		error("FSH already has a group named '$c->{name}' -- please pick a different name");
+		return;
+	}
+	my ($name, $unused_cmt) = _truncForFSH($data->{name} // '', '');
 
 	my $rec = &threads::shared::share({});
 	$rec->{uuid}   = navToFSHUUID($nav_uuid);
@@ -620,8 +637,12 @@ sub _newFSHRoute
 	return if !$nav_uuid;
 
 	my %pending_names;
-	my $name_raw  = _deconflictFSHName($db, $data->{name} // '', \%pending_names, 'routes');
-	my ($name, $comment) = _truncForFSH($name_raw, $data->{comment} // '');
+	if (my $c = _checkFSHNameConflict($db, $data->{name} // '', \%pending_names, 'routes'))
+	{
+		error("FSH already has a route named '$c->{name}' -- please pick a different name");
+		return;
+	}
+	my ($name, $comment) = _truncForFSH($data->{name} // '', $data->{comment} // '');
 
 	my $rec = &threads::shared::share({});
 	$rec->{uuid}    = navToFSHUUID($nav_uuid);
@@ -765,8 +786,12 @@ sub _pasteWaypointToFSH
 	}
 	else
 	{
-		my $name_raw = _deconflictFSHName($db, $item->{data}{name} // '', $pending_names, 'waypoints');
-		my ($name, $comment) = _truncForFSH($name_raw, $item->{data}{comment} // '');
+		if (my $c = _checkFSHNameConflict($db, $item->{data}{name} // '', $pending_names, 'waypoints'))
+		{
+			error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+			return;
+		}
+		my ($name, $comment) = _truncForFSH($item->{data}{name} // '', $item->{data}{comment} // '');
 		my $rec = _buildFSHWpRecord($item->{data}, { uuid => $nav_uuid, name => $name, comment => $comment });
 
 		if ($group_fsh_uid && $db->{groups}{$group_fsh_uid})
@@ -854,10 +879,11 @@ sub _pasteGroupToFSH
 		# UUID-preserving in-place update of existing group.  Merge
 		# clipboard members into the existing group by UUID: if a
 		# member's FSH UUID matches an existing wpt, update its fields
-		# in-place; otherwise deconflict its name + append.  Idempotent
-		# for unchanged data; counts do NOT inflate on a same-UUID
-		# round-trip.  Group name is replaced with the clipboard's value
-		# when non-empty.
+		# in-place; otherwise check name + append (any collision is a
+		# defensive-assert IMPLEMENTATION ERROR -- preflight should have
+		# caught it).  Idempotent for unchanged data; counts do NOT
+		# inflate on a same-UUID round-trip.  Group name is replaced with
+		# the clipboard's value when non-empty.
 		my $grp = $db->{groups}{$fsh_uuid};
 		my $gname_raw = $group_data->{name} // '';
 		if ($gname_raw ne '')
@@ -885,16 +911,20 @@ sub _pasteGroupToFSH
 			my $existing_w = $by_fsh_uuid{$wp_fsh};
 			if ($existing_w)
 			{
-				# Same-UUID -- preserve the existing name (it IS our name)
-				# rather than deconflicting against ourselves.
+				# Same-UUID -- preserve the existing name (it IS our name);
+				# no collision check (would be a self-match).
 				my ($wn, $wc) = _truncForFSH($wp_data->{name} // '', $wp_data->{comment} // '');
 				_updateFSHWpFields($existing_w, $wp_data, $wn, $wc);
 				$merged++;
 			}
 			else
 			{
-				my $wn_raw = _deconflictFSHName($db, $wp_data->{name} // '', \%wp_pending, 'waypoints');
-				my ($wn, $wc) = _truncForFSH($wn_raw, $wp_data->{comment} // '');
+				if (my $c = _checkFSHNameConflict($db, $wp_data->{name} // '', \%wp_pending, 'waypoints'))
+				{
+					error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+					return;
+				}
+				my ($wn, $wc) = _truncForFSH($wp_data->{name} // '', $wp_data->{comment} // '');
 				push @final, _buildFSHWpRecord($wp_data, { uuid => $wp_nav, name => $wn, comment => $wc });
 				$added++;
 			}
@@ -910,12 +940,20 @@ sub _pasteGroupToFSH
 		{
 			my $wp_data = $member->{data} // {};
 			my $wp_nav  = $member->{uuid};
-			my $wn_raw  = _deconflictFSHName($db, $wp_data->{name} // '', \%wp_pending, 'waypoints');
-			my ($wn, $wc) = _truncForFSH($wn_raw, $wp_data->{comment} // '');
+			if (my $c = _checkFSHNameConflict($db, $wp_data->{name} // '', \%wp_pending, 'waypoints'))
+			{
+				error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+				return;
+			}
+			my ($wn, $wc) = _truncForFSH($wp_data->{name} // '', $wp_data->{comment} // '');
 			push @embedded, _buildFSHWpRecord($wp_data, { uuid => $wp_nav, name => $wn, comment => $wc });
 		}
-		my $gname_raw = _deconflictFSHName($db, $group_data->{name} // '', $pending_names, 'groups');
-		my ($gname) = _truncForFSH($gname_raw, '');
+		if (my $c = _checkFSHNameConflict($db, $group_data->{name} // '', $pending_names, 'groups'))
+		{
+			error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for group '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+			return;
+		}
+		my ($gname) = _truncForFSH($group_data->{name} // '', '');
 
 		my $grp = &threads::shared::share({});
 		$grp->{uuid}   = $fsh_uuid;
@@ -993,8 +1031,12 @@ sub _pasteRouteToFSH
 	}
 	else
 	{
-		my $rname_raw = _deconflictFSHName($db, $route_data->{name} // '', $pending_names, 'routes');
-		my ($rname, $rcomment) = _truncForFSH($rname_raw, $route_data->{comment} // '');
+		if (my $c = _checkFSHNameConflict($db, $route_data->{name} // '', $pending_names, 'routes'))
+		{
+			error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for route '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+			return;
+		}
+		my ($rname, $rcomment) = _truncForFSH($route_data->{name} // '', $route_data->{comment} // '');
 
 		my $rec = &threads::shared::share({});
 		$rec->{uuid}    = $fsh_uuid;
@@ -1140,8 +1182,12 @@ sub _pasteNewWaypointToFSH
 		($node_type eq 'group')    ? $node->{uuid}       :
 		($node_type eq 'waypoint') ? $node->{group_uuid} : undef;
 
-	my $name_raw = _deconflictFSHName($db, $item->{data}{name} // '', $pending_names, 'waypoints');
-	my ($name, $comment) = _truncForFSH($name_raw, $item->{data}{comment} // '');
+	if (my $c = _checkFSHNameConflict($db, $item->{data}{name} // '', $pending_names, 'waypoints'))
+	{
+		error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+		return;
+	}
+	my ($name, $comment) = _truncForFSH($item->{data}{name} // '', $item->{data}{comment} // '');
 	my $rec = _buildFSHWpRecord($item->{data}, { uuid => $new_nav, name => $name, comment => $comment });
 
 	if ($group_fsh_uid && $db->{groups}{$group_fsh_uid})
@@ -1173,16 +1219,24 @@ sub _pasteNewGroupToFSH
 		my $wp_data = $member->{data} // {};
 		my $wp_new  = _newNavUUID();
 		if (!$wp_new) { error("_pasteNewGroupToFSH: WP UUID minting failed"); return; }
-		my $wn_raw  = _deconflictFSHName($db, $wp_data->{name} // '', \%wp_pending, 'waypoints');
-		my ($wn, $wc) = _truncForFSH($wn_raw, $wp_data->{comment} // '');
+		if (my $c = _checkFSHNameConflict($db, $wp_data->{name} // '', \%wp_pending, 'waypoints'))
+		{
+			error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+			return;
+		}
+		my ($wn, $wc) = _truncForFSH($wp_data->{name} // '', $wp_data->{comment} // '');
 		push @embedded, _buildFSHWpRecord($wp_data, { uuid => $wp_new, name => $wn, comment => $wc });
 	}
 
 	my $g_new = _newNavUUID();
 	if (!$g_new) { error("_pasteNewGroupToFSH: group UUID minting failed"); return; }
 	my %g_pending;
-	my $gname_raw = _deconflictFSHName($db, $group_data->{name} // '', \%g_pending, 'groups');
-	my ($gname) = _truncForFSH($gname_raw, '');
+	if (my $c = _checkFSHNameConflict($db, $group_data->{name} // '', \%g_pending, 'groups'))
+	{
+		error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for group '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+		return;
+	}
+	my ($gname) = _truncForFSH($group_data->{name} // '', '');
 
 	my $grp = &threads::shared::share({});
 	$grp->{uuid}   = navToFSHUUID($g_new);
@@ -1224,8 +1278,12 @@ sub _pasteNewRouteToFSH
 	my $r_new = _newNavUUID();
 	if (!$r_new) { error("_pasteNewRouteToFSH: route UUID minting failed"); return; }
 	my %r_pending;
-	my $rname_raw = _deconflictFSHName($db, $route_data->{name} // '', \%r_pending, 'routes');
-	my ($rname, $rcomment) = _truncForFSH($rname_raw, $route_data->{comment} // '');
+	if (my $c = _checkFSHNameConflict($db, $route_data->{name} // '', \%r_pending, 'routes'))
+	{
+		error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for route '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+		return;
+	}
+	my ($rname, $rcomment) = _truncForFSH($route_data->{name} // '', $route_data->{comment} // '');
 
 	my $rec = &threads::shared::share({});
 	$rec->{uuid}    = navToFSHUUID($r_new);
@@ -1286,8 +1344,12 @@ sub _pasteBeforeAfterFSH
 		my $rec = $fresh ? undef : _findFSHWPRecord($db, $wp_fsh);
 		if (!$rec)
 		{
-			my $name_raw = _deconflictFSHName($db, $wp_data->{name} // '', \%pending_names, 'waypoints');
-			my ($name, $comment) = _truncForFSH($name_raw, $wp_data->{comment} // '');
+			if (my $c = _checkFSHNameConflict($db, $wp_data->{name} // '', \%pending_names, 'waypoints'))
+			{
+				error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+				return;
+			}
+			my ($name, $comment) = _truncForFSH($wp_data->{name} // '', $wp_data->{comment} // '');
 			$rec = _buildFSHWpRecord($wp_data, { uuid => $wp_nav, name => $name, comment => $comment });
 			$db->{waypoints}{$rec->{uuid}} = $rec if $fresh;
 		}

@@ -90,31 +90,45 @@ sub _treeChildNodes
 }
 
 
-sub _deconflictE80Name
-    # Returns a name that won't clash with existing E80 names or $pending_names.
-    # $hash_name: 'waypoints' (default), 'groups', or 'routes' - which WPMGR hash to check.
-    # Appends " (2)", " (3)", ... until the name is unique.
-    # Always records the chosen name in $pending_names if provided.
+sub _checkE80NameConflict
+    # Detect a name conflict between $name and the live E80 state
+    # ($hash_name = 'waypoints' (default), 'groups', or 'routes') or any
+    # names already queued this batch in $pending_names.  Case-insensitive
+    # match (mirrors E80 uniqueness enforcement).
+    #
+    # Per policy, navMate NEVER auto-renames.  Preflight in
+    # navOps::_doPaste / navOps::_doPush is the primary gate; this
+    # spoke-seam check is the defensive assert that catches preflight
+    # regressions before any wire send.
+    #
+    # Returns undef on no-conflict (and claims the name in $pending_names),
+    # or { name, where => 'spoke'|'pending', existing_uuid? } on conflict
+    # (and leaves $pending_names untouched).
 {
     my ($wpmgr, $name, $pending_names, $hash_name) = @_;
-    $hash_name    //= 'waypoints';
+    $hash_name     //= 'waypoints';
     $pending_names //= {};
-    my %existing;
-    $existing{lc($_->{name} // '')} = 1 for values %{$wpmgr->{$hash_name} // {}};
-    my $base      = $name // '';
-    my $candidate = $base;
-    my $n         = 2;
-    while ($existing{lc($candidate)} || $pending_names->{lc($candidate)})
+    my $lc = lc($name // '');
+
+    for my $rec (values %{$wpmgr->{$hash_name} // {}})
     {
-        $candidate = "$base ($n)";
-        $n++;
+        my $rn = $rec->{name} // '';
+        if (lc($rn) eq $lc)
+        {
+            return {
+                name          => $name,
+                where         => 'spoke',
+                existing_uuid => $rec->{uuid} // '',
+                hash          => $hash_name,
+            };
+        }
     }
-    if ($candidate ne $base)
+    if ($pending_names->{$lc})
     {
-        display(0, 0, "_deconflictE80Name: renamed '$base' to '$candidate'");
+        return { name => $name, where => 'pending', hash => $hash_name };
     }
-    $pending_names->{lc($candidate)} = 1;
-    return $candidate;
+    $pending_names->{$lc} = 1;
+    return undef;
 }
 
 
@@ -642,11 +656,16 @@ sub _pasteOneWaypointToE80
 
     if (!$existing)
     {
-        my $wp_name_raw = defined($pending_names)
-            ? _deconflictE80Name($wpmgr, $wp->{name}, $pending_names)
-            : ($wp->{name} // '');
+        if (defined($pending_names))
+        {
+            if (my $c = _checkE80NameConflict($wpmgr, $wp->{name}, $pending_names))
+            {
+                error("IMPLEMENTATION ERROR: E80 spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+                return 'aborted';
+            }
+        }
         $pending_uuids->{$uuid} = 1 if $pending_uuids;
-        my ($pa_wp_name, $pa_wp_comment) = _truncForE80($wp_name_raw, $wp->{comment} // '');
+        my ($pa_wp_name, $pa_wp_comment) = _truncForE80($wp->{name} // '', $wp->{comment} // '');
         $wpmgr->createWaypoint({
             name     => $pa_wp_name,
             uuid     => $uuid,
@@ -1070,8 +1089,13 @@ sub _pasteNewWaypointToE80
     }
 
     my %pending_names;
-    my $wp_name = _deconflictE80Name($wpmgr, $wp->{name}, \%pending_names);
-    my ($pnw_name, $pnw_comment) = _truncForE80($wp_name, $wp->{comment} // '');
+    if (my $c = _checkE80NameConflict($wpmgr, $wp->{name}, \%pending_names))
+    {
+        error("IMPLEMENTATION ERROR: E80 spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+        $progress->{error} = 'name collision' if $progress;
+        return;
+    }
+    my ($pnw_name, $pnw_comment) = _truncForE80($wp->{name} // '', $wp->{comment} // '');
     $wpmgr->createWaypoint({
         name     => $pnw_name,
         uuid     => $new_uuid,
@@ -1140,8 +1164,13 @@ sub _pasteNewGroupToE80
             $progress->{error} = 'UUID generation failed' if $progress;
             last;
         }
-        my $wp_name = _deconflictE80Name($wpmgr, $wp->{name}, \%pending_names);
-        my ($png_wp_name, $png_wp_comment) = _truncForE80($wp_name, $wp->{comment} // '');
+        if (my $c = _checkE80NameConflict($wpmgr, $wp->{name}, \%pending_names))
+        {
+            error("IMPLEMENTATION ERROR: E80 spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+            $progress->{error} = 'name collision' if $progress;
+            last;
+        }
+        my ($png_wp_name, $png_wp_comment) = _truncForE80($wp->{name} // '', $wp->{comment} // '');
         $wpmgr->createWaypoint({
             name     => $png_wp_name,
             uuid     => $new_uuid,
@@ -1167,16 +1196,23 @@ sub _pasteNewGroupToE80
         else
         {
             my %pending_group_names;
-            my $group_name = _deconflictE80Name($wpmgr, $group_data->{name} // '',
-                \%pending_group_names, 'groups');
-            my ($png_grp_name, $png_grp_comment) = _truncForE80($group_name, $group_data->{comment} // '');
-            $wpmgr->createGroup({
-                name     => $png_grp_name,
-                uuid     => $new_group_uuid,
-                comment  => $png_grp_comment,
-                members  => \@new_wp_uuids,
-                progress => $progress,
-            });
+            if (my $c = _checkE80NameConflict($wpmgr, $group_data->{name} // '',
+                \%pending_group_names, 'groups'))
+            {
+                error("IMPLEMENTATION ERROR: E80 spoke-seam name collision for group '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+                $progress->{error} = 'name collision' if $progress;
+            }
+            else
+            {
+                my ($png_grp_name, $png_grp_comment) = _truncForE80($group_data->{name} // '', $group_data->{comment} // '');
+                $wpmgr->createGroup({
+                    name     => $png_grp_name,
+                    uuid     => $new_group_uuid,
+                    comment  => $png_grp_comment,
+                    members  => \@new_wp_uuids,
+                    progress => $progress,
+                });
+            }
         }
     }
 }
@@ -1220,9 +1256,14 @@ sub _pasteNewRouteToE80
     }
 
     my %pending_route_names;
-    my $route_name = _deconflictE80Name($wpmgr, $route_data->{name} // '',
-        \%pending_route_names, 'routes');
-    my ($pnr_name, $pnr_comment) = _truncForE80($route_name, $route_data->{comment} // '');
+    if (my $c = _checkE80NameConflict($wpmgr, $route_data->{name} // '',
+        \%pending_route_names, 'routes'))
+    {
+        error("IMPLEMENTATION ERROR: E80 spoke-seam name collision for route '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+        $progress->{error} = 'name collision' if $progress;
+        return;
+    }
+    my ($pnr_name, $pnr_comment) = _truncForE80($route_data->{name} // '', $route_data->{comment} // '');
     my @wp_uuids = map { $_->{uuid} } @$members;
     $wpmgr->createRoute({
         name      => $pnr_name,
@@ -1399,8 +1440,13 @@ sub _pasteBeforeAfterE80
                 $progress->{error} = 1 if $progress;
                 last;
             }
-            my $wp_name = _deconflictE80Name($wpmgr, $wp->{name}, \%pending_names);
-            my ($pba_name, $pba_comment) = _truncForE80($wp_name, $wp->{comment} // '');
+            if (my $c = _checkE80NameConflict($wpmgr, $wp->{name}, \%pending_names))
+            {
+                error("IMPLEMENTATION ERROR: E80 spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+                $progress->{error} = 1 if $progress;
+                last;
+            }
+            my ($pba_name, $pba_comment) = _truncForE80($wp->{name} // '', $wp->{comment} // '');
             $wpmgr->createWaypoint({
                 name     => $pba_name,
                 uuid     => $wp_uuid,

@@ -599,7 +599,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&rig
 Start-Sleep 4
 ```
 
-**Pass:** `ERROR - Clipboard contains duplicate waypoint name '<name>' -- aborting`; no WP named `<name>` lands on E80.
+**Pass:** ERROR sentinel `E80 operation blocked: N name collision(s):` with an `intra-clipboard waypoint name '<name>'` entry naming the colliding source items, followed by `Per policy, navMate does not auto-rename.  Resolve in the database and retry.`; no IMPL ERROR; no WP named `<name>` lands on E80.
 
 ---
 
@@ -632,7 +632,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&rig
 Start-Sleep 4
 ```
 
-**Pass:** `ERROR - E80 already has a waypoint named 'BOCAS1' -- aborting`; only one "BOCAS1" on E80 (the original from Test 25a).
+**Pass:** ERROR sentinel `E80 operation blocked: 1 name collision(s):` with a `waypoint 'BOCAS1' (from waypoint 'BOCAS1') already on E80 at UUID <existing>` entry, followed by `Per policy, navMate does not auto-rename.  Resolve in the database and retry.`; no IMPL ERROR; only one "BOCAS1" on E80 (the original from Test 25a).
 
 ---
 
