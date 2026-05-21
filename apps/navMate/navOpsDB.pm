@@ -353,7 +353,7 @@ sub _deleteDB
 			if (getWaypointRouteRefCount($dbh, $node->{data}{uuid}) > 0)
 			{
 				disconnectDB($dbh);
-				warning(0, 0, "IMPLEMENTATION ERROR: _deleteDB: waypoint in route reached delete handler");
+				implementationError("waypoint is referenced by a route");
 				return;
 			}
 		}
@@ -432,7 +432,7 @@ sub _deleteDB
 				if (getWaypointRouteRefCount($dbh, $wp->{uuid}) > 0)
 				{
 					disconnectDB($dbh);
-					warning(0, 0, "IMPLEMENTATION ERROR: _deleteDB: group waypoint in route reached delete handler");
+					implementationError("group member waypoint is referenced by a route");
 					return;
 				}
 			}
@@ -724,7 +724,7 @@ sub _pasteItemsToCollection
 			}
 			elsif ($source eq 'database' && !$fresh)
 			{
-				warning(0, 0, "IMPLEMENTATION ERROR: _pasteItemsToCollection: UUID-preserving DB-to-DB track copy would create duplicate");
+				implementationError("DB-to-DB track copy via PASTE not implemented");
 			}
 			else
 			{
@@ -999,7 +999,7 @@ sub _pasteDB
 					}
 					elsif ($source eq 'database' && !$fresh)
 					{
-						warning(0, 0, "IMPLEMENTATION ERROR: _pasteDB PASTE_BEFORE/AFTER: UUID-preserving DB-to-DB track copy not supported");
+						implementationError("DB-to-DB track copy via PASTE_BEFORE/AFTER not implemented");
 					}
 					else
 					{
@@ -1130,7 +1130,7 @@ sub _pasteDB
 			my @invalid = grep { my $t = $_->{type}//''; $t ne 'route_point' && $t ne 'waypoint' } @$items;
 			if (@invalid)
 			{
-				warning(0, 0, "IMPLEMENTATION ERROR: _pasteDB: PASTE_BEFORE/AFTER route_point: clipboard has non-route_point/waypoint items");
+				implementationError("PASTE_BEFORE/AFTER at route_point requires waypoint or route_point items only");
 				return;
 			}
 			@wp_items = @$items;
@@ -1258,7 +1258,7 @@ sub _pasteDB
 	my $rcn_type = $right_click_node ? ($right_click_node->{type} // '') : '';
 	if ($rcn_type ne 'collection' && $rcn_type ne 'root')
 	{
-		warning(0, 0, "IMPLEMENTATION ERROR: _pasteDB: non-collection destination '$rcn_type' reached paste handler");
+		implementationError("paste target type '$rcn_type' is not a collection");
 		return;
 	}
 	my $target_uuid = ($right_click_node->{data} // {})->{uuid};
@@ -1287,7 +1287,7 @@ sub _newDatabaseWaypoint
 
 	if (($right_click_node->{type} // '') ne 'collection')
 	{
-		warning(0, 0, "IMPLEMENTATION ERROR: _newDatabaseWaypoint: target is not a collection");
+		implementationError("new waypoint target is not a collection");
 		return;
 	}
 
@@ -1338,7 +1338,7 @@ sub _newDatabaseRoute
 
 	if (($right_click_node->{type} // '') ne 'collection')
 	{
-		warning(0, 0, "IMPLEMENTATION ERROR: _newDatabaseRoute: target is not a collection");
+		implementationError("new route target is not a collection");
 		return;
 	}
 

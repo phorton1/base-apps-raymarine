@@ -104,7 +104,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=e80&select=ce4e43181f01b3ae&ri
 Start-Sleep 5
 ```
 
-**Pass:** `/api/db` waypoints no longer contains `ce4e43181f01b3ae`. DELETE WAYPOINT STARTED/FINISHED. No ProgressDialog expected for single-WP delete (fast operation, see master_runbook ProgressDialog Pattern).
+**Pass:** `/api/db` waypoints no longer contains `ce4e43181f01b3ae`. DELETE WAYPOINT STARTED/FINISHED. ProgressDialog 'Delete Waypoint' STARTED + FINISHED.
 
 ---
 

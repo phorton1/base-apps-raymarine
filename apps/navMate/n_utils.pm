@@ -19,6 +19,7 @@ BEGIN
 	use Exporter qw( import );
 	our @EXPORT = qw(
 		$appName
+		implementationError
 		makeUUID
 		makeFSHUUID
 		parseLatLon
@@ -42,6 +43,31 @@ BEGIN
 
 
 our $appName = 'navMate';
+
+
+#---------------------------------
+# implementationError
+#---------------------------------
+# Unified guard-emission helper used across navOps.  Emits the same
+# message in two modes depending on $nmDialogs::suppress_error_dialog:
+#   suppressed (test runs):  warning() -- log only, "WARNING: ..." prefix
+#   live UI:                 error()   -- pops dialog AND logs
+# call_level=2 makes the log attribute to the caller (navOps site),
+# not this helper.  Callers pass condition-only text; the helper
+# prefixes "IMPLEMENTATION ERROR: " uniformly.
+
+sub implementationError
+{
+	my ($msg) = @_;
+	if ($nmDialogs::suppress_error_dialog)
+	{
+		warning(0, 0, "IMPLEMENTATION ERROR: $msg", 2);
+	}
+	else
+	{
+		error("IMPLEMENTATION ERROR: $msg", 2);
+	}
+}
 
 
 #---------------------------------

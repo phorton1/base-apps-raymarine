@@ -194,7 +194,11 @@ sub _e80DeleteWP
 
 sub _deleteE80Waypoints
 {
-    my ($nodes, $tree) = @_;
+    # $progress: optional, supplied by an aggregator that has already
+    # opened a ProgressDialog covering this call as part of a larger
+    # navOperation.  When absent, this routine opens its own dialog
+    # sized for $n waypoints.
+    my ($nodes, $tree, $progress) = @_;
     my $wpmgr = _wpmgr();
     if (!$wpmgr)
     {
@@ -206,7 +210,12 @@ sub _deleteE80Waypoints
         ? "Delete waypoint '$nodes->[0]{data}{name}' from E80?"
         : "Delete $n waypoints from E80?";
     return if !confirmDialog($tree, $msg, "Confirm Delete");
-    $wpmgr->deleteWaypoint($_->{uuid}) for @$nodes;
+    if (!$progress)
+    {
+        $progress = _openE80Progress("Delete Waypoint", $n);
+        return if !$progress;
+    }
+    $wpmgr->deleteWaypoint($_->{uuid}, $progress) for @$nodes;
 }
 
 
@@ -215,7 +224,7 @@ sub _deleteE80Groups
     my ($nodes, $tree) = @_;
     if (grep { ($_->{type} // '') eq 'my_waypoints' } @$nodes)
     {
-        warning(0, 0, "IMPLEMENTATION ERROR: _deleteE80Groups: my_waypoints node reached CMD_DELETE_GROUP handler");
+        implementationError("delete-group on E80 my_waypoints node not supported");
         return;
     }
     my $wpmgr = _wpmgr();
@@ -291,7 +300,7 @@ sub _deleteE80GroupsAndWPs
 
     if (@mw && @grps)
     {
-        warning(0, 0, "IMPLEMENTATION ERROR: _deleteE80GroupsAndWPs: mixed my_waypoints and named groups in selection");
+        implementationError("delete-group-and-WPs mixes my_waypoints with named groups");
         return;
     }
 
@@ -660,7 +669,7 @@ sub _pasteOneWaypointToE80
         {
             if (my $c = _checkE80NameConflict($wpmgr, $wp->{name}, $pending_names))
             {
-                error("IMPLEMENTATION ERROR: E80 spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+                implementationError("E80 waypoint name '$c->{name}' collides with existing waypoint (where=$c->{where})");
                 return 'aborted';
             }
         }
@@ -907,7 +916,7 @@ sub _pasteRouteToE80
         my $uuid = $rp->{uuid};
         if (!$wpmgr->{waypoints}{$uuid})
         {
-            error("_pasteRouteToE80: IMPLEMENTATION ERROR -- route member $uuid not on E80 (SS10.10)");
+            implementationError("route member $uuid not on E80 (SS10.10)");
             return;
         }
         push @wp_uuids, $uuid;
@@ -1091,7 +1100,7 @@ sub _pasteNewWaypointToE80
     my %pending_names;
     if (my $c = _checkE80NameConflict($wpmgr, $wp->{name}, \%pending_names))
     {
-        error("IMPLEMENTATION ERROR: E80 spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+        implementationError("E80 waypoint name '$c->{name}' collides with existing waypoint (where=$c->{where})");
         $progress->{error} = 'name collision' if $progress;
         return;
     }
@@ -1166,7 +1175,7 @@ sub _pasteNewGroupToE80
         }
         if (my $c = _checkE80NameConflict($wpmgr, $wp->{name}, \%pending_names))
         {
-            error("IMPLEMENTATION ERROR: E80 spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+            implementationError("E80 waypoint name '$c->{name}' collides with existing waypoint (where=$c->{where})");
             $progress->{error} = 'name collision' if $progress;
             last;
         }
@@ -1199,7 +1208,7 @@ sub _pasteNewGroupToE80
             if (my $c = _checkE80NameConflict($wpmgr, $group_data->{name} // '',
                 \%pending_group_names, 'groups'))
             {
-                error("IMPLEMENTATION ERROR: E80 spoke-seam name collision for group '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+                implementationError("E80 group name '$c->{name}' collides with existing group (where=$c->{where})");
                 $progress->{error} = 'name collision' if $progress;
             }
             else
@@ -1259,7 +1268,7 @@ sub _pasteNewRouteToE80
     if (my $c = _checkE80NameConflict($wpmgr, $route_data->{name} // '',
         \%pending_route_names, 'routes'))
     {
-        error("IMPLEMENTATION ERROR: E80 spoke-seam name collision for route '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+        implementationError("E80 route name '$c->{name}' collides with existing route (where=$c->{where})");
         $progress->{error} = 'name collision' if $progress;
         return;
     }
@@ -1442,7 +1451,7 @@ sub _pasteBeforeAfterE80
             }
             if (my $c = _checkE80NameConflict($wpmgr, $wp->{name}, \%pending_names))
             {
-                error("IMPLEMENTATION ERROR: E80 spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+                implementationError("E80 waypoint name '$c->{name}' collides with existing waypoint (where=$c->{where})");
                 $progress->{error} = 1 if $progress;
                 last;
             }
@@ -1497,13 +1506,13 @@ sub _pasteE80
     if ($rn_type eq 'track'
      || ($rn_type eq 'header' && $rn_kind eq 'tracks'))
     {
-        warning(0, 0, "IMPLEMENTATION ERROR: _pasteE80: tracks destination reached paste handler (SS10.8)");
+        implementationError("paste to E80 tracks header not supported (SS10.8)");
         return;
     }
 
     if ($rn_type eq 'waypoint')
     {
-        warning(0, 0, "IMPLEMENTATION ERROR: _pasteE80: individual waypoint node destination reached paste handler");
+        implementationError("paste at individual E80 waypoint node not supported");
         return;
     }
 
@@ -1531,29 +1540,48 @@ sub _pasteE80
 
 sub _cutE80Waypoint
 {
-    my ($uuid, $tree, $skip_group) = @_;
+    # $progress: optional, supplied by an aggregator that has already
+    # opened a ProgressDialog covering this call.  When absent, opens
+    # a single-op "Cut Cleanup" dialog so the operation has visible
+    # progress under suppress=1 (mirrors _deleteE80Waypoints).
+    my ($uuid, $tree, $skip_group, $progress) = @_;
     my $wpmgr = _wpmgr();
     return if !$wpmgr;
-    _e80DeleteWP($wpmgr, $uuid, undef, undef, $skip_group);
+    if (!$progress)
+    {
+        $progress = _openE80Progress("Cut Cleanup", 1);
+        return if !$progress;
+    }
+    _e80DeleteWP($wpmgr, $uuid, undef, $progress, $skip_group);
 }
 
 
 sub _cutE80Group
 {
-    my ($uuid, $tree) = @_;
+    my ($uuid, $tree, $progress) = @_;
     return if !defined $uuid;
     my $wpmgr = _wpmgr();
     return if !$wpmgr;
-    $wpmgr->deleteGroup($uuid);
+    if (!$progress)
+    {
+        $progress = _openE80Progress("Cut Cleanup", 1);
+        return if !$progress;
+    }
+    $wpmgr->deleteGroup($uuid, $progress);
 }
 
 
 sub _cutE80Route
 {
-    my ($uuid, $tree) = @_;
+    my ($uuid, $tree, $progress) = @_;
     my $wpmgr = _wpmgr();
     return if !$wpmgr;
-    $wpmgr->deleteRoute($uuid);
+    if (!$progress)
+    {
+        $progress = _openE80Progress("Cut Cleanup", 1);
+        return if !$progress;
+    }
+    $wpmgr->deleteRoute($uuid, $progress);
 }
 
 

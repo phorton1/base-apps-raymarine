@@ -788,7 +788,7 @@ sub _pasteWaypointToFSH
 	{
 		if (my $c = _checkFSHNameConflict($db, $item->{data}{name} // '', $pending_names, 'waypoints'))
 		{
-			error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+			implementationError("FSH waypoint name '$c->{name}' collides with existing waypoint (where=$c->{where})");
 			return;
 		}
 		my ($name, $comment) = _truncForFSH($item->{data}{name} // '', $item->{data}{comment} // '');
@@ -921,7 +921,7 @@ sub _pasteGroupToFSH
 			{
 				if (my $c = _checkFSHNameConflict($db, $wp_data->{name} // '', \%wp_pending, 'waypoints'))
 				{
-					error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+					implementationError("FSH waypoint name '$c->{name}' collides with existing waypoint (where=$c->{where})");
 					return;
 				}
 				my ($wn, $wc) = _truncForFSH($wp_data->{name} // '', $wp_data->{comment} // '');
@@ -942,7 +942,7 @@ sub _pasteGroupToFSH
 			my $wp_nav  = $member->{uuid};
 			if (my $c = _checkFSHNameConflict($db, $wp_data->{name} // '', \%wp_pending, 'waypoints'))
 			{
-				error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+				implementationError("FSH waypoint name '$c->{name}' collides with existing waypoint (where=$c->{where})");
 				return;
 			}
 			my ($wn, $wc) = _truncForFSH($wp_data->{name} // '', $wp_data->{comment} // '');
@@ -950,7 +950,7 @@ sub _pasteGroupToFSH
 		}
 		if (my $c = _checkFSHNameConflict($db, $group_data->{name} // '', $pending_names, 'groups'))
 		{
-			error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for group '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+			implementationError("FSH group name '$c->{name}' collides with existing group (where=$c->{where})");
 			return;
 		}
 		my ($gname) = _truncForFSH($group_data->{name} // '', '');
@@ -976,8 +976,15 @@ sub _pasteGroupToFSH
 		my $src = $cb->{source} // '';
 		if ($src eq 'e80')
 		{
-			navOps::_cutE80Group($nav_uuid, $tree);
-			navOps::_cutE80Waypoint($_->{uuid}, $tree, 1) for @$members;
+			# Aggregate cleanup under a single ProgressDialog covering
+			# the group shell delete + per-member delete.  Without this,
+			# each _cutE80* call would open its own one-op dialog and
+			# the user would see N+1 dialogs flash within a single
+			# navOperation.
+			my $total    = 1 + scalar @$members;
+			my $progress = navOps::_openE80Progress("Cut Cleanup", $total);
+			navOps::_cutE80Group($nav_uuid, $tree, $progress);
+			navOps::_cutE80Waypoint($_->{uuid}, $tree, 1, $progress) for @$members;
 		}
 		else
 		{
@@ -1033,7 +1040,7 @@ sub _pasteRouteToFSH
 	{
 		if (my $c = _checkFSHNameConflict($db, $route_data->{name} // '', $pending_names, 'routes'))
 		{
-			error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for route '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+			implementationError("FSH route name '$c->{name}' collides with existing route (where=$c->{where})");
 			return;
 		}
 		my ($rname, $rcomment) = _truncForFSH($route_data->{name} // '', $route_data->{comment} // '');
@@ -1184,7 +1191,7 @@ sub _pasteNewWaypointToFSH
 
 	if (my $c = _checkFSHNameConflict($db, $item->{data}{name} // '', $pending_names, 'waypoints'))
 	{
-		error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+		implementationError("FSH waypoint name '$c->{name}' collides with existing waypoint (where=$c->{where})");
 		return;
 	}
 	my ($name, $comment) = _truncForFSH($item->{data}{name} // '', $item->{data}{comment} // '');
@@ -1221,7 +1228,7 @@ sub _pasteNewGroupToFSH
 		if (!$wp_new) { error("_pasteNewGroupToFSH: WP UUID minting failed"); return; }
 		if (my $c = _checkFSHNameConflict($db, $wp_data->{name} // '', \%wp_pending, 'waypoints'))
 		{
-			error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+			implementationError("FSH waypoint name '$c->{name}' collides with existing waypoint (where=$c->{where})");
 			return;
 		}
 		my ($wn, $wc) = _truncForFSH($wp_data->{name} // '', $wp_data->{comment} // '');
@@ -1233,7 +1240,7 @@ sub _pasteNewGroupToFSH
 	my %g_pending;
 	if (my $c = _checkFSHNameConflict($db, $group_data->{name} // '', \%g_pending, 'groups'))
 	{
-		error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for group '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+		implementationError("FSH group name '$c->{name}' collides with existing group (where=$c->{where})");
 		return;
 	}
 	my ($gname) = _truncForFSH($group_data->{name} // '', '');
@@ -1280,7 +1287,7 @@ sub _pasteNewRouteToFSH
 	my %r_pending;
 	if (my $c = _checkFSHNameConflict($db, $route_data->{name} // '', \%r_pending, 'routes'))
 	{
-		error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for route '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+		implementationError("FSH route name '$c->{name}' collides with existing route (where=$c->{where})");
 		return;
 	}
 	my ($rname, $rcomment) = _truncForFSH($route_data->{name} // '', $route_data->{comment} // '');
@@ -1346,7 +1353,7 @@ sub _pasteBeforeAfterFSH
 		{
 			if (my $c = _checkFSHNameConflict($db, $wp_data->{name} // '', \%pending_names, 'waypoints'))
 			{
-				error("IMPLEMENTATION ERROR: FSH spoke-seam name collision for waypoint '$c->{name}' (where=$c->{where}) -- preflight failed to catch");
+				implementationError("FSH waypoint name '$c->{name}' collides with existing waypoint (where=$c->{where})");
 				return;
 			}
 			my ($name, $comment) = _truncForFSH($wp_data->{name} // '', $wp_data->{comment} // '');

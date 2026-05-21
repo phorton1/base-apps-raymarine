@@ -189,7 +189,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=database&select=244e8e10080040
 Start-Sleep 3
 ```
 
-**Pass:** `WARNING: IMPLEMENTATION ERROR: _deleteDB: group waypoint in route reached delete handler` (expected sentinel; navTest bypasses menu guard); group and 11 members intact in `/api/nmdb`.
+**Pass:** `WARNING: IMPLEMENTATION ERROR: group member waypoint is referenced by a route` (expected sentinel; navTest bypasses menu guard); group and 11 members intact in `/api/nmdb`.
 
 ---
 
@@ -431,7 +431,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=database&select=314e56cc090053
 Start-Sleep 3
 ```
 
-**Pass:** `WARNING: IMPLEMENTATION ERROR: _deleteDB: waypoint in route reached delete handler` (expected sentinel); [WPinRoute] still in `/api/nmdb`.
+**Pass:** `WARNING: IMPLEMENTATION ERROR: waypoint is referenced by a route` (expected sentinel); [WPinRoute] still in `/api/nmdb`.
 
 ---
 
@@ -457,7 +457,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=database&select=6f4e72ceae0264
 Start-Sleep 3
 ```
 
-**Pass:** `WARNING: IMPLEMENTATION ERROR: _pasteItemsToCollection: UUID-preserving DB-to-DB track copy would create duplicate`; DB unchanged.
+**Pass:** `WARNING: IMPLEMENTATION ERROR: DB-to-DB track copy via PASTE not implemented`; DB unchanged.
 
 ---
 
@@ -485,7 +485,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3
 Start-Sleep 3
 ```
 
-**Pass:** `WARNING: IMPLEMENTATION ERROR: _pasteDB: non-collection destination 'object' reached paste handler`; DB unchanged.
+**Pass:** `WARNING: IMPLEMENTATION ERROR: paste target type 'object' is not a collection`; DB unchanged.
 
 ---
 

@@ -245,7 +245,7 @@ If ProgressDialog hangs and `close_dialog` rescues the cycle, the step is **FAIL
 
 If `close_dialog` itself fails: catastrophic. Beep and stop.
 
-Missing FINISHED for fast/no-op operations (single-WP delete, etc.) is NOT a failure. Only beep when `dialog_state: active` in the log confirms a genuine hang.
+Missing FINISHED for fast/no-op operations (e.g. empty-list cleanup paths) is NOT a failure. Only beep when `dialog_state: active` in the log confirms a genuine hang.
 
 ---
 
