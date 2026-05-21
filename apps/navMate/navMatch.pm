@@ -114,11 +114,13 @@
 package navMatch;
 use strict;
 use warnings;
+use Time::HiRes qw(time);
 use Pub::Utils qw(display warning error);
 use n_defs;
 use navDB;
 use navFSH;
 use apps::raymarine::NET::c_RAYDP;
+use navMatchC;
 
 
 BEGIN
@@ -182,6 +184,31 @@ my $INF = 1e18;
 # returned as 'none' rather than alignment-attempted; revisit if real
 # data hits the cap (the Inline::C escape hatch is the next step there).
 use constant DTW_MAX_CELLS => 4_000_000;
+
+
+#---------------------------------
+# PP/C dispatcher state
+#---------------------------------
+# Three modes (use scoreLineStringPair() the same way regardless):
+#
+#   'pp'   -- pure Perl only (original behavior; reference implementation)
+#   'c'    -- navMatchC only (post-verification; production speed)
+#   'both' -- run both, time both, compare field-by-field; on divergence
+#             pop error() modal (first $DIV_MAX_MODALS times per Find
+#             operation) and warning() thereafter; return PP's result
+#             so program behavior is unchanged during the shadow soak.
+#
+# resetDivergence() is called by callers (e.g. winFind::_doRefresh) at
+# the top of each Find operation; reportCompareTiming() is called once
+# at the end to print cumulative PP vs C wall-time across all pairs in
+# that operation.
+our $COMPARE_MODE    = 'c';
+our $DIV_MAX_MODALS  = 3;
+
+our $_div_count    = 0;
+our $_pp_time_sum  = 0.0;
+our $_c_time_sum   = 0.0;
+our $_pair_count   = 0;
 
 
 #---------------------------------
@@ -268,7 +295,187 @@ sub scoreWaypointPair
 # linestring pair scoring (tracks, routes)
 #---------------------------------
 
+sub resetDivergence
+{
+	# Call at the top of each Find operation to reset the per-operation
+	# divergence-modal counter and the PP/C cumulative timing accumulators.
+	# Mode-independent; safe to call even when COMPARE_MODE is 'pp' or 'c'
+	# (zeros never get used in those modes).
+	$_div_count    = 0;
+	$_pp_time_sum  = 0.0;
+	$_c_time_sum   = 0.0;
+	$_pair_count   = 0;
+}
+
+
+sub reportCompareTiming
+{
+	# Call at the end of each Find operation when running in 'both' mode
+	# to emit the cumulative PP vs C wall-time across every pair scored.
+	# Single line, terse format -- not per-pair, which would flood the
+	# log on big Finds.  Silent in 'pp' / 'c' mode.
+	return if $COMPARE_MODE ne 'both';
+	return if $_pair_count == 0;
+	my $ratio = ($_c_time_sum > 0) ? ($_pp_time_sum / $_c_time_sum) : 0.0;
+	display(0, 0, sprintf(
+		"navMatch totals (%d pairs): PP=%.3fs  C=%.3fs  ratio=%.1fx",
+		$_pair_count, $_pp_time_sum, $_c_time_sum, $ratio));
+}
+
+
+sub _diffResult
+{
+	# Field-by-field comparison of two scoreLineStringPair-shaped result
+	# hashes.  Returns a list of human-readable divergence strings, one
+	# per offending field.  Empty list = identical (within tolerance).
+	#
+	# Tolerance policy:
+	#   tier/shape/mode  -- exact string match
+	#   matched_window   -- exact integer match (first divergent index reported)
+	#   counts.<field>   -- exact integer match (first divergent field reported)
+	#   steps.<count>    -- exact integer match
+	#   quality, coverages -- abs diff > 1e-6 counts as divergent
+	#
+	# Steps array contents themselves are NOT diffed cell-by-cell here;
+	# step count is a fast structural signal.  If counts match but cell
+	# costs drift, that's a separate investigation.
+	my ($pp, $c) = @_;
+	my @divs;
+
+	for my $f (qw(tier shape mode))
+	{
+		my $a = $pp->{$f};
+		my $b = $c->{$f};
+		next if !defined($a) && !defined($b);
+		if (!defined($a) || !defined($b) || $a ne $b)
+		{
+			push @divs, "$f: PP=" . ($a // '<undef>')
+			          . " C="  . ($b // '<undef>');
+		}
+	}
+
+	for my $f (qw(quality subj_coverage cand_coverage))
+	{
+		my $a = $pp->{$f};
+		my $b = $c->{$f};
+		next if !defined($a) && !defined($b);
+		if (!defined($a) || !defined($b) || abs($a - $b) > 1e-6)
+		{
+			push @divs, "$f: PP=" . (defined($a) ? sprintf('%.6f', $a) : '<undef>')
+			          . " C="  . (defined($b) ? sprintf('%.6f', $b) : '<undef>');
+		}
+	}
+
+	my $aw = $pp->{matched_window};
+	my $bw = $c->{matched_window};
+	if (defined($aw) xor defined($bw))
+	{
+		push @divs, "matched_window: PP=" . (defined($aw) ? '[set]' : '<undef>')
+		          . " C=" . (defined($bw) ? '[set]' : '<undef>');
+	}
+	elsif (defined($aw) && defined($bw))
+	{
+		for my $i (0..3)
+		{
+			if (($aw->[$i] // -999) != ($bw->[$i] // -999))
+			{
+				push @divs, "matched_window[$i]: PP=" . ($aw->[$i] // '<undef>')
+				          . " C=" . ($bw->[$i] // '<undef>');
+				last;
+			}
+		}
+	}
+
+	my $ac = $pp->{counts};
+	my $bc = $c->{counts};
+	if (defined($ac) xor defined($bc))
+	{
+		push @divs, "counts: PP=" . (defined($ac) ? '[set]' : '<undef>')
+		          . " C=" . (defined($bc) ? '[set]' : '<undef>');
+	}
+	elsif (defined($ac) && defined($bc))
+	{
+		for my $cf (qw(subj_before subj_in_match subj_after
+		               cand_before cand_in_match cand_after))
+		{
+			if (($ac->{$cf} // -999) != ($bc->{$cf} // -999))
+			{
+				push @divs, "counts.$cf: PP=" . ($ac->{$cf} // '<undef>')
+				          . " C=" . ($bc->{$cf} // '<undef>');
+				last;
+			}
+		}
+	}
+
+	my $as = $pp->{steps};
+	my $bs = $c->{steps};
+	if (defined($as) xor defined($bs))
+	{
+		push @divs, "steps: PP=" . (defined($as) ? '[set]' : '<undef>')
+		          . " C=" . (defined($bs) ? '[set]' : '<undef>');
+	}
+	elsif (defined($as) && defined($bs))
+	{
+		if (scalar(@$as) != scalar(@$bs))
+		{
+			push @divs, "steps.count: PP=" . scalar(@$as)
+			          . " C=" . scalar(@$bs);
+		}
+	}
+
+	return @divs;
+}
+
+
 sub scoreLineStringPair
+{
+	# Dispatcher.  Routes to the PP, C, or both implementations per
+	# $COMPARE_MODE.  In 'both' mode the result returned is PP's so
+	# program behavior is identical to a pure-PP run; C runs alongside
+	# only to time it and check it for divergence.  When confidence
+	# is established, flip $COMPARE_MODE to 'c' for the real speedup.
+	my ($subj_pts, $cand_pts) = @_;
+
+	if ($COMPARE_MODE eq 'pp')
+	{
+		return _scoreLineStringPair_pp($subj_pts, $cand_pts);
+	}
+	if ($COMPARE_MODE eq 'c')
+	{
+		return navMatchC::compareLineStringPair_c($subj_pts, $cand_pts);
+	}
+
+	# 'both' mode
+	my $t0 = time();
+	my $pp_result = _scoreLineStringPair_pp($subj_pts, $cand_pts);
+	my $t1 = time();
+	my $c_result  = navMatchC::compareLineStringPair_c($subj_pts, $cand_pts);
+	my $t2 = time();
+
+	$_pp_time_sum += $t1 - $t0;
+	$_c_time_sum  += $t2 - $t1;
+	$_pair_count++;
+
+	my @divs = _diffResult($pp_result, $c_result);
+	if (@divs)
+	{
+		my $msg = "navMatch PP/C divergence: " . join('; ', @divs);
+		if ($_div_count < $DIV_MAX_MODALS)
+		{
+			error($msg);
+		}
+		else
+		{
+			warning(0, 0, $msg);
+		}
+		$_div_count++;
+	}
+
+	return $pp_result;
+}
+
+
+sub _scoreLineStringPair_pp
 {
 	# Cascade scorer.  Two distinct algorithms answering two distinct
 	# questions, in sequence:

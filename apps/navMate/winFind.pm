@@ -227,6 +227,10 @@ sub _doRefresh
 	my $args = $this->{_subject};
 	my $obj_type = $args->{obj_type} // '';
 
+	# Reset navMatch's per-Find PP/C divergence-modal counter and the
+	# cumulative timing accumulators.  No-op when COMPARE_MODE != 'both'.
+	navMatch::resetDivergence();
+
 	# Modeless busy info window auto-destroys when the lexical goes out of
 	# scope at end of sub.  Tells the user the matcher is working so the
 	# several-second response doesn't feel like a hung app.
@@ -314,6 +318,10 @@ sub _doRefresh
 		$cand->{_match} = $result;
 		push @scored, $cand;
 	}
+
+	# Cumulative PP-vs-C timing for the whole Find op.  Silent unless
+	# COMPARE_MODE = 'both'.  Single log line, not per-pair.
+	navMatch::reportCompareTiming();
 
 	# Sort: tier rank descending (exact > match > near), then by quality
 	# within match/near, then by coverage extent.  EXACT ties broken by

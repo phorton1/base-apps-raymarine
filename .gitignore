@@ -1,2 +1,7 @@
 # Claude Code local settings -- never commit
 .claude/
+
+# Inline::C build scratch (navMatchC and any future Inline modules).  The
+# durable artifacts under _Inline/lib/auto/.../*.dll and _Inline/config-*
+# ARE tracked -- only the per-build scratch under _Inline/build/ is ignored.
+_Inline/build/
