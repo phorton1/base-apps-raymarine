@@ -22,8 +22,10 @@ use apps::raymarine::NET::b_records;
 use apps::raymarine::NET::c_RAYDP;
 use apps::raymarine::NET::d_WPMGR;
 use apps::raymarine::NET::d_TRACK;
+use apps::raymarine::NET::d_FILESYS;
 use apps::raymarine::NET::e_WPMGR;
 use apps::raymarine::NET::e_TRACK;
+use apps::raymarine::NET::e_FILESYS;
 use apps::raymarine::NET::e_wp_api;
 
 use n_defs;
@@ -76,7 +78,7 @@ if ($db_rc > 0)
 }
 navServer::startNavMateServer();
 
-apps::raymarine::NET::a_defs::initServices(wpmgr => 1, track => 1, auto_query => 1);
+apps::raymarine::NET::a_defs::initServices(wpmgr => 1, track => 1, filesys => 1, auto_query => 1);
 apps::raymarine::NET::c_RAYDP->new();
 $raydp->start();
 

@@ -21,7 +21,7 @@ use w_resources;
 use winShark;
 use winSniffer;
 use winRAYDP;
-use winFILESYS;
+use apps::raymarine::NET::winFILESYS;
 use winDBNAV;
 use base qw(Pub::WX::Frame);
 
@@ -69,7 +69,7 @@ sub createPane
 	return winRAYDP->new($this,$book,$id,$data) if $id == $WIN_RAYDP;
 	return winShark->new($this,$book,$id,$data) if $id == $WIN_SHARK;
 	return winSniffer->new($this,$book,$id,$data) if $id == $WIN_SNIFFER;
-	return winFILESYS->new($this,$book,$id,$data) if $id == $WIN_FILESYS;
+	return winFILESYS->new($this,$book,$id,$data,$CMD_DOWNLOAD) if $id == $WIN_FILESYS;
 	return winDBNAV->new($this,$book,$id,$data) if $id == $WIN_DBNAV;
     return $this->SUPER::createPane($id,$book,$data);
 }

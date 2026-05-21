@@ -23,8 +23,7 @@ use apps::raymarine::NET::a_defs;
 use apps::raymarine::NET::a_utils;
 use apps::raymarine::NET::c_RAYDP;
 use apps::raymarine::NET::d_FILESYS;
-use w_resources;
-use x_Progress;
+use apps::raymarine::NET::winMultiProgress;
 use base qw(Pub::WX::Window);
 
 my $dbg_win = 1;		# window basics
@@ -80,10 +79,11 @@ sub appendPath
 
 sub new
 {
-	my ($class,$frame,$book,$id,$data) = @_;
+	my ($class,$frame,$book,$id,$data,$cmd_download_id) = @_;
 	my $this = $class->SUPER::new($book,$id);
 	display(0,0,"winFILESYS::new() called");
 	$this->MyWindow($frame,$book,$id,'FILESYS',$data);
+	$this->{cmd_download_id} = $cmd_download_id;
 
 	$this->{vol_id} = '';
 	$this->{cur_path} = '';
@@ -124,7 +124,7 @@ sub new
     EVT_LIST_ITEM_ACTIVATED($ctrl,-1,\&onDoubleClick);
 	EVT_LIST_COL_CLICK($ctrl,-1,\&onClickColHeader);
     EVT_CONTEXT_MENU($ctrl,\&onContextMenu);
-	EVT_MENU($this,$CMD_DOWNLOAD,\&downloadSelected);
+	EVT_MENU($this,$cmd_download_id,\&downloadSelected);
 	EVT_COMBOBOX($this,$ID_SELECT_COMBO,\&onFileDeviceCombo);
 
 	$this->onSize();
@@ -269,7 +269,7 @@ sub downloadOneFile
 	my $size = $entry->{size};
 	if ($size > 1000000)
 	{
-		my $progress = $this->{progress} = x_Progress->new(
+		my $progress = $this->{progress} = winMultiProgress->new(
 			$this,
 			'download',
 			1,
@@ -826,7 +826,7 @@ sub downloadSelected
 
 	# start the recursive file download
 	
-	$this->{progress} = x_Progress->new(
+	$this->{progress} = winMultiProgress->new(
 		$this,
 		'download',
 		$num_files,

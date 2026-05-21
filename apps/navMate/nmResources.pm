@@ -28,6 +28,8 @@ BEGIN
 		$WIN_DATABASE
 		$WIN_E80
 		$WIN_MONITOR
+		$WIN_FILESYS
+		$CMD_DOWNLOAD
 
 		$COMMAND_OPEN_MAP
 		$COMMAND_CLEAR_MAP
@@ -68,6 +70,9 @@ our $WIN_DATABASE				= 10011;
 our $WIN_E80					= 10012;
 our $WIN_MONITOR				= 10013;
 our $WIN_FSH					= 10014;
+our $WIN_FILESYS				= 10015;
+
+our $CMD_DOWNLOAD				= 10100;
 
 our $COMMAND_OPEN_MAP			= 10021;
 our $COMMAND_CLEAR_MAP			= 10022;
@@ -105,6 +110,7 @@ my $pane_data = {
 	$WIN_E80		=> ['Unused String2', 'content'],
 	$WIN_MONITOR	=> ['Unused String3', 'content'],
 	$WIN_FSH		=> ['Unused String4', 'content'],
+	$WIN_FILESYS	=> ['Unused String5', 'content'],
 };
 
 my $command_data = {
@@ -113,6 +119,8 @@ my $command_data = {
 	$WIN_E80					=> ['E80',					'Live E80 contents'],
 	$WIN_MONITOR				=> ['Monitor',				'Monitor and control service monitoring bits'],
 	$WIN_FSH					=> ['FSH',					'FSH file browser'],
+	$WIN_FILESYS				=> ['FileSys',				'E80 removable media file system'],
+	$CMD_DOWNLOAD				=> ['Download',				'Download selected items'],
 	$COMMAND_NEW_FSH			=> ['New',					'Create a new empty untitled FSH in memory'],
 	$COMMAND_OPEN_FSH_FILE		=> ['Open File...',			'Load an FSH archive file into the FSH browser'],
 	$COMMAND_SAVE_FSH_FILE		=> ['Save File',			'Save FSH data back to the current file (round-trip rewrite)'],
@@ -157,6 +165,7 @@ my $view_menu = [
 	$WIN_E80,
 	$WIN_MONITOR,
 	$WIN_FSH,
+	$WIN_FILESYS,
 	$ID_SEPARATOR,
 	$COMMAND_OPEN_MAP,
 	$COMMAND_CLEAR_MAP,
@@ -189,6 +198,12 @@ my $e80_menu = [
 	$COMMAND_REFRESH_WIN_E80,
 	$COMMAND_REFRESH_E80_DB,
 	$COMMAND_CLEAR_E80_DB,
+	$ID_SEPARATOR,
+	$WIN_FILESYS,
+];
+
+my $filesys_context_menu = [
+	$CMD_DOWNLOAD,
 ];
 
 my $fsh_menu = [
@@ -219,6 +234,7 @@ $resources = { %$resources,
 	e80_menu                 => $e80_menu,
 	fsh_menu                 => $fsh_menu,
 	utils_menu               => $utils_menu,
+	filesys_context_menu     => $filesys_context_menu,
 };
 
 
