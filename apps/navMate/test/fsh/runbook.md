@@ -111,7 +111,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Atracks&rig
 Start-Sleep 2
 ```
 
-**Pass:** `/api/fsh` tracks contains `1A4E-ED92-4904-EBBE` named "2005-11-25-SanDiego2Oceanside"; no ERROR sentinel. Total FSH tracks = 124 (123 fixture + 1 new). Record `[FSH_TK]` = `1A4E-ED92-4904-EBBE`.
+**Pass:** `/api/fsh` tracks contains `1A4E-ED92-4904-EBBE` named "2005-11-25-SanD" (truncated to FSH 15-char name limit; source DB name "2005-11-25-SanDiego2Oceanside"); no ERROR sentinel. Total FSH tracks = 124 (123 fixture + 1 new). Record `[FSH_TK]` = `1A4E-ED92-4904-EBBE`.
 
 ---
 
@@ -685,7 +685,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=CE4E-4318-1F01-B3AE
 Start-Sleep 2
 ```
 
-**Pass:** `ERROR - Cannot paste: destination is a descendant of an item in the clipboard` (or analogous descendant-paste guard sentinel); FSH unchanged.
+**Pass:** `WARNING: IMPLEMENTATION ERROR: paste at FSH destination type 'waypoint' not supported` (D4 positive-list rejection); FSH unchanged.
 
 ---
 
@@ -697,7 +697,7 @@ curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=CE4E-4318-1F01-B3AE
 Start-Sleep 2
 ```
 
-**Pass:** same ERROR sentinel; FSH unchanged.
+**Pass:** same D4 IMPL ERROR sentinel; FSH unchanged.
 
 ---
 

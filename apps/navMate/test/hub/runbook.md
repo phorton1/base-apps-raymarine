@@ -676,9 +676,9 @@ Write-Host "hub.23: hetero_guard=$hetero_guard err=$err"
 
 #### Test 24 -- GUARD: Name collision destination-side
 
-Setup: ensure E80 has a WP named "Waypoint 25" with a different UUID than the FSH "Waypoint 25". The FSH has `80B2-C48A-5400-D3AE` named "Waypoint 25". E80 may have it at the same UUID (from Test 1). For a collision test we need a *different* UUID on E80 with the SAME name.
+**NOT_RUN under no-silent-rename policy.** The documented setup -- create a fresh-UUID "Waypoint 25" on E80 via PASTE_NEW from FSH -- is itself now blocked at preflight (same path as hub.8: PASTE_NEW source-name already on destination -> name-collision ERROR, no mint). Both spokes enforce per-spoke name uniqueness, so the precondition (two records on the same spoke sharing a name) cannot be constructed via any in-app paste operation. The collision-on-paste path is already exercised by hub.8 / hub.10 / hub.11 / hub.20 / hub.21 in the source-name-already-on-dest direction; hub.24's "different-UUID, same-name" variant cannot be set up under current policy.
 
-Create one via PASTE_NEW from FSH:
+Original setup retained below for reference / future use if the policy ever permits manual rename-on-conflict:
 
 ```powershell
 # Establish a fresh-UUID "Waypoint 25" on E80 (distinct from 80b2c48a5400d3ae)
@@ -858,7 +858,7 @@ $miss_sentinel = $log -match "missing" -or $log -match "not found on E80"
 Write-Host "Missing-member sentinel: $miss_sentinel"
 ```
 
-**Pass:** Either (a) route absent from E80 + missing-member ERROR sentinel (hard-reject) OR (b) route present on E80 with members pulled along (auto-pull). Document the actual behavior. ProgressDialog STARTED + FINISHED regardless. No catastrophic failure.
+**Pass:** Either (a) route absent from E80 + missing-member ERROR sentinel (hard-reject, no ProgressDialog because preflight blocks before wire dispatch) OR (b) route present on E80 with members pulled along (auto-pull, ProgressDialog STARTED + FINISHED). Document the actual behavior. No catastrophic failure.
 
 **Probe note:** SS10.10 normally suppresses this in the UI menu. The `/api/test` bypass exposes the underlying `_pasteRouteToE80` behavior. If it silently creates a route with dangling refs, that is a bug.
 

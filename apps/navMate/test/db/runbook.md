@@ -503,18 +503,6 @@ Start-Sleep 3
 
 ---
 
-### Test 24c -- Menu shape: PASTE at DB route object node blocked
-
-```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+db.24c" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=f34efdd6070022e8&right_click=f34efdd6070022e8&cmd=10210" | Out-Null
-Start-Sleep 3
-```
-
-**Pass:** IMPL ERROR sentinel; DB unchanged.
-
----
-
 ### Test 24d -- Menu shape: PASTE at DB track object node blocked
 
 ```powershell
@@ -692,6 +680,66 @@ Start-Sleep 3
 ```
 
 **Pass:** `WARNING: IMPLEMENTATION ERROR: PASTE_BEFORE/AFTER at route_point requires waypoint or route_point items only`; DB unchanged.
+
+---
+
+### Test 35 -- PASTE waypoint at DB route object (D3: REF append)
+
+D3 positive: a DB route object is now a valid PASTE / PASTE_NEW destination. Waypoint clipboard items become new `route_waypoints` rows on the target route (REF append, no record creation). Uses [IsolatedWP1] (`ce4e43181f01b3ae`) and [TestRoute] (`f34efdd6070022e8`, in [DST] after db.12).
+
+```powershell
+$rwp_before = (curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json).route_waypoints | Where-Object { $_.route_uuid -eq "f34efdd6070022e8" } | Measure-Object | Select-Object -ExpandProperty Count
+$wp_before  = (curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json).waypoints     | Where-Object { $_.uuid       -eq "ce4e43181f01b3ae" } | Measure-Object | Select-Object -ExpandProperty Count
+
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+db.35" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=f34efdd6070022e8&right_click=f34efdd6070022e8&cmd=10210" | Out-Null
+Start-Sleep 3
+
+$rwp_after = (curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json).route_waypoints | Where-Object { $_.route_uuid -eq "f34efdd6070022e8" } | Measure-Object | Select-Object -ExpandProperty Count
+$wp_after  = (curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json).waypoints     | Where-Object { $_.uuid       -eq "ce4e43181f01b3ae" } | Measure-Object | Select-Object -ExpandProperty Count
+Write-Host "TestRoute route_waypoints: before=$rwp_before after=$rwp_after (expect +1); IsolatedWP1 row count: before=$wp_before after=$wp_after (expect unchanged at 1)"
+```
+
+**Pass:** PASTE STARTED/FINISHED; no IMPL ERROR; `$rwp_after == $rwp_before + 1`; `$wp_after == $wp_before` (no new waypoints row); the last route_waypoints row on TestRoute has `wp_uuid = ce4e43181f01b3ae`.
+
+---
+
+### Test 36 -- COPY route_point, PASTE at collection blocked (D2: route_point at non-route)
+
+D2 negative: a route_point clipboard item is meaningful only at a route or route_point destination. Anywhere else (collection, branch, object) the predicate rejects with `route_point_at_non_route` IMPL ERROR.
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+db.36" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=rp:f34efdd6070022e8:454e11a80b002884&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=6f4e72ceae0264de&right_click=6f4e72ceae0264de&cmd=10210" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: route_point items can only be pasted at a route or route_point destination`; DB unchanged.
+
+---
+
+### Test 37 -- Pure route_point COPY+PASTE_BEFORE at route_point anchor (D1 carve-out)
+
+D1 positive (coverage): the DB-to-DB record-creation guard carves out REF-only destinations. A pure route_point clipboard pasted at a route_point anchor with non-fresh PASTE_BEFORE is a REF copy (one new `route_waypoints` row referencing the existing wp_uuid).
+
+```powershell
+$rwp_before = (curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json).route_waypoints | Where-Object { $_.route_uuid -eq "f34efdd6070022e8" } | Measure-Object | Select-Object -ExpandProperty Count
+
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+db.37" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=rp:f34efdd6070022e8:454e11a80b002884&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=rp:f34efdd6070022e8:8d4e68fa0a0073ee&right_click=rp:f34efdd6070022e8:8d4e68fa0a0073ee&cmd=10212" | Out-Null
+Start-Sleep 3
+
+$rwp_after = (curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json).route_waypoints | Where-Object { $_.route_uuid -eq "f34efdd6070022e8" } | Measure-Object | Select-Object -ExpandProperty Count
+Write-Host "TestRoute route_waypoints: before=$rwp_before after=$rwp_after (expect +1)"
+```
+
+**Pass:** PASTE BEFORE STARTED/FINISHED; no IMPL ERROR; `$rwp_after == $rwp_before + 1`.
 
 ---
 

@@ -1254,8 +1254,94 @@ sub _pasteDB
 		return;
 	}
 
-	# Standard paste into a collection
+	# D3: PASTE / PASTE_NEW at a DB route object node -- REF append.
+	# Mirrors the E80/FSH route-object paste semantics: waypoint and
+	# route_point clipboard items become new route_waypoints rows on the
+	# target route.  For waypoints from a non-DB source whose record isn't
+	# already in the DB, the record is created in the route's containing
+	# collection first.  PASTE_NEW does not mint new waypoint UUIDs at the
+	# REF layer (matches the PASTE_NEW_BEFORE/AFTER route_point semantics
+	# at SS6.4): "new" applies to the sequence position, not to the WP.
 	my $rcn_type = $right_click_node ? ($right_click_node->{type} // '') : '';
+	my $rcn_ot   = $right_click_node ? (($right_click_node->{data} // {})->{obj_type} // '') : '';
+	if ($rcn_type eq 'object' && $rcn_ot eq 'route')
+	{
+		my $route_uuid = ($right_click_node->{data} // {})->{uuid};
+		if (!$route_uuid)
+		{
+			warning(0, 0, "_pasteDB: PASTE at route object: no uuid");
+			return;
+		}
+		my $dbh = connectDB();
+		return if !$dbh;
+		my $route_rec = getRoute($dbh, $route_uuid);
+		if (!$route_rec)
+		{
+			disconnectDB($dbh);
+			warning(0, 0, "_pasteDB: PASTE at route object: route $route_uuid not found");
+			return;
+		}
+		my $coll_uuid = $route_rec->{collection_uuid};
+		my $rpos      = getRouteWaypointCount($dbh, $route_uuid);
+		my $policy    = undef;
+		my @to_cut;
+		for my $item (@$items)
+		{
+			my $t = $item->{type} // '';
+			next if $t ne 'waypoint' && $t ne 'route_point';
+			my $wp_uuid = $item->{uuid};
+			next if !$wp_uuid;
+			# Waypoint clipboard items may need a WP record on the DB side
+			# (cross-panel source).  route_point items always reference an
+			# existing waypoints row, so the WP record exists by construction.
+			if ($t eq 'waypoint')
+			{
+				my @wp_top = computePushDownPositions($dbh, $coll_uuid, 1);
+				my $result = _pasteOneWaypointToDB($dbh, $coll_uuid, $tree, $item,
+					$source, \$policy, 'Paste to Route', $wp_top[0]);
+				if ($policy && $policy eq 'abort')
+				{
+					disconnectDB($dbh);
+					_refreshDatabase();
+					return;
+				}
+				push @to_cut, $item if $cut_flag && $result ne 'skipped' && $result ne 'aborted';
+			}
+			elsif ($t eq 'route_point' && $cut_flag && $source eq 'database' && $item->{route_uuid})
+			{
+				# Source-side route_waypoints row gets removed in the cleanup
+				# loop below while DB is still open.
+				push @to_cut, $item;
+			}
+			appendRouteWaypoint($dbh, $route_uuid, $wp_uuid, $rpos++);
+		}
+		# In-DB cleanup for cut route_points (remove source route_waypoints rows)
+		# while DB is still open.
+		if ($cut_flag && $source eq 'database')
+		{
+			for my $item (@to_cut)
+			{
+				next if ($item->{type} // '') ne 'route_point' || !$item->{route_uuid};
+				my $pos = $item->{position};
+				removeRoutePoint($dbh, $item->{route_uuid}, $pos) if defined $pos;
+			}
+		}
+		disconnectDB($dbh);
+		# Cross-panel cut cleanup for waypoint items.
+		for my $item (@to_cut)
+		{
+			next if ($item->{type} // '') ne 'waypoint';
+			$source eq 'e80'
+				? navOps::_cutE80Waypoint($item->{uuid}, $tree)
+				: $source eq 'fsh'
+				? navOps::_cutFSHWaypoint($item->{uuid}, $tree)
+				: _cutDatabaseWaypoint($item->{uuid}, $tree);
+		}
+		_refreshDatabase();
+		return;
+	}
+
+	# Standard paste into a collection
 	if ($rcn_type ne 'collection' && $rcn_type ne 'root')
 	{
 		implementationError("paste target type '$rcn_type' is not a collection");

@@ -200,6 +200,19 @@ sub _pasteRuleAllows
 	my $rkind = $right_click_node->{kind} // '';
 	my $rd    = $right_click_node->{data} // {};
 	my $ruuid = $rd->{uuid} // '';
+	my $rot   = $rd->{obj_type} // '';
+
+	# Reference-vs-record destination classification.  A "ref-only"
+	# destination accepts waypoint / route_point clipboard items as new
+	# rows in route_waypoints (no record creation, no UUID-uniqueness
+	# concern).  Three shapes:
+	#   - route_point anchor          (positional, any panel)
+	#   - e80/fsh route object node   (panel-side type='route')
+	#   - DB     route object node    (type='object', obj_type='route')
+	my $dest_is_route_point = ($rt eq 'route_point');
+	my $dest_is_route_obj   = ($rt eq 'route')
+	                       || ($panel eq 'database' && $rt eq 'object' && $rot eq 'route');
+	my $dest_is_ref_only    = $dest_is_route_point || $dest_is_route_obj;
 
 	# DB-cut to spoke is rejected (would lose canonical state).
 	if (($panel eq 'e80' || $panel eq 'fsh') && $cut_flag && $source eq 'database')
@@ -245,6 +258,41 @@ sub _pasteRuleAllows
 		}
 	}
 
+	# D4: spoke-side positive-list paste destination.  The earlier rules
+	# above catch the more specific cases (E80 tracks header, individual
+	# E80 waypoint) with friendlier user_error sentinels; this rule is the
+	# backstop for shapes the executor doesn't support and that would
+	# otherwise silently no-op (e.g. paste at a track object).
+	if ($panel eq 'e80')
+	{
+		my $ok_e80 = ($rt eq 'header' && ($rkind eq 'groups' || $rkind eq 'routes'))
+		          || $rt eq 'my_waypoints'
+		          || $rt eq 'group'
+		          || $rt eq 'route'
+		          || $rt eq 'route_point';
+		if (!$ok_e80)
+		{
+			return (0, 'e80_invalid_paste_dest',
+			        "paste at E80 destination type '$rt' not supported",
+			        'impl_error');
+		}
+	}
+	elsif ($panel eq 'fsh')
+	{
+		# FSH writes tracks too, so all three header kinds are valid.
+		my $ok_fsh = ($rt eq 'header')
+		          || $rt eq 'my_waypoints'
+		          || $rt eq 'group'
+		          || $rt eq 'route'
+		          || $rt eq 'route_point';
+		if (!$ok_fsh)
+		{
+			return (0, 'fsh_invalid_paste_dest',
+			        "paste at FSH destination type '$rt' not supported",
+			        'impl_error');
+		}
+	}
+
 	# Before/After on a root-level branch has no parent to insert into.
 	if ($positional && $panel eq 'database' && $rt eq 'collection' && $ruuid)
 	{
@@ -262,8 +310,28 @@ sub _pasteRuleAllows
 		}
 	}
 
-	# DB target must be a collection for non-positional paste.
-	if ($panel eq 'database' && !$positional && $rt ne 'root' && $rt ne 'collection')
+	# D2: a route_point clipboard item is meaningful only at a route or
+	# route_point destination -- everywhere else it would either be lumped
+	# in with waypoints by the executor (latent bug) or silently skipped.
+	# Reject explicitly across all panels.
+	if (!$dest_is_ref_only)
+	{
+		for my $item (@$items)
+		{
+			if (($item->{type} // '') eq 'route_point')
+			{
+				return (0, 'route_point_at_non_route',
+				        'route_point items can only be pasted at a route or route_point destination',
+				        'impl_error');
+			}
+		}
+	}
+
+	# DB target must be a collection (or, per D3, a route object) for
+	# non-positional paste.  PASTE_BEFORE/AFTER (positional) accept other
+	# node shapes by anchoring on the node and inserting into its parent.
+	if ($panel eq 'database' && !$positional && $rt ne 'root' && $rt ne 'collection'
+	    && !($rt eq 'object' && $rot eq 'route'))
 	{
 		return (0, 'db_paste_non_collection',
 		        "paste target type '$rt' is not a collection",
@@ -285,14 +353,18 @@ sub _pasteRuleAllows
 		}
 	}
 
-	# DB-to-DB non-fresh non-cut paste of any item type silently no-ops or
-	# silently moves in the executor today.  Reject with PASTE_NEW guidance.
+	# D1: DB-to-DB non-fresh non-cut paste creates an INDEPENDENT RECORD
+	# at the clipboard UUID; with the DB's UUID-unique tables that's a
+	# guaranteed conflict.  REF-only destinations (route_point anchor,
+	# route object) carve out waypoint / route_point items -- those become
+	# new route_waypoints rows (no record creation, no uniqueness issue).
 	if ($panel eq 'database' && $source eq 'database' && !$fresh && !$cut_flag)
 	{
 		my $kind = $positional ? 'PASTE_BEFORE/AFTER' : 'PASTE';
 		for my $item (@$items)
 		{
 			my $t = $item->{type} // '';
+			next if $dest_is_ref_only && ($t eq 'waypoint' || $t eq 'route_point');
 			if ($t eq 'track')
 			{
 				return (0, 'db_to_db_track_copy',
@@ -662,6 +734,7 @@ sub _getPasteMenuItemsRaw
 	my $t    = $right_click_node->{type} // '';
 	my $kind = $right_click_node->{kind} // '';
 	my $nt   = ($right_click_node->{data} // {})->{node_type} // '';
+	my $ot   = ($right_click_node->{data} // {})->{obj_type}  // '';
 	my $cut  = $clipboard->{cut_flag};
 
 	# E80 and FSH share the tracks-readonly rule and the track_group
@@ -675,7 +748,7 @@ sub _getPasteMenuItemsRaw
 
 	# PASTE/PASTE_NEW: destination must be a collection (receives items into itself).
 	# E80/FSH: header folders, my_waypoints, groups, and routes (route = ordered WP collection).
-	# DB:      root and collection nodes (branch/group) only. NOT object or route_point nodes.
+	# DB:      root, collection nodes (branch/group), and route object nodes (REF append).
 	my $is_collection;
 	if ($panel eq 'e80' || $panel eq 'fsh')
 	{
@@ -686,7 +759,9 @@ sub _getPasteMenuItemsRaw
 	}
 	else
 	{
-		$is_collection = $t eq 'root' || $t eq 'collection';
+		$is_collection = $t eq 'root'
+		              || $t eq 'collection'
+		              || ($t eq 'object' && $ot eq 'route');
 	}
 
 	# PASTE_BEFORE/AFTER: destination supports positional insertion (adjacent to, not into).

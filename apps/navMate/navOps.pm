@@ -245,16 +245,42 @@ sub _routeMembersMissingAtSpoke
 {
 	my ($panel) = @_;
 	return 0 if !$clipboard;
+	# Build the set of WP UUIDs in the clipboard itself (top-level + group
+	# members).  A clipboard route or standalone route_point whose wp_uuid
+	# isn't on the spoke is still resolvable if the same clipboard supplies
+	# the WP record as a sibling item.
+	my %clip_wp_uuids;
+	for my $ci (@{$clipboard->{items} // []})
+	{
+		my $ct = $ci->{type} // '';
+		if ($ct eq 'waypoint')
+		{
+			$clip_wp_uuids{$ci->{uuid}} = 1 if $ci->{uuid};
+		}
+		elsif ($ct eq 'group')
+		{
+			$clip_wp_uuids{$_->{uuid}} = 1 for grep { $_->{uuid} } @{$ci->{members} // []};
+		}
+	}
 	if ($panel eq 'e80')
 	{
 		my $wpmgr = _wpmgr();
 		return 0 if !$wpmgr;
 		for my $cb_item (@{$clipboard->{items} // []})
 		{
-			next if ($cb_item->{type} // '') ne 'route';
-			for my $rp (@{$cb_item->{route_points} // []})
+			my $t = $cb_item->{type} // '';
+			if ($t eq 'route')
 			{
-				return 1 if !$wpmgr->{waypoints}{$rp->{uuid}};
+				for my $rp (@{$cb_item->{route_points} // []})
+				{
+					my $u = $rp->{uuid} // '';
+					return 1 if $u && !$clip_wp_uuids{$u} && !$wpmgr->{waypoints}{$u};
+				}
+			}
+			elsif ($t eq 'route_point')
+			{
+				my $u = $cb_item->{uuid} // '';
+				return 1 if $u && !$clip_wp_uuids{$u} && !$wpmgr->{waypoints}{$u};
 			}
 		}
 		return 0;
@@ -274,11 +300,23 @@ sub _routeMembersMissingAtSpoke
 		}
 		for my $cb_item (@{$clipboard->{items} // []})
 		{
-			next if ($cb_item->{type} // '') ne 'route';
-			for my $rp (@{$cb_item->{route_points} // []})
+			my $t = $cb_item->{type} // '';
+			if ($t eq 'route')
 			{
-				my $fsh_uuid = navToFSHUUID($rp->{uuid});
-				return 1 if !$have{$fsh_uuid};
+				for my $rp (@{$cb_item->{route_points} // []})
+				{
+					my $u = $rp->{uuid} // '';
+					next if !$u;
+					my $fsh_uuid = navToFSHUUID($u);
+					return 1 if !$clip_wp_uuids{$u} && !$have{$fsh_uuid};
+				}
+			}
+			elsif ($t eq 'route_point')
+			{
+				my $u = $cb_item->{uuid} // '';
+				next if !$u;
+				my $fsh_uuid = navToFSHUUID($u);
+				return 1 if !$clip_wp_uuids{$u} && !$have{$fsh_uuid};
 			}
 		}
 		return 0;
@@ -898,8 +936,15 @@ sub _doPaste
 	}
 
 	# Step 4: Route dependency check (SS10.1 Step 4)
+	# Walks clipboard routes' route_points AND any standalone route_point
+	# items.  Both forms reference a wp_uuid; that wp must be present at the
+	# destination, either already-there or supplied by a sibling waypoint
+	# item in the same clipboard.  For DB destinations the check is order-
+	# independent within the atomic paste (sibling WPs may be inserted in
+	# the same batch); for spokes it gates the paste up front.
 	my @routes_in_clip = grep { ($_->{type} // '') eq 'route' } @resolved;
-	if (@routes_in_clip)
+	my @standalone_rps = grep { ($_->{type} // '') eq 'route_point' } @resolved;
+	if (@routes_in_clip || @standalone_rps)
 	{
 		my %clip_wp_uuids;
 		for my $ci (@resolved)
@@ -932,6 +977,19 @@ sub _doPaste
 					    . join(', ', @missing));
 					return;
 				}
+			}
+			my @missing_rp;
+			for my $rp (@standalone_rps)
+			{
+				my $u = $rp->{uuid} // '';
+				next if !$u;
+				push @missing_rp, $u if !$clip_wp_uuids{$u} && !($wpmgr_dep && $wpmgr_dep->{waypoints}{$u});
+			}
+			if (@missing_rp)
+			{
+				error("route_point: referenced waypoint(s) not on E80 and not in clipboard: "
+				    . join(', ', @missing_rp));
+				return;
 			}
 		}
 		elsif ($panel eq 'fsh')
@@ -969,6 +1027,19 @@ sub _doPaste
 					return;
 				}
 			}
+			my @missing_rp;
+			for my $rp (@standalone_rps)
+			{
+				my $u = $rp->{uuid} // '';
+				next if !$u;
+				push @missing_rp, $u if !$clip_wp_uuids{$u} && !$fsh_have{$u};
+			}
+			if (@missing_rp)
+			{
+				error("route_point: referenced waypoint(s) not in FSH and not in clipboard: "
+				    . join(', ', @missing_rp));
+				return;
+			}
 		}
 		else
 		{
@@ -994,6 +1065,26 @@ sub _doPaste
 					    . join(', ', @missing));
 					return;
 				}
+			}
+			# Standalone route_points on DB destination: also order-independent
+			# (sibling WP records may be in the same paste); same fallback.
+			my @missing_rp;
+			for my $rp (@standalone_rps)
+			{
+				my $u = $rp->{uuid} // '';
+				next if !$u;
+				if (!$clip_wp_uuids{$u})
+				{
+					my $wp = getWaypoint($dep_dbh, $u);
+					push @missing_rp, $u if !$wp;
+				}
+			}
+			if (@missing_rp)
+			{
+				disconnectDB($dep_dbh);
+				error("route_point: referenced waypoint(s) not in database and not in clipboard: "
+				    . join(', ', @missing_rp));
+				return;
 			}
 			disconnectDB($dep_dbh);
 		}

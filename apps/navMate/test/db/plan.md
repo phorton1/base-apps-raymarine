@@ -85,7 +85,6 @@ Tests are listed in execution order. Tests are numbered locally to the module (1
 | 23  | Recursive PASTE_NEW guard -- branch into its own descendant |
 | 24a | Menu shape -- PASTE at DB WP object node blocked |
 | 24b | Menu shape -- PASTE_NEW at DB WP object node blocked |
-| 24c | Menu shape -- PASTE at DB route object node blocked |
 | 24d | Menu shape -- PASTE at DB track object node blocked |
 | 25a | Mixed clipboard PASTE_BEFORE at route_point |
 | 25b | Mixed clipboard PASTE_NEW_BEFORE at route_point |
@@ -103,6 +102,9 @@ Tests are listed in execution order. Tests are numbered locally to the module (1
 | 32  | NEW_WAYPOINT at non-collection target blocked (predicate; API bypass) |
 | 33  | NEW_ROUTE at non-collection target blocked (predicate; API bypass) |
 | 34  | PASTE_BEFORE at route_point with non-WP clipboard blocked (predicate) |
+| 35  | PASTE waypoint at DB route object -- REF append (D3 positive) |
+| 36  | COPY route_point, PASTE at collection blocked (D2: route_point at non-route) |
+| 37  | Pure route_point COPY+PASTE_BEFORE at route_point anchor (D1 carve-out coverage) |
 
 ## Intra-module sequencing
 

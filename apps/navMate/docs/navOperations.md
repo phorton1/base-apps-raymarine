@@ -466,6 +466,57 @@ predicate so the menu hides the operation entirely and any forced dispatch throu
 preflight emits a visible (or test-loggable) IMPL ERROR.
 
 
+### 5.3 Reference vs Record
+
+navOps legality decisions distinguish two fundamentally different operations the
+executor can perform:
+
+- **Record creation** -- inserting a new row in a UUID-unique DB table
+  (`waypoints`, `collections`, `routes`, `tracks`). Waypoints, groups, routes,
+  branches, and tracks are records. Two records of the same kind sharing a UUID
+  is a database constraint violation; the only legal way to "duplicate" a record
+  is PASTE_NEW (which mints a fresh UUID).
+- **Reference creation** -- inserting a new row in `route_waypoints` whose
+  `wp_uuid` points at an existing waypoint. Route points are references, not
+  records. The `route_waypoints` table has no uniqueness constraint on
+  `wp_uuid`; a single route may reference the same waypoint twice, and multiple
+  routes may reference the same waypoint. UUID-"preserving" splice of route
+  points is therefore always legal -- nothing is being created at a conflicting
+  identity.
+
+The predicate uses this distinction to classify the destination of a paste
+operation. A **ref-only destination** is one where the executor's action is a
+new `route_waypoints` row (and possibly a record insertion of a missing waypoint
+the row points at), not a record duplication:
+
+- A `route_point` anchor (positional PASTE_BEFORE / PASTE_AFTER on any panel).
+- A `route` object node on E80 or FSH (paste appends to the route's wpts list).
+- A DB `route` object node (same semantics, added 2026-05-21 -- closes the prior
+  DB/spoke asymmetry where DB route objects rejected paste).
+
+`_pasteRuleAllows` classifies the destination as ref-only or record-creating
+once, then applies the appropriate rule per clipboard item type:
+
+- Track items are never legal in DB-to-DB paste (the executor has no UUID-
+  preserving DB-to-DB track copy path; PASTE_NEW from a spoke is the only way
+  to land a track in DB). Predicate rejects with
+  `db_to_db_track_copy`.
+- Waypoint / group / route / branch items in DB-to-DB non-fresh non-cut paste
+  to a record-creating destination would conflict on UUID uniqueness. Predicate
+  rejects with `db_to_db_<type>_copy` (guidance: use Paste New).
+- Waypoint / route_point items at a ref-only destination are legal regardless of
+  panel / source / cut_flag combination -- no record is being created at the
+  clipboard UUID.
+- A route_point item at any non-ref-only destination is meaningless -- the
+  item is a reference into a route, and there is no route to reference into.
+  Predicate rejects with `route_point_at_non_route`.
+
+This same distinction governs the SS10.1 Step 4 route-dependency check: standalone
+route_point clipboard items reference a `wp_uuid`, and that waypoint must be
+present at the destination (or supplied by a sibling clipboard item) for the
+reference to resolve, just like a route's member references.
+
+
 ## 6. Selection and Clipboard Vocabulary
 
 This section defines formal terms used throughout SS8-SS10. Rules in those sections use
@@ -887,13 +938,18 @@ an item into one of its own descendants. On the DB panel this primarily guards a
 pasting a Branch or Group into a descendant Branch or Group. On the E80 panel deep nesting
 is uncommon but the check runs regardless.
 
-**Step 4 -- Route dependency check (invariant SS1.2, route clipboards only).** If the
-resolved clipboard contains any route items, verify that every waypoint UUID referenced by
-those routes either already exists at the destination or is present in the current clipboard
-and will be processed before the route (waypoints and groups are always processed before
-routes -- SS12.1, SS12.5). If any referenced waypoint UUID is absent from both the
-destination and the clipboard, reject with a message identifying the affected routes and
-missing waypoints. This check applies to all destinations -- DB and E80 alike.
+**Step 4 -- Route dependency check (invariant SS1.2).** If the resolved clipboard
+contains any route items or any standalone route_point items, verify that every
+waypoint UUID referenced by those items either already exists at the destination
+or is present in the current clipboard (as a sibling waypoint or as a member of
+a sibling group) and will be processed before the referencing item (waypoints
+and groups are always processed before routes -- SS12.1, SS12.5). Standalone
+route_point items carry a single `wp_uuid` each and are subject to the same
+presence check as route members. If any referenced waypoint UUID is absent from
+both the destination and the clipboard, reject with a message identifying the
+affected routes / route_points and the missing waypoints. This check applies to
+all destinations -- DB and E80 alike (see SS5.3 for the reference-vs-record
+distinction underlying this check).
 
 ### 10.2 Additional resolution -- E80 destination only
 
@@ -983,6 +1039,31 @@ For other classifications:
 
 E80-source cut (cut_flag = yes) rows are unaffected by classification: CUT+PASTE is
 always a move, UUID-preserving regardless of DB state.
+
+### 10.3a Paste to DB -- Route object node
+
+A DB Route object node is a **ref-only destination** (SS5.3): PASTE and PASTE_NEW
+of waypoint or route_point clipboard items append `route_waypoints` rows to the
+route's ordered sequence. No new waypoint records are created at the clipboard
+UUID; if a clipboard waypoint's record doesn't already exist in the route's
+containing collection, the executor inserts it via the standard waypoint paste
+path before appending the reference.
+
+This mirrors the E80 / FSH route-object paste behavior (SS10.5, navOpsFSH route
+object) -- a single rule applies on all three panels.
+
+| Clipboard category (after SS10.1)      | source | cut_flag | PASTE | PASTE_NEW | Notes                                            |
+|----------------------------------------|--------|----------|-------|-----------|--------------------------------------------------|
+| Homogeneous waypoints                  | DB     | any      | Y     | Y         | REF append; no record creation at clipboard UUID |
+| Homogeneous waypoints                  | E80    | any      | Y     | Y         | REF append; waypoint record inserted if missing  |
+| Homogeneous waypoints                  | FSH    | any      | Y     | Y         | REF append; waypoint record inserted if missing  |
+| Homogeneous route points               | DB     | any      | Y     | Y         | REF append                                       |
+| Any other clipboard                    | any    | any      | --    | --        | Route object accepts waypoint / route_point only |
+
+`PASTE` and `PASTE_NEW` collapse to the same semantics at a route object
+destination (see SS7.3): both insert references at the end of the route's
+sequence. The `_NEW` suffix has no minting effect because no record is being
+created at the clipboard UUID.
 
 ### 10.4 Paste Before and After -- DB panel
 
