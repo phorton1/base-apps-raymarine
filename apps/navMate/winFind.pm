@@ -424,11 +424,31 @@ sub _addRow
 		? ''
 		: sprintf('%.0f%%', $m->{quality} * 100);
 
-	$hbox->Add(Wx::StaticText->new($row, -1, $tier,
-		wxDefaultPosition, [40, -1]),
+	# Enrichable indicator: canEnrich is cheap (flag/tier check only, no
+	# point walking).  When it returns at least one possible direction
+	# for this row, draw Tier and Shape blue-bold as a hint.  False
+	# positives are possible -- the right-click menu is the real decision.
+	my $enr = navEnrich::canEnrich($this->{_subject}, $cand, $m);
+	my $is_enrichable = ($enr && @$enr) ? 1 : 0;
+
+	my $tier_text  = Wx::StaticText->new($row, -1, $tier,
+		wxDefaultPosition, [40, -1]);
+	my $shape_text = Wx::StaticText->new($row, -1, $shape,
+		wxDefaultPosition, [65, -1]);
+	if ($is_enrichable)
+	{
+		my $blue = Wx::Colour->new(0, 0, 192);
+		for my $t ($tier_text, $shape_text)
+		{
+			$t->SetForegroundColour($blue);
+			my $f = $t->GetFont();
+			$f->SetWeight(wxFONTWEIGHT_BOLD);
+			$t->SetFont($f);
+		}
+	}
+	$hbox->Add($tier_text,
 		0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
-	$hbox->Add(Wx::StaticText->new($row, -1, $shape,
-		wxDefaultPosition, [65, -1]),
+	$hbox->Add($shape_text,
 		0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
 	$hbox->Add(Wx::StaticText->new($row, -1, $subj_pct,
 		wxDefaultPosition, [45, -1]),
