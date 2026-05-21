@@ -132,6 +132,13 @@ Tests are listed in execution order. Tests are numbered locally to the module (1
 | 28b | Menu shape: PASTE at E80 WP object node blocked |
 | 28c | Menu shape: PASTE_NEW at E80 WP object node blocked |
 
+### Predicate-driven guards (added with the menu-side predicate wiring)
+
+| Test | What it verifies |
+|------|------------------|
+| 29   | DELETE_GROUP at E80 my_waypoints node blocked (predicate D4) |
+| 30   | DELETE_GROUP_WPS with mixed my_waypoints + named group blocked (predicate D5) |
+
 ## Intra-module sequencing
 
 Tests within this module build state on E80 progressively. The module follows the structure of the legacy Sections 3 + 5 -- upload phase, push phase, delete phase, re-upload phase, paste-new phase, route-point phase, then guards. Like the db module, internal sequencing is intentional; independence is at the module boundary only.

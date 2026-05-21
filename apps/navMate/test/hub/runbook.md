@@ -157,7 +157,30 @@ Write-Host "Tracks before: E80=$tk_before_e80 FSH=$tk_before_fsh; after: E80=$tk
 
 **Pass:** E80 tracks count unchanged. FSH tracks count unchanged. Log contains `ERROR - Cannot paste to E80 tracks header -- tracks are read-only`. NO ProgressDialog (guard fires pre-write). Neither side mutated.
 
-**Note:** The runbook's first authoring predicted a silent-skip outcome based on `_pasteAllToE80`'s track-type branch -- that branch is unreachable for a tracks-header destination because the upstream guard fires first. The hard-abort sentinel is the correct guard behavior; "silent skip" would be reachable only for a track item pasted at a non-tracks-header destination (e.g. mixed multi-select where the destination is the groups header) -- such a flow isn't exercised in this runbook.
+**Note:** The runbook's first authoring predicted a silent-skip outcome based on `_pasteAllToE80`'s track-type branch -- that branch is unreachable for a tracks-header destination because the upstream guard fires first. The hard-abort sentinel is the correct guard behavior; "silent skip" would also be reachable for a track item pasted at a non-tracks-header destination (e.g. groups header), which is now exercised in hub.4b.
+
+---
+
+#### Test 4b -- GUARD: Paste FSH Track -> E80 groups header blocked (predicate)
+
+Covers the path that hub.4's note flagged as not-yet-exercised: a tracks-only clipboard pasted to a non-tracks-header E80 destination. Without the predicate rule this would reach `_pasteAllToE80`'s per-item track skip and silently vanish; the new `tracks_to_e80_paste` predicate rule fires at preflight before any spoke-level dispatch.
+
+```powershell
+$tk_before_e80 = @((curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json).tracks.PSObject.Properties).Count
+$tk_before_fsh = @((curl.exe -s "http://localhost:9883/api/fsh" | ConvertFrom-Json).tracks.PSObject.Properties).Count
+
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.4b" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=A24E-672E-FE06-0A80&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+Start-Sleep 3
+
+$tk_after_e80 = @((curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json).tracks.PSObject.Properties).Count
+$tk_after_fsh = @((curl.exe -s "http://localhost:9883/api/fsh" | ConvertFrom-Json).tracks.PSObject.Properties).Count
+Write-Host "Tracks before: E80=$tk_before_e80 FSH=$tk_before_fsh; after: E80=$tk_after_e80 FSH=$tk_after_fsh"
+```
+
+**Pass:** Log contains `ERROR - Cannot paste tracks to E80 (E80 tracks are read-only)`. E80 tracks count unchanged. FSH tracks count unchanged. NO ProgressDialog (predicate fires pre-write). Neither side mutated.
 
 ---
 

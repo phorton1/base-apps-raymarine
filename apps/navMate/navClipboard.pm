@@ -39,6 +39,10 @@ BEGIN
 		getPasteMenuItems
 		getPushMenuItems
 
+		_pasteRuleAllows
+		_deleteRuleAllows
+		_newRuleAllows
+
 	);
 }
 
@@ -165,10 +169,294 @@ sub _updateStatusBar
 
 
 #----------------------------------------------------
+# Rule predicates -- silent, side-effect-free
+#----------------------------------------------------
+# Shared by the menu builders (filter what to offer) and by the
+# preflight in navOps.pm (gate execution).  Each returns either
+# (1) when the operation is allowed, or
+# (0, $reason_token, $detail_msg, $emit_as) on rejection.
+# $emit_as is 'impl_error' (use implementationError) or 'user_error'
+# (use error directly).  The token is for stable test matching;
+# the detail is the message body.
+
+sub _pasteRuleAllows
+{
+	my ($cmd_id, $panel, $right_click_node) = @_;
+	return (1) if !$clipboard;
+	return (1) if !$right_click_node;
+
+	my $source   = $clipboard->{source}   // '';
+	my $cut_flag = $clipboard->{cut_flag} // 0;
+	my $items    = $clipboard->{items}    // [];
+	my $fresh    = ($cmd_id == $CTX_CMD_PASTE_NEW
+	             || $cmd_id == $CTX_CMD_PASTE_NEW_BEFORE
+	             || $cmd_id == $CTX_CMD_PASTE_NEW_AFTER);
+	my $positional = ($cmd_id == $CTX_CMD_PASTE_BEFORE
+	               || $cmd_id == $CTX_CMD_PASTE_AFTER
+	               || $cmd_id == $CTX_CMD_PASTE_NEW_BEFORE
+	               || $cmd_id == $CTX_CMD_PASTE_NEW_AFTER);
+
+	my $rt    = $right_click_node->{type} // '';
+	my $rkind = $right_click_node->{kind} // '';
+	my $rd    = $right_click_node->{data} // {};
+	my $ruuid = $rd->{uuid} // '';
+
+	# DB-cut to spoke is rejected (would lose canonical state).
+	if (($panel eq 'e80' || $panel eq 'fsh') && $cut_flag && $source eq 'database')
+	{
+		return (0, 'db_cut_to_spoke',
+		        'Cannot paste a database Cut to ' . uc($panel),
+		        'user_error');
+	}
+
+	# E80 tracks header is not a paste destination (tracks are read-only on E80).
+	if ($panel eq 'e80' && $rt eq 'header' && $rkind eq 'tracks')
+	{
+		return (0, 'e80_tracks_header_paste',
+		        'Cannot paste to E80 tracks header -- tracks are read-only',
+		        'user_error');
+	}
+
+	# Individual E80 waypoint node is not a paste destination.
+	if ($panel eq 'e80' && $rt eq 'waypoint')
+	{
+		return (0, 'e80_individual_wp_paste',
+		        'Cannot paste at an individual E80 waypoint node -- pick a header or group',
+		        'user_error');
+	}
+
+	# Tracks cannot be pasted to ANY E80 destination.  The earlier
+	# tracks-header rule covers the explicit "drop tracks onto tracks"
+	# case; this rule catches the otherwise-silent path where a
+	# tracks-only clipboard would reach a group / route / my_waypoints
+	# / non-tracks-header target and be dropped by _pasteAllToE80's
+	# per-item skip.  E80 tracks are read-only -- created only by the
+	# E80 itself or by the teensyBoat recording path.
+	if ($panel eq 'e80')
+	{
+		for my $item (@$items)
+		{
+			if (($item->{type} // '') eq 'track')
+			{
+				return (0, 'tracks_to_e80_paste',
+				        'Cannot paste tracks to E80 (E80 tracks are read-only)',
+				        'user_error');
+			}
+		}
+	}
+
+	# Before/After on a root-level branch has no parent to insert into.
+	if ($positional && $panel eq 'database' && $rt eq 'collection' && $ruuid)
+	{
+		my $dbh = connectDB();
+		if ($dbh)
+		{
+			my $rec = getCollection($dbh, $ruuid);
+			disconnectDB($dbh);
+			if ($rec && !defined $rec->{parent_uuid})
+			{
+				return (0, 'root_branch_before_after',
+				        'Cannot paste before/after a root-level branch -- use Paste to add items to it',
+				        'user_error');
+			}
+		}
+	}
+
+	# DB target must be a collection for non-positional paste.
+	if ($panel eq 'database' && !$positional && $rt ne 'root' && $rt ne 'collection')
+	{
+		return (0, 'db_paste_non_collection',
+		        "paste target type '$rt' is not a collection",
+		        'impl_error');
+	}
+
+	# Before/After at a route_point anchor accepts only waypoint/route_point items.
+	if ($positional && $rt eq 'route_point')
+	{
+		for my $item (@$items)
+		{
+			my $t = $item->{type} // '';
+			if ($t ne 'waypoint' && $t ne 'route_point')
+			{
+				return (0, 'route_point_paste_non_wp',
+				        'PASTE_BEFORE/AFTER at route_point requires waypoint or route_point items only',
+				        'impl_error');
+			}
+		}
+	}
+
+	# DB-to-DB non-fresh non-cut paste of any item type silently no-ops or
+	# silently moves in the executor today.  Reject with PASTE_NEW guidance.
+	if ($panel eq 'database' && $source eq 'database' && !$fresh && !$cut_flag)
+	{
+		my $kind = $positional ? 'PASTE_BEFORE/AFTER' : 'PASTE';
+		for my $item (@$items)
+		{
+			my $t = $item->{type} // '';
+			if ($t eq 'track')
+			{
+				return (0, 'db_to_db_track_copy',
+				        "DB-to-DB track copy via $kind not implemented",
+				        'impl_error');
+			}
+			if ($t eq 'waypoint' || $t eq 'group' || $t eq 'route' || $t eq 'branch')
+			{
+				return (0, "db_to_db_${t}_copy",
+				        "DB-to-DB $t copy via $kind not implemented (use Paste New)",
+				        'impl_error');
+			}
+		}
+	}
+
+	return (1);
+}
+
+
+sub _deleteRuleAllows
+{
+	my ($cmd_id, $panel, $right_click_node, @nodes) = @_;
+	@nodes = ($right_click_node) if !@nodes && $right_click_node;
+	return (1) if !@nodes;
+
+	# E80 my_waypoints node is not a valid CMD_DELETE_GROUP target.
+	if ($panel eq 'e80' && $cmd_id == $CTX_CMD_DELETE_GROUP)
+	{
+		for my $n (@nodes)
+		{
+			if (($n->{type} // '') eq 'my_waypoints')
+			{
+				return (0, 'e80_delete_group_my_waypoints',
+				        'delete-group on E80 my_waypoints node not supported',
+				        'impl_error');
+			}
+		}
+	}
+
+	# E80 CMD_DELETE_GROUP_WPS rejects mixed my_waypoints + named groups.
+	if ($panel eq 'e80' && $cmd_id == $CTX_CMD_DELETE_GROUP_WPS)
+	{
+		my $has_mw  = scalar grep { ($_->{type} // '') eq 'my_waypoints' } @nodes;
+		my $has_grp = scalar grep { ($_->{type} // '') ne 'my_waypoints' } @nodes;
+		if ($has_mw && $has_grp)
+		{
+			return (0, 'e80_delete_mixed_my_waypoints',
+			        'delete-group-and-WPs mixes my_waypoints with named groups',
+			        'impl_error');
+		}
+	}
+
+	# DB DELETE_BRANCH safety: descendant WPs referenced by external routes.
+	if ($panel eq 'database' && $cmd_id == $CTX_CMD_DELETE_BRANCH)
+	{
+		my $uuid = ($right_click_node->{data} // {})->{uuid};
+		my $name = ($right_click_node->{data} // {})->{name} // '?';
+		if ($uuid)
+		{
+			my $dbh = connectDB();
+			if ($dbh)
+			{
+				my $safe = isBranchDeleteSafe($dbh, $uuid);
+				disconnectDB($dbh);
+				if (!$safe)
+				{
+					return (0, 'branch_wp_in_external_route',
+					        "Cannot delete '$name': waypoints are referenced by external routes",
+					        'user_error');
+				}
+			}
+		}
+	}
+
+	# DB DELETE_WAYPOINT: WP must not be referenced by any route.
+	if ($panel eq 'database' && $cmd_id == $CTX_CMD_DELETE_WAYPOINT)
+	{
+		my $dbh = connectDB();
+		if ($dbh)
+		{
+			for my $n (@nodes)
+			{
+				my $uuid = ($n->{data} // {})->{uuid};
+				next if !$uuid;
+				if (getWaypointRouteRefCount($dbh, $uuid) > 0)
+				{
+					disconnectDB($dbh);
+					return (0, 'wp_in_route',
+					        'waypoint is referenced by a route',
+					        'impl_error');
+				}
+			}
+			disconnectDB($dbh);
+		}
+	}
+
+	# DB DELETE_GROUP_WPS: no member WP may be referenced by any route.
+	if ($panel eq 'database' && $cmd_id == $CTX_CMD_DELETE_GROUP_WPS)
+	{
+		my $dbh = connectDB();
+		if ($dbh)
+		{
+			for my $n (@nodes)
+			{
+				my $uuid = ($n->{data} // {})->{uuid};
+				next if !$uuid;
+				my $wps = getGroupWaypoints($dbh, $uuid);
+				for my $wp (@$wps)
+				{
+					if (getWaypointRouteRefCount($dbh, $wp->{uuid}) > 0)
+					{
+						disconnectDB($dbh);
+						return (0, 'group_member_in_route',
+						        'group member waypoint is referenced by a route',
+						        'impl_error');
+					}
+				}
+			}
+			disconnectDB($dbh);
+		}
+	}
+
+	return (1);
+}
+
+
+sub _newRuleAllows
+{
+	my ($cmd_id, $panel, $right_click_node) = @_;
+	return (1) if !$right_click_node;
+
+	# DB NEW_WAYPOINT and NEW_ROUTE require a collection target.
+	if ($panel eq 'database'
+	 && ($cmd_id == $CTX_CMD_NEW_WAYPOINT || $cmd_id == $CTX_CMD_NEW_ROUTE))
+	{
+		my $rt = $right_click_node->{type} // '';
+		if ($rt ne 'collection' && $rt ne 'root')
+		{
+			my $verb = ($cmd_id == $CTX_CMD_NEW_WAYPOINT) ? 'waypoint' : 'route';
+			return (0, "db_new_${verb}_non_collection",
+			        "new $verb target is not a collection",
+			        'impl_error');
+		}
+	}
+
+	return (1);
+}
+
+
+#----------------------------------------------------
 # getNewMenuItems (SS11)
 #----------------------------------------------------
 
 sub getNewMenuItems
+{
+	my ($panel, $right_click_node) = @_;
+	my @items = _getNewMenuItemsRaw($panel, $right_click_node);
+	return grep {
+		my ($ok) = _newRuleAllows($_->{id}, $panel, $right_click_node);
+		$ok
+	} @items;
+}
+
+sub _getNewMenuItemsRaw
 {
 	my ($panel, $right_click_node) = @_;
 	my $t    = $right_click_node->{type} // '';
@@ -216,6 +504,16 @@ sub getNewMenuItems
 #----------------------------------------------------
 
 sub getDeleteMenuItems
+{
+	my ($panel, $right_click_node, @nodes) = @_;
+	my @items = _getDeleteMenuItemsRaw($panel, $right_click_node, @nodes);
+	return grep {
+		my ($ok) = _deleteRuleAllows($_->{id}, $panel, $right_click_node, @nodes);
+		$ok
+	} @items;
+}
+
+sub _getDeleteMenuItemsRaw
 {
 	my ($panel, $right_click_node, @nodes) = @_;
 	my $t    = $right_click_node->{type}  // '';
@@ -347,6 +645,16 @@ sub getCutMenuItems
 #----------------------------------------------------
 
 sub getPasteMenuItems
+{
+	my ($panel, $right_click_node) = @_;
+	my @items = _getPasteMenuItemsRaw($panel, $right_click_node);
+	return grep {
+		my ($ok) = _pasteRuleAllows($_->{id}, $panel, $right_click_node);
+		$ok
+	} @items;
+}
+
+sub _getPasteMenuItemsRaw
 {
 	my ($panel, $right_click_node) = @_;
 	return () if !$clipboard;

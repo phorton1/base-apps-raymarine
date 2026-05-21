@@ -8,6 +8,12 @@ own context here.
 
 ## Next
 
+[d_TRACKS missing $progress support]
+d_TRACK implementation is lacking progress support and needs it to properly bracket
+operations like Cleanup-E80 which deletes both tracks and waypoints/groups/etc,
+and then needs to be reworked into the aggregate scheme to properly implement
+operations like cut-E80-paste-DB tracks.
+
 [leaflet sym-icons] - work pending in leaflet to display the correct symbol
 icon type (all three sources) for waypoints. Pending getting the darned icons
 that match the e80 "sym_catalog" raw pictures we currently are using for the

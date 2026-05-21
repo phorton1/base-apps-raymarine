@@ -703,4 +703,32 @@ Start-Sleep 3
 
 ---
 
+### Test 29 -- DELETE_GROUP at E80 my_waypoints node blocked (predicate)
+
+The menu does not offer DELETE_GROUP for my_waypoints. API bypass forces the dispatch to verify the predicate's D4 guard.
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.29" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10221" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: delete-group on E80 my_waypoints node not supported`; E80 unchanged.
+
+---
+
+### Test 30 -- DELETE_GROUP_WPS with mixed my_waypoints + named group blocked (predicate)
+
+Multi-select includes the my_waypoints node and a named group (Popa group, `244e8e100800400a`, present on E80 since e80.22). The predicate's D5 guard rejects the mixed selection before any executor work.
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.30" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints,244e8e100800400a&right_click=my_waypoints&cmd=10222" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: delete-group-and-WPs mixes my_waypoints with named groups`; E80 unchanged.
+
+---
+
 End of e80 module tests.

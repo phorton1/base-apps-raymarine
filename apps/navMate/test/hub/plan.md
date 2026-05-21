@@ -69,7 +69,8 @@ Tests are listed in execution order. Section A starts from empty E80; later sect
 | 1 | Paste FSH WP -> E80 (UUID preserved; ProgressDialog) |
 | 2 | Paste FSH Group -> E80 (group + embedded members; ProgressDialog) |
 | 3 | Paste FSH Route -> E80 (members present from Test 2; ProgressDialog) |
-| 4 | **GUARD** Paste FSH Track -> E80 -- silently skipped; FSH track untouched, no E80 track |
+| 4 | **GUARD** Paste FSH Track -> E80 tracks header blocked (predicate E3 / tracks-header rule); FSH track untouched, no E80 track |
+| 4b | **GUARD** Paste FSH Track -> E80 groups header blocked (predicate `tracks_to_e80_paste` rule -- previously a silent skip in `_pasteAllToE80`) |
 
 ### Section B -- E80->FSH PASTE (UUID-preserving): same-UUID round-trip / in-place-update
 

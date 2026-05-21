@@ -412,6 +412,60 @@ Index 5 is named BLACK in the E80 protocol but is mapped to WHITE in navMate bec
 black is not visible against satellite imagery backgrounds.
 
 
+### 5.2 Shared Rule Predicates
+
+Three silent predicate functions in `navClipboard.pm` are the single source of truth
+for "is this operation structurally valid in the current context?" They are called
+by both the menu builders (to decide what to offer) and the preflight layer (to gate
+execution). The two layers cannot disagree because they consult the same function.
+
+- `_pasteRuleAllows($cmd_id, $panel, $right_click_node)`
+- `_deleteRuleAllows($cmd_id, $panel, $right_click_node, @nodes)`
+- `_newRuleAllows($cmd_id, $panel, $right_click_node)`
+
+Each is side-effect-free. Return convention:
+
+- `(1)` -- allowed.
+- `(0, $reason_token, $detail_msg, $emit_as)` -- rejected.
+
+`$reason_token` is a stable snake_case category (e.g. `db_to_db_track_copy`,
+`wp_in_route`, `e80_tracks_header_paste`); the testplan asserts on substrings of
+`$detail_msg` rather than the token, but the token is stable for future structural
+matchers. `$emit_as` is either `'user_error'` or `'impl_error'`.
+
+**Menu builders** (`getPasteMenuItems`, `getDeleteMenuItems`, `getNewMenuItems`) call
+the matching predicate for each candidate item and silently omit any item the
+predicate rejects. The user does not see a disallowed operation in the menu at all.
+
+**Preflight** (`_doPaste`, `_doDelete`, `_doNew`) calls the matching predicate at
+its first step. On rejection, the `$emit_as` tag routes the failure:
+
+- `'user_error'` -- emitted via plain `error($detail_msg)`. Produces a friendly
+  user-facing dialog (suppressed under test). Used for rejection paths that pre-date
+  the predicate layer and have established user-facing wording (e.g. "Cannot paste
+  to E80 tracks header -- tracks are read-only").
+- `'impl_error'` -- emitted via `implementationError($detail_msg)` (in `n_utils.pm`).
+  The helper checks `$nmDialogs::suppress_error_dialog` and routes to
+  `warning(0, 0, "IMPLEMENTATION ERROR: $detail", 2)` when suppressed (testplan
+  log-only) or `error("IMPLEMENTATION ERROR: $detail", 2)` otherwise (visible
+  dialog). `call_level=2` attributes the log line to the navOps caller, not the
+  helper.
+
+**Executor backstops** -- the historical `warning(0, 0, "IMPLEMENTATION ERROR: ...")`
+sites in `navOpsDB.pm`, `navOpsE80.pm`, `navOpsFSH.pm` were converted in the
+stage-1 refactor to call `implementationError()` directly with condition-only
+message text. They remain in place as defense-in-depth but should never fire
+post-stage-2 -- the predicate catches first at preflight. An API-bypass test that
+dispatches a disallowed command via `/api/test` therefore lands on the predicate's
+`implementationError` path, not on the executor backstop.
+
+The shared-predicate layer was introduced after a silent-fail incident: the menu
+offered PASTE_BEFORE for a DB-track-to-DB clipboard, the executor `warning()`d and
+returned, and the user saw nothing happen. The fix consolidated the rule into the
+predicate so the menu hides the operation entirely and any forced dispatch through
+preflight emits a visible (or test-loggable) IMPL ERROR.
+
+
 ## 6. Selection and Clipboard Vocabulary
 
 This section defines formal terms used throughout SS8-SS10. Rules in those sections use

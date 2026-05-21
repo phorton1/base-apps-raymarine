@@ -789,18 +789,18 @@ sub _doDelete
 	my ($cmd_id, $panel, $right_click_node, $tree, @nodes) = @_;
 	@nodes = ($right_click_node) if !@nodes;
 
-	# Pre-flight SS8: branch-safety check
-	if ($panel eq 'database' && $cmd_id == $CTX_CMD_DELETE_BRANCH)
+	# Shared delete-rule predicate -- absorbs the previously-inline branch
+	# safety check and the previously-silent executor backstops for WP-in-
+	# route, group-member-in-route, and the E80 my_waypoints / mixed-
+	# selection cases.  Menu builders consult the same predicate.
 	{
-		my $uuid = ($right_click_node->{data} // {})->{uuid};
-		my $name = ($right_click_node->{data} // {})->{name} // '?';
-		my $dbh  = connectDB();
-		return if !$dbh;
-		my $safe = isBranchDeleteSafe($dbh, $uuid);
-		disconnectDB($dbh);
-		if (!$safe)
+		my ($ok, $reason, $detail, $emit_as)
+			= _deleteRuleAllows($cmd_id, $panel, $right_click_node, @nodes);
+		if (!$ok)
 		{
-			error("Cannot delete '$name': waypoints are referenced by external routes");
+			($emit_as // '') eq 'user_error'
+				? error($detail)
+				: implementationError($detail);
 			return;
 		}
 	}
@@ -838,59 +838,28 @@ sub _doPaste
 
 	my $source = $cb->{source} // '';
 
-	# PASTE_BEFORE/AFTER on a root-level collection has no parent to insert into
-	if (($cmd_id == $CTX_CMD_PASTE_BEFORE    || $cmd_id == $CTX_CMD_PASTE_AFTER ||
-	     $cmd_id == $CTX_CMD_PASTE_NEW_BEFORE || $cmd_id == $CTX_CMD_PASTE_NEW_AFTER)
-	 && ($right_click_node->{type} // '') eq 'collection')
+	# Shared paste-rule predicate -- absorbs the previously-inline checks for:
+	# root-level branch before/after, DB-cut to spoke, E80 tracks header
+	# destination, E80 individual waypoint destination, plus the previously-
+	# silent executor backstops (DB-to-DB non-fresh-non-cut copy, DB non-
+	# collection target, PASTE_BEFORE/AFTER at route_point with non-WP items).
+	# Menu builders consult the same predicate so disallowed cells are not
+	# offered; reaching here means either a test bypass or a menu/predicate
+	# disagreement.  emit_as routes to error() (user-facing) or
+	# implementationError() (IMPL ERROR semantics, suppressable in test mode).
 	{
-		my $dbh = connectDB();
-		if ($dbh)
+		my ($ok, $reason, $detail, $emit_as)
+			= _pasteRuleAllows($cmd_id, $panel, $right_click_node);
+		if (!$ok)
 		{
-			my $rec = getCollection($dbh, ($right_click_node->{data} // {})->{uuid} // '');
-			disconnectDB($dbh);
-			if ($rec && !defined $rec->{parent_uuid})
-			{
-				error("Cannot paste before/after a root-level branch -- use Paste to add items to it");
-				return;
-			}
+			($emit_as // '') eq 'user_error'
+				? error($detail)
+				: implementationError($detail);
+			return;
 		}
 	}
 
 	my $is_spoke = ($panel eq 'e80' || $panel eq 'fsh');
-
-	# DB Cut -> spoke is always rejected: removing the DB record loses
-	# canonical state.  Same rule for E80 and FSH destinations.
-	if ($is_spoke && $cb->{cut_flag} && $source eq 'database')
-	{
-		error("Cannot paste a database Cut to " . uc($panel));
-		return;
-	}
-
-	# SS10.8: tracks header is not a valid paste destination on E80
-	# (tracks are E80-assigned UUIDs, read-only via WPMGR/TRACK).  FSH
-	# allows track writes via _pasteTrackToFSH (FSH is a file archive,
-	# not a service).
-	if ($panel eq 'e80'
-	 && ($right_click_node->{type} // '') eq 'header'
-	 && ($right_click_node->{kind} // '') eq 'tracks')
-	{
-		error("Cannot paste to E80 tracks header -- tracks are read-only");
-		return;
-	}
-
-	# An individual E80 waypoint node is not a valid paste destination.
-	# (PASTE_BEFORE / PASTE_AFTER at a route_point node IS valid and
-	# uses type='route_point', not 'waypoint'.)  This guard is the
-	# upstream counterpart of the IMPLEMENTATION ERROR catch-all at
-	# navOpsE80.pm:1459; that catch-all stays as defensive backstop but
-	# should never be reached from normal user actions once this guard
-	# is in place.
-	if ($panel eq 'e80'
-	 && ($right_click_node->{type} // '') eq 'waypoint')
-	{
-		error("Cannot paste at an individual E80 waypoint node -- pick a header or group");
-		return;
-	}
 
 	# Step 1: Ancestor-wins resolution (SS6.2)
 	my @orig_items = @{$cb->{items}};
@@ -1604,6 +1573,21 @@ sub _destIsDescendantOfClipboard
 sub _doNew
 {
 	my ($cmd_id, $panel, $right_click_node, $tree) = @_;
+
+	# Shared new-rule predicate -- covers the previously-silent executor
+	# backstops for DB NEW_WAYPOINT / NEW_ROUTE with a non-collection target.
+	{
+		my ($ok, $reason, $detail, $emit_as)
+			= _newRuleAllows($cmd_id, $panel, $right_click_node);
+		if (!$ok)
+		{
+			($emit_as // '') eq 'user_error'
+				? error($detail)
+				: implementationError($detail);
+			return;
+		}
+	}
+
 	my $parent_uuid = ($right_click_node->{data} // {})->{uuid};
 
 	if ($cmd_id == $CTX_CMD_NEW_BRANCH)

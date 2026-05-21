@@ -561,4 +561,138 @@ Start-Sleep 4
 
 ---
 
+### Test 26 -- COPY WP -> PASTE blocked (predicate; DB-to-DB waypoint copy)
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+db.26" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=6f4e72ceae0264de&right_click=6f4e72ceae0264de&cmd=10210" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: DB-to-DB waypoint copy via PASTE not implemented (use Paste New)`; DB unchanged.
+
+---
+
+### Test 27 -- COPY group -> PASTE blocked (predicate; DB-to-DB group copy)
+
+Uses [TestGroup] = Timiteo (`1a4eaf5a8c00e922`).
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+db.27" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=1a4eaf5a8c00e922&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=6f4e72ceae0264de&right_click=6f4e72ceae0264de&cmd=10210" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: DB-to-DB group copy via PASTE not implemented (use Paste New)`; DB unchanged.
+
+---
+
+### Test 28 -- COPY route -> PASTE blocked (predicate; DB-to-DB route copy)
+
+Uses Agua route (`d64e8c7e4400a186`).
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+db.28" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=d64e8c7e4400a186&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=6f4e72ceae0264de&right_click=6f4e72ceae0264de&cmd=10210" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: DB-to-DB route copy via PASTE not implemented (use Paste New)`; DB unchanged.
+
+---
+
+### Test 29 -- COPY branch -> PASTE blocked (predicate; DB-to-DB branch copy)
+
+Uses [RouteBranch] = Navigation/Routes (`ac4e2c500600b9aa`).
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+db.29" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=ac4e2c500600b9aa&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=6f4e72ceae0264de&right_click=6f4e72ceae0264de&cmd=10210" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: DB-to-DB branch copy via PASTE not implemented (use Paste New)`; DB unchanged.
+
+---
+
+### Test 30 -- COPY track -> PASTE_BEFORE blocked (predicate; the original-bug case)
+
+Uses [TestTrack] = `1a4eed924904ebbe` (moved to [DST] by test 13). PASTE_BEFORE anchor is [IsolatedWP2] = `af4e23246d01bfa8` (also in [DST] after test 3).
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+db.30" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=1a4eed924904ebbe&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=af4e23246d01bfa8&right_click=af4e23246d01bfa8&cmd=10212" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: DB-to-DB track copy via PASTE_BEFORE/AFTER not implemented`; DB unchanged.
+
+---
+
+### Test 31 -- COPY track -> PASTE_AFTER blocked (predicate; symmetry with db.30)
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+db.31" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=1a4eed924904ebbe&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=af4e23246d01bfa8&right_click=af4e23246d01bfa8&cmd=10213" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: DB-to-DB track copy via PASTE_BEFORE/AFTER not implemented`; DB unchanged.
+
+---
+
+### Test 32 -- NEW_WAYPOINT at non-collection target blocked (predicate)
+
+Right-click target is [IsolatedWP1] (a waypoint object). The menu does not offer NEW_WAYPOINT at an object node; API bypass forces the dispatch to verify the predicate guard.
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+db.32" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&right_click=ce4e43181f01b3ae&cmd=10230" | Out-Null
+Start-Sleep 2
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: new waypoint target is not a collection`; DB unchanged.
+
+---
+
+### Test 33 -- NEW_ROUTE at non-collection target blocked (predicate)
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+db.33" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&right_click=ce4e43181f01b3ae&cmd=10232" | Out-Null
+Start-Sleep 2
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: new route target is not a collection`; DB unchanged.
+
+---
+
+### Test 34 -- PASTE_BEFORE at route_point with non-WP clipboard blocked (predicate)
+
+Clipboard has [TestTrack] (non-WP). Anchor is [RP1] = Popa0 in [TestRoute] (which was moved to [DST] by test 12). The predicate's route_point-anchor rule fires before the DB-to-DB track-copy rule.
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+db.34" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=1a4eed924904ebbe&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=rp:f34efdd6070022e8:314e56cc09005332&right_click=rp:f34efdd6070022e8:314e56cc09005332&cmd=10212" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: PASTE_BEFORE/AFTER at route_point requires waypoint or route_point items only`; DB unchanged.
+
+---
+
 End of db module tests.

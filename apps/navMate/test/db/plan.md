@@ -90,6 +90,20 @@ Tests are listed in execution order. Tests are numbered locally to the module (1
 | 25a | Mixed clipboard PASTE_BEFORE at route_point |
 | 25b | Mixed clipboard PASTE_NEW_BEFORE at route_point |
 
+### Predicate-driven guards (added with the menu-side predicate wiring)
+
+| Test | What it verifies |
+|------|------------------|
+| 26  | COPY DB waypoint -> PASTE blocked (predicate; "use Paste New" guidance) |
+| 27  | COPY DB group -> PASTE blocked (predicate) |
+| 28  | COPY DB route -> PASTE blocked (predicate) |
+| 29  | COPY DB branch -> PASTE blocked (predicate) |
+| 30  | COPY DB track -> PASTE_BEFORE blocked (predicate; the original-bug case) |
+| 31  | COPY DB track -> PASTE_AFTER blocked (predicate; symmetry with db.30) |
+| 32  | NEW_WAYPOINT at non-collection target blocked (predicate; API bypass) |
+| 33  | NEW_ROUTE at non-collection target blocked (predicate; API bypass) |
+| 34  | PASTE_BEFORE at route_point with non-WP clipboard blocked (predicate) |
+
 ## Intra-module sequencing
 
 Tests within this module are not commutative -- they build on each other (BOCAS2 moves into [DST] in Test 3 and becomes the anchor for Test 14a/b; [TestRoute] moves into [DST] in Test 12 and is used for Test 15a/b, Test 16a/b, Test 19a, Test 25a/b). This is intentional and was the structure of the legacy Section 2.

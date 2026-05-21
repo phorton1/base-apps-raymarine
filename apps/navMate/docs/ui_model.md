@@ -504,6 +504,16 @@ All menu generators live in `navClipboard.pm` and are called by
 | `getPushMenuItems($panel, $wpmgr, @nodes)` | `Push to E80` (DB panel) or `Push to DB` (E80 panel) when every selected node has a counterpart on the other side |
 | `getPasteMenuItems($panel, $right_click_node)` | Up to six paste variants, gated by destination kind, cut/copy flag, and clipboard source/class |
 
+**Predicate filter** -- `getPasteMenuItems`, `getDeleteMenuItems`, and
+`getNewMenuItems` are thin wrappers that call a `_get*MenuItemsRaw` counterpart
+to produce the structural candidate list, then run each candidate through the
+matching silent predicate (`_pasteRuleAllows`, `_deleteRuleAllows`,
+`_newRuleAllows`). Items the predicate rejects are silently omitted from the
+returned list. The preflight layer in `navOps.pm` (`_doPaste` / `_doDelete` /
+`_doNew`) calls the same predicates as their first step, so menu and preflight
+cannot disagree on what is offered. See navOperations.md SS5.2 for the full
+predicate contract.
+
 ### Paste Variants
 
 Six paste commands are exported from `n_defs.pm`:
