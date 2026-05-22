@@ -13,6 +13,7 @@ use Wx qw(:everything);
 use Pub::WX::Resources;
 use Pub::WX::AppConfig;
 use apps::raymarine::NET::a_utils qw(@E80_SYMS);
+use n_utils qw($app_dir);
 
 
 BEGIN
@@ -248,25 +249,14 @@ $resources = { %$resources,
 # a "(multi)" style entry for the multi-editor's mixed-selection case.
 
 my %_sym_bitmaps;
-my $_sym_catalog_dir;
 my $_blank_bm;
-
-sub _symCatalogDir
-{
-	if (!defined $_sym_catalog_dir)
-	{
-		my $here = __FILE__;
-		$_sym_catalog_dir = dirname($here) . '/sym_catalog';
-	}
-	return $_sym_catalog_dir;
-}
 
 sub symBitmap
 {
 	my ($i) = @_;
 	return undef if !defined $i || $i < 0 || $i > $#E80_SYMS;
 	return $_sym_bitmaps{$i} if exists $_sym_bitmaps{$i};
-	my $path = sprintf('%s/clean%02d.png', _symCatalogDir(), $i);
+	my $path = sprintf('%s/sym_catalog/clean%02d.png', $app_dir, $i);
 	$_sym_bitmaps{$i} = Wx::Bitmap->new($path, wxBITMAP_TYPE_PNG);
 	return $_sym_bitmaps{$i};
 }

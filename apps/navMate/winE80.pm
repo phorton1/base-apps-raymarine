@@ -224,6 +224,7 @@ sub new
 	$state_imgs->Add(winTreeBase::_makeCheckBitmap(1));
 	$state_imgs->Add(winTreeBase::_makeCheckBitmap(2));
 	$this->{tree}->SetStateImageList($state_imgs);
+	winTreeBase::_attachSwatchImageList($this->{tree});
 	$this->{_state_imgs} = $state_imgs;
 
 	EVT_TREE_SEL_CHANGED($this,      $this->{tree}, \&onTreeSelect);
@@ -382,8 +383,9 @@ sub _buildGroups
 	for my $uuid (@ungrouped)
 	{
 		my $wp = $wps->{$uuid};
-		$tree->AppendItem($mw, $wp->{name} // $uuid, -1, -1,
+		my $item = $tree->AppendItem($mw, $wp->{name} // $uuid, -1, -1,
 			Wx::TreeItemData->new({ type => 'waypoint', uuid => $uuid, data => $wp }));
+		$this->_setSwatch($item);
 	}
 
 	# named groups, sorted by name
@@ -403,8 +405,9 @@ sub _buildGroups
 		{
 			my $wp = $wps->{$wp_uuid};
 			my $label = $wp ? ($wp->{name} // $wp_uuid) : "($wp_uuid)";
-			$tree->AppendItem($grp_item, $label, -1, -1,
+			my $item = $tree->AppendItem($grp_item, $label, -1, -1,
 				Wx::TreeItemData->new({ type => 'waypoint', uuid => $wp_uuid, data => $wp, group_uuid => $uuid }));
+			$this->_setSwatch($item);
 		}
 	}
 
@@ -428,6 +431,7 @@ sub _buildRoutes
 		my $n = $r->{num_wpts} // scalar(@{$r->{uuids} // []});
 		my $route_item = $tree->AppendItem($hdr, "$r->{name} ($n pts)", -1, -1,
 			Wx::TreeItemData->new({ type => 'route', uuid => $uuid, data => $r }));
+		$this->_setSwatch($route_item);
 
 		my $route_uuids = $r->{uuids} // [];
 		for my $i (0 .. $#$route_uuids)
@@ -464,8 +468,9 @@ sub _buildTracks
 	{
 		my $track = $tracks->{$uuid};
 		my $pts   = $track->{cnt1} // (ref $track->{points} ? scalar @{$track->{points}} : 0);
-		$tree->AppendItem($hdr, "$track->{name} ($pts pts)", -1, -1,
+		my $item  = $tree->AppendItem($hdr, "$track->{name} ($pts pts)", -1, -1,
 			Wx::TreeItemData->new({ type => 'track', uuid => $uuid, data => $track }));
+		$this->_setSwatch($item);
 	}
 
 	return $hdr;
@@ -1134,6 +1139,11 @@ sub _onShowHideE80Map
 
 sub _wpDataSource    { 'e80' }
 sub _groupHasComment { 1 }
+
+
+# _swatchSpec is inherited from winTreeBase (via winTreeColors.pm)
+# -- shared with winFSH since both have the same E80-style node and
+# data shape (waypoint sym, route/track palette-index color).
 
 sub _wpLatLon
 {

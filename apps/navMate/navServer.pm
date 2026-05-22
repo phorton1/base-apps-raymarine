@@ -23,19 +23,18 @@ use strict;
 use warnings;
 use threads;
 use threads::shared;
-use File::Basename qw(dirname);
-use Cwd qw(abs_path);
 use JSON::PP qw(encode_json decode_json);
 use Pub::Utils qw(display warning error);
 use Pub::HTTP::Response qw(json_response);
 use apps::raymarine::NET::h_server;
+use n_utils qw($app_dir);
 use navDB;
 use navFSH;
 use base qw(apps::raymarine::NET::h_server);
 
 
 my $SERVER_PORT = 9883;
-my $SITE_DIR    = dirname(abs_path(__FILE__)) . '/_site';
+my $SITE_DIR    = "$app_dir/_site";
 
 my $nm_server;
 

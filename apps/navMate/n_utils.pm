@@ -19,6 +19,7 @@ BEGIN
 	use Exporter qw( import );
 	our @EXPORT = qw(
 		$appName
+		$app_dir
 		implementationError
 		makeUUID
 		makeFSHUUID
@@ -43,6 +44,7 @@ BEGIN
 
 
 our $appName = 'navMate';
+our $app_dir = 'C:\base\apps\raymarine\apps\navMate';
 
 
 #---------------------------------

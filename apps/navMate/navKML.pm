@@ -636,16 +636,23 @@ sub _importTrack
 		my $ex = getTrack($dbh, $nm_uuid);
 		if ($ex)
 		{
-			$dbh->do("UPDATE tracks SET name=?, color=? WHERE uuid=?",
-				[$name, $color // $ex->{color}, $nm_uuid]);
+			updateTrack($dbh, $nm_uuid,
+				name  => $name,
+				color => $color // $ex->{color});
 			return;
 		}
 
 		my @pts = _parseCoords($pm->{LineString}{coordinates});
 		return if !@pts;
-		$dbh->do(
-			"INSERT INTO tracks (uuid,name,color,ts_start,ts_source,point_count,collection_uuid,companion_uuid) VALUES (?,?,?,?,?,?,?,?)",
-			[$nm_uuid, $name, $color, time(), $TS_SOURCE_IMPORT, scalar @pts, $coll_uuid, $ext->{companion_uuid}]);
+		insertTrack($dbh,
+			uuid            => $nm_uuid,
+			name            => $name,
+			color           => $color,
+			ts_start        => time(),
+			ts_source       => $TS_SOURCE_IMPORT,
+			point_count     => scalar @pts,
+			collection_uuid => $coll_uuid,
+			companion_uuid  => $ext->{companion_uuid});
 		insertTrackPoints($dbh, $nm_uuid, \@pts);
 	}
 	else

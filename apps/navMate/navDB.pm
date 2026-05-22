@@ -66,6 +66,8 @@ BEGIN
 		insertCollectionUUID
 		insertRouteUUID
 		updateRoute
+		updateTrack
+		updateRecord
 		clearRouteWaypoints
 		loadSymMap
 		symForWpType
@@ -772,6 +774,28 @@ sub findCollection
 
 
 #---------------------------------
+#---------------------------------
+# _normalizeColor (private)
+#---------------------------------
+# Single chokepoint for the color-value discipline.  Called from every
+# navDB API that writes to a `color` column on waypoints, routes, or
+# tracks (insert/update on each, plus the generic updateRecord used by
+# the multi-editor).  Undef or empty string both collapse to the
+# protocol-BLACK / white-on-map sentinel; anything not matching the
+# 8-hex shape is treated as garbage and also collapses.  This makes
+# '' impossible to store via the public API; the DB CHECK constraint
+# (if and when added) is a separate belt-and-suspenders.
+
+sub _normalizeColor
+{
+	my ($c) = @_;
+	return 'FFFFFFFF' if !defined $c || $c eq '';
+	return uc($c)     if $c =~ /^[0-9A-Fa-f]{8}$/;
+	return 'FFFFFFFF';
+}
+
+
+#---------------------------------
 # insertWaypoint
 #---------------------------------
 
@@ -794,7 +818,7 @@ sub insertWaypoint
 		$a{lon},
 		$a{wp_type}         // $WP_TYPE_NAV,
 		$a{sym}             // symForWpType($a{wp_type} // $WP_TYPE_NAV) // 0,
-		$a{color},
+		_normalizeColor($a{color}),
 		$a{depth_cm}        // 0,
 		$a{temp_k}          || undef,
 		$a{created_ts},
@@ -820,7 +844,7 @@ sub updateWaypoint
 		$a{lon},
 		$a{wp_type}  // $WP_TYPE_NAV,
 		$a{sym}      // symForWpType($a{wp_type} // $WP_TYPE_NAV) // 0,
-		$a{color},
+		_normalizeColor($a{color}),
 		$a{depth_cm} // 0,
 		$a{temp_k}   || undef,
 		$a{created_ts},
@@ -843,7 +867,7 @@ sub insertRoute
 	my $uuid = newUUID($dbh);
 	$dbh->do(
 		"INSERT INTO routes (uuid, name, color, comment, collection_uuid, position) VALUES (?,?,?,?,?,?)",
-		[$uuid, $name, $color, $comment // '', $collection_uuid, $position]);
+		[$uuid, $name, _normalizeColor($color), $comment // '', $collection_uuid, $position]);
 	return $uuid;
 }
 
@@ -855,7 +879,7 @@ sub insertRouteUUID
 		if !defined $position;
 	$dbh->do(
 		"INSERT INTO routes (uuid, name, color, comment, collection_uuid, position) VALUES (?,?,?,?,?,?)",
-		[$uuid, $name, $color, $comment // '', $collection_uuid, $position]);
+		[$uuid, $name, _normalizeColor($color), $comment // '', $collection_uuid, $position]);
 	return $uuid;
 }
 
@@ -865,7 +889,7 @@ sub updateRoute
 	my ($dbh, $uuid, $name, $color, $comment) = @_;
 	$dbh->do(
 		"UPDATE routes SET name=?, color=?, comment=? WHERE uuid=?",
-		[$name, $color, $comment // '', $uuid]);
+		[$name, _normalizeColor($color), $comment // '', $uuid]);
 	return 1;
 }
 
@@ -902,7 +926,7 @@ sub insertTrack
 		VALUES (?,?,?,?,?,?,?,?,?,?)},
 		[$uuid,
 		$a{name},
-		$a{color},
+		_normalizeColor($a{color}),
 		$a{ts_start}       // 0,
 		$a{ts_end},
 		$a{ts_source},
@@ -911,6 +935,37 @@ sub insertTrack
 		$a{companion_uuid},
 		$position]);
 	return $uuid;
+}
+
+
+#---------------------------------
+# updateTrack / updateRecord
+#---------------------------------
+# updateTrack -- explicit per-field update for tracks; parallels
+# updateRoute but accepts %fields so callers can update partial sets
+# (e.g. just name+color from a KML re-import).  Color is normalized
+# at the boundary.
+#
+# updateRecord -- generic multi-table update used by the multi-editor.
+# Routes through update_record() but normalizes color if it's in the
+# dirty hash, so the multi-edit path can't be a discipline leak.
+
+sub updateTrack
+{
+	my ($dbh, $uuid, %fields) = @_;
+	$fields{color} = _normalizeColor($fields{color}) if exists $fields{color};
+	$dbh->update_record('tracks', \%fields, 'uuid', $uuid, 1);
+	return 1;
+}
+
+
+sub updateRecord
+{
+	my ($dbh, $table, $uuid, $dirty) = @_;
+	my %d = %$dirty;
+	$d{color} = _normalizeColor($d{color}) if exists $d{color};
+	$dbh->update_record($table, \%d, 'uuid', $uuid, 1);
+	return 1;
 }
 
 

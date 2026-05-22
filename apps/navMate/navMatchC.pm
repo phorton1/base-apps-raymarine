@@ -44,14 +44,15 @@ package navMatchC;
 use strict;
 use warnings;
 use Pub::Utils qw(display warning error);
+use n_utils qw($app_dir);
 use navMatch;
 
 our $dbg_navmc = -1;   # raise for tracing pack/unpack; -1 = silent
 
-# Inline cache directory.  Hard-coded absolute path.  Inline 0.5 requires
-# an absolute, pre-existing DIRECTORY.  If this project ever moves on
-# disk, change the path here.
-use constant INLINE_DIR => 'C:/base/apps/raymarine/apps/navMate/_Inline';
+# Inline cache directory.  Inline 0.5 requires an absolute, pre-existing
+# DIRECTORY; derived from $app_dir so the navMate location is centralized
+# in n_utils.pm.
+use constant INLINE_DIR => "$app_dir/_Inline";
 BEGIN
 {
 	mkdir INLINE_DIR if !-d INLINE_DIR;

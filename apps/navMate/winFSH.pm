@@ -86,6 +86,7 @@ sub new
 	$state_imgs->Add(winTreeBase::_makeCheckBitmap(2));
 	$this->{tree}->SetStateImageList($state_imgs);
 	$this->{_state_imgs} = $state_imgs;
+	winTreeBase::_attachSwatchImageList($this->{tree});
 
 	# right side is one grey panel: editor widgets at top (packed by the
 	# winTreeBase layout walker), single detail TextCtrl below filling
@@ -439,8 +440,9 @@ sub _buildGroups
 	for my $uuid (@wpt_uuids)
 	{
 		my $wp = $wps->{$uuid};
-		$tree->AppendItem($mw, $wp->{name} // $uuid, -1, -1,
+		my $item = $tree->AppendItem($mw, $wp->{name} // $uuid, -1, -1,
 			Wx::TreeItemData->new({ type => 'waypoint', uuid => $uuid, data => $wp }));
+		$this->_setSwatch($item);
 	}
 
 	# BLK_GRP named groups
@@ -456,9 +458,10 @@ sub _buildGroups
 		my @sorted = sort { winTreeBase::_name_sort_key($a->{name}) cmp winTreeBase::_name_sort_key($b->{name}) } @$wpts;
 		for my $wp (@sorted)
 		{
-			$tree->AppendItem($grp_item, $wp->{name} // $wp->{uuid} // '?', -1, -1,
+			my $item = $tree->AppendItem($grp_item, $wp->{name} // $wp->{uuid} // '?', -1, -1,
 				Wx::TreeItemData->new({ type => 'waypoint', uuid => $wp->{uuid}, data => $wp,
 				                       group_uuid => $uuid }));
+			$this->_setSwatch($item);
 		}
 	}
 
@@ -482,6 +485,7 @@ sub _buildRoutes
 		my $n    = scalar @$wpts;
 		my $route_item = $tree->AppendItem($hdr, "$r->{name} ($n pts)", -1, -1,
 			Wx::TreeItemData->new({ type => 'route', uuid => $uuid, data => $r }));
+		$this->_setSwatch($route_item);
 
 		for my $i (0 .. $#$wpts)
 		{
@@ -575,8 +579,9 @@ sub _buildTracks
 			{
 				my $track = $tracks->{$m->{uuid}};
 				my $pts   = $track->{cnt} // (ref $track->{points} eq 'ARRAY' ? scalar @{$track->{points}} : 0);
-				$tree->AppendItem($grp_item, "$track->{name} ($pts pts)", -1, -1,
+				my $item  = $tree->AppendItem($grp_item, "$track->{name} ($pts pts)", -1, -1,
 					Wx::TreeItemData->new({ type => 'track', uuid => $m->{uuid}, data => $track }));
+				$this->_setSwatch($item);
 			}
 		}
 		else
@@ -584,8 +589,9 @@ sub _buildTracks
 			my $uuid  = $entry->{uuid};
 			my $track = $tracks->{$uuid};
 			my $pts   = $track->{cnt} // (ref $track->{points} eq 'ARRAY' ? scalar @{$track->{points}} : 0);
-			$tree->AppendItem($hdr, "$track->{name} ($pts pts)", -1, -1,
+			my $item  = $tree->AppendItem($hdr, "$track->{name} ($pts pts)", -1, -1,
 				Wx::TreeItemData->new({ type => 'track', uuid => $uuid, data => $track }));
+			$this->_setSwatch($item);
 		}
 	}
 
@@ -901,6 +907,10 @@ sub _onSave
 		return;
 	}
 
+	# Re-evaluate the row's swatch from the just-updated in-memory
+	# record so color / sym edits show immediately in the tree.
+	$this->_setSwatch($this->{_edit_item}) if $this->{_edit_item};
+
 	$this->{ed_save}->Enable(0);
 	$this->{_editor_dirty} = 0;
 	navFSH::markDirty();
@@ -913,6 +923,11 @@ sub _onSave
 
 sub _wpDataSource    { 'fsh' }
 sub _groupHasComment { 0 }
+
+
+# _swatchSpec is inherited from winTreeBase (via winTreeColors.pm)
+# -- shared with winE80 since both have the same E80-style node and
+# data shape (waypoint sym, route/track palette-index color).
 
 sub _wpLatLon
 {

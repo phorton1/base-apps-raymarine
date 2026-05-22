@@ -2,9 +2,11 @@
 #-------------------------------------------------------------------------
 # winTreeBase.pm
 #-------------------------------------------------------------------------
-# Base class shared by winE80 and winFSH.  Provides the tree/editor/
-# visibility/Leaflet infrastructure common to both windows.
+# Base class for winDatabase, winE80, and winFSH.  Provides the tree/editor/
+# visibility/Leaflet infrastructure common to the three windows.
 # Subclasses supply 16 abstract methods for the per-source differences.
+# winE80 and winFSH override all 16; winDatabase currently overrides only
+# _wpDataSource and reaches into shared helpers directly (refactor pending).
 
 package winTreeBase;
 use strict;
@@ -32,6 +34,7 @@ use navPrefs;
 use navServer qw(addRenderFeatures removeRenderFeatures openMapBrowser isBrowserConnected);
 use navVisibility;
 use base qw(Wx::SplitterWindow Pub::WX::Window);
+use winTreeColors;
 
 
 #---------------------------------
@@ -730,8 +733,9 @@ sub onClearMap
 # layout walker (per-item-type packed layout)
 #---------------------------------
 # Class-agnostic on purpose: takes $this as a hashref-of-widgets, not as
-# self. winDatabase (NOT a winTreeBase subclass) calls this as
-# winTreeBase::_layoutEditor(...) directly.
+# self.  Called as a package function (winTreeBase::_layoutEditor(...))
+# rather than a method so the same code serves callers that don't use the
+# standard winTreeBase widget setup.
 #
 # Reads from $this:
 #   {_ed_field_widgets}  - { field => [label_key, control_key, [companion_keys]] }

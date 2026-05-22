@@ -93,6 +93,7 @@ sub new
 	$state_imgs->Add(winTreeBase::_makeCheckBitmap(2));
 	$this->{tree}->SetStateImageList($state_imgs);
 	$this->{_state_imgs} = $state_imgs;
+	winTreeBase::_attachSwatchImageList($this->{tree});
 
 	# right side is one grey panel: editor widgets at top (packed by the
 	# winTreeBase layout walker), single detail TextCtrl below filling
@@ -293,6 +294,37 @@ sub new
 # at the end.
 
 sub _wpDataSource { 'db' }
+
+
+sub _swatchSpec
+{
+	# DB stores all object colors (waypoint / route / track) as full
+	# 8-char AABBGGRR hex strings (see navDB.pm schema: color TEXT on
+	# all three tables; never a palette index).  Collections (branches
+	# and groups) have no color column.  Route points are references,
+	# not records, so they inherit the route's swatch implicitly.
+	#
+	# Waypoints get a colored_sym swatch -- the sym shape recolored
+	# with the waypoint's color.  Missing/invalid color falls back to
+	# opaque black so the sym is still visible.  Routes and tracks
+	# stay flat-color swatches.
+	my ($this, $node) = @_;
+	my $type = $node->{type} // '';
+	return undef if $type ne 'object';
+	my $data     = $node->{data} // {};
+	my $obj_type = $data->{obj_type} // '';
+	my $color    = $data->{color};
+	if ($obj_type eq 'waypoint')
+	{
+		my $sym = ($data->{sym} // 0) + 0;
+		return undef if $sym < 0 || $sym > 39;
+		$color = 'FF000000'
+			if !defined $color || $color !~ /^[0-9a-fA-F]{8}$/;
+		return { kind => 'colored_sym', sym => $sym, color => $color };
+	}
+	return undef if !defined $color || $color !~ /^[0-9a-fA-F]{8}$/;
+	return { kind => 'color', value => $color };
+}
 
 
 sub _visObserverNodeUuid
@@ -509,6 +541,12 @@ sub refresh
 	# refcount in wx, so the inner Freeze in _loadTopLevel nests harmlessly.
 	$tree->Freeze();
 	eval {
+		# Capture horizontal scroll before the rebuild; the SelectItem and
+		# EnsureVisible calls inside _loadTopLevel auto-scroll horizontally
+		# to expose deep-indent selected items, which the user perceives as
+		# the tree "jumping right" on every save.  Restore after restoration
+		# completes.
+		my $hscroll = $tree->GetScrollPos(wxHORIZONTAL);
 		if ($tree->GetCount() > 0)
 		{
 			$this->_captureExpandedInto();
@@ -519,6 +557,7 @@ sub refresh
 		$this->{detail}->SetValue('');
 		_loadTopLevel($this);
 		_applyCutStyle($this);
+		$tree->SetScrollPos(wxHORIZONTAL, $hscroll, 1);
 	};
 	my $err = $@;
 	$tree->Thaw();
@@ -589,6 +628,7 @@ sub _addObjectItem
 	my $item = $this->{tree}->AppendItem($parent, $label, -1, -1,
 		Wx::TreeItemData->new({ type => 'object', data => $obj }));
 	$this->{tree}->SetItemState($item, $vis ? 1 : 0);
+	$this->_setSwatch($item);
 	$this->{tree}->AppendItem($item, $DUMMY) if $obj->{obj_type} eq 'route' && $n > 0;
 }
 
@@ -1302,11 +1342,10 @@ sub _onSave
 	}
 	elsif ($type eq 'object' && $obj_type eq 'track')
 	{
-		$dbh->do("UPDATE tracks SET name=?, comment=?, color=? WHERE uuid=?",
-			[$this->{ed_name}->GetValue(),
-			 $this->{ed_comment}->GetValue() // '',
-			 $this->{_edit_color},
-			 $uuid]);
+		updateTrack($dbh, $uuid,
+			name    => $this->{ed_name}->GetValue(),
+			comment => $this->{ed_comment}->GetValue() // '',
+			color   => $this->{_edit_color});
 	}
 
 	if ($type eq 'object' && $rendered_uuids{$uuid})

@@ -52,21 +52,6 @@ my $last_clear_version = 0;
 my $CUT_COLOR;
 
 
-sub _trackPointDepthCm
-	# Per-point depth in cm for JSON emission, normalizing absent /
-	# sentinel values to undef (JSON null).  Mirrors the helper of the
-	# same name in winTreeBase.pm; duplicated to avoid a cross-module
-	# dependency.
-{
-	my ($pt) = @_;
-	my $d = exists $pt->{depth_cm} ? $pt->{depth_cm} : $pt->{depth};
-	return undef if !defined $d;
-	return undef if $d == 0xFFFFFFFF;
-	return undef if $d == -1;
-	return $d + 0;
-}
-
-
 #---------------------------------
 # Leaflet sync (push/pull DB <-> map)
 #---------------------------------
@@ -159,7 +144,7 @@ sub _pushObjToLeaflet
 				ts_end          => ($t->{ts_end}      // 0) + 0,
 				ts_source       => $t->{ts_source}   // '',
 				collection_uuid => $t->{collection_uuid} // '',
-				depth_cm        => [ map { _trackPointDepthCm($_) } @$pts ],
+				depth_cm        => [ map { winTreeBase::_trackPointDepthCm($_) } @$pts ],
 			},
 			geometry => { type => 'LineString',
 				coordinates => [map { [$_->{lon}+0, $_->{lat}+0] } @$pts] },
@@ -609,7 +594,7 @@ sub resyncDbToLeaflet
 				ts_end          => ($t->{ts_end}      // 0) + 0,
 				ts_source       => $t->{ts_source}   // '',
 				collection_uuid => $t->{collection_uuid} // '',
-				depth_cm        => [ map { _trackPointDepthCm($_) } @$pts ],
+				depth_cm        => [ map { winTreeBase::_trackPointDepthCm($_) } @$pts ],
 			},
 			geometry => { type => 'LineString',
 				coordinates => [map { [$_->{lon}+0, $_->{lat}+0] } @$pts] },
@@ -872,7 +857,7 @@ sub _dbCommit
 				$dirty{sym} = $auto if defined $auto;
 			}
 			next if !%dirty;
-			$dbh->update_record($table, \%dirty, 'uuid', $it->{uuid}, 1);
+			updateRecord($dbh, $table, $it->{uuid}, \%dirty);
 			push @touched, $it->{uuid};
 		}
 	};
