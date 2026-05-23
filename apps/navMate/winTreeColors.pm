@@ -341,8 +341,11 @@ sub _ensureCache15x15Grey
 {
 	# Build sym_catalog/cache/15x15_grey_NN.png from symNN.png if missing
 	# or older.  Same pipeline as _ensureCache15x15 but the final 15x15
-	# emits greyscale: non-white pixels are converted to luminance (Rec
-	# 601: 0.299R + 0.587G + 0.114B), white stays white.  The recolor
+	# emits greyscale where the grey value is V from HSV (max channel),
+	# not Rec 601 luminance.  The hand-drawn sym palette is dominant-
+	# channel pure colors (reds and blues), so V reads source intensity
+	# directly; luminance would crush pure red and crush blue harder
+	# because Rec 601 is green-weighted for natural photos.  The recolor
 	# step in _swatchBitmapForColoredSym then tints the greys per the
 	# user's chosen color and leaves white alone.
 	my ($src_path, $cache_path) = @_;
@@ -372,12 +375,20 @@ sub _ensureCache15x15Grey
 
 	$src->Rescale(13, 13, wxIMAGE_QUALITY_HIGH);
 
+	# Cache encoding: each pixel stores chroma+lift for HSV-style hue
+	# replacement (see _swatchBitmapForColoredSym):
+	#   R = chroma = max(r,g,b) - min(r,g,b)
+	#   G = lift   = min(r,g,b)
+	#   B = 0
+	# A pure-white pixel (sentinel was resolved to white) thus encodes
+	# as (0,255,0) and tints to (255,255,255) regardless of user color.
+	# The 1-px border is set to the same white-encoding directly.
 	my $out = Wx::Image->new(15, 15);
 	for my $y (0 .. 14)
 	{
 		for my $x (0 .. 14)
 		{
-			$out->SetRGB($x, $y, 255, 255, 255);
+			$out->SetRGB($x, $y, 0, 255, 0);
 		}
 	}
 	for my $y (0 .. 12)
@@ -387,15 +398,9 @@ sub _ensureCache15x15Grey
 			my $r = $src->GetRed($x, $y);
 			my $g = $src->GetGreen($x, $y);
 			my $b = $src->GetBlue($x, $y);
-			if ($r == 255 && $g == 255 && $b == 255)
-			{
-				$out->SetRGB($x + 1, $y + 1, 255, 255, 255);
-			}
-			else
-			{
-				my $lum = int(0.299 * $r + 0.587 * $g + 0.114 * $b);
-				$out->SetRGB($x + 1, $y + 1, $lum, $lum, $lum);
-			}
+			my $max = $r > $g ? ($r > $b ? $r : $b) : ($g > $b ? $g : $b);
+			my $min = $r < $g ? ($r < $b ? $r : $b) : ($g < $b ? $g : $b);
+			$out->SetRGB($x + 1, $y + 1, $max - $min, $min, 0);
 		}
 	}
 	$out->SaveFile($cache_path, wxBITMAP_TYPE_PNG);
@@ -405,9 +410,14 @@ sub _ensureCache15x15Grey
 sub _swatchBitmapForColoredSym
 {
 	# Load sym_catalog/cache/15x15_grey_NN.png and recolor in memory per
-	# the user's chosen ABGR.  Cached mask is greyscale-on-white:
-	#   white (255,255,255) -> stays white (was transparent in source)
-	#   grey  (g,g,g)        -> user_color * g/255
+	# the user's chosen ABGR.  Cached mask is chroma+lift encoded:
+	#   src.R = chroma = max(r,g,b) - min(r,g,b)
+	#   src.G = lift   = min(r,g,b)
+	# Tint:  out = userColor * chroma/255 + lift
+	# This preserves the source palette's "lift toward white" so a pixel
+	# like native (230,175,175) -- chroma=55, lift=175 -- still reads as
+	# a bright highlight when tinted to any hue.  Cannot overflow:
+	# userColor*chroma/255 + lift <= chroma + lift = max(r,g,b) <= 255.
 	# Built lazily by _ensureCache15x15Grey from sym_catalog/symNN.png.
 	my ($sym, $color_hex) = @_;
 	my $src_path   = sprintf('%s/sym_catalog/sym%02d.png',               $app_dir, $sym);
@@ -424,20 +434,12 @@ sub _swatchBitmapForColoredSym
 	{
 		for my $ox (0 .. $SWATCH_W - 1)
 		{
-			my $pr = $src->GetRed($ox, $oy);
-			my $pg = $src->GetGreen($ox, $oy);
-			my $pb = $src->GetBlue($ox, $oy);
-			if ($pr == 255 && $pg == 255 && $pb == 255)
-			{
-				$out->SetRGB($ox, $oy, 255, 255, 255);
-			}
-			else
-			{
-				$out->SetRGB($ox, $oy,
-					int($rr * $pr / 255),
-					int($gg * $pr / 255),
-					int($bb * $pr / 255));
-			}
+			my $chroma = $src->GetRed($ox, $oy);
+			my $lift   = $src->GetGreen($ox, $oy);
+			$out->SetRGB($ox, $oy,
+				int($rr * $chroma / 255) + $lift,
+				int($gg * $chroma / 255) + $lift,
+				int($bb * $chroma / 255) + $lift);
 		}
 	}
 	return Wx::Bitmap->new($out);

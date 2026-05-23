@@ -25,6 +25,10 @@ BEGIN
 
 		symBitmap
 		makeSymComboBox
+		ensureLeafletNative
+		ensureLeafletMask
+		leafletNativePath
+		leafletMaskPath
 
 		$WIN_DATABASE
 		$WIN_E80
@@ -335,6 +339,118 @@ sub makeSymComboBox
 		$cb->Append(sprintf('%2d - %s', $i, $E80_SYMS[$i]), symBitmap($i) // _blankBitmap());
 	}
 	return $cb;
+}
+
+
+#-------------------------------------------------------------------------
+# leaflet sym cache helpers
+#-------------------------------------------------------------------------
+# The Leaflet client renders waypoint markers with the sym art.  Two
+# 16x16 RGBA variants live alongside the wx picker caches under
+# sym_catalog/cache/:
+#   leaflet_native_NN.png -- original RGB, green sentinel -> alpha 0.
+#                            Used directly for E80 and FSH waypoints
+#                            (native red/blue rendering).
+#   leaflet_mask_NN.png   -- RGB collapsed to luminance (Rec 601),
+#                            green sentinel -> alpha 0.  The browser
+#                            tints this in a canvas per the WP's
+#                            ABGR color for database waypoints.
+# Both are built lazily, mtime-gated against the source symNN.png.
+
+sub leafletNativePath
+{
+	my ($i) = @_;
+	return sprintf('%s/sym_catalog/cache/leaflet_native_%02d.png', $app_dir, $i);
+}
+
+sub leafletMaskPath
+{
+	my ($i) = @_;
+	return sprintf('%s/sym_catalog/cache/leaflet_mask_%02d.png', $app_dir, $i);
+}
+
+sub _buildLeafletVariant
+{
+	# Shared builder for both leaflet cache variants.  $to_grey controls
+	# whether non-sentinel pixels keep their RGB or collapse to luminance.
+	# Sentinel pixels (0, 255, 0) become transparent; everything else is
+	# opaque.  Alpha is set via a single SetAlpha(buffer) call --
+	# wxPerl's binding maps SetAlpha to SetAlphaData and rejects the
+	# per-pixel (x, y, a) form.
+	my ($src_path, $cache_path, $to_grey) = @_;
+	my $src_mtime   = (stat($src_path))[9];
+	my $cache_mtime = -f $cache_path ? (stat($cache_path))[9] : 0;
+	return if defined $src_mtime && $cache_mtime >= $src_mtime;
+
+	my $dir = $cache_path;
+	$dir =~ s|/[^/]+$||;
+	mkdir $dir if !-d $dir;
+
+	my $src = Wx::Image->new($src_path, wxBITMAP_TYPE_PNG);
+	return if !$src || !$src->IsOk();
+
+	my $out   = Wx::Image->new(16, 16);
+	my $alpha = '';
+	for my $y (0 .. 15)
+	{
+		for my $x (0 .. 15)
+		{
+			my $r = $src->GetRed($x, $y);
+			my $g = $src->GetGreen($x, $y);
+			my $b = $src->GetBlue($x, $y);
+			if ($r == 0 && $g == 255 && $b == 0)
+			{
+				# RGB at fully-transparent pixels is irrelevant once
+				# alpha=0; white degrades better than black if the alpha
+				# channel is ever stripped.
+				$out->SetRGB($x, $y, 255, 255, 255);
+				$alpha .= chr(0);
+			}
+			elsif ($to_grey)
+			{
+				# Chroma + lift encoding for HSV-style hue replacement:
+				#   mask.R = chroma = max(r,g,b) - min(r,g,b)
+				#   mask.G = lift   = min(r,g,b)
+				# Client tints with:  out = userColor * chroma/255 + lift
+				# This preserves the source palette's "lift toward white"
+				# (e.g. native pixel (230,175,175) has chroma=55 and
+				# lift=175 -- a heavily-white-lifted highlight that
+				# reads as bright pink in red sym art and would still
+				# read as a bright highlight when tinted to any hue).
+				my $max = $r > $g ? ($r > $b ? $r : $b) : ($g > $b ? $g : $b);
+				my $min = $r < $g ? ($r < $b ? $r : $b) : ($g < $b ? $g : $b);
+				$out->SetRGB($x, $y, $max - $min, $min, 0);
+				$alpha .= chr(255);
+			}
+			else
+			{
+				$out->SetRGB($x, $y, $r, $g, $b);
+				$alpha .= chr(255);
+			}
+		}
+	}
+	$out->SetAlpha($alpha);
+	$out->SaveFile($cache_path, wxBITMAP_TYPE_PNG);
+}
+
+sub ensureLeafletNative
+{
+	my ($i) = @_;
+	return undef if !defined $i || $i < 0 || $i > $#E80_SYMS;
+	my $src   = sprintf('%s/sym_catalog/sym%02d.png', $app_dir, $i);
+	my $cache = leafletNativePath($i);
+	_buildLeafletVariant($src, $cache, 0);
+	return -f $cache ? $cache : undef;
+}
+
+sub ensureLeafletMask
+{
+	my ($i) = @_;
+	return undef if !defined $i || $i < 0 || $i > $#E80_SYMS;
+	my $src   = sprintf('%s/sym_catalog/sym%02d.png', $app_dir, $i);
+	my $cache = leafletMaskPath($i);
+	_buildLeafletVariant($src, $cache, 1);
+	return -f $cache ? $cache : undef;
 }
 
 

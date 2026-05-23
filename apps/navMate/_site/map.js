@@ -349,6 +349,118 @@ function abgrToCSS(abgr) {
     return '#' + abgr.slice(6,8) + abgr.slice(4,6) + abgr.slice(2,4);
 }
 
+// ---- Sym icons (16x16) ----
+// E80 and FSH waypoints render with native sym art (/sym/native/NN.png).
+// DB waypoints render with a luminance mask (/sym/mask/NN.png) tinted
+// in a canvas to the WP's ABGR color.  Three caches:
+//   _nativeIconCache  -- sym number -> L.icon (server-side PNG, browser HTTP-caches it)
+//   _maskImageCache   -- sym number -> Promise<ImageData> (mask, fetched once per sym)
+//   _coloredIconCache -- 'sym:ABGR' -> L.icon (tinted dataURL, memoized)
+// loadMaskImageData() is async; coloredSymIcon() awaits the mask once
+// per sym then resolves synchronously thereafter, so post-first-frame
+// the upgrade from the provisional circle is invisible to the user.
+
+const SYM_W = 16, SYM_H = 16;
+const _nativeIconCache  = new Map();
+const _coloredIconCache = new Map();
+const _maskImageCache   = new Map();
+
+function _symPath(kind, sym) {
+    return '/sym/' + kind + '/' + String(sym).padStart(2, '0') + '.png';
+}
+
+function nativeSymIcon(sym) {
+    // divIcon with a bright-orange backdrop hidden by default; the
+    // img's onerror handler reveals it and hides the broken img.
+    // Successful loads keep the backdrop hidden so the sym art's
+    // transparent regions stay transparent against the basemap.
+    if (_nativeIconCache.has(sym)) return _nativeIconCache.get(sym);
+    const url = _symPath('native', sym);
+    const html =
+        '<div style="position:relative;width:' + SYM_W + 'px;height:' + SYM_H + 'px;">' +
+            '<div class="nm-sym-fb" style="position:absolute;inset:0;background:#ff8800;display:none;"></div>' +
+            '<img src="' + url + '" width="' + SYM_W + '" height="' + SYM_H + '"' +
+                ' style="position:absolute;inset:0;"' +
+                ' onerror="var fb=this.previousSibling;if(fb)fb.style.display=\'block\';this.style.display=\'none\';"/>' +
+        '</div>';
+    const icon = L.divIcon({
+        className:   '',
+        html:        html,
+        iconSize:    [SYM_W, SYM_H],
+        iconAnchor:  [SYM_W >> 1, SYM_H >> 1],
+        popupAnchor: [0, -(SYM_H >> 1) - 1],
+    });
+    _nativeIconCache.set(sym, icon);
+    return icon;
+}
+
+function loadMaskImageData(sym) {
+    if (_maskImageCache.has(sym)) return _maskImageCache.get(sym);
+    const p = new Promise(function(resolve, reject) {
+        const img = new Image();
+        img.onload = function() {
+            const cvs = document.createElement('canvas');
+            cvs.width = SYM_W; cvs.height = SYM_H;
+            const ctx = cvs.getContext('2d');
+            ctx.drawImage(img, 0, 0, SYM_W, SYM_H);
+            try { resolve(ctx.getImageData(0, 0, SYM_W, SYM_H)); }
+            catch (e) { reject(e); }
+        };
+        img.onerror = reject;
+        img.src = _symPath('mask', sym);
+    });
+    _maskImageCache.set(sym, p);
+    return p;
+}
+
+function _abgrToRGB(abgr) {
+    if (!abgr || typeof abgr !== 'string' || abgr.length < 8) return [255, 255, 255];
+    return [
+        parseInt(abgr.slice(6, 8), 16),
+        parseInt(abgr.slice(4, 6), 16),
+        parseInt(abgr.slice(2, 4), 16),
+    ];
+}
+
+async function coloredSymIcon(sym, abgr) {
+    const key = sym + ':' + (abgr || '');
+    if (_coloredIconCache.has(key)) return _coloredIconCache.get(key);
+    let mask;
+    try { mask = await loadMaskImageData(sym); }
+    catch (_) { return null; }
+    const [rr, gg, bb] = _abgrToRGB(abgr);
+    const cvs = document.createElement('canvas');
+    cvs.width = SYM_W; cvs.height = SYM_H;
+    const ctx = cvs.getContext('2d');
+    const out = ctx.createImageData(SYM_W, SYM_H);
+    const md = mask.data, od = out.data;
+    // Mask encodes chroma + lift (HSV-style hue replacement):
+    //   md[i  ] = chroma = max(srcR,srcG,srcB) - min(srcR,srcG,srcB)
+    //   md[i+1] = lift   = min(srcR,srcG,srcB)
+    // Tint:  out = userColor * chroma/255 + lift
+    // Preserves the source palette's "lift toward white" so highlight
+    // pixels stay bright when tinted to any hue.  Cannot overflow:
+    //   userColor*chroma/255 + lift <= chroma + lift = max <= 255.
+    for (let i = 0; i < md.length; i += 4) {
+        const chroma = md[i];
+        const lift   = md[i + 1];
+        od[i  ] = ((rr * chroma) / 255 + lift) | 0;
+        od[i+1] = ((gg * chroma) / 255 + lift) | 0;
+        od[i+2] = ((bb * chroma) / 255 + lift) | 0;
+        od[i+3] = md[i + 3];
+    }
+    ctx.putImageData(out, 0, 0);
+    const url = cvs.toDataURL('image/png');
+    const icon = L.icon({
+        iconUrl:     url,
+        iconSize:    [SYM_W, SYM_H],
+        iconAnchor:  [SYM_W >> 1, SYM_H >> 1],
+        popupAnchor: [0, -(SYM_H >> 1) - 1],
+    });
+    _coloredIconCache.set(key, icon);
+    return icon;
+}
+
 // ---- Render all features from a GeoJSON FeatureCollection ----
 
 // Composite "source:uuid" keys from the previous render.  Autozoom fires
@@ -464,7 +576,21 @@ async function renderAll(geojson)
                     })
                 });
             } else if (isWPs()) {
-                m = L.marker([lat, lon], { icon: makeColoredWpIcon(props.color) });
+                const symN = (props.sym != null && props.sym >= 0 && props.sym <= 39) ? props.sym : null;
+                if (symN == null) {
+                    m = L.marker([lat, lon], { icon: makeColoredWpIcon(props.color) });
+                } else if (dsrc === 'e80' || dsrc === 'fsh') {
+                    m = L.marker([lat, lon], { icon: nativeSymIcon(symN) });
+                } else {
+                    // db, already screened: wp_type is neither LABEL nor SOUNDING here.
+                    // Provisional circle while the mask resolves; subsequent uses of
+                    // the same (sym, color) resolve synchronously from cache.
+                    m = L.marker([lat, lon], { icon: makeColoredWpIcon(props.color) });
+                    const _m = m;
+                    coloredSymIcon(symN, props.color).then(function(ic) {
+                        if (ic) { try { _m.setIcon(ic); } catch (_) {} }
+                    });
+                }
             }
 
             if (m) {

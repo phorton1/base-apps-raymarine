@@ -28,6 +28,7 @@ use Pub::Utils qw(display warning error);
 use Pub::HTTP::Response qw(json_response);
 use apps::raymarine::NET::h_server;
 use n_utils qw($app_dir);
+use nmResources qw(ensureLeafletNative ensureLeafletMask leafletNativePath leafletMaskPath);
 use navDB;
 use navFSH;
 use base qw(apps::raymarine::NET::h_server);
@@ -320,6 +321,33 @@ sub handle_request
 		return json_response($request, { error => 'missing or invalid JSON body' }) if !$h;
 		{ lock($route_edit_pending); $route_edit_pending = encode_json($h); }
 		return json_response($request, { ok => 1, queued => 1 });
+	}
+
+	if ($uri =~ m{^/sym/(native|mask)/(\d{2})\.png$})
+	{
+		# Leaflet sym icons.  /sym/native/NN.png returns the 16x16 RGBA
+		# source with green-sentinel pixels keyed to alpha=0 (used as-is
+		# by E80 and FSH waypoints).  /sym/mask/NN.png returns the same
+		# geometry collapsed to luminance for client-side canvas tinting
+		# of database waypoints.  Cache files live under
+		# sym_catalog/cache/ and are built lazily on first request.
+		my $kind = $1;
+		my $i    = $2 + 0;
+		my $cache_path = $kind eq 'native'
+			? ensureLeafletNative($i)
+			: ensureLeafletMask($i);
+		if (!$cache_path)
+		{
+			return Pub::HTTP::Response->new($request, 'sym not found', 404, 'text/plain');
+		}
+		my $bytes = '';
+		if (open(my $fh, '<:raw', $cache_path))
+		{
+			local $/;
+			$bytes = <$fh>;
+			close $fh;
+		}
+		return Pub::HTTP::Response->new($request, $bytes, 200, 'image/png');
 	}
 
 	$request->{uri} = '/anchor.png' if $uri eq '/favicon.ico';
