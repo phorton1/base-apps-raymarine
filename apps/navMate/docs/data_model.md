@@ -119,7 +119,7 @@ waypoints (
   lat               REAL NOT NULL,       -- degrees WGS84
   lon               REAL NOT NULL,       -- degrees WGS84
   wp_type           INTEGER NOT NULL DEFAULT 0,  -- enum; see Waypoint Types (schema 12.0)
-  sym               INTEGER NOT NULL DEFAULT 0,  -- 0..39 E80 wire symbol (schema 12.0); see Sym
+  sym               INTEGER NOT NULL DEFAULT 0,  -- 0..35 E80 wire symbol (schema 12.0); see Sym
   color             TEXT DEFAULT NULL,   -- aabbggrr hex (GE byte order); NULL = type default
   depth_cm          INTEGER DEFAULT 0,   -- non-zero only for sounding waypoints
   temp_k            INTEGER DEFAULT NULL,-- water temperature x 100 Kelvin (schema 11.2); NULL = no data
@@ -146,13 +146,13 @@ editable via Utils -> Waypoint Sym Mapping...):
 |---|---|---|---|---|
 | 0 | `$WP_TYPE_NAV`       | `nav`       | 2  | SQUARE    |
 | 1 | `$WP_TYPE_ROUTE_PT`  | `route_pt`  | 4  | DIAMOND   |
-| 2 | `$WP_TYPE_SOUNDING`  | `sounding`  | 37 | CIRCLE_S  |
-| 3 | `$WP_TYPE_LABEL`     | `label`     | 38 | CIRCLE_N  |
-| 4 | `$WP_TYPE_HAZARD`    | `hazard`    | 7  | SKULL     |
-| 5 | `$WP_TYPE_SHIPWRECK` | `shipwreck` | 14 | SHIPWRECK |
-| 6 | `$WP_TYPE_FISH`      | `fish`      | 25 | FISH      |
-| 7 | `$WP_TYPE_DIVING`    | `diving`    | 23 | BLUE_FLAG |
-| 8 | `$WP_TYPE_POI`       | `poi`       | 1  | CIRCLE    |
+| 2 | `$WP_TYPE_SOUNDING`  | `sounding`  | 11 | CIRCLE_M   |
+| 3 | `$WP_TYPE_LABEL`     | `label`     | 3  | TRIANGLE   |
+| 4 | `$WP_TYPE_HAZARD`    | `hazard`    | 7  | SKULL      |
+| 5 | `$WP_TYPE_SHIPWRECK` | `shipwreck` | 14 | SHIPWRECK  |
+| 6 | `$WP_TYPE_FISH`      | `fish`      | 25 | FISH       |
+| 7 | `$WP_TYPE_DIVING`    | `diving`    | 23 | BLUE_FLAG  |
+| 8 | `$WP_TYPE_POI`       | `poi`       | 9  | TRIANGLE_I |
 
 Display-string lookup uses `@WP_TYPE_NAMES` indexed by wp_type int.
 
@@ -163,10 +163,16 @@ defines the full rule; see [Spoke Contract](navOps_spoke_contract.md)).
 
 ### Sym
 
-`sym` (schema 12.0) is the E80 wire-protocol symbol index, 0..39, indexing into
-`@E80_SYMS` in `NET/a_utils.pm` (formerly `@WPICON_TABLE`). The 40 entries are
-displayed by the E80 firmware; navMate stores the index, the icon catalog lives
-in `apps/navMate/sym_catalog/clean*.png` for UI display.
+`sym` (schema 12.0) is the E80 wire-protocol symbol index, 0..35, indexing into
+`@E80_SYMS` in `NET/a_utils.pm` (formerly `@WPICON_TABLE`). The E80 firmware
+accepts and renders sym indices up to 39, but its waypoint editor will not
+present sym 36..39 for selection, so they cannot be set or edited round-trip on
+the head unit; navMate caps at 0..35 to keep every stored sym editable on the
+E80. The four extra constants (`$E80_SYM_MAN_OVERBOARD` etc., 36..39) remain
+defined in `a_utils.pm` for posterity but are not exported and do not appear in
+`@E80_SYMS`. navMate stores the index; the icon catalog lives in
+`apps/navMate/sym_catalog/sym*.png` (16x16 cleanly-drawn icons, green sentinel
+for transparent regions) for UI display.
 
 The `wp_type -> sym` mapping is **not** hardcoded in navMate. It is JSON-encoded
 in `key_values.wp_mapped_syms` and seeded at `openDB` from `%WP_DEFAULT_SYMS` if

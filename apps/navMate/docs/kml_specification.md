@@ -138,7 +138,7 @@ All exported features carry navMate metadata in `<ExtendedData>`:
 | `nm_type` | all features | Object type (see table below) |
 | `nm_ref` | route-member waypoints only | `1` = route-waypoint reference, not the canonical instance |
 | `nm_wp_type` | waypoints | INTEGER 0..8; `wp_type` round-trip (schema 12.0). Absent in foreign KMLs (Google Earth, hand-edited); import falls back to the name-numeric heuristic when absent. |
-| `nm_sym` | waypoints | INTEGER 0..39; `sym` round-trip (schema 12.0). Absent in foreign KMLs; import lets the write-boundary default-sym rule fill it from `wp_type`. |
+| `nm_sym` | waypoints | INTEGER 0..35; `sym` round-trip (schema 12.0). Absent in foreign KMLs; import lets the write-boundary default-sym rule fill it from `wp_type`. |
 | `temp_k` | waypoints with non-zero `temp_k` only | Water temperature x 100 Kelvin |
 
 `nm_type` values:

@@ -386,7 +386,7 @@ that index.
 Track color mismatch in the DB-to-E80 direction is not applicable and is deferred to a
 future file-based transport path.
 
-**Waypoints.** Waypoint icons on the E80 (sym index 0-39) and waypoint colors in the DB
+**Waypoints.** Waypoint icons on the E80 (sym index 0-35) and waypoint colors in the DB
 (aabbggrr) are unrelated fields with no current mapping between them. No color transfer
 occurs in either direction; waypoints are not subject to color-mismatch pre-flight.
 

@@ -158,7 +158,7 @@ branch.
 ## Hub-Spoke wp_type / sym Boundary
 
 `wp_type` is a navMate-only concept (a 9-value INTEGER enum; see
-[Data Model](data_model.md#waypoint-types)). Spokes carry `sym` (0..39) on the
+[Data Model](data_model.md#waypoint-types)). Spokes carry `sym` (0..35) on the
 wire but no equivalent of `wp_type`. The boundary derives `wp_type` from `sym`
 via the current mapping (`key_values.wp_mapped_syms`, accessed via
 `navDB::symForWpType` / `wpTypeForSym` / `isMapped`).

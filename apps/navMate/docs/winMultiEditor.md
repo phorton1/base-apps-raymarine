@@ -95,7 +95,7 @@ shipwreck / fish / diving / poi). E80 and FSH wire records have no
 equivalent field; at the spoke boundary `wp_type` is derived from
 `sym` via the current mapping (`navDB::wpTypeForSym`).
 
-`sym` is the E80 wire-protocol symbol index (0..39, indexing into
+`sym` is the E80 wire-protocol symbol index (0..35, indexing into
 `@E80_SYMS` in `NET/a_utils.pm`). Present on DB / FSH / E80 records.
 
 `tracks` on the FSH wire have no `comment` field, but `tracks.comment`

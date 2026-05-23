@@ -104,10 +104,6 @@ BEGIN
 		$E80_SYM_LOBSTER
 		$E80_SYM_SPORTFISHEER
 		$E80_SYM_TRAWLER
-		$E80_SYM_MAN_OVERBOARD
-		$E80_SYM_CIRCLE_S
-		$E80_SYM_CIRCLE_N
-		$E80_SYM_BIG_RED_SQUARE
 
 		$appClientName
 
@@ -202,7 +198,7 @@ our $wx_color_medium_grey   = Wx::Colour->new(0xC0, 0xC0, 0xC0);
 # Empirically confirmed 2026-04-23 via direct WPMGR protocol writes to E80-4.
 # ALL symbols are RED descriptions (from E80) unless the name says otherwise.
 # sym >= 40 crashes E80 firmware (confirmed -- do not use).
-# E80 only allows selection of 0..35 but disiplays 36..39 distinctly.
+# E80 only allows selection of 0..35 but displays 36..39 distinctly.
 # RNS allows selection of 0..39 but displays 36..39 same as it does with 3 square.
 # RNS displays them differently ; see table comments
 
@@ -242,10 +238,14 @@ our $E80_SYM_SHARK           = 32;
 our $E80_SYM_LOBSTER         = 33;  # black on RNS
 our $E80_SYM_SPORTFISHEER    = 34;  # RNS Sportfisher
 our $E80_SYM_TRAWLER         = 35;  # RNS Trawler
+
+# following four are kept for posterities sake
+
 our $E80_SYM_MAN_OVERBOARD   = 36;  # person in water waving arms
 our $E80_SYM_CIRCLE_S        = 37;
 our $E80_SYM_CIRCLE_N        = 38;
 our $E80_SYM_BIG_RED_SQUARE  = 39;
+
 
 our @E80_SYMS = (
     'X',                #  0
@@ -284,10 +284,13 @@ our @E80_SYMS = (
     'LOBSTER',          # 33
     'SPORTFISHEER',     # 34
     'TRAWLER',          # 35
-    'MAN_OVERBOARD',    # 36
-    'CIRCLE_S',         # 37
-    'CIRCLE_N',         # 38
-    'BIG_RED_SQUARE',   # 39
+
+	# The following four show, but cannot be selected on the E80
+
+	#	'MAN_OVERBOARD',    # 36
+    #	'CIRCLE_S',         # 37
+    #	'CIRCLE_N',         # 38
+    #	'BIG_RED_SQUARE',   # 39
 );
 
 

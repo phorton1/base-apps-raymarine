@@ -248,9 +248,10 @@ $resources = { %$resources,
 # 20x20_NN.png by adding a 2-px white border around the source and
 # resolving the green sentinel to white.  Stale cache files (older
 # than their source) are rebuilt automatically on next access.
-# makeSymComboBox builds a Wx::BitmapComboBox populated with all 40
-# syms (text + icon).  An optional $multi_label prepends a "(multi)"
-# style entry for the multi-editor's mixed-selection case.
+# makeSymComboBox builds a Wx::BitmapComboBox populated with all
+# in-use syms (text + icon) from @E80_SYMS.  An optional $multi_label
+# prepends a "(multi)" style entry for the multi-editor's mixed-
+# selection case.
 
 my %_sym_bitmaps;
 my $_blank_bm;
