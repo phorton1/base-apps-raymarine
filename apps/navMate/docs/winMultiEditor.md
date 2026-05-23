@@ -165,7 +165,7 @@ The `(multi N)` state is visually distinct from any real value:
   any real value commits it; leaving the dropdown on `(multi)`
   writes nothing. `sym` is a `Wx::BitmapComboBox` (via
   `nmResources::makeSymComboBox`) with icons from
-  `apps/navMate/sym_catalog/clean*.png`; the dialog uses
+  `apps/navMate/sym_catalog/sym*.png`; the dialog uses
   `EVT_COMBOBOX` for the dirty-tracking binding.
 
 ### Conservative per-item forward-map (DB descriptor)

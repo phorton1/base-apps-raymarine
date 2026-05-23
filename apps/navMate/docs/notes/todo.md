@@ -14,16 +14,6 @@ operations like Cleanup-E80 which deletes both tracks and waypoints/groups/etc,
 and then needs to be reworked into the aggregate scheme to properly implement
 operations like cut-E80-paste-DB tracks.
 
-[leaflet sym-icons] - work pending in leaflet to display the correct symbol
-icon type (all three sources) for waypoints. Source assets are now in place:
-the new 16x16 `apps/navMate/sym_catalog/sym{NN}.png` icons (green sentinel for
-transparency) are the canonical sym art and are already in use by the editor
-picker / tree-row swatches. Remaining work is the leaflet-side integration to
-serve them and recolor (DB waypoints) at render time.
-
-
-[remove database track ts_start and ts_end times]
-- make sure they're not used in phorton.com building process
 
 
 

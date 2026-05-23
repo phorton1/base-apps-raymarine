@@ -121,7 +121,7 @@ Control details:
 - **name, comment** - plain `TextCtrl`
 - **lat, lon** - `TextCtrl` [110px] with a live DDM `StaticText` label (e.g. `9deg26.142' N`) that updates on every keystroke; `parseLatLon()` accepts DD or DDM with optional leading minus or N/S/E/W suffix
 - **wp_type** - `Wx::Choice` over the 9-entry int enum (`@WP_TYPE_NAMES`: nav / route_pt / sounding / label / hazard / shipwreck / fish / diving / poi). A bold `mapped` / `not-mapped` indicator label sits to the right of the Choice and refreshes live on every wp_type or sym change. Changing wp_type when the current pair is mapped triggers a live forward-map: the sym Choice visibly tracks to the new mapping default; off-map pairs leave sym alone. Sym change never touches wp_type in the editor.
-- **sym** - `Wx::BitmapComboBox` built via `nmResources::makeSymComboBox`. 40 entries (text label `"NN - NAME"` + icon loaded from `apps/navMate/sym_catalog/clean*.png`). Width 240px in single editors / 260px in winMultiEditor.
+- **sym** - `Wx::BitmapComboBox` built via `nmResources::makeSymComboBox`. 40 entries (text label `"NN - NAME"` + icon loaded from `apps/navMate/sym_catalog/sym*.png`). Width 240px in single editors / 260px in winMultiEditor.
 - **color** - 28x20 swatch `Panel` (`wxSIMPLE_BORDER`) plus an "E80 color" `Wx::Choice` (named-palette) plus "Pick..." `Button`; opens `Wx::ColourDialog`; value round-trips as aabbggrr with alpha byte preserved; `_setColorSwatch()` converts aabbggrr -> `Wx::Colour` for display. The E80 Choice flips to "Custom" when the current value is not an exact E80 palette color, signaling lossy round-trip if pushed to E80.
 - **depth** - `TextCtrl` [70px] plus a static unit label ("ft" or "m") from `$PREF_DEPTH_DISPLAY` (read at panel creation); `depth_cm = 0` displays as empty string; ft<->cm multiply/divide by 30.48, m<->cm multiply/divide by 100
 - **Visible** checkbox - three-state; value loaded from the in-memory visibility state (navMate.json); shown for all node types except route_point
@@ -422,7 +422,7 @@ computed from the selected index.  No Custom entry, no Pick... button, no
 ABGR exposure in any FSH-context UI -- distinct from the winDatabase /
 winE80 color editors that work in ABGR end-to-end.  **Sym** for waypoints
 is a `Wx::BitmapComboBox` over the full 40-entry `@E80_SYMS` table with icons
-from `apps/navMate/sym_catalog/clean*.png`, built via
+from `apps/navMate/sym_catalog/sym*.png`, built via
 `nmResources::makeSymComboBox`.
 
 FSH transport limits are enforced at write time: name <= 15 chars
@@ -595,10 +595,14 @@ the user toggles visibility.
 
 ### Rendering
 
-- **Waypoints** - point markers; `wp_type` determines symbol:
-  - `nav`: hollow colored circle; color from `waypoints.color`
+- **Waypoints** - point markers; `wp_type` plus `data_source` determine appearance:
   - `label`: text div at coordinate; the name is the visible label
   - `sounding`: depth number; red when `depth_cm` below critical threshold
+  - all other `wp_type` values (nav / hazard / shipwreck / fish / diving / poi / route_pt) render the waypoint's `sym` from `apps/navMate/sym_catalog/sym*.png` (16x16 hand-drawn art with green-sentinel transparency):
+    - E80 and FSH source: native art served as-is from `/sym/native/NN.png`
+    - DB source: art recolored to the WP's ABGR via an HSV-style chroma/lift mask served from `/sym/mask/NN.png` and tinted in a browser canvas; tint preserves the source palette's lift-toward-white so highlights stay bright at any hue
+    - missing or out-of-range `sym`: fallback to a small filled colored circle
+    - on broken / failed sym fetch the marker shows a bright-orange backdrop so it stays visible against a satellite basemap
 - **Routes** - dashed polyline connecting ordered waypoints
 - **Tracks** - solid colored polyline with start (green) and end (red) markers
   when selected for editing
