@@ -266,60 +266,168 @@ sub _swatchSpec
 }
 
 
+sub _ensureCache15x15
+{
+	# Build sym_catalog/cache/15x15_NN.png from symNN.png if missing or
+	# older.  Resolve the green sentinel to white first (so edge area-
+	# averaging doesn't produce green-tinged pixels), Rescale 16x16 ->
+	# 13x13 with wxIMAGE_QUALITY_HIGH, then place in a 15x15 white
+	# canvas with 1-px border.
+	my ($src_path, $cache_path) = @_;
+	my $src_mtime   = (stat($src_path))[9];
+	my $cache_mtime = -f $cache_path ? (stat($cache_path))[9] : 0;
+	return if defined $src_mtime && $cache_mtime >= $src_mtime;
+
+	my $dir = $cache_path;
+	$dir =~ s|/[^/]+$||;
+	mkdir $dir if !-d $dir;
+
+	my $src = Wx::Image->new($src_path, wxBITMAP_TYPE_PNG);
+	return if !$src || !$src->IsOk();
+
+	for my $y (0 .. 15)
+	{
+		for my $x (0 .. 15)
+		{
+			if ($src->GetRed($x, $y) == 0 &&
+				$src->GetGreen($x, $y) == 255 &&
+				$src->GetBlue($x, $y) == 0)
+			{
+				$src->SetRGB($x, $y, 255, 255, 255);
+			}
+		}
+	}
+
+	$src->Rescale(13, 13, wxIMAGE_QUALITY_HIGH);
+
+	my $out = Wx::Image->new(15, 15);
+	for my $y (0 .. 14)
+	{
+		for my $x (0 .. 14)
+		{
+			$out->SetRGB($x, $y, 255, 255, 255);
+		}
+	}
+	for my $y (0 .. 12)
+	{
+		for my $x (0 .. 12)
+		{
+			$out->SetRGB($x + 1, $y + 1,
+				$src->GetRed($x, $y), $src->GetGreen($x, $y), $src->GetBlue($x, $y));
+		}
+	}
+	$out->SaveFile($cache_path, wxBITMAP_TYPE_PNG);
+}
+
+
 sub _swatchBitmapForSym
 {
-	# Load the pre-resampled $SWATCH_W x $SWATCH_H sym bitmap from
-	# $app_dir/sym_catalog/swatch{NN}.png.  These assets are
-	# produced by _makeSwatches.pl from the source clean*.png set;
-	# see the e80-symbols-clipart memory for the production history.
+	# Load the pre-built $SWATCH_W x $SWATCH_H sym bitmap from
+	# sym_catalog/cache/15x15_NN.png.  Built lazily by _ensureCache15x15
+	# from sym_catalog/symNN.png: 16x16 source downsampled to 13x13 and
+	# placed in a 15x15 white canvas with 1-px border.
 	my ($sym) = @_;
-	my $path = sprintf('%s/sym_catalog/swatch%02d.png', $app_dir, $sym);
-	return undef if !-f $path;
-	my $bmp = Wx::Bitmap->new($path, wxBITMAP_TYPE_PNG);
+	my $src   = sprintf('%s/sym_catalog/sym%02d.png',          $app_dir, $sym);
+	my $cache = sprintf('%s/sym_catalog/cache/15x15_%02d.png', $app_dir, $sym);
+	_ensureCache15x15($src, $cache);
+	return undef if !-f $cache;
+	my $bmp = Wx::Bitmap->new($cache, wxBITMAP_TYPE_PNG);
 	return undef if !$bmp || !$bmp->IsOk();
 	return $bmp;
 }
 
 
+sub _ensureCache15x15Grey
+{
+	# Build sym_catalog/cache/15x15_grey_NN.png from symNN.png if missing
+	# or older.  Same pipeline as _ensureCache15x15 but the final 15x15
+	# emits greyscale: non-white pixels are converted to luminance (Rec
+	# 601: 0.299R + 0.587G + 0.114B), white stays white.  The recolor
+	# step in _swatchBitmapForColoredSym then tints the greys per the
+	# user's chosen color and leaves white alone.
+	my ($src_path, $cache_path) = @_;
+	my $src_mtime   = (stat($src_path))[9];
+	my $cache_mtime = -f $cache_path ? (stat($cache_path))[9] : 0;
+	return if defined $src_mtime && $cache_mtime >= $src_mtime;
+
+	my $dir = $cache_path;
+	$dir =~ s|/[^/]+$||;
+	mkdir $dir if !-d $dir;
+
+	my $src = Wx::Image->new($src_path, wxBITMAP_TYPE_PNG);
+	return if !$src || !$src->IsOk();
+
+	for my $y (0 .. 15)
+	{
+		for my $x (0 .. 15)
+		{
+			if ($src->GetRed($x, $y) == 0 &&
+				$src->GetGreen($x, $y) == 255 &&
+				$src->GetBlue($x, $y) == 0)
+			{
+				$src->SetRGB($x, $y, 255, 255, 255);
+			}
+		}
+	}
+
+	$src->Rescale(13, 13, wxIMAGE_QUALITY_HIGH);
+
+	my $out = Wx::Image->new(15, 15);
+	for my $y (0 .. 14)
+	{
+		for my $x (0 .. 14)
+		{
+			$out->SetRGB($x, $y, 255, 255, 255);
+		}
+	}
+	for my $y (0 .. 12)
+	{
+		for my $x (0 .. 12)
+		{
+			my $r = $src->GetRed($x, $y);
+			my $g = $src->GetGreen($x, $y);
+			my $b = $src->GetBlue($x, $y);
+			if ($r == 255 && $g == 255 && $b == 255)
+			{
+				$out->SetRGB($x + 1, $y + 1, 255, 255, 255);
+			}
+			else
+			{
+				my $lum = int(0.299 * $r + 0.587 * $g + 0.114 * $b);
+				$out->SetRGB($x + 1, $y + 1, $lum, $lum, $lum);
+			}
+		}
+	}
+	$out->SaveFile($cache_path, wxBITMAP_TYPE_PNG);
+}
+
+
 sub _swatchBitmapForColoredSym
 {
-	# Load mask{NN}.png (native size ~24x24) and produce a $SWATCH_W x
-	# $SWATCH_H recolored bitmap.  The 18-entry mask palette is exact:
-	#   (255, 0, 0)  red sentinel    -> transparent (left red, masked out)
-	#   (0, 255, 0)  green sentinel  -> opaque white
-	#   (g, g, g)    one of 16 greys -> user_color * g/255 (grey 0 = black,
-	#                                   grey 255 = full user color)
-	# Manual nearest-neighbor sampling so the exact palette values pass
-	# through unchanged (Wx::Image::Rescale's NEAREST flag isn't exposed
-	# in this binding).
+	# Load sym_catalog/cache/15x15_grey_NN.png and recolor in memory per
+	# the user's chosen ABGR.  Cached mask is greyscale-on-white:
+	#   white (255,255,255) -> stays white (was transparent in source)
+	#   grey  (g,g,g)        -> user_color * g/255
+	# Built lazily by _ensureCache15x15Grey from sym_catalog/symNN.png.
 	my ($sym, $color_hex) = @_;
-	my $path = sprintf('%s/sym_catalog/mask%02d.png', $app_dir, $sym);
-	return undef if !-f $path;
-	my $src = Wx::Image->new($path, wxBITMAP_TYPE_PNG);
+	my $src_path   = sprintf('%s/sym_catalog/sym%02d.png',               $app_dir, $sym);
+	my $cache_path = sprintf('%s/sym_catalog/cache/15x15_grey_%02d.png', $app_dir, $sym);
+	_ensureCache15x15Grey($src_path, $cache_path);
+	return undef if !-f $cache_path;
+	my $src = Wx::Image->new($cache_path, wxBITMAP_TYPE_PNG);
 	return undef if !$src || !$src->IsOk();
-
-	my $sw = $src->GetWidth();
-	my $sh = $src->GetHeight();
 
 	my ($rr, $gg, $bb) = _parseUserColor($color_hex);
 
 	my $out = Wx::Image->new($SWATCH_W, $SWATCH_H);
 	for my $oy (0 .. $SWATCH_H - 1)
 	{
-		my $sy = int($oy * $sh / $SWATCH_H);
-		$sy = $sh - 1 if $sy >= $sh;
 		for my $ox (0 .. $SWATCH_W - 1)
 		{
-			my $sx = int($ox * $sw / $SWATCH_W);
-			$sx = $sw - 1 if $sx >= $sw;
-			my $pr = $src->GetRed($sx, $sy);
-			my $pg = $src->GetGreen($sx, $sy);
-			my $pb = $src->GetBlue($sx, $sy);
-			if ($pr == 255 && $pg == 0 && $pb == 0)
-			{
-				$out->SetRGB($ox, $oy, 255, 0, 0);
-			}
-			elsif ($pr == 0 && $pg == 255 && $pb == 0)
+			my $pr = $src->GetRed($ox, $oy);
+			my $pg = $src->GetGreen($ox, $oy);
+			my $pb = $src->GetBlue($ox, $oy);
+			if ($pr == 255 && $pg == 255 && $pb == 255)
 			{
 				$out->SetRGB($ox, $oy, 255, 255, 255);
 			}
@@ -332,8 +440,6 @@ sub _swatchBitmapForColoredSym
 			}
 		}
 	}
-
-	$out->SetMaskColour(255, 0, 0);
 	return Wx::Bitmap->new($out);
 }
 

@@ -242,22 +242,73 @@ $resources = { %$resources,
 #-------------------------------------------------------------------------
 # sym icon helpers
 #-------------------------------------------------------------------------
-# clean*.png assets live alongside this file in sym_catalog/.  Bitmaps
-# are loaded on demand and cached.  symBitmap returns undef on out-of-
-# range index; makeSymComboBox builds a Wx::BitmapComboBox populated
-# with all 40 syms (text + icon).  An optional $multi_label prepends
-# a "(multi)" style entry for the multi-editor's mixed-selection case.
+# sym{NN}.png sources live in sym_catalog/ (16x16 wall-to-wall, with
+# the 0x00FF00 green sentinel marking transparent regions).  symBitmap
+# returns a 20x20 picker bitmap built lazily into sym_catalog/cache/
+# 20x20_NN.png by adding a 2-px white border around the source and
+# resolving the green sentinel to white.  Stale cache files (older
+# than their source) are rebuilt automatically on next access.
+# makeSymComboBox builds a Wx::BitmapComboBox populated with all 40
+# syms (text + icon).  An optional $multi_label prepends a "(multi)"
+# style entry for the multi-editor's mixed-selection case.
 
 my %_sym_bitmaps;
 my $_blank_bm;
+
+sub _ensureCache20x20
+{
+	# Build sym_catalog/cache/20x20_NN.png from sym_catalog/symNN.png
+	# if missing or older than the source.  20x20 = 16x16 source + 2 px
+	# white border; green sentinel pixels in the source resolve to white.
+	my ($src_path, $cache_path) = @_;
+	my $src_mtime   = (stat($src_path))[9];
+	my $cache_mtime = -f $cache_path ? (stat($cache_path))[9] : 0;
+	return if defined $src_mtime && $cache_mtime >= $src_mtime;
+
+	my $dir = $cache_path;
+	$dir =~ s|/[^/]+$||;
+	mkdir $dir if !-d $dir;
+
+	my $src = Wx::Image->new($src_path, wxBITMAP_TYPE_PNG);
+	return if !$src || !$src->IsOk();
+
+	my $out = Wx::Image->new(20, 20);
+	for my $y (0 .. 19)
+	{
+		for my $x (0 .. 19)
+		{
+			$out->SetRGB($x, $y, 255, 255, 255);
+		}
+	}
+	for my $y (0 .. 15)
+	{
+		for my $x (0 .. 15)
+		{
+			my $r = $src->GetRed($x, $y);
+			my $g = $src->GetGreen($x, $y);
+			my $b = $src->GetBlue($x, $y);
+			if ($r == 0 && $g == 255 && $b == 0)
+			{
+				$out->SetRGB($x + 2, $y + 2, 255, 255, 255);
+			}
+			else
+			{
+				$out->SetRGB($x + 2, $y + 2, $r, $g, $b);
+			}
+		}
+	}
+	$out->SaveFile($cache_path, wxBITMAP_TYPE_PNG);
+}
 
 sub symBitmap
 {
 	my ($i) = @_;
 	return undef if !defined $i || $i < 0 || $i > $#E80_SYMS;
 	return $_sym_bitmaps{$i} if exists $_sym_bitmaps{$i};
-	my $path = sprintf('%s/sym_catalog/clean%02d.png', $app_dir, $i);
-	$_sym_bitmaps{$i} = Wx::Bitmap->new($path, wxBITMAP_TYPE_PNG);
+	my $src   = sprintf('%s/sym_catalog/sym%02d.png',          $app_dir, $i);
+	my $cache = sprintf('%s/sym_catalog/cache/20x20_%02d.png', $app_dir, $i);
+	_ensureCache20x20($src, $cache);
+	$_sym_bitmaps{$i} = Wx::Bitmap->new($cache, wxBITMAP_TYPE_PNG);
 	return $_sym_bitmaps{$i};
 }
 

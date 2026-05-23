@@ -775,7 +775,7 @@ sub _onSave
 			name    => $this->{ed_name}->GetValue(),
 			lat     => $lat,
 			lon     => $lon,
-			sym     => $this->{ed_sym}->GetSelection(),
+			sym     => $this->{ed_sym}->GetCurrentSelection(),
 			comment => $this->{ed_comment}->GetValue(),
 			depth   => $depth_cm,
 			temp_k  => $temp_k100,
