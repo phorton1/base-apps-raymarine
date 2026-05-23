@@ -127,7 +127,7 @@ Field preservation across two cross-spoke hops. Catches silent lossy transforms.
 | Test | What it verifies |
 |------|------------------|
 | 22 | Multi-select 2 E80 WPs, Paste to FSH (both UUIDs preserved; no per-item progress confusion) |
-| 23 | Multi-select FSH Group + Route, Paste to E80 (heterogeneous types; per-type dispatch must order Groups before Routes) |
+| 23 | **GUARD** Multi-select FSH Group + Route, Paste to E80 -- D6 spoke content-vs-destination predicate rejects the route component at `header:groups` (only group items accepted there). Replaces the previous-cycle expectation that targeted the homogeneity check at `navOps.pm`. |
 
 ### Section H -- Cross-spoke guards
 
@@ -169,7 +169,7 @@ The hub conception deliberately probes these surfaces:
 
 6. **Refresh side-effects (every test)**: `_refresh<Spoke>` invoked from each paste handler. Verify destination panel re-renders accurately via `/api/db` and `/api/fsh`.
 
-7. **Multi-select mixed types (hub.23)**: per-type dispatch in `_pasteAllToE80` / `_pasteAllToFSH` orders WPs/Groups before Routes; cross-spoke must preserve this ordering or routes will fail member-existence preflight.
+7. **Multi-select mixed types (hub.23)**: spoke D6 predicate rejects mixed-type clipboards on spoke destinations because no single destination accepts all member types (group + route share no common spoke destination). The per-type dispatch ordering in `_pasteAllToE80` / `_pasteAllToFSH` is unreachable for cross-spoke mixed clipboards but remains relevant for the wp+group special case (ancestor-wins absorption keeps that path live).
 
 8. **ProgressDialog absence accuracy**: E80->FSH PASTE has no E80-side write -- ProgressDialog should NOT render. A spurious render flags a bug in either the dispatcher (opening a dialog for a no-op spoke) or in cleanup ordering.
 

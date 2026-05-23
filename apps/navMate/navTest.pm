@@ -11,8 +11,6 @@
 #   select=key1,key2,...      node keys to select (UUIDs or "header:groups" etc.)
 #   right_click=key           which node is the right-click target (defaults to first in select)
 #   cmd=10200                 numeric CTX_CMD_* constant to fire
-#   op=suppress&val=0|1       set suppress_confirm without any tree or fire action
-#   op=suppress&val=1&outcome=reject   also set suppress_outcome for two-outcome dialogs
 #   op=refresh                reload navMate.db from disk
 #   op=clear_e80              delete all E80 routes, groups, waypoints, and tracks
 #   op=create_branch&parent_uuid=X&name=Y    create a branch without the name-input dialog
@@ -58,23 +56,12 @@ sub dispatchTestCommand
 	my $cmd = eval { decode_json($cmd_json) };
 	if ($@) { warning(0,0,"navTest: bad JSON: $@"); return; }
 
-	# Pure ops - handle before panel resolution
+	# Pure ops - handle before panel resolution.
+	# Note: op=suppress is handled synchronously on the HTTP server thread
+	# in navServer.pm (NOT here); it never reaches the navTest queue.  That
+	# avoids the single-slot race where a subsequent /api/test op would
+	# overwrite a queued suppress before the wx idle loop applied it.
 	my $op = $cmd->{op} // '';
-	if ($op eq 'suppress')
-	{
-		$suppress_confirm                 = ($cmd->{val} // 0) ? 1 : 0;
-		$nmDialogs::suppress_error_dialog = $suppress_confirm;
-		if (exists $cmd->{outcome})
-		{
-			$nmDialogs::suppress_outcome = $cmd->{outcome} // 'accept';
-			display(0,0,"navTest: suppress_confirm=$suppress_confirm suppress_outcome=$nmDialogs::suppress_outcome");
-		}
-		else
-		{
-			display(0,0,"navTest: suppress_confirm=$suppress_confirm");
-		}
-		return;
-	}
 	if ($op eq 'refresh')
 	{
 		my $pname = $cmd->{panel} // 'database';

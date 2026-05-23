@@ -138,6 +138,10 @@ Tests are listed in execution order. Tests are numbered locally to the module (1
 |------|------------------|
 | 29   | DELETE_GROUP at E80 my_waypoints node blocked (predicate D4) |
 | 30   | DELETE_GROUP_WPS with mixed my_waypoints + named group blocked (predicate D5) |
+| 32   | D6 spoke content-vs-destination: WP at E80 routes header blocked |
+| 33   | D6 spoke content-vs-destination: Group at E80 my_waypoints blocked |
+| 34   | D6 spoke content-vs-destination: Route at E80 groups header blocked |
+| 35   | D6 spoke content-vs-destination: Group at E80 named-group node blocked |
 
 ## Intra-module sequencing
 

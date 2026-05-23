@@ -143,6 +143,10 @@ FSH allows track writes (PASTE to tracks). E80 blocks the same path; tests 4 and
 | 32a  | Ensure [FSH_IsolatedWP1] on FSH (precondition for 32b/c). PASS if already present OR if the paste step lands it; FAIL otherwise. |
 | 32b  | PASTE at FSH WP object node blocked (descendant-paste guard; parallels e80.28b) |
 | 32c  | PASTE_NEW at FSH WP object node blocked (parallels e80.28c) |
+| 33   | D6 spoke content-vs-destination: WP at FSH routes header blocked (parallels e80.32) |
+| 34   | D6 spoke content-vs-destination: Group at FSH my_waypoints blocked (parallels e80.33) |
+| 35   | D6 spoke content-vs-destination: Route at FSH groups header blocked (parallels e80.34) |
+| 36   | D6 spoke content-vs-destination: Group at FSH named-group node blocked (parallels e80.35) |
 
 ## Intra-module sequencing
 
@@ -155,7 +159,7 @@ Key sequencing decisions:
 - Tests 11-16 progressively clear FSH (specific deletes -> group blocked guard -> header deletes).
 - Tests 17a/b re-populate state for the paste-new and route-point tests.
 - Tests 23-26 exercise tracks last (so the 123-track fixture is preserved through earlier tests).
-- Guards (27-32c) run at the end.
+- Guards (27-32c, 33-36) run at the end.
 
 ## Notes
 

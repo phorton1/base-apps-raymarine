@@ -19,6 +19,10 @@ Exceptions (do not invent new ones):
 - A test documented with a built-in batched script (e.g. a stress-test loop) runs as written.
 - Helper function definitions may share a tool call with the test that uses them, but only one test per call.
 
+### Announce each result in user-facing text
+
+After every test, the result (PASS / PASSED_BUT / FAIL / NOT_RUN) MUST appear in the assistant's user-facing reply, not only in tool output. Tool stdout is hidden from the user by default; relying on it for the per-test verdict leaves the operator blind to cycle progress and to early failures. The minimum line is `<module>.<N>: <status>` with a one-line note when not PASS. Announcing in tool output instead of reply text is a discipline failure.
+
 ### Read-the-log convention
 
 After every command, read `/api/log?since=mark` and scan for `ERROR`, `WARNING`, `IMPLEMENTATION ERROR`. `{ok:1}` from `/api/command` or `/api/test` only means *dispatched* -- it says nothing about whether the operation succeeded.

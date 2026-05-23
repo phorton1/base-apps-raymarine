@@ -59,7 +59,7 @@ function fshToDb
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.1" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 2
 ```
 
@@ -326,7 +326,7 @@ Start-Sleep 2
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.16a" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 2
 ```
 
@@ -382,7 +382,7 @@ Uses [IsolatedWP2] from DB (`af4e23246d01bfa8`, BOCAS2).
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.18" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=af4e23246d01bfa8&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
 Start-Sleep 2
 ```
 
@@ -436,7 +436,7 @@ Uses [IsolatedWP1] + [IsolatedWP3] from DB. Pre-cleanup: ensure neither is on FS
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.21" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae,994e0f7ef900baa4&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 2
 ```
 
@@ -552,7 +552,7 @@ Write-Host "LongWP $LongWP name='$($long.name)' length=$($long.name.Length)"
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.28" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=$LongWP&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 2
 ```
 
@@ -573,7 +573,7 @@ $WP_B = $dups.Group[1].uuid
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.29" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=$WP_A,$WP_B&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
 Start-Sleep 2
 ```
 
@@ -587,7 +587,7 @@ Start-Sleep 2
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.30a" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 2
 ```
 
@@ -620,7 +620,7 @@ $SameNameWP = $second.uuid
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.30b" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=$SameNameWP&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 2
 ```
 
@@ -646,7 +646,7 @@ foreach ($b in $bocas2s) {
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.31" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=af4e23246d01bfa8&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 2
 ```
 
@@ -665,7 +665,7 @@ if (-not ($f.waypoints.PSObject.Properties.Name -contains "CE4E-4318-1F01-B3AE")
     curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.32a" | Out-Null
     curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
     Start-Sleep 1
-    curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+    curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
     Start-Sleep 2
     $f = curl.exe -s "http://localhost:9883/api/fsh" | ConvertFrom-Json
 }
@@ -698,6 +698,72 @@ Start-Sleep 2
 ```
 
 **Pass:** same D4 IMPL ERROR sentinel; FSH unchanged.
+
+---
+
+### Test 33 -- D6: WP paste at FSH routes header blocked
+
+D6 (spoke content-vs-destination) rejects waypoint clipboard items at the FSH routes header -- only route items are accepted at `header:routes`.
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.33" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10210" | Out-Null
+Start-Sleep 2
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: Cannot paste waypoint clipboard item at fsh 'header:routes' destination`; FSH unchanged.
+
+---
+
+### Test 34 -- D6: Group paste at FSH my_waypoints blocked
+
+D6 rejects group clipboard items at the FSH my_waypoints pseudo-group -- only waypoint items are accepted there. Spokes do not support nested groups.
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.34" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=244e8e100800400a&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
+Start-Sleep 2
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: Cannot paste group clipboard item at fsh 'my_waypoints' destination`; FSH unchanged.
+
+---
+
+### Test 35 -- D6: Route paste at FSH groups header blocked
+
+D6 rejects route clipboard items at the FSH groups header -- only group items are accepted at `header:groups`.
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.35" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=f34efdd6070022e8&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+Start-Sleep 2
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: Cannot paste route clipboard item at fsh 'header:groups' destination`; FSH unchanged.
+
+---
+
+### Test 36 -- D6: Group paste at FSH named-group node blocked
+
+D6 rejects group clipboard items at a named-group destination -- only waypoint items are accepted at a group node. Spokes do not support nested groups.
+
+Uses DB Popa group (`244e8e100800400a`) as the clipboard group and [FSH_GroupInRoute] = `C482-CBA0-D14E-67B2` (Timiteo group, fixture-present) as the destination node.
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.36" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=244e8e100800400a&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=C482-CBA0-D14E-67B2&right_click=C482-CBA0-D14E-67B2&cmd=10210" | Out-Null
+Start-Sleep 2
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: Cannot paste group clipboard item at fsh 'group' destination`; FSH unchanged.
 
 ---
 

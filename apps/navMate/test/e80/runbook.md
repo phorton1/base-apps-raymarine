@@ -30,7 +30,7 @@ After every E80 step verify ProgressDialog FINISHED in the log; see `../master_r
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.1" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 6
 ```
 
@@ -182,7 +182,7 @@ if (-not $present)
     curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.10a" | Out-Null
     curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
     Start-Sleep 1
-    curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+    curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
     Start-Sleep 5
 }
 ```
@@ -279,7 +279,7 @@ Start-Sleep 5
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.14" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=af4e23246d01bfa8&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
 Start-Sleep 5
 ```
 
@@ -311,7 +311,7 @@ Setup: PASTE_NEW [IsolatedWP1] from DB to E80 to create a second fresh-UUID WP (
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.14c+setup" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
 Start-Sleep 5
 # Identify [E80_FRESH_WP2] = the BOCAS1 fresh-UUID from /api/db (not ce4e43181f01b3ae)
 ```
@@ -400,7 +400,7 @@ Then:
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.17" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae,af4e23246d01bfa8&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 6
 ```
 
@@ -595,7 +595,7 @@ $WP_B = $dups.Group[1].uuid
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.24" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=$WP_A,$WP_B&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
 Start-Sleep 4
 ```
 
@@ -609,7 +609,7 @@ Start-Sleep 4
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.25a" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 5
 ```
 
@@ -628,7 +628,7 @@ $SameNameWP = ($nmdb.waypoints | Where-Object { $_.name -eq "BOCAS1" -and $_.uui
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.25b" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=$SameNameWP&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 4
 ```
 
@@ -642,7 +642,7 @@ Start-Sleep 4
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.26" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=af4e23246d01bfa8&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 5
 ```
 
@@ -668,7 +668,7 @@ if (-not $present)
     curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.28a" | Out-Null
     curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
     Start-Sleep 1
-    curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+    curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
     Start-Sleep 5
 }
 ```
@@ -728,6 +728,72 @@ Start-Sleep 3
 ```
 
 **Pass:** `WARNING: IMPLEMENTATION ERROR: delete-group-and-WPs mixes my_waypoints with named groups`; E80 unchanged.
+
+---
+
+### Test 32 -- D6: WP paste at E80 routes header blocked
+
+D6 (spoke content-vs-destination) rejects waypoint clipboard items at the routes header -- only route items are accepted at `header:routes`.
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.32" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10210" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: Cannot paste waypoint clipboard item at e80 'header:routes' destination`; E80 unchanged.
+
+---
+
+### Test 33 -- D6: Group paste at E80 my_waypoints blocked
+
+D6 rejects group clipboard items at the my_waypoints pseudo-group -- only waypoint items are accepted there. Spokes do not support nested groups.
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.33" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=244e8e100800400a&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: Cannot paste group clipboard item at e80 'my_waypoints' destination`; E80 unchanged.
+
+---
+
+### Test 34 -- D6: Route paste at E80 groups header blocked
+
+D6 rejects route clipboard items at the groups header -- only group items are accepted at `header:groups`.
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.34" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=f34efdd6070022e8&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: Cannot paste route clipboard item at e80 'header:groups' destination`; E80 unchanged.
+
+---
+
+### Test 35 -- D6: Group paste at E80 named-group node blocked
+
+D6 rejects group clipboard items at a named-group destination -- only waypoint items are accepted at a group node. Spokes do not support nested groups.
+
+Uses [TestGroup] (`1a4eaf5a8c00e922`, Timiteo) as the clipboard group and Popa group (`244e8e100800400a`, present on E80 since e80.9a / e80.11a) as the destination node.
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.35" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=1a4eaf5a8c00e922&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=244e8e100800400a&right_click=244e8e100800400a&cmd=10210" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `WARNING: IMPLEMENTATION ERROR: Cannot paste group clipboard item at e80 'group' destination`; E80 unchanged.
 
 ---
 

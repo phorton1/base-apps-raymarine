@@ -29,6 +29,7 @@ use Pub::HTTP::Response qw(json_response);
 use apps::raymarine::NET::h_server;
 use n_utils qw($app_dir);
 use nmResources qw(ensureLeafletNative ensureLeafletMask leafletNativePath leafletMaskPath);
+use nmDialogs qw($suppress_confirm $suppress_outcome $suppress_error_dialog);
 use navDB;
 use navFSH;
 use base qw(apps::raymarine::NET::h_server);
@@ -305,6 +306,21 @@ sub handle_request
 	elsif ($uri eq '/api/test')
 	{
 		my $params = $request->{params} // {};
+		# op=suppress runs synchronously on the HTTP server thread so that
+		# a subsequent /api/test op (e.g. clear_e80) cannot overwrite the
+		# pending-test single slot and race past the suppression flag.
+		# The flags are shared :shared scalars so cross-thread writes are
+		# visible to the wx main thread immediately.
+		if (($params->{op} // '') eq 'suppress')
+		{
+			$suppress_confirm      = ($params->{val} // 0) ? 1 : 0;
+			$suppress_error_dialog = $suppress_confirm;
+			if (exists $params->{outcome})
+			{
+				$suppress_outcome = $params->{outcome} // 'accept';
+			}
+			return json_response($request, { ok => 1, suppress_confirm => $suppress_confirm });
+		}
 		{ lock($test_pending); $test_pending = encode_json($params); }
 		return json_response($request, { ok => 1, queued => 1 });
 	}

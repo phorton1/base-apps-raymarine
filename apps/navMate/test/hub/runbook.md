@@ -96,7 +96,7 @@ Uses [FSH_IsolatedWP1] = `80B2-C48A-5400-D3AE` ("Waypoint 25", top-level under F
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.1" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=80B2-C48A-5400-D3AE&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 6
 ```
 
@@ -196,7 +196,7 @@ Source: [HUB_WP] on E80 (`80b2c48a5400d3ae`). Destination: FSH where `80B2-C48A-
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.5" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=80b2c48a5400d3ae&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 2
 ```
 
@@ -250,7 +250,7 @@ $fsh_wp_before = @((curl.exe -s "http://localhost:9883/api/fsh" | ConvertFrom-Js
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.8" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=80b2c48a5400d3ae&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
 Start-Sleep 2
 
 $fsh_wp_after = @((curl.exe -s "http://localhost:9883/api/fsh" | ConvertFrom-Json).waypoints.PSObject.Properties).Count
@@ -273,7 +273,7 @@ $e80_wp_before = @((curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Jso
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.9" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=83B2-167D-3F00-ED99&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
 Start-Sleep 6
 
 $e80_wp_after = @((curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json).waypoints.PSObject.Properties).Count
@@ -345,7 +345,7 @@ Setup: PASTE_NEW [IsolatedWP1] (BOCAS1) from DB to E80 first -- this lands a fre
 # whose name is not on FSH and so won't collide on the cut-paste).
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
 Start-Sleep 6
 
 $db = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
@@ -356,7 +356,7 @@ Write-Host "Cutting E80 WP: $HUB_FRESH_E80_WP (name BOCAS1)"
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.12" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$HUB_FRESH_E80_WP&cmd=10201" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 6
 ```
 
@@ -376,7 +376,7 @@ Cut [FSH_IsolatedWP3] = `83B2-167D-3F00-37D9` ("Waypoint 14"). FSH-side cleanup 
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.13" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=83B2-167D-3F00-37D9&cmd=10201" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 6
 ```
 
@@ -552,7 +552,7 @@ else
     # Hop 1: E80 -> FSH (same UUID, no collision)
     curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$src_uuid&cmd=10200" | Out-Null
     Start-Sleep 1
-    curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+    curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
     Start-Sleep 3
 
     # Hop 2: FSH -> E80 PASTE_NEW.  Source name still on E80; preflight blocks (no rename per policy).
@@ -560,7 +560,7 @@ else
     $fsh_uuid_hop1 = "$($u.Substring(0,4))-$($u.Substring(4,4))-$($u.Substring(8,4))-$($u.Substring(12,4))"
     curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=$fsh_uuid_hop1&cmd=10200" | Out-Null
     Start-Sleep 1
-    curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
+    curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
     Start-Sleep 8
 
     $db_after = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
@@ -624,7 +624,7 @@ Write-Host "Multi-selecting E80 WPs: $u1, $u2"
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.22" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$u1,$u2&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 2
 
 $f = curl.exe -s "http://localhost:9883/api/fsh" | ConvertFrom-Json
@@ -649,7 +649,7 @@ Write-Host "FSH has $u1_fsh = $present_1; $u2_fsh = $present_2 (top-level + grou
 
 #### Test 23 -- GUARD: Heterogeneous clipboard (Group + Route) blocked
 
-The homogeneity check at `navOps.pm:1052` rejects clipboards that mix types, with one special exception for waypoint+group (the natural multi-select-from-group-tree case). Group+Route is NOT a permitted mix and must hard-abort before any spoke-side write.
+A Group + Route multi-select is rejected on a spoke destination by the D6 spoke-content-vs-destination rule (`navClipboard.pm`): the destination `header:groups` accepts only group items, so the route component triggers the `spoke_route_at_header_groups` predicate rejection at preflight. This fires before the older homogeneity check at `navOps.pm`, which is now unreachable for spoke pastes with type-mixed content.
 
 Use [FSH_GroupInRoute] + [FSH_TestRoute] (multi-select a group and a route on FSH; paste to E80).
 
@@ -661,14 +661,14 @@ curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&rig
 Start-Sleep 3
 
 $r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
-$hetero_guard = @($r.lines | Where-Object { $_.text -match 'paste requires homogeneous content' }).Count
-$err          = @($r.lines | Where-Object { $_.text -match 'ERROR -|IMPLEMENTATION ERROR' }).Count
-Write-Host "hub.23: hetero_guard=$hetero_guard err=$err"
+$d6_guard = @($r.lines | Where-Object { $_.text -match "Cannot paste route clipboard item at e80 'header:groups' destination" }).Count
+$err      = @($r.lines | Where-Object { $_.text -match 'ERROR -|IMPLEMENTATION ERROR' }).Count
+Write-Host "hub.23: d6_guard=$d6_guard err=$err"
 ```
 
-**Pass:** `hetero_guard=1` -- the homogeneity sentinel fired. No spoke mutation. NO wxProgressDialog (guard aborts before `_pasteAllToE80`; the op-boundary STARTED/FINISHED markers may still appear in the log).
+**Pass:** `d6_guard=1` -- the D6 spoke-content-vs-destination sentinel fired (rejecting the route component of the mixed clipboard). No spoke mutation. NO wxProgressDialog (guard aborts before `_pasteAllToE80`; the op-boundary STARTED/FINISHED markers may still appear in the log).
 
-**Note:** earlier versions of this test asserted that per-type dispatch would handle group+route automatically. That is not the design -- only wp+group is permitted to mix. A real positive multi-select test for the wp+group special case could be added separately; hub.22 already exercises the all-waypoints positive path.
+**Note:** earlier versions of this test asserted the `paste requires homogeneous content` sentinel from the homogeneity check at `navOps.pm`. D6 now fires earlier in the predicate layer with finer-grained per-item-type messaging; the homogeneity check remains in place as a backstop for shapes that pass D6 but still mix types in non-spoke contexts. The user-observable behavior (mixed group+route rejected pre-write) is unchanged.
 
 ---
 
@@ -684,7 +684,7 @@ Original setup retained below for reference / future use if the policy ever perm
 # Establish a fresh-UUID "Waypoint 25" on E80 (distinct from 80b2c48a5400d3ae)
 curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=80B2-C48A-5400-D3AE&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
 Start-Sleep 6
 
 $db = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
@@ -696,7 +696,7 @@ Write-Host "Fresh E80 'Waypoint 25' UUID: $E80_FRESH_WP25"
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.24" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$E80_FRESH_WP25&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 2
 
 $log = curl.exe -s "http://localhost:9883/api/log?since=mark"
@@ -718,7 +718,7 @@ Paste E80 [HUB_WP] (`80b2c48a5400d3ae`, "Waypoint 25") -> FSH where same UUID + 
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.25" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=80b2c48a5400d3ae&cmd=10200" | Out-Null
 Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 2
 
 $log = curl.exe -s "http://localhost:9883/api/log?since=mark"
@@ -763,7 +763,7 @@ else {
     curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.26" | Out-Null
     curl.exe -s "http://localhost:9883/api/test?panel=database&select=$p1,$p2&cmd=10200" | Out-Null
     Start-Sleep 1
-    curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+    curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
     Start-Sleep 2
     $r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
     $intra = @($r.lines | Where-Object { $_.text -match "FSH operation blocked|intra-clipboard" }).Count
