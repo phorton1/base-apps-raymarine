@@ -296,3 +296,29 @@ long-standing gap, NOT in scope.
   - `navops_ref_vs_record.md` — reference vs record fundamental
   - `feedback_navops_fix_philosophy.md` — fix-completely directive
   - `navops_db_group_homogeneity_deferral.md` — the one allowed deferral
+
+---
+
+## Postscript: D6 added 2026-05-23
+
+D4 validated only destination *type*; nothing cross-checked clipboard item
+type against destination. Patrick observed that, on E80 and FSH, Paste /
+Paste New was offered for content+destination combinations the executor
+silently mis-handled (e.g. group at `my_waypoints`, route at
+`header[groups]`, waypoint at `header[routes]`). The executors
+(`_pasteGroupToE80`, `_pasteRouteToE80`, etc.) ignore the right-click node
+when the item type doesn't fit and create at top level, so the user saw
+items appearing in places they did not click.
+
+D6 adds a per-destination accepted-item-types table after the
+`route_point_paste_non_wp` block in `_pasteRuleAllows`. Token form is
+`spoke_<item_type>_at_<dest_key>` (e.g. `spoke_group_at_my_waypoints`).
+DB destinations are deliberately untouched -- DB branches and groups
+accept heterogeneous clipboards under the existing D1/D2 record-vs-ref
+constraints, and the explicit DB group homogeneity deferral above still
+applies.
+
+D6 lives in `navClipboard.pm` and is documented in `docs/navOperations.md`
+section 5.2. New negative tests cover the spoke side (`e80.32`-`e80.35`,
+`fsh.34`-`fsh.37`); existing positive tests are unaffected because they
+all paste structurally valid type+destination combinations.

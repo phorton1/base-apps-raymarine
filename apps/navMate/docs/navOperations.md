@@ -465,6 +465,33 @@ returned, and the user saw nothing happen. The fix consolidated the rule into th
 predicate so the menu hides the operation entirely and any forced dispatch through
 preflight emits a visible (or test-loggable) IMPL ERROR.
 
+**Spoke content-vs-destination matrix (D6).** The D4 positive-list rule
+establishes that the right-click node is a structurally valid spoke paste
+destination; D6 then narrows by clipboard item type. Each spoke destination
+accepts a specific subset of item types, and any item outside that subset
+would be silently mis-placed by the executor (e.g. `_pasteGroupToE80` calls
+`createGroup` at top level regardless of the right-click node, so a group
+pasted at `my_waypoints` becomes a new sibling top-level group rather than
+a member). The matrix is:
+
+| Destination               | Accepted item types         |
+|---------------------------|-----------------------------|
+| `header[groups]`          | `group`                     |
+| `header[routes]`          | `route`                     |
+| `header[tracks]` (FSH)    | `track`                     |
+| `my_waypoints`            | `waypoint`                  |
+| `group`                   | `waypoint`                  |
+| `route`                   | `waypoint`, `route_point`   |
+
+D6 fires for non-positional `PASTE` / `PASTE_NEW` only. Positional
+`PASTE_BEFORE` / `PASTE_AFTER` is already gated by `route_point_paste_non_wp`
+(spokes offer the positional variants exclusively at `route_point` anchors,
+where only waypoint / route_point items are accepted). Token form is
+`spoke_<item_type>_at_<dest_key>` (e.g. `spoke_group_at_my_waypoints`,
+`spoke_waypoint_at_header_routes`). DB destinations are NOT subject to D6 --
+DB branches and groups accept heterogeneous clipboards under the usual
+record-vs-reference constraints (D1, D2).
+
 
 ### 5.3 Reference vs Record
 

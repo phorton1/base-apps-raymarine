@@ -353,6 +353,65 @@ sub _pasteRuleAllows
 		}
 	}
 
+	# D6: spoke content-vs-destination compatibility.  D4 establishes that
+	# the destination is a structurally valid spoke node; this narrows
+	# further by item type.  Without it the executors silently mis-place
+	# items at top level (e.g. a group pasted at my_waypoints becomes a
+	# new sibling top-level group; a waypoint pasted at the routes header
+	# becomes an ungrouped wp via createWaypoint with no group_uuid).
+	# Positional PASTE_BEFORE/AFTER is gated by route_point_paste_non_wp
+	# above and is not re-checked here.
+	#
+	# Absorbed-aware: an item whose UUID appears in another clipboard
+	# item's members / route_points is dropped by _resolveAncestorWins
+	# (in _doPaste) before the executor runs, so it must not be
+	# evaluated here either.  This lets the natural wp+group multi-
+	# select case (a group plus one of its own member WPs) survive D6
+	# at a header:groups paste -- only the group item is checked.
+	if (!$positional && ($panel eq 'e80' || $panel eq 'fsh'))
+	{
+		my %accepts = (
+			'header:groups' => { group       => 1 },
+			'header:routes' => { route       => 1 },
+			'header:tracks' => { track       => 1 },
+			'my_waypoints'  => { waypoint    => 1 },
+			'group'         => { waypoint    => 1 },
+			'route'         => { waypoint    => 1, route_point => 1 },
+		);
+		my $dest_key = ($rt eq 'header') ? "header:$rkind" : $rt;
+		my $ok_set   = $accepts{$dest_key};
+
+		my %absorbed;
+		for my $item (@$items)
+		{
+			my $uuid = $item->{uuid} // '';
+			next if !$uuid;
+			for my $other (@$items)
+			{
+				next if ($other->{uuid} // '') eq $uuid;
+				my @sub = (@{$other->{members} // []}, @{$other->{route_points} // []});
+				if (grep { ($_->{uuid} // '') eq $uuid } @sub)
+				{
+					$absorbed{$uuid} = 1;
+					last;
+				}
+			}
+		}
+
+		for my $item (@$items)
+		{
+			my $t = $item->{type} // '';
+			my $u = $item->{uuid} // '';
+			next if $u && $absorbed{$u};
+			next if $ok_set && $ok_set->{$t};
+			my $tok = "spoke_${t}_at_${dest_key}";
+			$tok =~ s/:/_/g;
+			return (0, $tok,
+			        "Cannot paste $t clipboard item at $panel '$dest_key' destination",
+			        'impl_error');
+		}
+	}
+
 	# D1: DB-to-DB non-fresh non-cut paste creates an INDEPENDENT RECORD
 	# at the clipboard UUID; with the DB's UUID-unique tables that's a
 	# guaranteed conflict.  REF-only destinations (route_point anchor,
