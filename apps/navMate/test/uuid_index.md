@@ -77,7 +77,13 @@ UUIDs verified 2026-05-08 from live `/api/nmdb` (schema 10, git-baseline navMate
 
 | [Name] | UUID | Notes |
 |--------|------|-------|
-| [TestTrack] | 1a4eed924904ebbe | "2005-11-25-SanDiego2Oceanside" -- in MandalaLogs/Tracks |
+| [TestTrack] | 1a4eed924904ebbe | "2005-11-25-SanDiego2Oceanside" -- in MandalaLogs/Tracks; 500 pts, palette color (ff00ff00 green) |
+| [DB_TRACK_SHORT] | 8a4e3c4a2201fac2 | "BOCAS1-001" -- 11 chars, 77 pts, color=ffff6666; short-name positive PASTE-to-E80 candidate |
+| [DB_TRACK_LONG_NONPALETTE] | 824e8a104b04c37c | "2006-01-11-SanDiego2DanaPoint" -- 31 chars, 231 pts, color=ffffff00; exercises BOTH lossy-warn lines (name truncation + color snap) in a single paste |
+| [DB_TRACK_MULTI_A] | 8a4e3c4a2201fac2 | = [DB_TRACK_SHORT]. Alias for use in multi-track tests as the first of N. |
+| [DB_TRACK_MULTI_B] | 664e93a624018e26 | "BOCAS1-002" -- 11 chars, 74 pts. Second in multi-track tests. |
+| [DB_TRACK_MULTI_C] | 694e27fe26016702 | "BOCAS1-003" -- 11 chars, 55 pts. Third in multi-track tests. |
+| [DB_TRACKS_BRANCH] | 2b4e3308ca00cf66 | oldE80/Tracks branch -- 123 tracks; parent of the BOCAS1-* / BOCAS2-* / TOBOBE-* / SANBLAS-* etc. children used by multi-track tests. |
 
 ### Paste destination
 
@@ -135,6 +141,7 @@ The fixture was copied 2026-05-17 from `FSH/test/working_oldE80.fsh`. Inventory:
 | [Name] | UUID | Notes |
 |--------|------|-------|
 | [FSH_TestTrack] | A24E-672E-FE06-0A80 | "Track2-006" -- first track in fixture (123 tracks total). |
+| [FSH_TRACK_BOCAS1_003] | 0E4E-0BEA-B407-584A | "BOCAS1-003" -- 74 pts, color=0 (palette). FSH-source positive PASTE-to-E80 candidate (clean path: short name + palette color, no lossy-warn fires). |
 
 ### FSH UUID format and selection-key construction
 
@@ -154,8 +161,7 @@ These entries have no static UUID. The module's baseline setup creates them; the
 | [E80_WP] | setup:upload_wp([IsolatedWP1]) -- e80 module | Paste [IsolatedWP1] to E80 (UUID preserved). Used as the canonical upload-WP across e80 module tests. |
 | [E80_GR] | setup:upload_group([GroupWithRouteMembers]) -- e80 module | Paste Popa group to E80 (UUID preserved). |
 | [E80_RT] | setup:upload_route([TestRoute]) -- e80 module | Paste Popa route to E80 (UUID preserved). |
-| [E80_TK1] | setup:teensyBoat_track(Track1) -- tracks module | First track recorded via teensyBoat; UUID assigned by E80 (byte 1 = B2). |
-| [E80_TK2] | setup:teensyBoat_track(Track2) -- tracks module | Second track. |
+| [E80_TK] | setup:teensyBoat_track(E80Track) -- tracks module | Single teensyBoat-recorded track; UUID assigned by E80 (byte 1 = B2). One track is sufficient now that the track-writer protocol provides a wire path for DB->E80 paste; multi-track variants source from DB-paste outputs rather than additional teensyBoat recordings. |
 | [E80_FRESH_WP] | setup:paste_new_wp -- e80 module | Fresh-UUID WP created by PASTE_NEW (navMate-assigned UUID, byte 1 = 0x4e). |
 | [E80_FRESH_WP2] | setup:paste_new_wp -- e80 module | Second fresh-UUID WP. |
 | [E80_RT_FRESH] | setup:paste_new_route -- e80 module | Fresh-UUID route from PASTE_NEW (preserves member WP UUIDs by reference). |

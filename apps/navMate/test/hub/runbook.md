@@ -84,9 +84,9 @@ function Wait-NavCmdFinished
 
 ---
 
-## Module Tests
-
 ### Section A -- FSH->E80 PASTE (UUID-preserving): seeds E80 organically
+
+## Positive Tests
 
 #### Test 1 -- Paste FSH WP -> E80 (UUID-preserving)
 
@@ -136,51 +136,7 @@ Start-Sleep 8
 
 ---
 
-#### Test 4 -- GUARD: Paste FSH Track -> E80 blocked at tracks-header guard
-
-Uses [FSH_TestTrack] = `A24E-672E-FE06-0A80` ("Track2-006"). The `navOps.pm:877` guard ("Cannot paste to E80 tracks header -- tracks are read-only") fires before any spoke-level dispatch -- this guard is E80-only (FSH alpha Bug 1 fix restricted it to E80; FSH header paste is allowed). The guard short-circuits at `_doPaste` so `_pasteAllToE80`'s track-type skip (line 1011-1014) is never reached.
-
-```powershell
-$tk_before_e80 = @((curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json).tracks.PSObject.Properties).Count
-$tk_before_fsh = @((curl.exe -s "http://localhost:9883/api/fsh" | ConvertFrom-Json).tracks.PSObject.Properties).Count
-
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.4" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=A24E-672E-FE06-0A80&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_click=header%3Atracks&cmd=10210" | Out-Null
-Start-Sleep 5
-
-$tk_after_e80 = @((curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json).tracks.PSObject.Properties).Count
-$tk_after_fsh = @((curl.exe -s "http://localhost:9883/api/fsh" | ConvertFrom-Json).tracks.PSObject.Properties).Count
-Write-Host "Tracks before: E80=$tk_before_e80 FSH=$tk_before_fsh; after: E80=$tk_after_e80 FSH=$tk_after_fsh"
-```
-
-**Pass:** E80 tracks count unchanged. FSH tracks count unchanged. Log contains `ERROR - Cannot paste to E80 tracks header -- tracks are read-only`. NO ProgressDialog (guard fires pre-write). Neither side mutated.
-
-**Note:** The runbook's first authoring predicted a silent-skip outcome based on `_pasteAllToE80`'s track-type branch -- that branch is unreachable for a tracks-header destination because the upstream guard fires first. The hard-abort sentinel is the correct guard behavior; "silent skip" would also be reachable for a track item pasted at a non-tracks-header destination (e.g. groups header), which is now exercised in hub.4b.
-
----
-
-#### Test 4b -- GUARD: Paste FSH Track -> E80 groups header blocked (predicate)
-
-Covers the path that hub.4's note flagged as not-yet-exercised: a tracks-only clipboard pasted to a non-tracks-header E80 destination. Without the predicate rule this would reach `_pasteAllToE80`'s per-item track skip and silently vanish; the new `tracks_to_e80_paste` predicate rule fires at preflight before any spoke-level dispatch.
-
-```powershell
-$tk_before_e80 = @((curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json).tracks.PSObject.Properties).Count
-$tk_before_fsh = @((curl.exe -s "http://localhost:9883/api/fsh" | ConvertFrom-Json).tracks.PSObject.Properties).Count
-
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.4b" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=A24E-672E-FE06-0A80&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
-Start-Sleep 3
-
-$tk_after_e80 = @((curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json).tracks.PSObject.Properties).Count
-$tk_after_fsh = @((curl.exe -s "http://localhost:9883/api/fsh" | ConvertFrom-Json).tracks.PSObject.Properties).Count
-Write-Host "Tracks before: E80=$tk_before_e80 FSH=$tk_before_fsh; after: E80=$tk_after_e80 FSH=$tk_after_fsh"
-```
-
-**Pass:** Log contains `ERROR - Cannot paste tracks to E80 (E80 tracks are read-only)`. E80 tracks count unchanged. FSH tracks count unchanged. NO ProgressDialog (predicate fires pre-write). Neither side mutated.
+Tests 4 / 4b retired 2026-05-29.  FSH track-paste-to-E80 is no longer blocked -- the writer-session protocol moved track-write coverage to the `tracks/` module.  See `tracks.9` (FSH single-track paste) and `tracks.G1` (track at non-tracks-header rejection).
 
 ---
 
@@ -647,69 +603,6 @@ Write-Host "FSH has $u1_fsh = $present_1; $u2_fsh = $present_2 (top-level + grou
 
 ---
 
-#### Test 23 -- GUARD: Heterogeneous clipboard (Group + Route) blocked
-
-A Group + Route multi-select is rejected on a spoke destination by the D6 spoke-content-vs-destination rule (`navClipboard.pm`): the destination `header:groups` accepts only group items, so the route component triggers the `spoke_route_at_header_groups` predicate rejection at preflight. This fires before the older homogeneity check at `navOps.pm`, which is now unreachable for spoke pastes with type-mixed content.
-
-Use [FSH_GroupInRoute] + [FSH_TestRoute] (multi-select a group and a route on FSH; paste to E80).
-
-```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.23" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=C482-CBA0-D14E-67B2,C482-CB9E-D14E-67B2&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
-Start-Sleep 3
-
-$r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
-$d6_guard = @($r.lines | Where-Object { $_.text -match "Cannot paste route clipboard item at e80 'header:groups' destination" }).Count
-$err      = @($r.lines | Where-Object { $_.text -match 'ERROR -|IMPLEMENTATION ERROR' }).Count
-Write-Host "hub.23: d6_guard=$d6_guard err=$err"
-```
-
-**Pass:** `d6_guard=1` -- the D6 spoke-content-vs-destination sentinel fired (rejecting the route component of the mixed clipboard). No spoke mutation. NO wxProgressDialog (guard aborts before `_pasteAllToE80`; the op-boundary STARTED/FINISHED markers may still appear in the log).
-
-**Note:** earlier versions of this test asserted the `paste requires homogeneous content` sentinel from the homogeneity check at `navOps.pm`. D6 now fires earlier in the predicate layer with finer-grained per-item-type messaging; the homogeneity check remains in place as a backstop for shapes that pass D6 but still mix types in non-spoke contexts. The user-observable behavior (mixed group+route rejected pre-write) is unchanged.
-
----
-
-### Section H -- Cross-spoke guards
-
-#### Test 24 -- GUARD: Name collision destination-side
-
-**NOT_RUN under no-silent-rename policy.** The documented setup -- create a fresh-UUID "Waypoint 25" on E80 via PASTE_NEW from FSH -- is itself now blocked at preflight (same path as hub.8: PASTE_NEW source-name already on destination -> name-collision ERROR, no mint). Both spokes enforce per-spoke name uniqueness, so the precondition (two records on the same spoke sharing a name) cannot be constructed via any in-app paste operation. The collision-on-paste path is already exercised by hub.8 / hub.10 / hub.11 / hub.20 / hub.21 in the source-name-already-on-dest direction; hub.24's "different-UUID, same-name" variant cannot be set up under current policy.
-
-Original setup retained below for reference / future use if the policy ever permits manual rename-on-conflict:
-
-```powershell
-# Establish a fresh-UUID "Waypoint 25" on E80 (distinct from 80b2c48a5400d3ae)
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=80B2-C48A-5400-D3AE&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
-Start-Sleep 6
-
-$db = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
-$candidates = $db.waypoints.PSObject.Properties | Where-Object { $_.Value.name -eq 'Waypoint 25' -and $_.Name -ne '80b2c48a5400d3ae' }
-$E80_FRESH_WP25 = ($candidates | Select-Object -First 1).Name
-Write-Host "Fresh E80 'Waypoint 25' UUID: $E80_FRESH_WP25"
-
-# Now attempt to paste E80's fresh-UUID 'Waypoint 25' to FSH -- name collides (FSH already has 'Waypoint 25' at a different UUID)
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.24" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$E80_FRESH_WP25&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
-Start-Sleep 2
-
-$log = curl.exe -s "http://localhost:9883/api/log?since=mark"
-$collided = $log -match "FSH operation blocked" -and $log -match "'Waypoint 25'"
-Write-Host "Collision sentinel observed = $collided"
-```
-
-**Pass:** NO ProgressDialog (guard fires pre-write). FSH state unchanged (no new record at the E80 fresh UUID's FSH-form). Log contains a name-collision ERROR sentinel referencing "Waypoint 25". Neither side mutated.
-
-**Probe note:** if the paste succeeds (creates a fresh-UUID FSH record with name "Waypoint 25" alongside the original), the no-silent-rename policy has regressed -- both PASTE and PASTE_NEW must preflight-error on a different-UUID name collision; neither should ever silently mint a deduped variant.
-
----
-
 #### Test 25 -- UUID-conflict in-place-update probe
 
 Paste E80 [HUB_WP] (`80b2c48a5400d3ae`, "Waypoint 25") -> FSH where same UUID + same name exists. Expect in-place update PASS. Probes the FSH-alpha-noted possibility of name-uniqueness firing before UUID-match.
@@ -731,87 +624,6 @@ Write-Host "ERROR sentinel: $has_error; Name-collision sentinel: $has_name_colli
 
 **Bug probe:** if name-collision fires here, the **open observation from FSH alpha** is confirmed -- UUID-match precedence is wrong.
 
----
-
-#### Test 26 -- GUARD: Intra-clipboard name collision
-
-Hard-abort when a clipboard contains two same-named items of the same type. Source from the DATABASE panel rather than E80/FSH -- those spokes enforce name uniqueness, so an "intra-clipboard collision" can only originate from a spoke that allows same-named records, which is DB by design (records distinguished by UUID).
-
-The baseline `navMate.db` has multiple WPs sharing names (e.g. several `BOCAS1` records). Find two same-named DB WPs at runtime, multi-select them, copy, and paste to FSH header. The SS10.2 step-7 intra-clipboard check should fire.
-
-```powershell
-# Find two same-named DB WPs
-$nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
-$by_name = @{}
-foreach ($w in $nmdb.waypoints) {
-    $n = $w.name
-    if (-not $by_name.ContainsKey($n)) { $by_name[$n] = @() }
-    $by_name[$n] += $w.uuid
-}
-$dup_name = $null
-foreach ($n in $by_name.Keys) {
-    if ($by_name[$n].Count -ge 2) { $dup_name = $n; break }
-}
-if (-not $dup_name) {
-    Write-Host "hub.26: NOT_RUN (no same-named WP pair in DB)"
-}
-else {
-    $uuids = $by_name[$dup_name]
-    $p1 = $uuids[0]
-    $p2 = $uuids[1]
-    Write-Host "Pair: $p1, $p2 (both named '$dup_name')"
-    curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.26" | Out-Null
-    curl.exe -s "http://localhost:9883/api/test?panel=database&select=$p1,$p2&cmd=10200" | Out-Null
-    Start-Sleep 1
-    curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
-    Start-Sleep 2
-    $r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
-    $intra = @($r.lines | Where-Object { $_.text -match "FSH operation blocked|intra-clipboard" }).Count
-    $err = @($r.lines | Where-Object { $_.text -match "ERROR -|IMPLEMENTATION ERROR" } | Where-Object { $_.text -notmatch "Could not send content" }).Count
-    Write-Host "hub.26: name='$dup_name' intra=$intra err=$err"
-}
-```
-
-**Pass:** NO ProgressDialog. ERROR sentinel `FSH operation blocked: N name collision(s):` with an `intra-clipboard waypoint name '$dup_name'` entry (from `_collectNameConflicts` / `_formatNameConflicts` in `navOps.pm`). FSH state unchanged. Per the 2026-05-20 no-silent-rename policy, the error replaces the older single-line `Clipboard contains duplicate waypoint name '<name>' -- aborting` sentinel.
-
-**Note:** sourcing from DB is the only way to construct an "intra-clipboard duplicate" clipboard since E80 and FSH enforce per-spoke name uniqueness. Earlier versions of this test tried to source from E80 -- that was a malformed test design (testing an impossible precondition).
-
----
-
-#### Test 27 -- GUARD: Descendant-of-clipboard
-
-Cross-spoke route paste at one of its own member-WP nodes. Use [FSH_TestRoute] (`C482-CB9E-D14E-67B2`) copied; paste at one of its members (e.g. t01 = `C482-CB98-D14E-67B2`).
-
-Wait -- pasting at a node on the SAME panel where the clipboard came FROM is a same-panel descendant. For cross-spoke, the route is on the FSH source and the destination would need to be the E80 panel where some member of the FSH route also lives. The route's t01..t06 are on E80 (from Test 2). Right-click target on E80 = t01 (`d44e40468d000d96`? -- need to verify the cross-spoke UUID).
-
-Actually the FSH route's t01 has FSH UUID `C482-CB98-D14E-67B2`. Its navMate-form is `c482cb98d14e67b2`. After Test 2 (FSH->E80 paste of Timiteo group), E80 has the member at that UUID.
-
-```powershell
-# Copy FSH route; attempt to paste at an E80 individual waypoint node
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.27" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=C482-CB9E-D14E-67B2&cmd=10200" | Out-Null
-Start-Sleep 1
-# Right-click target = E80 t01 (an individual waypoint node, also a member
-# of the route in clipboard).  The expected block is the upstream guard at
-# navOps.pm "Cannot paste at an individual E80 waypoint node".  Reaching
-# the navOpsE80.pm:1459 IMPLEMENTATION ERROR catch-all is a FAIL.
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=c482cb98d14e67b2&right_click=c482cb98d14e67b2&cmd=10210" | Out-Null
-Start-Sleep 2
-
-$r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
-$clean_guard = @($r.lines | Where-Object { $_.text -match "Cannot paste at an individual E80 waypoint node" }).Count
-$impl_err    = @($r.lines | Where-Object { $_.text -match "IMPLEMENTATION ERROR.*paste handler" }).Count
-$err         = @($r.lines | Where-Object { $_.text -match "ERROR -|IMPLEMENTATION ERROR" } | Where-Object { $_.text -notmatch "Could not send content" }).Count
-Write-Host "hub.27: clean_guard=$clean_guard impl_err=$impl_err err=$err"
-```
-
-**Pass:** `clean_guard=1` and `impl_err=0` -- the upstream guard at navOps.pm fired with the proper sentinel and the catch-all in navOpsE80.pm:1459 was NOT reached. E80 state unchanged.
-
-**FAIL conditions:**
-- `impl_err >= 1`: the catch-all was hit, meaning the upstream guard didn't catch this code path
-- `clean_guard == 0`: neither guard fired; the bad op may have proceeded
-
-**Note:** this test was previously categorized as a "descendant-of-clipboard" probe, but the actual block point for cross-spoke paste-at-WP-node is the simpler "no paste at individual WP node" guard, regardless of whether the target WP is a clipboard descendant. Same-spoke descendant detection (`_destIsDescendantOfClipboard`) is a separate concern not exercised by this test.
 ---
 
 #### Test 28 -- Route paste cross-spoke with missing member WPs
@@ -864,11 +676,149 @@ Write-Host "Missing-member sentinel: $miss_sentinel"
 
 ---
 
-End of hub module runbook.
+## Guard Tests
 
-## Module Status
+#### Test G1 -- GUARD: Heterogeneous clipboard (Group + Route) blocked [was hub.23]
 
-After alpha-debug pass clean:
-- Update `apps/navMate/test/master_plan.md` -- hub status "Stub" -> "Solid"
-- Update `apps/navMate/docs/testing.md` -- drop "(stub)" suffix
-- Update memory `navops_phase4_testplan_refactor` with hub completion + any bugs fixed
+A Group + Route multi-select is rejected on a spoke destination by the D6 spoke-content-vs-destination rule (`navClipboard.pm`): the destination `header:groups` accepts only group items, so the route component triggers the `spoke_route_at_header_groups` predicate rejection at preflight. This fires before the older homogeneity check at `navOps.pm`, which is now unreachable for spoke pastes with type-mixed content.
+
+Use [FSH_GroupInRoute] + [FSH_TestRoute] (multi-select a group and a route on FSH; paste to E80).
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.G1" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=C482-CBA0-D14E-67B2,C482-CB9E-D14E-67B2&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+Start-Sleep 3
+
+$r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
+$d6_guard = @($r.lines | Where-Object { $_.text -match "Cannot paste route clipboard item at e80 'header:groups' destination" }).Count
+$err      = @($r.lines | Where-Object { $_.text -match 'ERROR -|IMPLEMENTATION ERROR' }).Count
+Write-Host "hub.23: d6_guard=$d6_guard err=$err"
+```
+
+**Pass:** `d6_guard=1` -- the D6 spoke-content-vs-destination sentinel fired (rejecting the route component of the mixed clipboard). No spoke mutation. NO wxProgressDialog (guard aborts before `_pasteAllToE80`; the op-boundary STARTED/FINISHED markers may still appear in the log).
+
+**Note:** earlier versions of this test asserted the `paste requires homogeneous content` sentinel from the homogeneity check at `navOps.pm`. D6 now fires earlier in the predicate layer with finer-grained per-item-type messaging; the homogeneity check remains in place as a backstop for shapes that pass D6 but still mix types in non-spoke contexts. The user-observable behavior (mixed group+route rejected pre-write) is unchanged.
+
+---
+
+### Section H -- Cross-spoke guards
+
+#### Test G2 -- GUARD: Name collision destination-side [was hub.24]
+
+**NOT_RUN under no-silent-rename policy.** The documented setup -- create a fresh-UUID "Waypoint 25" on E80 via PASTE_NEW from FSH -- is itself now blocked at preflight (same path as hub.8: PASTE_NEW source-name already on destination -> name-collision ERROR, no mint). Both spokes enforce per-spoke name uniqueness, so the precondition (two records on the same spoke sharing a name) cannot be constructed via any in-app paste operation. The collision-on-paste path is already exercised by hub.8 / hub.10 / hub.11 / hub.20 / hub.21 in the source-name-already-on-dest direction; hub.24's "different-UUID, same-name" variant cannot be set up under current policy.
+
+Original setup retained below for reference / future use if the policy ever permits manual rename-on-conflict:
+
+```powershell
+# Establish a fresh-UUID "Waypoint 25" on E80 (distinct from 80b2c48a5400d3ae)
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=80B2-C48A-5400-D3AE&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
+Start-Sleep 6
+
+$db = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
+$candidates = $db.waypoints.PSObject.Properties | Where-Object { $_.Value.name -eq 'Waypoint 25' -and $_.Name -ne '80b2c48a5400d3ae' }
+$E80_FRESH_WP25 = ($candidates | Select-Object -First 1).Name
+Write-Host "Fresh E80 'Waypoint 25' UUID: $E80_FRESH_WP25"
+
+# Now attempt to paste E80's fresh-UUID 'Waypoint 25' to FSH -- name collides (FSH already has 'Waypoint 25' at a different UUID)
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.G2" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$E80_FRESH_WP25&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
+Start-Sleep 2
+
+$log = curl.exe -s "http://localhost:9883/api/log?since=mark"
+$collided = $log -match "FSH operation blocked" -and $log -match "'Waypoint 25'"
+Write-Host "Collision sentinel observed = $collided"
+```
+
+**Pass:** NO ProgressDialog (guard fires pre-write). FSH state unchanged (no new record at the E80 fresh UUID's FSH-form). Log contains a name-collision ERROR sentinel referencing "Waypoint 25". Neither side mutated.
+
+**Probe note:** if the paste succeeds (creates a fresh-UUID FSH record with name "Waypoint 25" alongside the original), the no-silent-rename policy has regressed -- both PASTE and PASTE_NEW must preflight-error on a different-UUID name collision; neither should ever silently mint a deduped variant.
+
+---
+
+#### Test G3 -- GUARD: Intra-clipboard name collision [was hub.26]
+
+Hard-abort when a clipboard contains two same-named items of the same type. Source from the DATABASE panel rather than E80/FSH -- those spokes enforce name uniqueness, so an "intra-clipboard collision" can only originate from a spoke that allows same-named records, which is DB by design (records distinguished by UUID).
+
+The baseline `navMate.db` has multiple WPs sharing names (e.g. several `BOCAS1` records). Find two same-named DB WPs at runtime, multi-select them, copy, and paste to FSH header. The SS10.2 step-7 intra-clipboard check should fire.
+
+```powershell
+# Find two same-named DB WPs
+$nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
+$by_name = @{}
+foreach ($w in $nmdb.waypoints) {
+    $n = $w.name
+    if (-not $by_name.ContainsKey($n)) { $by_name[$n] = @() }
+    $by_name[$n] += $w.uuid
+}
+$dup_name = $null
+foreach ($n in $by_name.Keys) {
+    if ($by_name[$n].Count -ge 2) { $dup_name = $n; break }
+}
+if (-not $dup_name) {
+    Write-Host "hub.26: NOT_RUN (no same-named WP pair in DB)"
+}
+else {
+    $uuids = $by_name[$dup_name]
+    $p1 = $uuids[0]
+    $p2 = $uuids[1]
+    Write-Host "Pair: $p1, $p2 (both named '$dup_name')"
+    curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.G3" | Out-Null
+    curl.exe -s "http://localhost:9883/api/test?panel=database&select=$p1,$p2&cmd=10200" | Out-Null
+    Start-Sleep 1
+    curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
+    Start-Sleep 2
+    $r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
+    $intra = @($r.lines | Where-Object { $_.text -match "FSH operation blocked|intra-clipboard" }).Count
+    $err = @($r.lines | Where-Object { $_.text -match "ERROR -|IMPLEMENTATION ERROR" } | Where-Object { $_.text -notmatch "Could not send content" }).Count
+    Write-Host "hub.26: name='$dup_name' intra=$intra err=$err"
+}
+```
+
+**Pass:** NO ProgressDialog. ERROR sentinel `FSH operation blocked: N name collision(s):` with an `intra-clipboard waypoint name '$dup_name'` entry (from `_collectNameConflicts` / `_formatNameConflicts` in `navOps.pm`). FSH state unchanged. Per the 2026-05-20 no-silent-rename policy, the error replaces the older single-line `Clipboard contains duplicate waypoint name '<name>' -- aborting` sentinel.
+
+**Note:** sourcing from DB is the only way to construct an "intra-clipboard duplicate" clipboard since E80 and FSH enforce per-spoke name uniqueness. Earlier versions of this test tried to source from E80 -- that was a malformed test design (testing an impossible precondition).
+
+---
+
+#### Test G4 -- GUARD: Descendant-of-clipboard [was hub.27]
+
+Cross-spoke route paste at one of its own member-WP nodes. Use [FSH_TestRoute] (`C482-CB9E-D14E-67B2`) copied; paste at one of its members (e.g. t01 = `C482-CB98-D14E-67B2`).
+
+Wait -- pasting at a node on the SAME panel where the clipboard came FROM is a same-panel descendant. For cross-spoke, the route is on the FSH source and the destination would need to be the E80 panel where some member of the FSH route also lives. The route's t01..t06 are on E80 (from Test 2). Right-click target on E80 = t01 (`d44e40468d000d96`? -- need to verify the cross-spoke UUID).
+
+Actually the FSH route's t01 has FSH UUID `C482-CB98-D14E-67B2`. Its navMate-form is `c482cb98d14e67b2`. After Test 2 (FSH->E80 paste of Timiteo group), E80 has the member at that UUID.
+
+```powershell
+# Copy FSH route; attempt to paste at an E80 individual waypoint node
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+hub.G4" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=C482-CB9E-D14E-67B2&cmd=10200" | Out-Null
+Start-Sleep 1
+# Right-click target = E80 t01 (an individual waypoint node, also a member
+# of the route in clipboard).  The expected block is the upstream guard at
+# navOps.pm "Cannot paste at an individual E80 waypoint node".  Reaching
+# the navOpsE80.pm:1459 IMPLEMENTATION ERROR catch-all is a FAIL.
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=c482cb98d14e67b2&right_click=c482cb98d14e67b2&cmd=10210" | Out-Null
+Start-Sleep 2
+
+$r = curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json
+$clean_guard = @($r.lines | Where-Object { $_.text -match "Cannot paste at an individual E80 waypoint node" }).Count
+$impl_err    = @($r.lines | Where-Object { $_.text -match "IMPLEMENTATION ERROR.*paste handler" }).Count
+$err         = @($r.lines | Where-Object { $_.text -match "ERROR -|IMPLEMENTATION ERROR" } | Where-Object { $_.text -notmatch "Could not send content" }).Count
+Write-Host "hub.27: clean_guard=$clean_guard impl_err=$impl_err err=$err"
+```
+
+**Pass:** `clean_guard=1` and `impl_err=0` -- the upstream guard at navOps.pm fired with the proper sentinel and the catch-all in navOpsE80.pm:1459 was NOT reached. E80 state unchanged.
+
+**FAIL conditions:**
+- `impl_err >= 1`: the catch-all was hit, meaning the upstream guard didn't catch this code path
+- `clean_guard == 0`: neither guard fired; the bad op may have proceeded
+
+**Note:** this test was previously categorized as a "descendant-of-clipboard" probe, but the actual block point for cross-spoke paste-at-WP-node is the simpler "no paste at individual WP node" guard, regardless of whether the target WP is a clipboard descendant. Same-spoke descendant detection (`_destIsDescendantOfClipboard`) is a separate concern not exercised by this test.
+---
+

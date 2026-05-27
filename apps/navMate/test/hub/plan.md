@@ -10,13 +10,13 @@ For shared philosophy and status definitions, see [`../master_plan.md`](../maste
 
 | Family | Direction(s) | Notes |
 |--------|------|-------|
-| Cross-spoke PASTE (UUID-preserving) | FSH->E80, E80->FSH | Track only via FSH->E80 (silently skipped by `_pasteAllToE80` for type=track -- E80 read-only on tracks). |
+| Cross-spoke PASTE (UUID-preserving) | FSH->E80, E80->FSH | Track ops covered in tracks/ module (writer-session protocol enabled DB/FSH->E80 paste 2026-05-27). |
 | Cross-spoke PASTE_NEW (fresh UUID) | both directions | Fresh UUIDs minted at clipboard seam by `_pasteNewAllTo<Spoke>`. |
 | Cross-spoke CUT/PASTE | both directions | Source-side deletion after destination success via `_cut<Spoke>*` helpers in `_doPaste`. |
 | Cross-spoke PUSH | E80->FSH (cmd 10251 `CTX_CMD_PUSH_FSH`), FSH->E80 (cmd 10252 `CTX_CMD_PUSH_E80`) | Lossy-preflight skipped: E80<->FSH share name/comment limits + color palette. Missing-destination = warn+skip (no degrade to PASTE). |
 | Round-trip identity | E80->FSH->E80, FSH->E80->FSH | Verifies field preservation across two cross-spoke hops. |
 | Multi-select cross-spoke | both directions | Single-source-panel multi-select (clipboard is panel-scoped per `_snapshotNodes`); heterogeneous types in same paste. |
-| Cross-spoke guards | both directions | Name collision destination-side, UUID-conflict precedence, descendant-of-clipboard, intra-clipboard collision, tracks-to-E80 skip. |
+| Cross-spoke guards | both directions | Name collision destination-side, UUID-conflict precedence, descendant-of-clipboard, intra-clipboard collision. |
 
 The module exercises Phase 3B (cross-spoke) wiring that landed in `_pasteAllToFSH` (accepts `cb->{source} eq 'e80'`), `_pasteAllToE80` (accepts `cb->{source} eq 'fsh'`), `_pushToFSH` / `_pushToE80` (cross-spoke push), and the dedicated `CTX_CMD_PUSH_E80` / `CTX_CMD_PUSH_FSH` menu items.
 
@@ -32,7 +32,6 @@ Every test states explicit ProgressDialog expectation in its pass criteria. A sp
 | E80->FSH PASTE / PASTE_NEW | NO (FSH-side write synchronous) |
 | E80->FSH CUT/PASTE | YES (E80-side source cleanup) |
 | E80->FSH PUSH (cmd 10251) | NO (FSH-side write synchronous) |
-| FSH->E80 paste-track (skipped, no work) | YES but empty (loop iterates and skips track type) |
 
 ## Baseline
 
@@ -60,84 +59,48 @@ Full pre-flight semantic catalog lives in the legacy `apps/navMate/docs/notes/na
 
 ## Test Inventory
 
-Tests are listed in execution order. Section A starts from empty E80; later sections build on accumulated state.
+Two-section structure per master_runbook's Test Organization Convention: positives first (`hub.<N>`), guards second (`hub.G<N>`).  Within positives, tests retain their cross-spoke sub-section organization (Section A through G) because state-dependent sequencing matters; the section labels are documentation, not separate test counters.
 
-### Section A -- FSH->E80 PASTE (UUID-preserving): seeds E80 organically
+### Positive Tests
 
-| Test | What it verifies |
-|------|------------------|
-| 1 | Paste FSH WP -> E80 (UUID preserved; ProgressDialog) |
-| 2 | Paste FSH Group -> E80 (group + embedded members; ProgressDialog) |
-| 3 | Paste FSH Route -> E80 (members present from Test 2; ProgressDialog) |
-| 4 | **GUARD** Paste FSH Track -> E80 tracks header blocked (predicate E3 / tracks-header rule); FSH track untouched, no E80 track |
-| 4b | **GUARD** Paste FSH Track -> E80 groups header blocked (predicate `tracks_to_e80_paste` rule -- previously a silent skip in `_pasteAllToE80`) |
+| Test    | What it verifies | Cross-spoke flow |
+|---------|------------------|------------------|
+| hub.1   | Paste FSH WP -> E80 (UUID preserved; ProgressDialog) | A: FSH -> E80 PASTE |
+| hub.2   | Paste FSH Group -> E80 (group + embedded members; ProgressDialog) | A: FSH -> E80 PASTE |
+| hub.3   | Paste FSH Route -> E80 (members present from hub.2; ProgressDialog) | A: FSH -> E80 PASTE |
+| hub.5   | Paste E80 WP -> FSH (same UUID; in-place update or coherent skip) | B: E80 -> FSH PASTE (same-UUID round-trip) |
+| hub.6   | Paste E80 Group -> FSH (same UUID; idempotent) | B |
+| hub.7   | Paste E80 Route -> FSH (same UUID; idempotent) | B |
+| hub.8   | Paste-New E80 WP -> FSH (fresh FSH UUID; new record alongside existing same-name) | C: PASTE_NEW |
+| hub.9   | Paste-New FSH WP -> E80 (fresh navMate UUID; ProgressDialog) | C |
+| hub.10  | Paste-New E80 Group -> FSH (fresh group UUID + fresh member UUIDs) | C |
+| hub.11  | Paste-New FSH Route -> E80 (fresh route UUID; member WPs reused when already on E80; ProgressDialog) | C |
+| hub.12  | Cut E80 WP, Paste to FSH (E80-side gone + ProgressDialog for cleanup; FSH-side present) | D: CUT/PASTE |
+| hub.13  | Cut FSH WP, Paste to E80 (FSH-side gone synchronously; E80-side present + ProgressDialog) | D |
+| hub.14  | Cut E80 Group, Paste to FSH (group + members migrate; E80 cleanup ProgressDialog) | D |
+| hub.15  | Cut FSH Group, Paste to E80 (group + members migrate; E80 write ProgressDialog) | D |
+| hub.16  | Push E80 WP -> FSH (cmd 10251; existing FSH record updated; no ProgressDialog) | E: PUSH |
+| hub.17  | Push FSH WP -> E80 (cmd 10252; existing E80 record updated; ProgressDialog) | E |
+| hub.18  | Push E80 Group -> FSH (multi-WP update; no ProgressDialog) | E |
+| hub.19  | Push FSH Route -> E80 (ProgressDialog) | E |
+| hub.20  | E80->FSH->E80 WP round-trip (sym, name, comment, lat/lon preserved; depth/temp on FSH default-init) | F: round-trip identity |
+| hub.21  | FSH->E80->FSH Group round-trip with members in route | F |
+| hub.22  | Multi-select 2 E80 WPs, Paste to FSH (both UUIDs preserved; no per-item progress confusion) | G: multi-select |
+| hub.25  | UUID-conflict in-place-update: paste with same UUID + same name = in-place update.  Probes the open observation from FSH alpha about name-uniqueness firing before UUID-match check. | (positive of the in-place-update path) |
+| hub.28  | Route paste cross-spoke with missing member WPs (SS10.10 bypassed via /api/test); destination state unmodified or partial-create with skipped-WPs warning. | (edge case, positive of the partial-create path) |
 
-### Section B -- E80->FSH PASTE (UUID-preserving): same-UUID round-trip / in-place-update
+Note: hub Tests 4 / 4b retired 2026-05-29 -- FSH track-paste-to-E80 moved to the `tracks/` module (writer-session protocol enabled DB/FSH->E80 paste; tracks/ owns the coverage).
 
-Since the E80 content originated on FSH (Section A), this section exercises the **same-UUID in-place-update path** through cross-spoke. PASS criterion: paste succeeds without error, no name-collision sentinel fires (UUIDs match), FSH state touched but identical (or warned-skip if dest contract is "create only").
+### Guard Tests
 
-| Test | What it verifies |
-|------|------------------|
-| 5 | Paste E80 WP -> FSH (same UUID; in-place update or coherent skip) |
-| 6 | Paste E80 Group -> FSH (same UUID; idempotent) |
-| 7 | Paste E80 Route -> FSH (same UUID; idempotent) |
+Renamed from previous numbers; old-number cross-reference kept inline.
 
-### Section C -- Cross-spoke PASTE_NEW (fresh UUID)
-
-| Test | What it verifies |
-|------|------------------|
-| 8  | Paste-New E80 WP -> FSH (fresh FSH UUID; new record alongside existing same-name) |
-| 9  | Paste-New FSH WP -> E80 (fresh navMate UUID; ProgressDialog) |
-| 10 | Paste-New E80 Group -> FSH (fresh group UUID + fresh member UUIDs) |
-| 11 | Paste-New FSH Route -> E80 (fresh route UUID; member WPs reused when already on E80; ProgressDialog) |
-
-### Section D -- Cross-spoke CUT/PASTE
-
-Source-side deletion via `_cutE80*` (when source=e80) or `_cutFSH*` (when source=fsh). Critical analog of the navOpsDB cut-dispatch bug fixed in FSH alpha -- this is the cross-spoke version.
-
-| Test | What it verifies |
-|------|------------------|
-| 12 | Cut E80 WP, Paste to FSH (E80-side gone + ProgressDialog for cleanup; FSH-side present) |
-| 13 | Cut FSH WP, Paste to E80 (FSH-side gone synchronously; E80-side present + ProgressDialog for write) |
-| 14 | Cut E80 Group, Paste to FSH (group + members migrate; E80 cleanup ProgressDialog) |
-| 15 | Cut FSH Group, Paste to E80 (group + members migrate; E80 write ProgressDialog) |
-
-### Section E -- Cross-spoke PUSH
-
-Update existing destination record. `_pushToFSH` / `_pushToE80` warn+skip when destination record absent -- tests use already-on-destination targets.
-
-| Test | What it verifies |
-|------|------------------|
-| 16 | Push E80 WP -> FSH (cmd 10251; existing FSH record updated; no ProgressDialog) |
-| 17 | Push FSH WP -> E80 (cmd 10252; existing E80 record updated; ProgressDialog) |
-| 18 | Push E80 Group -> FSH (multi-WP update; no ProgressDialog) |
-| 19 | Push FSH Route -> E80 (ProgressDialog) |
-
-### Section F -- Round-trip identity
-
-Field preservation across two cross-spoke hops. Catches silent lossy transforms.
-
-| Test | What it verifies |
-|------|------------------|
-| 20 | E80->FSH->E80 WP round-trip (sym, name, comment, lat/lon preserved; depth/temp on FSH default-init) |
-| 21 | FSH->E80->FSH Group round-trip with members in route |
-
-### Section G -- Multi-select cross-spoke
-
-| Test | What it verifies |
-|------|------------------|
-| 22 | Multi-select 2 E80 WPs, Paste to FSH (both UUIDs preserved; no per-item progress confusion) |
-| 23 | **GUARD** Multi-select FSH Group + Route, Paste to E80 -- D6 spoke content-vs-destination predicate rejects the route component at `header:groups` (only group items accepted there). Replaces the previous-cycle expectation that targeted the homogeneity check at `navOps.pm`. |
-
-### Section H -- Cross-spoke guards
-
-| Test | What it verifies |
-|------|------------------|
-| 24 | **GUARD** Name collision destination-side: same name + different UUID on dest = hard-abort with name-collision sentinel. Neither side mutated, no in-place merge attempted. |
-| 25 | UUID-conflict in-place-update: paste with same UUID + same name = in-place update. Probes the open observation from FSH alpha about name-uniqueness firing before UUID-match check. |
-| 26 | **GUARD** Intra-clipboard name collision: multi-select with two same-named WPs (hard abort). |
-| 27 | **GUARD** Descendant-of-clipboard: cross-spoke route paste at one of its own member-WP nodes (SS10.7). |
-| 28 | Route paste cross-spoke with missing member WPs (SS10.10 bypassed via /api/test); destination state unmodified or partial-create with skipped-WPs warning. |
+| Test   | What it verifies | (was) |
+|--------|------------------|-------|
+| hub.G1 | Multi-select FSH Group + Route, Paste to E80 -- D6 spoke content-vs-destination predicate rejects the route component at `header:groups`. | hub.23 |
+| hub.G2 | Name collision destination-side: same name + different UUID on dest = hard-abort with name-collision sentinel.  Neither side mutated, no in-place merge attempted. | hub.24 |
+| hub.G3 | Intra-clipboard name collision: multi-select with two same-named WPs (hard abort). | hub.26 |
+| hub.G4 | Descendant-of-clipboard: cross-spoke route paste at one of its own member-WP nodes (SS10.7). | hub.27 |
 
 ## Intra-module Sequencing
 
@@ -165,13 +128,11 @@ The hub conception deliberately probes these surfaces:
 
 4. **PUSH cmd_id symmetric wiring (Section E)**: cmd 10251 from E80 panel, cmd 10252 from FSH panel; verify lossy-preflight is skipped and missing-destination warn+skip behavior fires correctly.
 
-5. **Track asymmetry (hub.4)**: silently skipped at `_pasteAllToE80:1011-1014` (debug-level log, no ERROR sentinel). Verify FSH-side track unchanged.
+5. **Refresh side-effects (every test)**: `_refresh<Spoke>` invoked from each paste handler. Verify destination panel re-renders accurately via `/api/db` and `/api/fsh`.
 
-6. **Refresh side-effects (every test)**: `_refresh<Spoke>` invoked from each paste handler. Verify destination panel re-renders accurately via `/api/db` and `/api/fsh`.
+6. **Multi-select mixed types (hub.23)**: spoke D6 predicate rejects mixed-type clipboards on spoke destinations because no single destination accepts all member types (group + route share no common spoke destination). The per-type dispatch ordering in `_pasteAllToE80` / `_pasteAllToFSH` is unreachable for cross-spoke mixed clipboards but remains relevant for the wp+group special case (ancestor-wins absorption keeps that path live).
 
-7. **Multi-select mixed types (hub.23)**: spoke D6 predicate rejects mixed-type clipboards on spoke destinations because no single destination accepts all member types (group + route share no common spoke destination). The per-type dispatch ordering in `_pasteAllToE80` / `_pasteAllToFSH` is unreachable for cross-spoke mixed clipboards but remains relevant for the wp+group special case (ancestor-wins absorption keeps that path live).
-
-8. **ProgressDialog absence accuracy**: E80->FSH PASTE has no E80-side write -- ProgressDialog should NOT render. A spurious render flags a bug in either the dispatcher (opening a dialog for a no-op spoke) or in cleanup ordering.
+7. **ProgressDialog absence accuracy**: E80->FSH PASTE has no E80-side write -- ProgressDialog should NOT render. A spurious render flags a bug in either the dispatcher (opening a dialog for a no-op spoke) or in cleanup ordering.
 
 ## Notes
 

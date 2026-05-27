@@ -29,9 +29,9 @@ Official overview of the navOps test suite. Forward-pointing index; the substant
 The navOps test suite verifies the cross-transport (hub-and-spoke) behavior of navMate. Tests live in `apps/navMate/test/`, organized by transport surface:
 
 - **db** -- DB-internal operations (copy/cut/paste/delete inside the database) + DB-only guards
-- **e80** -- DB <-> E80 cross-panel operations + DB-E80 guards
-- **tracks** -- E80 -> DB track download (requires teensyBoat); DB -> E80 track upload (via TRACK_writing.md) is supported at the transport layer (confirmed 2026-05-27), pending navOps wiring
-- **fsh** -- DB <-> FSH cross-panel operations + DB-FSH guards, plus FSH-unique track writes (current navOps blocks paste-to-E80-tracks pending the wiring step; FSH allows)
+- **e80** -- DB <-> E80 cross-panel WGR (waypoint/group/route) operations + DB-E80 guards
+- **tracks** -- All E80 track operations: teensyBoat recording, E80 -> DB download, DB/FSH -> E80 upload via the TRACK writer-session protocol (wired into navOps 2026-05-28), PUSH, track-specific guards
+- **fsh** -- DB <-> FSH cross-panel operations + DB-FSH guards
 - **hub** -- Three-panel operations routed through navMate (E80<->FSH cross-spoke flows routed through the DB hub)
 
 Each module runs from its own baseline (revert DB + clear E80 + optional FSH load), independent of any other module. A full-cycle orchestrator composes all modules in order and writes an archived results file.
@@ -75,7 +75,9 @@ Open the module's runbook (e.g. `test/db/runbook.md`), execute its baseline setu
 
 ### Test identifiers
 
-Inside a module's book, tests are numbered locally as `Test 1`, `Test 14a`, etc. -- short and unambiguous within that file. In the cycle results table and in conversation, tests are prefixed with the module name and a dot: `db.1`, `e80.14b`, `tracks.3`. Mark tags in curl URLs put the literal `Test` before the qualified identifier: `mark+Test+db.24b` becomes log tag `Test db.24b`. Use `<module>.<N>` whenever the context spans modules; use plain `Test N` inside a single module's book.
+Tests are organized within each module into two sections per `test/master_runbook.md`'s Test Organization Convention: **positives** (`<module>.<N>`, the happy paths -- "the thing works") and **guards** (`<module>.G<N>`, the rejection paths -- "the thing is correctly refused").  Positives run first in every module; guards run second.
+
+Inside a module's book, tests are numbered locally as `Test 1`, `Test 14a`, `Test G3`, etc. -- short and unambiguous within that file.  In the cycle results table and in conversation, tests are prefixed with the module name and a dot: `db.1`, `e80.14b`, `tracks.G2`.  Mark tags in curl URLs put the literal `Test` before the qualified identifier: `mark+Test+db.G7` becomes log tag `Test db.G7`.  Use `<module>.<N>` whenever the context spans modules; use plain `Test N` inside a single module's book.
 
 ### Full cycle (regression)
 

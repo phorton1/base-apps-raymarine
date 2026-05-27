@@ -22,7 +22,7 @@ After every E80 step verify ProgressDialog FINISHED in the log; see `../master_r
 
 ---
 
-## Module Tests
+## Positive Tests
 
 ### Test 1 -- Paste WP to E80 (UUID-preserving)
 
@@ -105,18 +105,6 @@ Start-Sleep 5
 ```
 
 **Pass:** `/api/db` waypoints no longer contains `ce4e43181f01b3ae`. DELETE WAYPOINT STARTED/FINISHED. ProgressDialog 'Delete Waypoint' STARTED + FINISHED.
-
----
-
-### Test 6b -- Delete E80 Group+WPS blocked (member in route)
-
-```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.6b" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=244e8e100800400a&right_click=244e8e100800400a&cmd=10222" | Out-Null
-Start-Sleep 3
-```
-
-**Pass:** `ERROR - Cannot delete group 'Popa' and its waypoints: one or more members are used in a route.`; no IMPL ERROR; no ProgressDialog STARTED; group + 11 members + route still in `/api/db`.
 
 ---
 
@@ -437,20 +425,6 @@ Start-Sleep 6
 
 ---
 
-### Test 19 -- DB-cut to E80 destination blocked
-
-```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.19" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10201" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
-Start-Sleep 3
-```
-
-**Pass:** `ERROR - Cannot paste a database Cut to E80`; [IsolatedWP1] still in DB at its original `collection_uuid` (cut clipboard not consumed).
-
----
-
 ### Test 20a -- Delete BOCAS1 from E80 if present
 
 ```powershell
@@ -479,20 +453,6 @@ foreach ($wp in $bocas2) {
 ```
 
 **Pass:** no WP named "BOCAS2" remains on E80. Skip / NOT_RUN if none was present.
-
----
-
-### Test 20c -- Paste to E80 tracks header blocked
-
-```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.20c" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_click=header%3Atracks&cmd=10210" | Out-Null
-Start-Sleep 3
-```
-
-**Pass:** `ERROR - Cannot paste to E80 tracks header -- tracks are read-only`; E80 unchanged.
 
 ---
 
@@ -535,22 +495,6 @@ Start-Sleep 5
 
 ---
 
-### Test 21d -- Route-dependency pre-flight
-
-Prerequisite: E80 is empty (verify before firing).
-
-```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.21d" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=f34efdd6070022e8&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10210" | Out-Null
-Start-Sleep 3
-```
-
-**Pass:** `ERROR - Route 'Popa': member waypoint(s) not on E80 and not in clipboard: <UUIDs>`; `/api/db` routes empty.
-
----
-
 ### Test 22 -- Ancestor-wins accept path
 
 ```powershell
@@ -565,44 +509,6 @@ Start-Sleep 8
 
 ---
 
-### Test 23 -- Ancestor-wins reject path
-
-```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.23" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?op=suppress&val=1&outcome=reject" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=1a4eaf5a8c00e922,d44e40468d000d96&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
-Start-Sleep 4
-curl.exe -s "http://localhost:9883/api/test?op=suppress&val=1&outcome=accept" | Out-Null
-```
-
-**Pass:** PASTE NEW (e80) STARTED then FINISHED immediately (no ProgressDialog between them); no ERROR or IMPL ERROR; E80 state unchanged from Test 22's end state.
-
----
-
-### Test 24 -- Intra-clipboard name collision
-
-Need two DB WPs with the same name. Find via `/api/nmdb` group-by-name (e.g. WPs named "10" -- multiple exist).
-
-```powershell
-$nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
-$dups = $nmdb.waypoints | Group-Object name | Where-Object { $_.Count -ge 2 } | Select-Object -First 1
-$WP_A = $dups.Group[0].uuid
-$WP_B = $dups.Group[1].uuid
-
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.24" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=$WP_A,$WP_B&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
-Start-Sleep 4
-```
-
-**Pass:** ERROR sentinel `E80 operation blocked: N name collision(s):` with an `intra-clipboard waypoint name '<name>'` entry naming the colliding source items, followed by `Per policy, navMate does not auto-rename.  Resolve in the database and retry.`; no IMPL ERROR; no WP named `<name>` lands on E80.
-
----
-
 ### Test 25a -- Upload IsolatedWP1 to E80 (setup for Test 25b)
 
 ```powershell
@@ -614,25 +520,6 @@ Start-Sleep 5
 ```
 
 **Pass:** [IsolatedWP1] on E80.
-
----
-
-### Test 25b -- E80-wide name collision
-
-Find any DB WP named "BOCAS1" with a UUID different from `ce4e43181f01b3ae`.
-
-```powershell
-$nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
-$SameNameWP = ($nmdb.waypoints | Where-Object { $_.name -eq "BOCAS1" -and $_.uuid -ne "ce4e43181f01b3ae" } | Select-Object -First 1).uuid
-
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.25b" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=$SameNameWP&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
-Start-Sleep 4
-```
-
-**Pass:** ERROR sentinel `E80 operation blocked: 1 name collision(s):` with a `waypoint 'BOCAS1' (from waypoint 'BOCAS1') already on E80 at UUID <existing>` entry, followed by `Per policy, navMate does not auto-rename.  Resolve in the database and retry.`; no IMPL ERROR; only one "BOCAS1" on E80 (the original from Test 25a).
 
 ---
 
@@ -677,10 +564,153 @@ if (-not $present)
 
 ---
 
-### Test 28b -- PASTE at E80 WP object node blocked
+## Guard Tests
+
+### Test G1 -- Delete E80 Group+WPS blocked (member in route) [was e80.6b]
 
 ```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.28b" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G1" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=244e8e100800400a&right_click=244e8e100800400a&cmd=10222" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `ERROR - Cannot delete group 'Popa' and its waypoints: one or more members are used in a route.`; no IMPL ERROR; no ProgressDialog STARTED; group + 11 members + route still in `/api/db`.
+
+---
+
+### Test G2 -- DB-cut to E80 destination blocked [was e80.19]
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G2" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10201" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `ERROR - Cannot paste a database Cut to E80`; [IsolatedWP1] still in DB at its original `collection_uuid` (cut clipboard not consumed).
+
+---
+
+### Test G3 -- Intra-batch post-truncation WP collision [was e80.36]
+
+Two DB WPs (`BajaCalifornia~1` = `7b4e6d421403dc72`, `BajaCalifornia~2` = `044e7e7017030a9e`) have distinct full names but both truncate to `BajaCalifornia~` (15 chars).  PASTE both at E80 my_waypoints; `_collectNameConflicts` detects the intra-batch post-truncation collision before any spoke write.
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G3" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=7b4e6d421403dc72&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=044e7e7017030a9e&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** preflight aborts with collision sentinel; sentinel mentions `BajaCalifornia~` (the post-truncation form, not the original names) -- this is what proves the post-truncation comparison fired vs the pre-truncation form.  E80 unchanged.  NO ProgressDialog.
+
+---
+
+### Test G4 -- Vs-spoke post-truncation WP collision [was e80.37]
+
+Pre-condition: one `BajaCalifornia~N` already on E80.  Test PASTEs a DIFFERENT `BajaCalifornia~M` from DB; preflight rejects because the post-truncation form already exists on the spoke.
+
+```powershell
+# Setup: paste BajaCalifornia~1 to E80 (should succeed under lossy-warn auto-accept)
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G4+setup" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=7b4e6d421403dc72&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
+Start-Sleep 5
+
+# Probe: now paste BajaCalifornia~2; should hit vs-spoke post-truncation collision
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G4" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=044e7e7017030a9e&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** post-setup E80 has 1 WP named `BajaCalifornia~` (truncated form).  After probe: preflight rejects; sentinel mentions the post-truncation collision; E80 still has only the one WP from setup.  Cleanup: delete the setup WP after the test via DELETE_WAYPOINT to keep state tidy for later guards.
+
+---
+
+### Test G5 -- Route-dependency pre-flight [was e80.21d]
+
+Prerequisite: E80 is empty (verify before firing).
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G5" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=f34efdd6070022e8&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10210" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** `ERROR - Route 'Popa': member waypoint(s) not on E80 and not in clipboard: <UUIDs>`; `/api/db` routes empty.
+
+---
+
+### Test G6 -- Ancestor-wins reject path [was e80.23]
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G6" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?op=suppress&val=1&outcome=reject" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=1a4eaf5a8c00e922,d44e40468d000d96&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10211" | Out-Null
+Start-Sleep 4
+curl.exe -s "http://localhost:9883/api/test?op=suppress&val=1&outcome=accept" | Out-Null
+```
+
+**Pass:** PASTE NEW (e80) STARTED then FINISHED immediately (no ProgressDialog between them); no ERROR or IMPL ERROR; E80 state unchanged from Test 22's end state.
+
+---
+
+### Test G7 -- Intra-clipboard name collision [was e80.24]
+
+Need two DB WPs with the same name. Find via `/api/nmdb` group-by-name (e.g. WPs named "10" -- multiple exist).
+
+```powershell
+$nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
+$dups = $nmdb.waypoints | Group-Object name | Where-Object { $_.Count -ge 2 } | Select-Object -First 1
+$WP_A = $dups.Group[0].uuid
+$WP_B = $dups.Group[1].uuid
+
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G7" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=$WP_A,$WP_B&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
+Start-Sleep 4
+```
+
+**Pass:** ERROR sentinel `E80 operation blocked: N name collision(s):` with an `intra-clipboard waypoint name '<name>'` entry naming the colliding source items, followed by `Per policy, navMate does not auto-rename.  Resolve in the database and retry.`; no IMPL ERROR; no WP named `<name>` lands on E80.
+
+---
+
+### Test G8 -- E80-wide name collision [was e80.25b]
+
+Find any DB WP named "BOCAS1" with a UUID different from `ce4e43181f01b3ae`.
+
+```powershell
+$nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
+$SameNameWP = ($nmdb.waypoints | Where-Object { $_.name -eq "BOCAS1" -and $_.uuid -ne "ce4e43181f01b3ae" } | Select-Object -First 1).uuid
+
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G8" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=$SameNameWP&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
+Start-Sleep 4
+```
+
+**Pass:** ERROR sentinel `E80 operation blocked: 1 name collision(s):` with a `waypoint 'BOCAS1' (from waypoint 'BOCAS1') already on E80 at UUID <existing>` entry, followed by `Per policy, navMate does not auto-rename.  Resolve in the database and retry.`; no IMPL ERROR; only one "BOCAS1" on E80 (the original from Test 25a).
+
+---
+
+### Test G9 -- PASTE at E80 WP object node blocked [was e80.28b]
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G9" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=ce4e43181f01b3ae&right_click=ce4e43181f01b3ae&cmd=10210" | Out-Null
@@ -691,10 +721,10 @@ Start-Sleep 3
 
 ---
 
-### Test 28c -- PASTE_NEW at E80 WP object node blocked
+### Test G10 -- PASTE_NEW at E80 WP object node blocked [was e80.28c]
 
 ```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.28c" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G10" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=ce4e43181f01b3ae&right_click=ce4e43181f01b3ae&cmd=10211" | Out-Null
 Start-Sleep 3
 ```
@@ -703,12 +733,12 @@ Start-Sleep 3
 
 ---
 
-### Test 29 -- DELETE_GROUP at E80 my_waypoints node blocked (predicate)
+### Test G11 -- DELETE_GROUP at E80 my_waypoints node blocked (predicate) [was e80.29]
 
 The menu does not offer DELETE_GROUP for my_waypoints. API bypass forces the dispatch to verify the predicate's D4 guard.
 
 ```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.29" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G11" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10221" | Out-Null
 Start-Sleep 3
 ```
@@ -717,12 +747,12 @@ Start-Sleep 3
 
 ---
 
-### Test 30 -- DELETE_GROUP_WPS with mixed my_waypoints + named group blocked (predicate)
+### Test G12 -- DELETE_GROUP_WPS with mixed my_waypoints + named group blocked (predicate) [was e80.30]
 
 Multi-select includes the my_waypoints node and a named group (Popa group, `244e8e100800400a`, present on E80 since e80.22). The predicate's D5 guard rejects the mixed selection before any executor work.
 
 ```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.30" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G12" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints,244e8e100800400a&right_click=my_waypoints&cmd=10222" | Out-Null
 Start-Sleep 3
 ```
@@ -731,12 +761,12 @@ Start-Sleep 3
 
 ---
 
-### Test 32 -- D6: WP paste at E80 routes header blocked
+### Test G13 -- D6: WP paste at E80 routes header blocked [was e80.32]
 
 D6 (spoke content-vs-destination) rejects waypoint clipboard items at the routes header -- only route items are accepted at `header:routes`.
 
 ```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.32" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G13" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10210" | Out-Null
@@ -747,12 +777,12 @@ Start-Sleep 3
 
 ---
 
-### Test 33 -- D6: Group paste at E80 my_waypoints blocked
+### Test G14 -- D6: Group paste at E80 my_waypoints blocked [was e80.33]
 
 D6 rejects group clipboard items at the my_waypoints pseudo-group -- only waypoint items are accepted there. Spokes do not support nested groups.
 
 ```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.33" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G14" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=244e8e100800400a&cmd=10200" | Out-Null
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
@@ -763,12 +793,12 @@ Start-Sleep 3
 
 ---
 
-### Test 34 -- D6: Route paste at E80 groups header blocked
+### Test G15 -- D6: Route paste at E80 groups header blocked [was e80.34]
 
 D6 rejects route clipboard items at the groups header -- only group items are accepted at `header:groups`.
 
 ```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.34" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G15" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=f34efdd6070022e8&cmd=10200" | Out-Null
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
@@ -779,14 +809,14 @@ Start-Sleep 3
 
 ---
 
-### Test 35 -- D6: Group paste at E80 named-group node blocked
+### Test G16 -- D6: Group paste at E80 named-group node blocked [was e80.35]
 
 D6 rejects group clipboard items at a named-group destination -- only waypoint items are accepted at a group node. Spokes do not support nested groups.
 
 Uses [TestGroup] (`1a4eaf5a8c00e922`, Timiteo) as the clipboard group and Popa group (`244e8e100800400a`, present on E80 since e80.9a / e80.11a) as the destination node.
 
 ```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.35" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+e80.G16" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=1a4eaf5a8c00e922&cmd=10200" | Out-Null
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=244e8e100800400a&right_click=244e8e100800400a&cmd=10210" | Out-Null

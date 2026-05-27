@@ -35,6 +35,41 @@ The tag is echoed in the log as `------ MARK: <tag> ------`. Tags let a human re
 
 ---
 
+## Test Organization Convention
+
+### Positive / Guard segregation
+
+Every module organizes its tests in two named sections:
+
+1. **Positive tests** (`<module>.<N>`) -- the functional happy paths. "The thing works." These run first in every module.
+2. **Guard tests** (`<module>.G<N>`) -- the rejection paths. "The thing is correctly refused." These run second.
+
+The rationale: failure isolation. If a positive fails, the feature is broken; guards on a broken feature are meaningless. Triaging a cycle is faster when "all positives PASS, 2 guards FAIL" tells a different story from "3 positives FAIL." When adding a new test, the placement is obvious -- does the new code do something or refuse something?
+
+Within each section, ordering may still be sequence-dependent for state build-up; that's fine. Cross-section optimization (a guard's setup happens to also seed a positive) is NOT done. Within a section, optimize freely.
+
+### Module-prefix naming
+
+Test identifiers carry their module name: `tracks.1`, `e80.20a`, `fsh.G3`. Bare numbers (`Test 4`) are not used outside a single runbook's local scope. The mark tag, cycle results table, and any cross-document reference all use the prefixed form.
+
+### Baseline-first, construct-as-last-resort
+
+When a test needs data with a specific shape (long-named WP, multi-track group, color drift candidate, etc.), the runbook author MUST first search the live baseline (`/api/nmdb` after `git checkout` revert, `/api/fsh` after loading `_fixtures/test.fsh`) for items meeting the precondition. Constructing test data at runtime is the fallback, used only when no baseline candidate exists.
+
+Rationale: the baseline `navMate.db` carries years of organic real-world weirdness. Engineered fixtures cannot match that. Plus baseline-first is faster: a query is shorter than a multi-step construction.
+
+When a test does fall back on construction, the runbook documents it as such ("**Construction:** ... because no baseline candidate exists for X").
+
+### Guards assume positives passed
+
+Guard tests' setup steps execute without re-asserting the positive functionality those steps depend on. If a guard's setup needs to "create a WP first," that operation runs as a single curl-and-sleep with no PASS-criterion-style verification; the verification lives in the positive test for WP creation that ran earlier in the same cycle.
+
+This is what makes guards lean. A guard's value is in its rejection assertion, not in re-proving the create path. Setup is operationally noisy but assertively quiet.
+
+Corollary: if positives fail and the cycle continues into guards, expect guard setups to also fail in weird ways. That's not a guard regression -- it's a downstream consequence of the upstream positive failure.
+
+---
+
 ## HTTP Endpoints
 
 Base URL: `http://localhost:9883`.

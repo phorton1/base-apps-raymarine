@@ -1,6 +1,6 @@
 # fsh Module -- Plan
 
-DB <-> FSH cross-panel operations (upload, download, push, paste-new, multi-select, route-point ops on FSH) plus DB-FSH guards (FSH destination-side blocks, name collisions, UUID conflict resolution). Includes FSH-unique track-write operations (E80 blocks paste-to-tracks; FSH allows).
+DB <-> FSH cross-panel operations (upload, download, push, paste-new, multi-select, route-point ops on FSH) plus DB-FSH guards (FSH destination-side blocks, name collisions, UUID conflict resolution).  FSH also accepts track writes (paste-to-tracks-header), historically considered FSH-unique; since 2026-05-27 E80 also accepts track writes via the writer-session protocol, so FSH track-paste is no longer asymmetric (track-write E80 coverage lives in the `tracks/` module).
 
 For shared philosophy and status definitions, see [`../master_plan.md`](../master_plan.md). For shared toolbox, see [`../master_runbook.md`](../master_runbook.md). For UUID lookup, see [`../uuid_index.md`](../uuid_index.md). For execution, see [`runbook.md`](runbook.md).
 
@@ -10,14 +10,14 @@ For shared philosophy and status definitions, see [`../master_plan.md`](../maste
 
 This module exercises navOps operations that span the DB and FSH transports:
 
-- UUID-preserving uploads (DB -> FSH via PASTE) for waypoint, group, route, **track** (FSH-unique)
+- UUID-preserving uploads (DB -> FSH via PASTE) for waypoint, group, route, track
 - PASTE_NEW uploads (DB -> FSH with fresh FSH-assigned UUIDs)
 - FSH -> DB downloads (COPY/CUT then PASTE / PASTE_NEW)
 - Push (FSH -> DB) for waypoint, group, route, multi-item
 - FSH-side deletes via header nodes and specific nodes
 - FSH-side route-point insertion
 - DB-FSH guards: paste from DB-cut to FSH, name collisions, descendant-paste, UUID conflict
-- FSH track-write tests (covers paste-to-tracks-header as an ALLOWED path, contra E80's guard)
+- FSH track-write tests (paste-to-tracks-header allowed; E80 also allows since the 2026-05-27 writer-session protocol)
 
 FSH is the first **synchronous** spoke -- all operations mutate the in-memory `$navFSH::fsh_db` hash directly. No ProgressDialog renders; operations complete in a single wx idle tick. Test sleeps are 1-2 seconds typical; no `Wait-NavCmdFinished` helper needed.
 
@@ -49,104 +49,63 @@ Full pre-flight semantic catalog lives in the legacy `apps/navMate/docs/notes/na
 
 ## Test Inventory
 
-Tests are listed in execution order. The module mirrors the e80 module's structure but drops ProgressDialog-related criteria and adds FSH-unique track tests.
+Two-section structure per master_runbook's Test Organization Convention: positives first (`fsh.<N>`), guards second (`fsh.G<N>`).  Tests within each section follow their natural execution sequence -- state-dependent ordering is preserved.
 
-### Upload (DB -> FSH, UUID-preserving)
+### Positive Tests
 
-| Test | What it verifies |
-|------|------------------|
-| 1 | Paste WP to FSH (DB UUID converted to FSH dashed-upper via navToFSHUUID; round-trip preserves the original DB UUID via fshToNavUUID) |
-| 2 | Paste Group to FSH (UUID preserved; embedded member WP UUIDs preserved) |
-| 3 | Paste Route to FSH (UUID preserved; embedded route_waypoints preserved) |
-| 4 | Paste Track to FSH (UUID preserved -- FSH-unique; E80 blocks this) |
+| Test    | What it verifies |
+|---------|------------------|
+| fsh.1   | Paste WP to FSH (DB UUID converted to FSH dashed-upper via navToFSHUUID) |
+| fsh.2   | Paste Group to FSH (UUID preserved; embedded member WP UUIDs preserved) |
+| fsh.3   | Paste Route to FSH (UUID preserved; embedded route_waypoints preserved) |
+| fsh.4   | Paste Track to FSH (UUID preserved).  E80 also accepts paste-track since 2026-05-27; this remains as the FSH-destination coverage. |
+| fsh.5   | Copy FSH WP, Push to DB |
+| fsh.6   | Copy FSH Group, Push to DB |
+| fsh.7   | Copy FSH Route, Push to DB |
+| fsh.8   | Multi-select Group + Route, Push to DB |
+| fsh.9   | Copy FSH WP, Paste New to DB (fresh navMate UUID; FSH WP unaffected) |
+| fsh.10  | Cut FSH WP, Paste to DB (UUID preserved into DB; FSH-side WP gone) |
+| fsh.11a | Delete FSH WP (specific WP node under my_waypoints) |
+| fsh.11b | Delete FSH Group -- dissolve (group shell removed; embedded members migrate to top-level my_waypoints; routes referencing those UUIDs unaffected).  Parallels db.5. |
+| fsh.13  | Delete via FSH Routes header (all routes) |
+| fsh.14  | Delete via FSH Groups header (all groups + members) |
+| fsh.15a | Re-upload Popa group to FSH |
+| fsh.15b | Delete FSH Group + members via specific group node |
+| fsh.16a | Re-upload IsolatedWP1 to FSH |
+| fsh.16b | Delete via FSH My Waypoints (all top-level ungrouped WPs) |
+| fsh.17a | Re-upload [FSH_GroupInRoute] (after fsh.14 cleared groups) |
+| fsh.17b | Re-upload [FSH_TestRoute] (after fsh.13 cleared routes) |
+| fsh.18  | Paste New WP to FSH (fresh FSH UUID; original DB UUID NOT preserved) |
+| fsh.19  | Paste New Group to FSH (fresh group UUID + fresh member UUIDs) |
+| fsh.20  | Paste New Route to FSH (fresh route UUID; member WPs reused if already on FSH, else fresh) |
+| fsh.21  | Multi-select WPs, Paste to FSH (homogeneous flat set; both UUIDs preserved) |
+| fsh.22  | Route point Paste Before/After on FSH |
+| fsh.23  | Cut FSH Track, Paste to DB (UUID preserved; FSH-side track gone) |
+| fsh.24  | Copy FSH Track, Paste New to DB (fresh navMate UUID; FSH track stays) |
+| fsh.25  | Delete FSH Track (specific node) |
+| fsh.26  | Delete via FSH Tracks header (all tracks cleared) |
+| fsh.28  | Lossy-transform pre-flight: db_to_fsh long-name truncation warning fires; user accepts; paste proceeds with truncation |
+| fsh.30a | Ensure [FSH_IsolatedWP1] on FSH (precondition for the FSH-wide collision guard) |
+| fsh.31  | UUID conflict clean-create path (parallels e80.26) |
+| fsh.32a | Ensure [FSH_IsolatedWP1] on FSH (precondition for the descendant-paste guards) |
 
-### Push (FSH -> DB existing record)
+### Guard Tests
 
-Pushes back the items uploaded in tests 1-3. UUIDs match after round-trip conversion; push updates the DB record's spoke-managed fields without moving the record.
+Renamed from previous numbers; old-number cross-reference kept inline for log/code archaeology.  The 2026-05-29 post-truncation guard (`fsh.G11`) is new and uses the same `BajaCalifornia~N` baseline candidates as `e80.G3` -- `_collectNameConflicts` shares its codepath across E80 and FSH destinations.
 
-| Test | What it verifies |
-|------|------------------|
-| 5    | Copy FSH WP, Push to DB |
-| 6    | Copy FSH Group, Push to DB |
-| 7    | Copy FSH Route, Push to DB |
-| 8    | Multi-select Group + Route, Push to DB |
-
-### Download (FSH -> DB)
-
-| Test | What it verifies |
-|------|------------------|
-| 9    | Copy FSH WP, Paste New to DB (fresh navMate UUID; FSH WP unaffected) |
-| 10   | Cut FSH WP, Paste to DB (UUID preserved into DB; FSH-side WP gone) |
-
-### FSH deletes
-
-| Test | What it verifies |
-|------|------------------|
-| 11a  | Delete FSH WP (specific WP node under my_waypoints) |
-| 11b  | Delete FSH Group -- dissolve (group shell removed; embedded members migrate to top-level my_waypoints; routes referencing those UUIDs unaffected). Parallels db.5. |
-| 12   | Delete FSH Group+WPS blocked (members in route; ERROR sentinel) |
-| 13   | Delete via FSH Routes header (all routes) |
-| 14   | Delete via FSH Groups header (all groups + members) |
-| 15   | Delete FSH Group + members via specific group node |
-| 16   | Delete via FSH My Waypoints (all top-level ungrouped WPs) |
-
-### Re-uploads (intra-module setup interleaved with deletes)
-
-Analogous to e80.9a / e80.11a / e80.12a / e80.16a.
-
-| Test | What it does |
-|------|--------------|
-| 17a  | Re-upload [FSH_GroupInRoute] (after fsh.14 cleared groups) |
-| 17b  | Re-upload [FSH_TestRoute] (after fsh.13 cleared routes) |
-
-### PASTE_NEW variants (fresh-UUID uploads to FSH)
-
-| Test | What it verifies |
-|------|------------------|
-| 18   | Paste New WP to FSH (fresh FSH UUID; original DB UUID NOT preserved) |
-| 19   | Paste New Group to FSH (fresh group UUID + fresh member UUIDs) |
-| 20   | Paste New Route to FSH (fresh route UUID; member WPs reused if already on FSH, else fresh) |
-
-### Multi-select
-
-| Test | What it verifies |
-|------|------------------|
-| 21   | Multi-select WPs, Paste to FSH (homogeneous flat set; both UUIDs preserved) |
-
-### FSH-side route point operations
-
-| Test | What it verifies |
-|------|------------------|
-| 22   | Route point Paste Before/After on FSH |
-
-### Track-specific (FSH-unique)
-
-FSH allows track writes (PASTE to tracks). E80 blocks the same path; tests 4 and 23-26 exercise the difference.
-
-| Test | What it verifies |
-|------|------------------|
-| 23   | Cut FSH Track, Paste to DB (UUID preserved; FSH-side track gone) |
-| 24   | Copy FSH Track, Paste New to DB (fresh navMate UUID; FSH track stays) |
-| 25   | Delete FSH Track (specific node) |
-| 26   | Delete via FSH Tracks header (all tracks cleared) |
-
-### Cross-transport guards
-
-| Test | What it verifies |
-|------|------------------|
-| 27   | DB-cut to FSH destination blocked (parallels e80.19) |
-| 28   | Lossy-transform pre-flight: db_to_fsh long-name truncation warning |
-| 29   | Intra-clipboard name collision (hard-abort; parallels e80.24) |
-| 30a  | Ensure [FSH_IsolatedWP1] on FSH (precondition for 30b) |
-| 30b  | FSH-wide name collision (parallels e80.25b). Self-establishes a second DB BOCAS1 via PASTE_NEW if the fixture-DB precondition is absent, then verifies the collision sentinel. |
-| 31   | UUID conflict clean-create path (parallels e80.26) |
-| 32a  | Ensure [FSH_IsolatedWP1] on FSH (precondition for 32b/c). PASS if already present OR if the paste step lands it; FAIL otherwise. |
-| 32b  | PASTE at FSH WP object node blocked (descendant-paste guard; parallels e80.28b) |
-| 32c  | PASTE_NEW at FSH WP object node blocked (parallels e80.28c) |
-| 33   | D6 spoke content-vs-destination: WP at FSH routes header blocked (parallels e80.32) |
-| 34   | D6 spoke content-vs-destination: Group at FSH my_waypoints blocked (parallels e80.33) |
-| 35   | D6 spoke content-vs-destination: Route at FSH groups header blocked (parallels e80.34) |
-| 36   | D6 spoke content-vs-destination: Group at FSH named-group node blocked (parallels e80.35) |
+| Test    | What it verifies | (was) |
+|---------|------------------|-------|
+| fsh.G1  | Delete FSH Group+WPS blocked -- members in route (ERROR sentinel) | fsh.12 |
+| fsh.G2  | DB-cut to FSH destination blocked (parallels e80.G2) | fsh.27 |
+| fsh.G3  | Intra-clipboard name collision (hard-abort; parallels e80.G7) | fsh.29 |
+| fsh.G4  | FSH-wide name collision (parallels e80.G8).  Self-establishes a second DB BOCAS1 via PASTE_NEW if the fixture-DB precondition is absent, then verifies the collision sentinel. | fsh.30b |
+| fsh.G5  | PASTE at FSH WP object node blocked (descendant-paste guard; parallels e80.G9) | fsh.32b |
+| fsh.G6  | PASTE_NEW at FSH WP object node blocked (parallels e80.G10) | fsh.32c |
+| fsh.G7  | D6 spoke content-vs-destination: WP at FSH routes header blocked (parallels e80.G13) | fsh.33 |
+| fsh.G8  | D6 spoke content-vs-destination: Group at FSH my_waypoints blocked (parallels e80.G14) | fsh.34 |
+| fsh.G9  | D6 spoke content-vs-destination: Route at FSH groups header blocked (parallels e80.G15) | fsh.35 |
+| fsh.G10 | D6 spoke content-vs-destination: Group at FSH named-group node blocked (parallels e80.G16) | fsh.36 |
+| fsh.G11 | Intra-batch post-truncation WP collision on FSH destination -- two `BajaCalifornia~N` DB WPs PASTE'd to FSH my_waypoints; `_collectNameConflicts` rejects via post-truncation lc-key comparison.  Parallels e80.G3. | fsh.37 |
 
 ## Intra-module sequencing
 

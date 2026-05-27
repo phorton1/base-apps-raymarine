@@ -1160,7 +1160,8 @@ sub _wpColor
 sub _trackColorABGR
 {
 	my ($this, $track) = @_;
-	return $track->{color} // 'FF888888';
+	my $cidx = defined($track->{color}) ? ($track->{color} + 0) : 0;
+	return $E80_ROUTE_COLOR_ABGR[$cidx] // 'FF888888';
 }
 
 

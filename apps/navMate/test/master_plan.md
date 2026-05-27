@@ -22,8 +22,8 @@ Modules are ordered consistently throughout the suite (overview docs, folder lis
 |-------|--------|----------|--------|
 | 1     | db     | DB-internal ops + DB-only guards | Solid |
 | 2     | e80    | DB <-> E80 cross-panel ops + DB-E80 guards | Solid |
-| 3     | tracks | E80 -> DB tracks via teensyBoat | Solid |
-| 4     | fsh    | DB <-> FSH cross-panel ops + DB-FSH guards (incl. FSH-unique track writes) | Solid |
+| 3     | tracks | E80 <-> DB / FSH -> E80 tracks (teensyBoat + writer-session protocol; owns all E80 track ops) | Solid |
+| 4     | fsh    | DB <-> FSH cross-panel ops + DB-FSH guards (incl. FSH track writes) | Solid |
 | 5     | hub    | Three-panel ops routed through navMate | Solid |
 
 First clean all-PASS full cycle landed 2026-05-17 (cycle 20). All 141 attempted tests passed; the 2 NOT_RUNs in e80 are by design (`e80.27 db_versioning` infrastructure absent, `e80.28a` precondition-met no-op).

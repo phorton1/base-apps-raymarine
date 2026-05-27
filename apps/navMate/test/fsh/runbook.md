@@ -51,7 +51,7 @@ function fshToDb
 
 ---
 
-## Module Tests
+## Positive Tests
 
 ### Test 1 -- Paste WP to FSH (UUID-preserving)
 
@@ -253,20 +253,6 @@ Write-Host "Michel_Agua route wpts: $pre_rt_n -> $post_rt_n (expect unchanged)"
 **Pass:** group shell `C782-7BB6-7A46-4722` absent from `/api/fsh.groups`; all 10 former members now keyed in `/api/fsh.waypoints` (top-level / my_waypoints); the Michel_Agua route's wpt count unchanged; no ERROR.
 
 **Fail:** group still present, OR fewer than 10 members migrated, OR the route lost wpts (would indicate dissolve incorrectly cascaded to routes), OR an IMPLEMENTATION ERROR fired.
-
----
-
-### Test 12 -- Delete FSH Group+WPS blocked (members in route)
-
-Uses [FSH_GroupInRoute] = Timiteo `C482-CBA0-D14E-67B2` (6 members, all in Timiteo route).
-
-```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.12" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=C482-CBA0-D14E-67B2&right_click=C482-CBA0-D14E-67B2&cmd=10222" | Out-Null
-Start-Sleep 2
-```
-
-**Pass:** `ERROR - Cannot delete FSH group 'Timiteo' and its waypoints: one or more members are referenced by routes. Use Delete Group to dissolve without deleting members, or remove from routes first.`; no IMPL ERROR; Timiteo group + 6 members + Timiteo route still in `/api/fsh`.
 
 ---
 
@@ -524,20 +510,6 @@ Start-Sleep 5
 
 ---
 
-### Test 27 -- DB-cut to FSH destination blocked
-
-```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.27" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10201" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
-Start-Sleep 2
-```
-
-**Pass:** `ERROR - Cannot paste a database Cut to FSH` (or analogous sentinel); `/api/nmdb` waypoint `ce4e43181f01b3ae` still has its original `collection_uuid` (cut clipboard not consumed).
-
----
-
 ### Test 28 -- Lossy-transform pre-flight (db_to_fsh long-name warning)
 
 Setup: find or create a DB WP whose name length > 15 chars. Find a candidate via `/api/nmdb`.
@@ -560,27 +532,6 @@ Start-Sleep 2
 
 ---
 
-### Test 29 -- Intra-clipboard name collision
-
-Find two DB WPs with the same name.
-
-```powershell
-$nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
-$dups = $nmdb.waypoints | Group-Object name | Where-Object { $_.Count -ge 2 } | Select-Object -First 1
-$WP_A = $dups.Group[0].uuid
-$WP_B = $dups.Group[1].uuid
-
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.29" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=$WP_A,$WP_B&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
-Start-Sleep 2
-```
-
-**Pass:** ERROR sentinel `FSH operation blocked: N name collision(s):` with an `intra-clipboard waypoint name '<name>'` entry naming the colliding source items, followed by `Per policy, navMate does not auto-rename.  Resolve in the database and retry.`; no IMPL ERROR; no WP named `<name>` lands on FSH.
-
----
-
 ### Test 30a -- Upload IsolatedWP1 to FSH (setup for 30b)
 
 ```powershell
@@ -592,39 +543,6 @@ Start-Sleep 2
 ```
 
 **Pass:** `CE4E-4318-1F01-B3AE` (BOCAS1) on FSH.
-
----
-
-### Test 30b -- FSH-wide name collision
-
-Precondition: a second BOCAS1 must exist in DB with UUID != `ce4e43181f01b3ae`. The fixture DB has only one BOCAS1, so the precondition is established by PASTE_NEW of [IsolatedWP1] into [DST] (mints a fresh-UUID BOCAS1 in DB). If the precondition already holds (a prior test created a second BOCAS1), no setup is needed.
-
-```powershell
-# Ensure a second BOCAS1 exists in DB (precondition)
-$nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
-$second = $nmdb.waypoints | Where-Object { $_.name -eq "BOCAS1" -and $_.uuid -ne "ce4e43181f01b3ae" } | Select-Object -First 1
-if (-not $second)
-{
-    curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.30b+precond" | Out-Null
-    curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
-    Start-Sleep 1
-    curl.exe -s "http://localhost:9883/api/test?panel=database&select=6f4e72ceae0264de&right_click=6f4e72ceae0264de&cmd=10211" | Out-Null
-    Start-Sleep 2
-    $nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
-    $second = $nmdb.waypoints | Where-Object { $_.name -eq "BOCAS1" -and $_.uuid -ne "ce4e43181f01b3ae" } | Select-Object -First 1
-    if (-not $second) { Write-Host "fsh.30b FAIL: could not establish precondition (no second BOCAS1)"; return }
-}
-$SameNameWP = $second.uuid
-
-# Actual test: paste the second BOCAS1 to FSH; expect name-collision sentinel
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.30b" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=$SameNameWP&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
-Start-Sleep 2
-```
-
-**Pass:** ERROR sentinel `FSH operation blocked: 1 name collision(s):` with a `waypoint 'BOCAS1' (from waypoint 'BOCAS1') already on FSH at UUID <existing>` entry, followed by `Per policy, navMate does not auto-rename.  Resolve in the database and retry.`; no IMPL ERROR; only one BOCAS1 on FSH (`CE4E-4318-1F01-B3AE`, the original from fsh.30a). **Fail:** precondition could not be established, OR the sentinel did not fire, OR a second BOCAS1 landed on FSH.
 
 ---
 
@@ -675,10 +593,94 @@ if (-not ($f.waypoints.PSObject.Properties.Name -contains "CE4E-4318-1F01-B3AE")
 
 ---
 
-### Test 32b -- PASTE at FSH WP object node blocked
+## Guard Tests
+
+### Test G1 -- Delete FSH Group+WPS blocked (members in route) [was fsh.12]
+
+Uses [FSH_GroupInRoute] = Timiteo `C482-CBA0-D14E-67B2` (6 members, all in Timiteo route).
 
 ```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.32b" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.G1" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=C482-CBA0-D14E-67B2&right_click=C482-CBA0-D14E-67B2&cmd=10222" | Out-Null
+Start-Sleep 2
+```
+
+**Pass:** `ERROR - Cannot delete FSH group 'Timiteo' and its waypoints: one or more members are referenced by routes. Use Delete Group to dissolve without deleting members, or remove from routes first.`; no IMPL ERROR; Timiteo group + 6 members + Timiteo route still in `/api/fsh`.
+
+---
+
+### Test G2 -- DB-cut to FSH destination blocked [was fsh.27]
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.G2" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10201" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
+Start-Sleep 2
+```
+
+**Pass:** `ERROR - Cannot paste a database Cut to FSH` (or analogous sentinel); `/api/nmdb` waypoint `ce4e43181f01b3ae` still has its original `collection_uuid` (cut clipboard not consumed).
+
+---
+
+### Test G3 -- Intra-clipboard name collision [was fsh.29]
+
+Find two DB WPs with the same name.
+
+```powershell
+$nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
+$dups = $nmdb.waypoints | Group-Object name | Where-Object { $_.Count -ge 2 } | Select-Object -First 1
+$WP_A = $dups.Group[0].uuid
+$WP_B = $dups.Group[1].uuid
+
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.G3" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=$WP_A,$WP_B&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10211" | Out-Null
+Start-Sleep 2
+```
+
+**Pass:** ERROR sentinel `FSH operation blocked: N name collision(s):` with an `intra-clipboard waypoint name '<name>'` entry naming the colliding source items, followed by `Per policy, navMate does not auto-rename.  Resolve in the database and retry.`; no IMPL ERROR; no WP named `<name>` lands on FSH.
+
+---
+
+### Test G4 -- FSH-wide name collision [was fsh.30b]
+
+Precondition: a second BOCAS1 must exist in DB with UUID != `ce4e43181f01b3ae`. The fixture DB has only one BOCAS1, so the precondition is established by PASTE_NEW of [IsolatedWP1] into [DST] (mints a fresh-UUID BOCAS1 in DB). If the precondition already holds (a prior test created a second BOCAS1), no setup is needed.
+
+```powershell
+# Ensure a second BOCAS1 exists in DB (precondition)
+$nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
+$second = $nmdb.waypoints | Where-Object { $_.name -eq "BOCAS1" -and $_.uuid -ne "ce4e43181f01b3ae" } | Select-Object -First 1
+if (-not $second)
+{
+    curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.G4+precond" | Out-Null
+    curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
+    Start-Sleep 1
+    curl.exe -s "http://localhost:9883/api/test?panel=database&select=6f4e72ceae0264de&right_click=6f4e72ceae0264de&cmd=10211" | Out-Null
+    Start-Sleep 2
+    $nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
+    $second = $nmdb.waypoints | Where-Object { $_.name -eq "BOCAS1" -and $_.uuid -ne "ce4e43181f01b3ae" } | Select-Object -First 1
+    if (-not $second) { Write-Host "fsh.30b FAIL: could not establish precondition (no second BOCAS1)"; return }
+}
+$SameNameWP = $second.uuid
+
+# Actual test: paste the second BOCAS1 to FSH; expect name-collision sentinel
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.G4" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=$SameNameWP&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
+Start-Sleep 2
+```
+
+**Pass:** ERROR sentinel `FSH operation blocked: 1 name collision(s):` with a `waypoint 'BOCAS1' (from waypoint 'BOCAS1') already on FSH at UUID <existing>` entry, followed by `Per policy, navMate does not auto-rename.  Resolve in the database and retry.`; no IMPL ERROR; only one BOCAS1 on FSH (`CE4E-4318-1F01-B3AE`, the original from fsh.30a). **Fail:** precondition could not be established, OR the sentinel did not fire, OR a second BOCAS1 landed on FSH.
+
+---
+
+### Test G5 -- PASTE at FSH WP object node blocked [was fsh.32b]
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.G5" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=CE4E-4318-1F01-B3AE&right_click=CE4E-4318-1F01-B3AE&cmd=10210" | Out-Null
@@ -689,10 +691,10 @@ Start-Sleep 2
 
 ---
 
-### Test 32c -- PASTE_NEW at FSH WP object node blocked
+### Test G6 -- PASTE_NEW at FSH WP object node blocked [was fsh.32c]
 
 ```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.32c" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.G6" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=CE4E-4318-1F01-B3AE&right_click=CE4E-4318-1F01-B3AE&cmd=10211" | Out-Null
 Start-Sleep 2
 ```
@@ -701,12 +703,12 @@ Start-Sleep 2
 
 ---
 
-### Test 33 -- D6: WP paste at FSH routes header blocked
+### Test G7 -- D6: WP paste at FSH routes header blocked [was fsh.33]
 
 D6 (spoke content-vs-destination) rejects waypoint clipboard items at the FSH routes header -- only route items are accepted at `header:routes`.
 
 ```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.33" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.G7" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=ce4e43181f01b3ae&cmd=10200" | Out-Null
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Aroutes&right_click=header%3Aroutes&cmd=10210" | Out-Null
@@ -717,12 +719,12 @@ Start-Sleep 2
 
 ---
 
-### Test 34 -- D6: Group paste at FSH my_waypoints blocked
+### Test G8 -- D6: Group paste at FSH my_waypoints blocked [was fsh.34]
 
 D6 rejects group clipboard items at the FSH my_waypoints pseudo-group -- only waypoint items are accepted there. Spokes do not support nested groups.
 
 ```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.34" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.G8" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=244e8e100800400a&cmd=10200" | Out-Null
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
@@ -733,12 +735,12 @@ Start-Sleep 2
 
 ---
 
-### Test 35 -- D6: Route paste at FSH groups header blocked
+### Test G9 -- D6: Route paste at FSH groups header blocked [was fsh.35]
 
 D6 rejects route clipboard items at the FSH groups header -- only group items are accepted at `header:groups`.
 
 ```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.35" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.G9" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=f34efdd6070022e8&cmd=10200" | Out-Null
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=header%3Agroups&right_click=header%3Agroups&cmd=10210" | Out-Null
@@ -749,14 +751,14 @@ Start-Sleep 2
 
 ---
 
-### Test 36 -- D6: Group paste at FSH named-group node blocked
+### Test G10 -- D6: Group paste at FSH named-group node blocked [was fsh.36]
 
 D6 rejects group clipboard items at a named-group destination -- only waypoint items are accepted at a group node. Spokes do not support nested groups.
 
 Uses DB Popa group (`244e8e100800400a`) as the clipboard group and [FSH_GroupInRoute] = `C482-CBA0-D14E-67B2` (Timiteo group, fixture-present) as the destination node.
 
 ```powershell
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.36" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.G10" | Out-Null
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=244e8e100800400a&cmd=10200" | Out-Null
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=C482-CBA0-D14E-67B2&right_click=C482-CBA0-D14E-67B2&cmd=10210" | Out-Null
@@ -764,6 +766,24 @@ Start-Sleep 2
 ```
 
 **Pass:** `WARNING: IMPLEMENTATION ERROR: Cannot paste group clipboard item at fsh 'group' destination`; FSH unchanged.
+
+---
+
+### Test G11 -- Intra-batch post-truncation WP collision on FSH destination [was fsh.37]
+
+Parallels e80.36 -- the same post-truncation comparison in `_collectNameConflicts` runs for `panel='fsh'` destinations (FSH shares the 15-char name limit with E80 per `fsh_name_comment_limits`).  Two DB WPs `BajaCalifornia~1` (`7b4e6d421403dc72`) and `BajaCalifornia~2` (`044e7e7017030a9e`) have distinct full names but both truncate to `BajaCalifornia~` (15 chars).
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.G11" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=7b4e6d421403dc72&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=044e7e7017030a9e&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
+Start-Sleep 3
+```
+
+**Pass:** preflight aborts with collision sentinel mentioning the post-truncation form `BajaCalifornia~`; FSH waypoints count unchanged; NO write to in-memory `$navFSH::fsh_db`.
 
 ---
 
