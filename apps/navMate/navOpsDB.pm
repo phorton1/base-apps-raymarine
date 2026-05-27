@@ -1548,7 +1548,28 @@ sub _pushFromE80
 				);
 			}
 		}
-		# tracks: read-only on E80; push-down not applicable
+		elsif ($t eq 'track')
+		{
+			# PUSH-tracks (E80 -> DB) syncs the user-visible fields
+			# (name, color) from the E80-db cache to the DB row, plus
+			# the transport-metadata companion_uuid (the trk_uuid that
+			# E80 currently associates with this track).  Points are
+			# immutable on E80 so we don't touch the track_points table.
+			# Matched by mta_uuid only (which is the canonical identity);
+			# trk_uuid drift between DB and E80 is normal and expected
+			# (every PASTE causes E80 to mint a fresh trk_uuid).
+			my $td  = $item->{data} // {};
+			my $rec = getTrack($dbh, $uuid);
+			next if !$rec;
+			$dbh->do(
+				"UPDATE tracks SET name=?, color=?, companion_uuid=?, modified_ts=strftime('%s','now') WHERE uuid=?",
+				[
+					$td->{name}     // $rec->{name},
+					$td->{color}    // $rec->{color},
+					$td->{trk_uuid} // $rec->{companion_uuid},
+					$uuid,
+				]);
+		}
 	}
 
 	disconnectDB($dbh);

@@ -12,6 +12,9 @@ use Wx qw(:everything);
 use Pub::Utils qw(display warning error getAppFrame);
 use Pub::WX::Dialogs;
 use apps::raymarine::NET::a_defs qw($E80_MAX_NAME $E80_MAX_COMMENT);
+use apps::raymarine::NET::a_utils qw(latLonToNorthEast);
+use apps::raymarine::NET::d_TRACK_writer;
+use navClipboard qw(_pasteTracksToE80Allows);
 use n_defs;
 use n_utils;
 use nmDialogs;
@@ -96,6 +99,14 @@ sub _checkE80NameConflict
     # names already queued this batch in $pending_names.  Case-insensitive
     # match (mirrors E80 uniqueness enforcement).
     #
+    # $name may be passed PRE-truncation (full DB name); the function
+    # truncates internally to $E80_MAX_NAME before comparing.  This
+    # mirrors the E80's own keying (the device stores truncated names)
+    # and catches post-truncation collisions that pre-truncation
+    # comparison would miss.  $pending_names is populated with the
+    # truncated lc form so the intra-batch check is also
+    # truncation-aware by construction.
+    #
     # Per policy, navMate NEVER auto-renames.  Preflight in
     # navOps::_doPaste / navOps::_doPush is the primary gate; this
     # spoke-seam check is the defensive assert that catches preflight
@@ -108,7 +119,7 @@ sub _checkE80NameConflict
     my ($wpmgr, $name, $pending_names, $hash_name) = @_;
     $hash_name     //= 'waypoints';
     $pending_names //= {};
-    my $lc = lc($name // '');
+    my $lc = lc(substr($name // '', 0, $E80_MAX_NAME));
 
     for my $rec (values %{$wpmgr->{$hash_name} // {}})
     {
@@ -965,6 +976,217 @@ sub _pasteRouteToE80
 }
 
 
+#----------------------------------------------------
+# Track-write helpers (DB / FSH -> E80 via TRACK writer-session)
+#----------------------------------------------------
+# These compose the per-track upload through
+# apps::raymarine::NET::d_TRACK_writer (NET/d_TRACK_writer.pm), which
+# implements the protocol in NET/docs/notes/TRACK_writing.md.  One
+# TCP session per track upload.  No modify-in-place: E80 rejects
+# RECORD with an existing UUID, so PASTE requires UUID-not-on-E80
+# (predicate _pasteTracksToE80Allows enforces) and PASTE_NEW mints
+# a fresh navMate UUID.
+
+sub _normalizeTrackPointForWire
+{
+    # Returns a hashref with north/east/temp_k/depth populated, suitable
+    # for buildTRKPoint.  Field-name normalization across sources:
+    #
+    #   - DB     (navDB::getTrackPoints): lat, lon, depth_cm, temp_k, ts
+    #   - FSH    (navFSH /api/fsh):       lat, lon, north, east, depth, temp_k
+    #   - E80    (in-memory parsed):      north, east, depth, temp_k, lat, lon
+    #
+    # Caller may pass any of these shapes; north/east take precedence over
+    # lat/lon (cheaper, exact), and the depth field is read as either
+    # 'depth' or 'depth_cm' (both are centimeters per
+    # memory/track_point_fields.md).
+    my ($pt) = @_;
+    my %wire = (
+        temp_k => $pt->{temp_k} // 0,
+        depth  => $pt->{depth}  // $pt->{depth_cm} // 0,
+    );
+    if (defined $pt->{north} && defined $pt->{east})
+    {
+        $wire{north} = $pt->{north};
+        $wire{east}  = $pt->{east};
+    }
+    elsif (defined $pt->{lat} && defined $pt->{lon})
+    {
+        my $coords = latLonToNorthEast($pt->{lat}, $pt->{lon});
+        $wire{north} = $coords->{north};
+        $wire{east}  = $coords->{east};
+    }
+    else
+    {
+        $wire{north} = 0;
+        $wire{east}  = 0;
+    }
+    return \%wire;
+}
+
+
+sub _trackItemPoints
+{
+    # Returns the points arrayref for a track item, fetching from DB
+    # if the item didn't bring them along (DB-tree right-click-Push
+    # currently snapshots without the points blob).
+    my ($item) = @_;
+    return $item->{points} if ref($item->{points}) eq 'ARRAY' && @{$item->{points}};
+    return $item->{data}{points} if ref($item->{data}{points}) eq 'ARRAY' && @{$item->{data}{points}};
+    my $uuid = $item->{uuid} // $item->{data}{mta_uuid} // $item->{data}{uuid} // '';
+    return [] if !$uuid;
+    my $dbh = connectDB();
+    return [] if !$dbh;
+    my $points = getTrackPoints($dbh, $uuid) || [];
+    disconnectDB($dbh);
+    return $points;
+}
+
+
+sub _buildMtaRecForItem
+{
+    # Assembles the MTA hash that buildMTA consumes from a track item.
+    # Source-agnostic: works for DB / FSH / E80-sourced items.  Caller
+    # passes an explicit $name (post-truncate-for-E80), a $color (in
+    # either source form -- DB ABGR string or FSH/E80 palette int),
+    # and a $points arrayref of wire-normalized points so that
+    # start/end anchors come from the actual points being delivered.
+    # Color is normalized here: ABGR strings convert via abgrToE80Index;
+    # integers in 0..5 pass through; anything else folds to 0 (red).
+    my ($item, $name, $color, $points) = @_;
+    my $d        = $item->{data}  // {};
+    my $first_pt = $points->[0]   // {};
+    my $last_pt  = $points->[-1]  // $first_pt;
+
+    my $color_int = 0;
+    if (defined $color)
+    {
+        if ($color =~ /^\d+$/)
+        {
+            $color_int = int($color);
+            $color_int = 0 if $color_int < 0 || $color_int > 5;
+        }
+        else
+        {
+            $color_int = abgrToE80Index($color);
+        }
+    }
+
+    return {
+        name           => $name,
+        color          => $color_int,
+        length         => $d->{length} // $d->{distance} // 0,
+        north_start    => $first_pt->{north} // 0,
+        east_start     => $first_pt->{east}  // 0,
+        temp_k_start   => $first_pt->{temp_k} // 0,
+        depth_start    => $first_pt->{depth}  // 0,
+        north_end      => $last_pt->{north} // 0,
+        east_end       => $last_pt->{east}  // 0,
+        temp_k_end     => $last_pt->{temp_k} // 0,
+        depth_end      => $last_pt->{depth}  // 0,
+    };
+}
+
+
+sub _writeTrackToE80
+{
+    # Core per-track writer invocation.  Used by both _pasteTrackToE80
+    # and _pasteNewTrackToE80; the only difference between them is the
+    # UUID that gets passed (caller's responsibility to mint fresh for
+    # PASTE_NEW).
+    #
+    # Returns 1 on success, 0 on failure (with error already
+    # displayed via Pub::Utils::error).
+    my ($item, $uuid_hex, $progress) = @_;
+
+    my $track_svc = _track();
+    if (!$track_svc)
+    {
+        error("_writeTrackToE80: TRACK service not connected");
+        return 0;
+    }
+
+    my $d        = $item->{data} // {};
+    my $name_raw = $d->{name}    // $item->{name} // 'TRACK';
+    my ($name, undef) = _truncForE80($name_raw, '');   # apply E80 15-char limit
+    my $color    = $d->{color} // 0;
+
+    my $raw_points = _trackItemPoints($item);
+    if (!@$raw_points)
+    {
+        error("_writeTrackToE80: track '$name' has no points");
+        return 0;
+    }
+
+    my @wire_points = map { _normalizeTrackPointForWire($_) } @$raw_points;
+    my $mta_rec     = _buildMtaRecForItem($item, $name, $color, \@wire_points);
+
+    display($dbg_e80_ops, 0, "_writeTrackToE80 name='$name' uuid=$uuid_hex points=".scalar(@wire_points));
+
+    my $writer = apps::raymarine::NET::d_TRACK_writer->new(
+        ip       => $track_svc->{ip},
+        port     => $track_svc->{port},
+        mta_rec  => $mta_rec,
+        points   => \@wire_points,
+        uuid_hex => $uuid_hex,
+        progress => $progress,
+    );
+    if (!$writer)
+    {
+        error("_writeTrackToE80: failed to construct d_TRACK_writer");
+        return 0;
+    }
+
+    my $ok = $writer->run();
+    if (!$ok)
+    {
+        error("_writeTrackToE80: track '$name' write failed: " . ($writer->{error} // 'unknown'));
+        return 0;
+    }
+    return 1;
+}
+
+
+sub _pasteTrackToE80
+{
+    # PASTE -- preserves the source item's mta_uuid as the MTA-CONTEXT
+    # UUID on the wire (E80 saves under that UUID).  Caller must have
+    # cleared collision via _pasteTracksToE80Allows; if a duplicate-
+    # UUID slips through, E80 returns 0x80040f07 in SAVED.success and
+    # the writer reports failure.
+    my ($node, $tree, $item, $cb, $progress) = @_;
+    my $uuid = $item->{uuid} // $item->{data}{mta_uuid} // $item->{data}{uuid} // '';
+    if (!$uuid)
+    {
+        error("_pasteTrackToE80: item has no UUID");
+        return;
+    }
+    my $ok = _writeTrackToE80($item, $uuid, $progress);
+    $progress->{done}++ if $progress && $ok;
+    return $ok;
+}
+
+
+sub _pasteNewTrackToE80
+{
+    # PASTE_NEW -- mints a fresh navMate UUID for the writer.  The
+    # source item's UUID is discarded for the wire; the DB row is
+    # unchanged (PASTE-family operations never touch DB).
+    my ($node, $tree, $item, $cb, $progress) = @_;
+    my $uuid = _newNavUUID();
+    if (!$uuid)
+    {
+        error("_pasteNewTrackToE80: _newNavUUID returned undef");
+        return;
+    }
+    display($dbg_e80_ops, 0, "_pasteNewTrackToE80: minted fresh uuid=$uuid for '"
+        . ($item->{data}{name} // $item->{uuid} // '?') . "'");
+    my $ok = _writeTrackToE80($item, $uuid, $progress);
+    $progress->{done}++ if $progress && $ok;
+    return $ok;
+}
+
+
 sub _pasteAllToE80
     # UUID-preserving multi-item paste to E80. $items already pre-flighted.
 {
@@ -975,6 +1197,27 @@ sub _pasteAllToE80
     {
         error("_pasteAllToE80: WPMGR not connected");
         return;
+    }
+
+    # Track preflight: hard-rule and UUID-collision check before
+    # opening the progress dialog.  Halt-on-any-failure: any reject
+    # aborts the whole batch, and any UUID collision routes the user
+    # to PASTE_NEW instead.
+    my @track_items = grep { ($_->{type} // '') eq 'track' } @$items;
+    if (@track_items)
+    {
+        my $track_svc = _track();
+        my $verdict   = _pasteTracksToE80Allows(\@track_items, $track_svc);
+        if ($verdict =~ /^reject:(.*)/)
+        {
+            error("_pasteAllToE80: track preflight rejected: $1");
+            return;
+        }
+        if ($verdict eq 'paste_new_required')
+        {
+            error("_pasteAllToE80: one or more tracks already exist on E80 by UUID; use PASTE_NEW instead");
+            return;
+        }
     }
 
     # Pasting waypoints into an existing E80 route: append by UUID reference, no WP creation.
@@ -1018,6 +1261,7 @@ sub _pasteAllToE80
         if    ($type eq 'waypoint') { $total += 1; }
         elsif ($type eq 'group')    { $total += scalar(@$members) + ($item->{uuid} ? 1 : 0); }
         elsif ($type eq 'route')    { $total += 1; }
+        elsif ($type eq 'track')    { $total += 1; }
     }
 
     my $progress = _openE80Progress("Paste", $total,
@@ -1045,7 +1289,13 @@ sub _pasteAllToE80
         }
         elsif ($type eq 'track')
         {
-            display($dbg_e80_ops, 0, "_pasteAllToE80: skipping track '${\($item->{data}{name}//$item->{uuid})}'");
+            # PASTE-tracks: route to the writer-session.  Predicate
+            # _pasteTracksToE80Allows should have ensured no UUID
+            # collision before we got here; if one slips through,
+            # the writer reports failure with the E80's status code
+            # (typically 0x80040f07 for duplicate UUID).
+            my $ok = _pasteTrackToE80($node, $tree, $item, $cb, $progress);
+            last if !$ok;   # halt-on-any-failure policy
         }
         else
         {
@@ -1299,6 +1549,44 @@ sub _pasteNewAllToE80
         return;
     }
 
+    # Track preflight + PASTE_NEW confirmation dialog.  Hard rules
+    # (name length, point count, color) apply unconditionally;
+    # UUID-collision is the REASON we're in PASTE_NEW so it's
+    # informational, not a reject.  Confirmation dialog warns the
+    # user that PASTE_NEW is unusual and they may not have meant it.
+    my @track_items = grep { ($_->{type} // '') eq 'track' } @$items;
+    if (@track_items)
+    {
+        my $verdict_hard = _pasteTracksToE80Allows(\@track_items, undef);
+        if ($verdict_hard =~ /^reject:(.*)/)
+        {
+            error("_pasteNewAllToE80: track preflight rejected: $1");
+            return;
+        }
+        # Count tracks that would collide with existing E80 UUIDs
+        # (informational only; PASTE_NEW always mints fresh UUIDs).
+        my $track_svc = _track();
+        my $m = 0;
+        if ($track_svc && ref($track_svc->{tracks}) eq 'HASH')
+        {
+            my $e80_tracks = $track_svc->{tracks};
+            for my $item (@track_items)
+            {
+                my $uuid = $item->{uuid} // $item->{data}{mta_uuid} // '';
+                $m++ if $uuid && exists $e80_tracks->{$uuid};
+            }
+        }
+        my $n = scalar @track_items;
+        if (!$nmDialogs::suppress_confirm)
+        {
+            my $msg = "Are you SURE you want to PASTE_NEW these track(s)?\n\n"
+                    . "The need for this is highly unusual and creating new tracks on the UUID "
+                    . "might not be your intention.  Caution is suggested.\n\n"
+                    . "This operation will write $n new track(s), $m of which have existing UUIDs on the E80.";
+            return if !confirmDialog($tree, $msg, 'PASTE_NEW');
+        }
+    }
+
     # Pasting into an existing E80 route: append existing WPs by UUID reference.
     # WPs that already exist (duplicate route point case) bypass name-collision in
     # the pre-flight, so they arrive here and must be appended, not re-created.
@@ -1343,6 +1631,7 @@ sub _pasteNewAllToE80
         if    ($type eq 'waypoint') { $total += 1; }
         elsif ($type eq 'group')    { $total += scalar(@$members) + 1; }
         elsif ($type eq 'route')    { $total += 1; }
+        elsif ($type eq 'track')    { $total += 1; }
     }
 
     my $progress = _openE80Progress("Paste New", $total,
@@ -1367,7 +1656,10 @@ sub _pasteNewAllToE80
         }
         elsif ($type eq 'track')
         {
-            display($dbg_e80_ops, 0, "_pasteNewAllToE80: skipping track '${\($item->{data}{name}//$item->{uuid})}'");
+            # PASTE_NEW-tracks: mint fresh navMate UUID per track.
+            # E80 will never collide on a freshly-minted byte-1=0x4e UUID.
+            my $ok = _pasteNewTrackToE80($node, $tree, $item, $cb, $progress);
+            last if !$ok;   # halt-on-any-failure policy
         }
         else
         {
@@ -1503,10 +1795,18 @@ sub _pasteE80
 
     my $rn_type = $right_click_node ? ($right_click_node->{type} // '') : '';
     my $rn_kind = $right_click_node ? ($right_click_node->{kind} // '') : '';
-    if ($rn_type eq 'track'
-     || ($rn_type eq 'header' && $rn_kind eq 'tracks'))
+
+    # E80 tracks header is now a valid paste destination via the
+    # TRACK writer-session protocol (NET/docs/notes/TRACK_writing.md,
+    # confirmed live 2026-05-27).  Track items route through
+    # _pasteAllToE80 / _pasteNewAllToE80, which preflights via
+    # navClipboard::_pasteTracksToE80Allows and dispatches each
+    # track to _pasteTrackToE80 / _pasteNewTrackToE80 -> d_TRACK_writer.
+    # Pasting at an individual track node (a specific saved track)
+    # is still not a meaningful destination -- use the tracks header.
+    if ($rn_type eq 'track')
     {
-        implementationError("paste to E80 tracks header not supported (SS10.8)");
+        implementationError("paste at individual E80 track node not supported -- use tracks header");
         return;
     }
 
@@ -1650,6 +1950,7 @@ sub _pushToE80
         if    ($t eq 'waypoint') { $total++;                                                  }
         elsif ($t eq 'group')    { $total += scalar(@{$item->{members} // []}) + 1;           }
         elsif ($t eq 'route')    { $total++;                                                  }
+        elsif ($t eq 'track')    { $total++;                                                  }
     }
 
     my $progress = _openE80Progress("Push to E80", $total,
@@ -1743,6 +2044,16 @@ sub _pushToE80
                 waypoints => \@wp_uuids,
                 progress  => $progress,
             });
+        }
+        elsif ($t eq 'track')
+        {
+            # PUSH-track to E80: writer-session protocol creates the
+            # track on the E80 with the DB's mta_uuid as identity.
+            # E80 rejects duplicate UUIDs (status 0x80040f07);
+            # preflight at the higher menu/predicate layer should have
+            # already excluded tracks that already exist on E80.
+            my $ok = _pasteTrackToE80(undef, undef, $item, undef, $progress);
+            last if !$ok;   # halt-on-any-failure policy
         }
     }
 }

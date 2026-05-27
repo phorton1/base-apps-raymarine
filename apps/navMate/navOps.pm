@@ -1277,6 +1277,20 @@ sub _collectNameConflicts
 	# Flatten items to a checkable entry list.  Each entry =
 	#   { type, name, lc_name, uuid, source } -- "source" names the
 	# location in the batch for the error message.
+	#
+	# lc_name is the POST-TRUNCATION key for spoke destinations.  E80
+	# and FSH share the same 15-char limit (see
+	# [[fsh-name-comment-limits]]); $E80_MAX_NAME is authoritative for
+	# both.  DB destinations don't truncate.  Comparing post-truncation
+	# matches the destination's own keying -- spoke names returned by
+	# _spokeNameAndUUIDSets are already truncated since they came off
+	# the wire -- so symmetry holds once the clipboard side is also
+	# truncated.  The original (untruncated) name is preserved in the
+	# 'name' field for the user-facing error message.
+	my $key_for = sub {
+		my ($s) = @_;
+		return $panel eq 'db' ? lc($s) : lc(substr($s, 0, $E80_MAX_NAME));
+	};
 	my @entries;
 	for my $item (@$items)
 	{
@@ -1289,7 +1303,7 @@ sub _collectNameConflicts
 			push @entries, {
 				type    => $t,
 				name    => $n,
-				lc_name => lc($n),
+				lc_name => $key_for->($n),
 				uuid    => $u,
 				source  => "$t '$n'",
 			};
@@ -1304,7 +1318,7 @@ sub _collectNameConflicts
 				push @entries, {
 					type    => 'waypoint',
 					name    => $mn,
-					lc_name => lc($mn),
+					lc_name => $key_for->($mn),
 					uuid    => $mu,
 					source  => "waypoint '$mn' in group '$n'",
 				};
@@ -1830,7 +1844,8 @@ sub _preflightLossyTransform
 			}
 
 			push @color_mismatch, $name
-				if $t eq 'route' && !isExactE80Color($d->{color} // '');
+				if ($t eq 'route' || $t eq 'track')
+				&& !isExactE80Color($d->{color} // '');
 		}
 		elsif ($is_spoke_to_db && $dbh)
 		{

@@ -105,6 +105,16 @@ sub parseMessage
 		($dir == $DIRECTION_RECV &&
 		 ($cmd == $TRACK_REPLY_TRACK || $cmd == $TRACK_REPLY_END)))
 	{
+		# Fresh track flow begins.  Wipe any partial tx state left
+		# over from a previous flow that may have stalled mid-stream
+		# (e.g. multi-batch readback that timed out before reaching
+		# cnt1, per Option A in the 2026-05-29 underflow analysis).
+		# Without this, accumulated points / is_track / mta_uuid
+		# from the stalled prior flow would contaminate the new one.
+		# All four conditions above are flow-start headers
+		# (TRACK_REPLY_END is the GET_CUR2 reply header despite the
+		# name; see d_TRACK.pm:398).
+		$this->resetTransaction();
 		$this->{tx}{expect_trk} = 1;
 	}
 
@@ -210,7 +220,34 @@ sub parsePiece
 		# determine terminal condition for this buffer
 		if ($this->{tx}{is_track})
 		{
-			$this->{buffer_complete} = 1;  # TRK buffer after INFO_END -> terminal for GET_TRACK/GET_CUR2
+			# Multi-batch tracks: the wire delivers cnt1 points across
+			# multiple CONTEXT/BUFFER/END body groups (confirmed on E80
+			# read-side 2026-05-29 with a 430-point track returning as
+			# 4 batches of 142/142/142/4).  $item->{cnt1} is set from
+			# the MTA earlier in the stream, so by the time any TRK
+			# BUFFER arrives we know the expected total.  Defer
+			# terminality until the cumulative point count reaches
+			# cnt1; otherwise stay non-terminal and let the next
+			# batch's BUFFER append more points.
+			#
+			# Underflow case (sender promises N, delivers fewer): the
+			# stream simply never completes here; the caller's
+			# command/reply timeout (b_sock waitReply) is the
+			# detector of last resort.  This is Option A from the
+			# 2026-05-29 underflow analysis -- accepting that explicit
+			# underflow errors become timeouts in exchange for clean
+			# multi-batch handling.
+			#
+			# Legacy fallback: if cnt1 isn't known (no MTA seen, or
+			# parseMTA didn't set cnt1), fire terminal on every TRK
+			# BUFFER as before.
+			my $num_points = $item->{points} ? scalar(@{$item->{points}}) : 0;
+			my $cnt1 = $item->{cnt1};
+			if (!defined($cnt1) || $num_points >= $cnt1)
+			{
+				$this->{buffer_complete} = 1;
+			}
+			# else: more batches expected; stay non-terminal
 		}
 		elsif (!$this->{tx}{expect_trk})
 		{

@@ -64,7 +64,7 @@ sub lossyTransformWarning
 	my $cm = scalar @{$issues->{color_mismatch}     // []};
 	push @lines, "$tn item(s) will have names truncated to 15 characters." if $tn;
 	push @lines, "$tc item(s) will have comments truncated to 31 characters." if $tc;
-	push @lines, "$cm item(s) have colors that cannot round-trip to the E80 and will be approximated." if $cm;
+	push @lines, "$cm item(s) have colors that cannot round-trip to the destination and will be approximated." if $cm;
 	my $msg = "This operation has lossy transforms:\n\n"
 		. join("\n", @lines)
 		. "\n\nProceed anyway?";

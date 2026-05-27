@@ -58,6 +58,11 @@ BEGIN
 		parseMTA
 		parsePoint
 
+		buildMTA
+		buildTRKHeader
+		buildTRKPoint
+		buildTRKBatch
+
     );
 }
 
@@ -961,6 +966,141 @@ sub parsePoint
 }
 
 
+#--------------------------------------------------------------
+# Track-writer encoders -- symmetric counterparts to parseMTA /
+# parseTRK / parsePoint, used by NET/d_TRACK_writer.pm to
+# emit the wire format described in
+# NET/docs/notes/TRACK_writing.md.
+#
+# Each function returns the exact byte string for its piece of
+# the writer protocol.  buildMTA expects the caller to pass
+# $cnt explicitly (== number of points being delivered);
+# the cnt1=cnt invariant is structural here rather than relying
+# on $rec->{cnt1} being correct.
+#--------------------------------------------------------------
+
+sub buildMTA
+{
+	my ($rec, $cnt, $mon, $color) = @_;
+	$mon   //= 0;
+	$color //= 0;
+
+	# Writer-side invariants per TRACK_writing.md "MTA writer-side notes":
+	#   k1_1 = 0x01  (saved track, not in-process recording)
+	#   cnt1 = cnt2 = exact point count we will deliver
+	#   k2_0 = 0
+	#   u1   = 0     (0xef on reader-side means "not recording yet")
+	# Build a shallow copy so the caller's record is not mutated.
+	my $local = {
+		%$rec,
+		k1_1 => 1,
+		cnt1 => $cnt,
+		cnt2 => $cnt,
+		k2_0 => 0,
+		u1   => 0,
+	};
+
+	my $buffer = packRecord($mon, $color, 'mta', $local, $MTA_REC_SPECS);
+
+	if (length($buffer) != $MTA_REC_SIZE)
+	{
+		error("buildMTA: produced ".length($buffer)." bytes, expected $MTA_REC_SIZE");
+		return undef;
+	}
+
+	printConsole(2,$mon,$color,"buildMTA($local->{name}) cnt=$cnt")
+		if $mon & $MON_REC;
+
+	return $buffer;
+}
+
+
+sub buildTRKHeader
+{
+	# $a is the starting buffer index for this batch on the E80 side
+	# (so the i-th point of the batch lands at server-buffer position
+	# (a + i) * 14).  $cnt is the point count IN THIS BATCH.
+	# b is always 0 on the writer side.
+	my ($a, $cnt, $mon, $color) = @_;
+	$mon   //= 0;
+	$color //= 0;
+
+	my $buffer =
+		pack('V', $a) .
+		pack('v', $cnt) .
+		pack('v', 0);
+
+	if (length($buffer) != $TRACK_HDR_SIZE)
+	{
+		error("buildTRKHeader: produced ".length($buffer)." bytes, expected $TRACK_HDR_SIZE");
+		return undef;
+	}
+
+	printConsole(3,$mon,$color,"buildTRKHeader(a=$a, cnt=$cnt)")
+		if $mon & $MON_REC;
+
+	return $buffer;
+}
+
+
+sub buildTRKPoint
+{
+	my ($pt, $mon, $color) = @_;
+	$mon   //= 0;
+	$color //= 0;
+
+	# A track point on the wire is 14 bytes: north(l) east(l) temp_k(v) depth(V).
+	# Caller is responsible for having north/east populated; if only lat/lon
+	# are available, caller must convert via latLonToNorthEast first.
+	my $buffer =
+		pack('l', $pt->{north} // 0) .
+		pack('l', $pt->{east}   // 0) .
+		pack('v', $pt->{temp_k} // 0) .
+		pack('V', $pt->{depth}  // 0);
+
+	if (length($buffer) != $TRACK_PT_SIZE)
+	{
+		error("buildTRKPoint: produced ".length($buffer)." bytes, expected $TRACK_PT_SIZE");
+		return undef;
+	}
+
+	return $buffer;
+}
+
+
+sub buildTRKBatch
+{
+	# Build one BUFFER-content for a point batch body group:
+	# TRACK_HEADER followed by $cnt records of TRACK_PT.  $a_start is the
+	# starting server-side buffer index for THIS batch (0 for first batch;
+	# next batch uses previous a + previous cnt).
+	my ($a_start, $points, $mon, $color) = @_;
+	$mon   //= 0;
+	$color //= 0;
+
+	my $cnt = scalar @$points;
+	my $buffer = buildTRKHeader($a_start, $cnt, $mon, $color);
+	return undef if !defined $buffer;
+
+	for my $pt (@$points)
+	{
+		my $pt_bytes = buildTRKPoint($pt, $mon, $color);
+		return undef if !defined $pt_bytes;
+		$buffer .= $pt_bytes;
+	}
+
+	my $expected = $TRACK_HDR_SIZE + $cnt * $TRACK_PT_SIZE;
+	if (length($buffer) != $expected)
+	{
+		error("buildTRKBatch: produced ".length($buffer)." bytes, expected $expected");
+		return undef;
+	}
+
+	printConsole(2,$mon,$color,"buildTRKBatch(a=$a_start, cnt=$cnt)")
+		if $mon & $MON_REC;
+
+	return $buffer;
+}
 
 
 

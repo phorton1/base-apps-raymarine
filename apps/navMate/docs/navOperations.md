@@ -382,13 +382,14 @@ match for that index, overwriting would be lossy. This case is listed in the sum
 the user proceeds, the DB color is overwritten with the palette-exact aabbggrr value for
 that index.
 
-**Tracks (DB to E80).** The TRACK writer-session protocol
-([NET/docs/notes/TRACK_writing.md](../../../NET/docs/notes/TRACK_writing.md))
-supports DB-to-E80 track upload at the transport layer (confirmed live 2026-05-27);
-the navOps wiring (paste-to-E80-tracks, push-to-E80) is pending implementation.
-Track color mismatch in the DB-to-E80 direction will be evaluated as part of the
-navOps wiring; it does not appear in pre-flight today because the operation does
-not yet exist.
+**Tracks (DB to E80).** Implemented via the TRACK writer-session protocol
+([NET/docs/notes/TRACK_writing.md](../../../NET/docs/notes/TRACK_writing.md),
+confirmed live 2026-05-27).  PASTE preserves the source mta_uuid (preflight
+rejects on collision and the menu routes the user to PASTE_NEW).  PASTE_NEW
+mints a fresh navMate UUID per track and pops a confirmation dialog.  PUSH
+from a DB track selection writes via the same path.  Track color mismatch
+in the DB-to-E80 direction is structurally constrained (color is 0..5 on both
+sides) and rejected by `_pasteTracksToE80Allows` preflight.
 
 **Waypoints.** Waypoint icons on the E80 (sym index 0-35) and waypoint colors in the DB
 (aabbggrr) are unrelated fields with no current mapping between them. No color transfer
@@ -433,8 +434,8 @@ Each is side-effect-free. Return convention:
 - `(0, $reason_token, $detail_msg, $emit_as)` -- rejected.
 
 `$reason_token` is a stable snake_case category (e.g. `db_to_db_track_copy`,
-`wp_in_route`, `e80_tracks_header_paste`); the testplan asserts on substrings of
-`$detail_msg` rather than the token, but the token is stable for future structural
+`wp_in_route`, `tracks_to_non_tracks_header_e80`); the testplan asserts on substrings
+of `$detail_msg` rather than the token, but the token is stable for future structural
 matchers. `$emit_as` is either `'user_error'` or `'impl_error'`.
 
 **Menu builders** (`getPasteMenuItems`, `getDeleteMenuItems`, `getNewMenuItems`) call
@@ -446,8 +447,8 @@ its first step. On rejection, the `$emit_as` tag routes the failure:
 
 - `'user_error'` -- emitted via plain `error($detail_msg)`. Produces a friendly
   user-facing dialog (suppressed under test). Used for rejection paths that pre-date
-  the predicate layer and have established user-facing wording (e.g. "Cannot paste
-  to E80 tracks header -- tracks are read-only").
+  the predicate layer and have established user-facing wording (e.g. "Tracks can
+  only be pasted to the E80 tracks header").
 - `'impl_error'` -- emitted via `implementationError($detail_msg)` (in `n_utils.pm`).
   The helper checks `$nmDialogs::suppress_error_dialog` and routes to
   `warning(0, 0, "IMPLEMENTATION ERROR: $detail", 2)` when suppressed (testplan
@@ -702,9 +703,13 @@ homogeneous route points, and the mixed waypoints-and-route-points clipboard -- 
 as `route_waypoints` sequence references. This is the E80-side route reordering and
 insertion destination.
 
-**E80 Tracks header / track node** -- no paste accepted; tracks are
-read-only on E80. E80 Tracks header is a valid Delete right-click target: Delete operates
-on all tracks in the folder (SS8.2).
+**E80 Tracks header / track node** -- the tracks header IS a paste destination
+for track-type clipboard items (PASTE preserves the source mta_uuid; PASTE_NEW
+mints a fresh navMate UUID per the protocol in
+[`NET/docs/notes/TRACK_writing.md`](../../../NET/docs/notes/TRACK_writing.md)).
+Pasting at an individual track node is not supported (impl_error -- use the
+tracks header).  E80 Tracks header is also a valid Delete right-click target:
+Delete operates on all tracks in the folder (SS8.2).
 
 
 ## 7. Type-Specific Behaviors

@@ -116,6 +116,14 @@ sub _checkFSHNameConflict
 	# match (mirrors FSH uniqueness enforcement).  For 'waypoints', also
 	# considers group-embedded WP names (they share the WP-name space).
 	#
+	# $name may be passed PRE-truncation (full DB name); the function
+	# truncates internally to $FSH_MAX_NAME before comparing.  This
+	# mirrors FSH's own keying (the writer stores truncated names)
+	# and catches post-truncation collisions that pre-truncation
+	# comparison would miss.  $pending_names is populated with the
+	# truncated lc form so the intra-batch check is also
+	# truncation-aware by construction.
+	#
 	# Per policy, navMate NEVER auto-renames.  Preflight in
 	# navOps::_doPaste / navOps::_doPush is the primary gate; this
 	# spoke-seam check is the defensive assert that catches preflight
@@ -129,7 +137,7 @@ sub _checkFSHNameConflict
 	$hash_name     //= 'waypoints';
 	$pending_names //= {};
 	$name          //= '';
-	my $lc = lc($name);
+	my $lc = lc(substr($name, 0, $FSH_MAX_NAME));
 
 	for my $rec (values %{$db->{$hash_name} // {}})
 	{

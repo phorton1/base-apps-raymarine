@@ -42,6 +42,7 @@ BEGIN
 		_pasteRuleAllows
 		_deleteRuleAllows
 		_newRuleAllows
+		_pasteTracksToE80Allows
 
 	);
 }
@@ -222,14 +223,6 @@ sub _pasteRuleAllows
 		        'user_error');
 	}
 
-	# E80 tracks header is not a paste destination (tracks are read-only on E80).
-	if ($panel eq 'e80' && $rt eq 'header' && $rkind eq 'tracks')
-	{
-		return (0, 'e80_tracks_header_paste',
-		        'Cannot paste to E80 tracks header -- tracks are read-only',
-		        'user_error');
-	}
-
 	# Individual E80 waypoint node is not a paste destination.
 	if ($panel eq 'e80' && $rt eq 'waypoint')
 	{
@@ -238,34 +231,40 @@ sub _pasteRuleAllows
 		        'user_error');
 	}
 
-	# Tracks cannot be pasted to ANY E80 destination.  The earlier
-	# tracks-header rule covers the explicit "drop tracks onto tracks"
-	# case; this rule catches the otherwise-silent path where a
-	# tracks-only clipboard would reach a group / route / my_waypoints
-	# / non-tracks-header target and be dropped by _pasteAllToE80's
-	# per-item skip.  E80 tracks are read-only -- created only by the
-	# E80 itself or by the teensyBoat recording path.
+	# Tracks-to-E80: now supported at the tracks header (via the
+	# TRACK writer-session protocol, NET/docs/notes/TRACK_writing.md).
+	# Any other E80 destination still rejects tracks: pasting a track
+	# onto a group / route / my_waypoints / non-tracks-header target
+	# is structurally meaningless, and the D6 spoke-content check
+	# below also rejects, but this earlier check produces a clearer
+	# user_error sentinel.
 	if ($panel eq 'e80')
 	{
-		for my $item (@$items)
+		my $dest_is_tracks_header = ($rt eq 'header' && $rkind eq 'tracks');
+		if (!$dest_is_tracks_header)
 		{
-			if (($item->{type} // '') eq 'track')
+			for my $item (@$items)
 			{
-				return (0, 'tracks_to_e80_paste',
-				        'Cannot paste tracks to E80 (E80 tracks are read-only)',
-				        'user_error');
+				if (($item->{type} // '') eq 'track')
+				{
+					return (0, 'tracks_to_non_tracks_header_e80',
+					        'Tracks can only be pasted to the E80 tracks header',
+					        'user_error');
+				}
 			}
 		}
 	}
 
 	# D4: spoke-side positive-list paste destination.  The earlier rules
-	# above catch the more specific cases (E80 tracks header, individual
-	# E80 waypoint) with friendlier user_error sentinels; this rule is the
-	# backstop for shapes the executor doesn't support and that would
-	# otherwise silently no-op (e.g. paste at a track object).
+	# above catch the more specific cases (individual E80 waypoint,
+	# tracks at non-tracks-header destinations) with friendlier
+	# user_error sentinels; this rule is the backstop for shapes the
+	# executor doesn't support and that would otherwise silently no-op.
+	# Tracks header is now a valid paste destination (writer-session
+	# protocol, TRACK_writing.md, confirmed live 2026-05-27).
 	if ($panel eq 'e80')
 	{
-		my $ok_e80 = ($rt eq 'header' && ($rkind eq 'groups' || $rkind eq 'routes'))
+		my $ok_e80 = $rt eq 'header'
 		          || $rt eq 'my_waypoints'
 		          || $rt eq 'group'
 		          || $rt eq 'route'
@@ -440,6 +439,108 @@ sub _pasteRuleAllows
 	}
 
 	return (1);
+}
+
+
+#----------------------------------------------------
+# _pasteTracksToE80Allows
+#----------------------------------------------------
+# Precise per-item preflight for PASTE/PASTE_NEW of tracks to the
+# E80 tracks header.  Called by the executor after _pasteRuleAllows
+# has cleared the coarse structural rules (panel = e80, destination =
+# tracks header, item types acceptable).
+#
+# Returns one of:
+#   'paste'              -- all tracks pass all rules; the caller may
+#                           proceed with PASTE (writer uses each track's
+#                           own mta_uuid)
+#   'paste_new_required' -- one or more tracks has an mta_uuid that
+#                           already exists on the E80; PASTE is not
+#                           allowed (E80 transport rejects duplicate
+#                           UUIDs with success=0x80040f07), but
+#                           PASTE_NEW with fresh UUIDs is the alternative
+#   'reject:<message>'   -- a hard rule failed (no points, missing
+#                           mta_uuid); the entire batch is rejected per
+#                           the halt-on-any-failure policy.  Name length
+#                           and color drift are NOT hard rules: name is
+#                           silently truncated at the wire seam by
+#                           _truncForE80; color is closest-snapped to
+#                           the E80 palette by abgrToE80Index.  Both are
+#                           reported through the lossy-transform warning
+#                           dialog as advisory consent.
+#
+# The PASTE-vs-PASTE_NEW menu state is derived from this:
+#   'paste'              -> PASTE enabled,  PASTE_NEW visible+disabled
+#   'paste_new_required' -> PASTE disabled, PASTE_NEW enabled (with confirm)
+#   'reject:*'           -> both disabled
+#
+# $track_service is the d_TRACK live service hash (passed by caller
+# from navOpsE80::_track() so this module stays peer-agnostic).
+# May be undef if TRACK service is not connected; in that case we
+# fail open on collision detection (no E80 cache to check against)
+# but still apply hard rules.
+
+sub _pasteTracksToE80Allows
+{
+	my ($items, $track_service) = @_;
+	$items ||= [];
+
+	# Hard rules per track.  Name length and color drift are NOT hard
+	# rules -- they are lossy transforms (silent truncation by
+	# _truncForE80, closest-snap by abgrToE80Index) reported through the
+	# lossy-warn dialog as advisory consent.  See [[feedback-never-dedup]]
+	# for the systemic policy.
+	#
+	# What IS a hard rule:
+	#   - Point count > 0 -- cnt1 = 0 + actual_points > 0 = "behavior past
+	#     the cnt1-th point is undefined" per TRACK_writing.md, crashed
+	#     an E80 during writer-protocol bring-up on 2026-05-27.
+	#   - mta_uuid present -- the writer-session protocol requires a
+	#     non-empty source UUID in the CONTEXT body group.
+	for my $item (@$items)
+	{
+		my $t = $item->{type} // '';
+		next if $t ne 'track';
+
+		my $d        = $item->{data}  // {};
+		my $name     = $d->{name}     // $item->{name} // '';
+		my $points   = $item->{points} // $d->{points} // [];
+		my $pt_count = ref($points) eq 'ARRAY' ? scalar @$points : 0;
+		my $uuid     = $item->{uuid}  // $d->{mta_uuid} // $d->{uuid} // '';
+
+		if ($pt_count <= 0)
+		{
+			return ('reject:track "' . $name . '" has no points');
+		}
+		if (!$uuid)
+		{
+			return ('reject:track "' . $name . '" has no mta_uuid');
+		}
+	}
+
+	# Collision detection: if the TRACK service hash is available
+	# (navOpsE80 connected), check each track's mta_uuid against
+	# the live E80-db cache.  Any collision flips us to
+	# 'paste_new_required'.  This is the empirical finding from
+	# 2026-05-27: E80 rejects writer-session RECORD with an existing
+	# UUID via success=0x80040f07 in the SAVED reply.
+	if ($track_service && ref($track_service->{tracks}) eq 'HASH')
+	{
+		my $e80_tracks = $track_service->{tracks};
+		for my $item (@$items)
+		{
+			my $t = $item->{type} // '';
+			next if $t ne 'track';
+			my $uuid = $item->{uuid} // $item->{data}{mta_uuid} // $item->{data}{uuid} // '';
+			next if !$uuid;
+			if (exists $e80_tracks->{$uuid})
+			{
+				return 'paste_new_required';
+			}
+		}
+	}
+
+	return 'paste';
 }
 
 
@@ -796,13 +897,16 @@ sub _getPasteMenuItemsRaw
 	my $ot   = ($right_click_node->{data} // {})->{obj_type}  // '';
 	my $cut  = $clipboard->{cut_flag};
 
-	# E80 and FSH share the tracks-readonly rule and the track_group
-	# exclusion (winFSH-only visual artifact, no paste target).
+	# E80 and FSH share the track_group exclusion (winFSH-only visual
+	# artifact, no paste target).  Clicking on a specific track node is
+	# also not a paste destination (use the tracks header instead).
+	# Tracks-header is NOW a paste destination on both E80 and FSH
+	# (E80 added 2026-05-28 via the TRACK writer-session protocol;
+	# FSH was always a writer).
 	if ($panel eq 'e80' || $panel eq 'fsh')
 	{
 		return () if $t eq 'track';
 		return () if $t eq 'track_group';
-		return () if $t eq 'header' && $kind eq 'tracks';
 	}
 
 	# PASTE/PASTE_NEW: destination must be a collection (receives items into itself).
@@ -811,7 +915,7 @@ sub _getPasteMenuItemsRaw
 	my $is_collection;
 	if ($panel eq 'e80' || $panel eq 'fsh')
 	{
-		$is_collection = ($t eq 'header' && $kind ne 'tracks')
+		$is_collection = $t eq 'header'
 		              || $t eq 'my_waypoints'
 		              || $t eq 'group'
 		              || $t eq 'route';
@@ -947,6 +1051,10 @@ sub _e80NodesAllInDB
 {
 	# E80 tree-node UUIDs are already navMate no-dash form (the NET
 	# layer decodes them that way), so the DB lookup is direct.
+	# Tracks are accepted as of 2026-05-27 with the writer-session
+	# protocol enabling the reverse direction (DB->E80 PASTE/PASTE_NEW);
+	# E80->DB PUSH for tracks updates the DB row's name/color/trk_uuid
+	# from the E80-db state.
 	my ($nodes) = @_;
 	my $dbh = connectDB();
 	return 0 if !$dbh;
@@ -955,7 +1063,7 @@ sub _e80NodesAllInDB
 	{
 		my $t    = $node->{type} // '';
 		my $uuid = $node->{uuid} // '';
-		if (!$uuid || $t eq 'track' || $t eq 'header'
+		if (!$uuid || $t eq 'header'
 		           || $t eq 'my_waypoints' || $t eq 'route_point')
 		{
 			$ok = 0; last;
@@ -964,6 +1072,7 @@ sub _e80NodesAllInDB
 		if    ($t eq 'waypoint') { $found = getWaypoint($dbh, $uuid);   }
 		elsif ($t eq 'group')    { $found = getCollection($dbh, $uuid); }
 		elsif ($t eq 'route')    { $found = getRoute($dbh, $uuid);      }
+		elsif ($t eq 'track')    { $found = getTrack($dbh, $uuid);      }
 		else                     { $ok = 0; last; }
 		if (!$found) { $ok = 0; last; }
 	}
@@ -1006,7 +1115,12 @@ sub _dbNodesAllInE80
 {
 	# DB selection nodes carry navMate-form UUIDs; $wpmgr's per-type
 	# hashes are keyed by the same form.  Direct lookup.
+	# Track presence is checked against the TRACK service's live hash
+	# (navOps::_track()->{tracks}), enabling "Push to E80" on DB tracks
+	# whose mta_uuid is already on the E80.  (For tracks NOT on E80,
+	# the menu won't show Push -- the user uses PASTE instead.)
 	my ($wpmgr, $nodes) = @_;
+	my $track_svc;   # lazy-loaded only if a track node appears
 	for my $node (@$nodes)
 	{
 		my $t  = $node->{type}  // '';
@@ -1020,6 +1134,11 @@ sub _dbNodesAllInE80
 		{
 			if    ($ot eq 'waypoint') { $found = $wpmgr->{waypoints}{$uuid}; }
 			elsif ($ot eq 'route')    { $found = $wpmgr->{routes}{$uuid};    }
+			elsif ($ot eq 'track')
+			{
+				$track_svc //= navOps::_track();
+				$found = $track_svc && $track_svc->{tracks}{$uuid};
+			}
 			else                      { return 0; }
 		}
 		elsif ($t eq 'collection')
@@ -1113,12 +1232,17 @@ sub _fshNodesAllInE80
 {
 	# FSH tree-node UUIDs are FSH dashed-upper; E80 WPMGR hashes are
 	# keyed by navMate no-dash form.  Convert at the seam.
+	# Track presence is checked against the TRACK service hash, enabling
+	# "Push to E80" on FSH tracks whose mta_uuid is already on the E80
+	# (cross-spoke PUSH semantics, parallel to the DB-side branch in
+	# _dbNodesAllInE80).
 	my ($wpmgr, $nodes) = @_;
+	my $track_svc;   # lazy-loaded only if a track node appears
 	for my $node (@$nodes)
 	{
 		my $t        = $node->{type} // '';
 		my $fsh_uuid = $node->{uuid} // '';
-		if (!$fsh_uuid || $t eq 'track' || $t eq 'header'
+		if (!$fsh_uuid || $t eq 'header'
 		               || $t eq 'my_waypoints' || $t eq 'route_point')
 		{
 			return 0;
@@ -1128,6 +1252,11 @@ sub _fshNodesAllInE80
 		if    ($t eq 'waypoint') { $found = $wpmgr->{waypoints}{$uuid}; }
 		elsif ($t eq 'group')    { $found = $wpmgr->{groups}{$uuid};    }
 		elsif ($t eq 'route')    { $found = $wpmgr->{routes}{$uuid};    }
+		elsif ($t eq 'track')
+		{
+			$track_svc //= navOps::_track();
+			$found = $track_svc && $track_svc->{tracks}{$uuid};
+		}
 		else                     { return 0; }
 		return 0 if !$found;
 	}
