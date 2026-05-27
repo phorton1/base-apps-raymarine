@@ -382,9 +382,13 @@ match for that index, overwriting would be lossy. This case is listed in the sum
 the user proceeds, the DB color is overwritten with the palette-exact aabbggrr value for
 that index.
 
-**Tracks (DB to E80).** Tracks cannot be sent to the E80 via the WPMGR or TRACK protocols.
-Track color mismatch in the DB-to-E80 direction is not applicable and is deferred to a
-future file-based transport path.
+**Tracks (DB to E80).** The TRACK writer-session protocol
+([NET/docs/notes/TRACK_writing.md](../../../NET/docs/notes/TRACK_writing.md))
+supports DB-to-E80 track upload at the transport layer (confirmed live 2026-05-27);
+the navOps wiring (paste-to-E80-tracks, push-to-E80) is pending implementation.
+Track color mismatch in the DB-to-E80 direction will be evaluated as part of the
+navOps wiring; it does not appear in pre-flight today because the operation does
+not yet exist.
 
 **Waypoints.** Waypoint icons on the E80 (sym index 0-35) and waypoint colors in the DB
 (aabbggrr) are unrelated fields with no current mapping between them. No color transfer

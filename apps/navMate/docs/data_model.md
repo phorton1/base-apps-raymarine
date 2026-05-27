@@ -355,9 +355,10 @@ inside the transport layer and never appear in the schema.
 are always populated. When no GPS or source timestamp is available, the import
 timestamp is used. `ts_source` records which case applies.
 
-**Track unidirectionality is a transport concern, not a schema concern.** The E80's
-TRACK protocol offers no upload path - tracks can only be pulled from the E80, not
-pushed. That constraint belongs in the RAYNET transport layer. The schema stores
+**Track direction is a transport concern, not a schema concern.** Track upload
+to the E80 is supported by the TRACK writer-session protocol
+([NET/docs/notes/TRACK_writing.md](../../../NET/docs/notes/TRACK_writing.md),
+confirmed live 2026-05-27); the navOps wiring is pending. The schema stores
 tracks without encoding assumptions about how they arrived.
 
 **Route waypoints are first-class objects.** A waypoint that appears in a route

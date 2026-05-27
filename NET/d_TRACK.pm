@@ -63,7 +63,6 @@ BEGIN
 		$TRACK_CMD_USELESS_E
 		$TRACK_CMD_NOREPLY_F
 		$TRACK_CMD_BUMP_NAME
-		$TRACK_CMD_NO_REPLY_11
 
 		$TRACK_REPLY_CONTEXT
 		$TRACK_REPLY_BUFFER
@@ -79,9 +78,15 @@ BEGIN
 		$TRACK_REPLY_NAMED
 		$TRACK_REPLY_RENAMED
 
+		$TRACK_CMD_RECORD
+		$TRACK_INFO_CONTEXT
+		$TRACK_INFO_BUFFER
+		$TRACK_INFO_END
+		$TRACK_REPLY_SAVED
+
 		%TRACK_REPLY_NAME
 		%TRACK_REQUEST_NAME
-		%TRACK_PARSE_RULES 
+		%TRACK_PARSE_RULES
 	);
 }
 
@@ -247,7 +252,6 @@ our $TRACK_CMD_GET_STATE	= 0x0d;		# recv			GET_STATE					returns {stopable} = 1 
 our $TRACK_CMD_USELESS_E	= 0x0e;		# 				useless						returns an event with byte=6, possibly to event others?
 our $TRACK_CMD_NOREPLY_F	= 0x0f;		# 				xxxx						never got a reply
 our $TRACK_CMD_BUMP_NAME 	= 0x10;		# 				BUMP 						Increment the default Current Track name, talk about useless
-our $TRACK_CMD_NO_REPLY_11	= 0x11;		# 				xxxx						never got a reply
 
 
 # Synonyms for known nibbles that come in replies
@@ -272,6 +276,23 @@ our $TRACK_REPLY_RENAMED	= 0x0e;
 # our $TRACK_REPLY_11		= 0x11;
 
 
+#----------------------------------------------------------------------
+# Writer-side aliases  (TRACK_writing.md one-track-per-session upload)
+#----------------------------------------------------------------------
+# These reuse the same direction|nibble keys as the reader-side
+# constants above, but the writer-meaningful names make the
+# wire-format intent explicit in writer code.  The duplicate-valued
+# names (INFO_CONTEXT/BUFFER/END vs REPLY_CONTEXT/BUFFER/END) are
+# intentional: the bytes on the wire are identical in either role,
+# but writer code reads more clearly with INFO_* names.
+
+our $TRACK_CMD_RECORD     = 0x11;	# SEND: opens writer session; payload=zero4; seq is the writer-chosen correlation token returned in SAVED
+our $TRACK_INFO_CONTEXT   = 0x00;	# INFO: opens a body group;           same nibble as $TRACK_REPLY_CONTEXT
+our $TRACK_INFO_BUFFER    = 0x01;	# INFO: body bytes (MTA or batch);    same nibble as $TRACK_REPLY_BUFFER
+our $TRACK_INFO_END       = 0x02;	# INFO: closes a body group;          same nibble as $TRACK_REPLY_END
+our $TRACK_REPLY_SAVED    = 0x0f;	# RECV: writer-session auto-save ack; seq echoes RECORD's, success=0x00040000
+
+
 our %TRACK_REPLY_NAME = (							# recv
 	$TRACK_REPLY_CONTEXT		=> 'CONTEXT',		# header for get nth track point
 	$TRACK_REPLY_BUFFER			=> 'BUFFER',        # header for get 'mta' current track
@@ -288,9 +309,9 @@ our %TRACK_REPLY_NAME = (							# recv
 	# $TRACK_REPLY_GET_DICT		=> 'GET_DICT',
 	$TRACK_REPLY_NAMED			=> 'NAMED',			# success for CMD_SET_NAME
     $TRACK_REPLY_RENAMED		=> 'RENAMED',		# success for CMD_RENAME
+	$TRACK_REPLY_SAVED			=> 'SAVED',			# writer-session auto-save ack (TRACK_writing.md)
     # $TRACK_CMD_NOREPLY_F		=> 'CMD_F',
 	# $TRACK_CMD_BUMP_NAME		=> 'BUMP_NAME',
-	# $TRACK_CMD_NO_REPLY_11	=> 'CMD_11',
 );
 
 
@@ -312,7 +333,7 @@ our %TRACK_REQUEST_NAME = (
     $TRACK_CMD_USELESS_E	=> 'uselessE',
     $TRACK_CMD_NOREPLY_F	=> 'no_replyF',
 	$TRACK_CMD_BUMP_NAME	=> 'BUMP_NAME',
-	$TRACK_CMD_NO_REPLY_11	=> 'no_reply11',
+	$TRACK_CMD_RECORD		=> 'RECORD',		# writer-session open (TRACK_writing.md)
 );
 
 
@@ -347,8 +368,24 @@ our %TRACK_REQUEST_NAME = (
 # show until it is started (or weirdly renamed before being started)
 
 #----------------------------------------------------------------------
-# Parse rules
+# Parse rules -- dual-role: reader-side queries AND writer-side uploads
 #----------------------------------------------------------------------
+# This single table covers BOTH the long-lived reader-side flows
+# (GET_TRACK, GET_CUR2, GET_DICT, etc.) AND the transient
+# one-track-per-session writer flow (RECORD + body groups, replied
+# with SAVED).  See NET/docs/notes/TRACK_writing.md for the writer
+# protocol spec.
+#
+# The INFO|CONTEXT/BUFFER/END entries are byte-identical for both
+# roles and serve both: the parser state machine in e_TRACK
+# (expect_trk -> is_track via the END's 'track_uuid' piece ->
+# buffer_complete at the next BUFFER) walks the writer's MTA-then-
+# points body groups correctly, the same way it walks the reader's
+# MTA-then-TRK GET_TRACK reply.
+#
+# SEND|RECORD and RECV|SAVED are writer-only -- they have no role
+# in reader-direction traffic and do not collide with any existing
+# reader entry.
 
 our %TRACK_PARSE_RULES = (
 
@@ -365,13 +402,15 @@ our %TRACK_PARSE_RULES = (
 	$DIRECTION_RECV | $TRACK_REPLY_STATE    => { pieces => ['seq','stopable'],           terminal => 1 },  # GET_STATE reply
 	$DIRECTION_RECV | $TRACK_REPLY_NAMED    => { pieces => ['seq','success'],            terminal => 1 },  # SET_NAME reply
 	$DIRECTION_RECV | $TRACK_REPLY_RENAMED  => { pieces => ['seq','success'],            terminal => 1 },  # RENAME reply
+	$DIRECTION_RECV | $TRACK_REPLY_SAVED    => { pieces => ['seq','success'],            terminal => 1 },  # writer-session auto-save ack (TRACK_writing.md)
 
 	# Events - unsolicited, no seq_num
 
 	$DIRECTION_RECV | $TRACK_REPLY_CHANGED  => { pieces => ['uuid','byte'],              terminal => 1, is_event => 1 },
 	$DIRECTION_RECV | $TRACK_REPLY_EVENT    => { pieces => ['byte'],                     terminal => 1, is_event => 1 },
 
-	# INFO messages - terminal handled dynamically via buffer_complete flag in parsePiece
+	# INFO messages - terminal handled dynamically via buffer_complete flag in parsePiece.
+	# Also serve writer-side body groups (TRACK_writing.md): same wire bytes, same parser walk.
 
 	$DIRECTION_INFO | $TRACK_REPLY_CONTEXT  => { pieces => ['seq','uuid','context_bits'], terminal => 0 },
 	$DIRECTION_INFO | $TRACK_REPLY_BUFFER   => { pieces => ['seq','buffer'],              terminal => 0 },  # buffer_complete set by parsePiece
@@ -395,8 +434,29 @@ our %TRACK_PARSE_RULES = (
 	$DIRECTION_SEND | $TRACK_CMD_GET_DICT   => { pieces => ['seq'],                terminal => 0 },
 	$DIRECTION_SEND | $TRACK_CMD_GET_STATE  => { pieces => ['seq'],                terminal => 0 },
 	$DIRECTION_SEND | $TRACK_CMD_BUMP_NAME  => { pieces => ['seq','name16'],       terminal => 0 },
+	$DIRECTION_SEND | $TRACK_CMD_RECORD     => { pieces => ['seq','zero4'],        terminal => 0 },  # writer-session open (TRACK_writing.md)
 
 );
+
+
+# Writer-side wire sequence (one track per TCP connection):
+#
+#   send  RECORD       seq = writer-chosen correlation token
+#   info  CONTEXT      uuid = track_uuid, context_bits = 0     \
+#   info  BUFFER       57-byte MTA record (b_records.pm)        ) MTA body group
+#   info  END          uuid = track_uuid                       /
+#   info  CONTEXT      uuid = track_uuid, context_bits = 0     \
+#   info  BUFFER       TRACK_HEADER + N*TRACK_PT records        ) point batch body group  (may repeat for multi-batch)
+#   info  END          uuid = track_uuid                       /
+#   recv  SAVED        seq echoes RECORD's, success = 0x00040000
+#   close TCP
+#
+# The reader-side INFO state machine handles this naturally: the
+# MTA's END piece sets is_track=1, the points BUFFER then parses as
+# TRK, and buffer_complete fires there with cnt1 (from MTA) matching
+# the points count (from TRK) -- emitting a single reply for the
+# whole transaction.  See e_TRACK::parseMessage where expect_trk is
+# set for RECORD to keep the MTA BUFFER from firing prematurely.
 
 # $TRACK_CMD_GET_DICT results in
 #	recv	REPLY_DICT		success

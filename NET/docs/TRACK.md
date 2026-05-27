@@ -20,9 +20,13 @@ Folders: **[Raymarine](../../docs/readme.md)** --
 over TCP on port **2053**, service_id **19** (0x13, shown as `1300` in hex streams).
 TRACK is fully implemented in `d_TRACK.pm`.
 
-Unlike WPMGR, tracks cannot be created programmatically - they can only be started
-and stopped on the E80 itself. The TRACK protocol provides control over the
-Current Track (start, stop, name, save, discard) and retrieval of saved tracks.
+The recording itself - START and STOP of the Current Track - can only be initiated
+on the E80 itself; the TRACK protocol does not support remotely starting a recording.
+Otherwise the protocol is fully bidirectional. The client can name, save, discard,
+or erase tracks; can retrieve any saved track (MTA + points) by UUID; and can
+upload a complete saved track from the client into the E80 via a transient
+one-track-per-session writer protocol -- see
+**[TRACK_writing.md](notes/TRACK_writing.md)** for the full writer-session spec.
 
 ## Command Table
 
@@ -48,7 +52,7 @@ the E80 to close the TCP connection.
 | 0x0e | USELESS_E     | -                  | Returns EVENT byte=6; no practical use found   |
 | 0x0f | NOREPLY_F     | -                  | Never produced a reply                         |
 | 0x10 | BUMP_NAME     | seq, name16        | Increments the default track name counter      |
-| 0x11 | NO_REPLY_11   | -                  | Never produced a reply                         |
+| 0x11 | RECORD        | seq, zero4         | Opens a writer-session track upload (TRACK_writing.md); see SAVED (0x0f reply) |
 
 Commands 0x12 and higher cause the E80 to close the TCP connection (FIN).
 
@@ -71,6 +75,7 @@ The E80 sends these reply codes back to the client:
 | 0x0b | CHANGED  | uuid, byte             | No seq; a saved track was added/changed/deleted |
 | 0x0d | NAMED    | seq, success           | Confirms SET_NAME                             |
 | 0x0e | RENAMED  | seq, success           | Confirms RENAME                               |
+| 0x0f | SAVED    | seq, success           | Auto-save ack for writer-session RECORD (TRACK_writing.md) |
 
 ## EVENT Byte (reply 0x0a)
 

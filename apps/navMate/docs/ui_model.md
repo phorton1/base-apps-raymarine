@@ -352,9 +352,13 @@ winE80's context menu is built by the same
 
 E80-specific routing rules:
 
-- The `tracks` header and individual `track` nodes are **read-only**: no Delete,
-  New, Copy, Cut, Push, or Paste appears for them (the TRACK service offers no
-  upload or delete path).
+- The `tracks` header and individual `track` nodes are **read-only** in the
+  current navOps wiring: no Delete, New, Copy, Cut, Push, or Paste appears for
+  them. The TRACK writer-session protocol
+  ([NET/docs/notes/TRACK_writing.md](../../../NET/docs/notes/TRACK_writing.md))
+  does support upload at the transport layer (confirmed live 2026-05-27); the
+  read-only context menus reflect a pending navOps wiring step, not a transport
+  limitation.
 - The `header:routes` and `header:tracks` and `header:groups` nodes expose
   bulk Delete (Delete Routes, Delete Tracks, Delete Groups / Delete Groups + Waypoints).
 - **Push to DB** appears on E80 selections whose every member has a counterpart

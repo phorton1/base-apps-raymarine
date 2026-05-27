@@ -194,7 +194,7 @@ my $SHARK_MON_TRACK 	= $MON_HEADER | $MON_RAW | $MON_MULTI | $MON_PARSE | $MON_P
     $MON_PACK_CONTROL |
     $MON_PACK_UNKNOWN;
 
-$SHARK_MON_TRACK = 0;	# turn it off in single line
+# $SHARK_MON_TRACK = 0;	# turn it off in single line
 
 my $SHARK_MON_WAYPOINT 	= 0;	# $MON_MIN;  # $MON_ALL;
 my $SHARK_MON_ROUTE 	= 0;	# $MON_MIN;  # $MON_ALL;
@@ -310,7 +310,7 @@ for my $port (keys %SERVICE_PORT_DEFS)
 
 my $SNIFF_MON_FILESYS	= 0;	# $MON_HEADER | $MON_RAW | $MON_PARSE | $MON_PIECES;
 my $SNIFF_MON_DBNAV		= 0;	# $MON_ALL;
-my $SNIFF_MON_TRACK 	= 0;	# $MON_ALL;
+my $SNIFF_MON_TRACK 	= $MON_ALL;	# $MON_ALL;
 my $SNIFF_MON_WAYPOINT 	= 0;	# $MON_MIN;
 my $SNIFF_MON_ROUTE 	= $MON_ALL;
 my $SNIFF_MON_GROUP 	= 0;	# $MON_MIN;
@@ -330,6 +330,7 @@ mergeHash($SNIFFER_DEFAULTS{$SPORT_DBNAV},{
 	out_color		=> $UTILS_COLOR_MAGENTA, });
 mergeHash($SNIFFER_DEFAULTS{$SPORT_TRACK},{
 	parser_class	=> 'apps::raymarine::NET::e_TRACK',
+	active => 1,
 	mon_in			=> $SNIFF_MON_TRACK,
 	mon_out 		=> $SNIFF_MON_TRACK,
 	in_color		=> $UTILS_COLOR_CYAN,

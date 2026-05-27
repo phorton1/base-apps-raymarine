@@ -88,8 +88,20 @@ sub parseMessage
 	return error("NO RULE dir($dir)=$dir_name cmd($cmd)=$cmd_name") if !$rule;
 
 	# set expect_trk flag for commands that return MTA+TRK (GET_TRACK, GET_CUR2)
-	# GET_CUR2 reply is RECV BUFFER (same as GET_CUR), so check on SEND direction
+	# GET_CUR2 reply is RECV BUFFER (same as GET_CUR), so check on SEND direction.
+	#
+	# RECORD is included here for the writer-side track-upload session
+	# (TRACK_writing.md).  A writer session delivers MTA + points as
+	# separate body groups, structurally parallel to the reader-side
+	# GET_TRACK / GET_CUR2 flows (MTA followed by TRK).  Setting
+	# expect_trk=1 here keeps the MTA's INFO_BUFFER from firing
+	# premature buffer_complete (which would trigger the cnt1-vs-points
+	# validation in parseMessage before the points body group arrives);
+	# the existing reader-side machinery then naturally fires
+	# buffer_complete at the points BUFFER once the MTA's INFO_END has
+	# set is_track=1 via the 'track_uuid' piece.
 	if (($dir == $DIRECTION_SEND && $cmd == $TRACK_CMD_GET_CUR2) ||
+		($dir == $DIRECTION_SEND && $cmd == $TRACK_CMD_RECORD)   ||
 		($dir == $DIRECTION_RECV &&
 		 ($cmd == $TRACK_REPLY_TRACK || $cmd == $TRACK_REPLY_END)))
 	{
