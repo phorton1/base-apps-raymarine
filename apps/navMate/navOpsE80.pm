@@ -522,11 +522,13 @@ sub _deleteE80Tracks
         ? "Delete track '$nodes->[0]{data}{name}' from E80?"
         : "Delete $n tracks from E80?";
     return if !confirmDialog($tree, $msg, "Confirm Delete");
+    my $progress = _openE80Progress("Delete Track", $n);
+    return if !$progress;
     for my $node (@$nodes)
     {
         $track->queueTRACKCommand(
             $apps::raymarine::NET::d_TRACK::API_GENERAL_CMD,
-            $node->{uuid}, 'erase');
+            $node->{uuid}, 'erase', undef, $progress);
     }
 }
 

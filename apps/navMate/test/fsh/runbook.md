@@ -775,10 +775,8 @@ Parallels e80.36 -- the same post-truncation comparison in `_collectNameConflict
 
 ```powershell
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+fsh.G11" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=7b4e6d421403dc72&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=044e7e7017030a9e&cmd=10200" | Out-Null
-Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=7b4e6d421403dc72,044e7e7017030a9e&cmd=10200" | Out-Null
+Start-Sleep 2
 curl.exe -s "http://localhost:9883/api/test?panel=fsh&select=my_waypoints&right_click=my_waypoints&cmd=10210" | Out-Null
 Start-Sleep 3
 ```

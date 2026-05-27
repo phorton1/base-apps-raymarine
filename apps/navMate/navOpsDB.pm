@@ -1561,11 +1561,18 @@ sub _pushFromE80
 			my $td  = $item->{data} // {};
 			my $rec = getTrack($dbh, $uuid);
 			next if !$rec;
+			# E80 stores color as a palette index 0..5; the DB canonical
+			# form is the full ABGR string.  Convert the index back to
+			# ABGR before writing so DB consumers (leaflet, etc) keep
+			# seeing the canonical form.
+			my $td_color = defined $td->{color}
+				? e80ColorIndexToAbgr($td->{color})
+				: $rec->{color};
 			$dbh->do(
 				"UPDATE tracks SET name=?, color=?, companion_uuid=?, modified_ts=strftime('%s','now') WHERE uuid=?",
 				[
 					$td->{name}     // $rec->{name},
-					$td->{color}    // $rec->{color},
+					$td_color,
 					$td->{trk_uuid} // $rec->{companion_uuid},
 					$uuid,
 				]);

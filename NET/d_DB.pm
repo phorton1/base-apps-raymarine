@@ -295,10 +295,10 @@ sub onIdle
 			$any++;
 
 			my $fid_name = $DB_FIELDS{$fid}->{name} || sprintf("UNKNOWN(%02x)",$fid);
-			display($dbg+1,0,"CMD_UUID: $fid_name");
+			display($dbg+1,0,"CMD_FIELD: $fid_name");		# was CMD_UUID
 			$this->sendDBCommand(
 				$DIRECTION_SEND,
-				$DB_CMD_UUID,
+				$DB_CMD_FIELD,								# was $DB_CMD_UUID
 				$fid);
 
 			if (0)

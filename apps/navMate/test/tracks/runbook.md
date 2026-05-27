@@ -31,9 +31,11 @@ If teensyBoat is unavailable, mark all tracks tests `NOT_RUN (teensyBoat unavail
 
 ## Positive Tests
 
-### Test 1 -- Create test track on E80 (E80Track)
+### Test 1 -- Create two test tracks on E80 (E80Track1, E80Track2)
 
-Configure the simulator and start recording:
+Two separate recordings.  Each gets its own fresh E80 uuid -- the second exists to give tracks.4 a fresh uuid for the CUT+PASTE record-creating positive, since tracks.2/3 contaminate the first track's uuid in DB.
+
+#### tracks.1a -- record E80Track1
 
 ```powershell
 curl.exe -s "http://localhost:9881/api/command?cmd=AP%3D0" | Out-Null   # autopilot off
@@ -43,95 +45,129 @@ Start-Sleep 1
 curl.exe -s "http://localhost:9881/api/command?cmd=S%3D50" | Out-Null   # 50 knots
 Start-Sleep 2
 
-# Verify motion (look for non-zero sog in SIM output)
+# Verify motion
 $seq = (curl.exe -s "http://localhost:9881/api/log?tail=1" | ConvertFrom-Json).seq
 curl.exe -s "http://localhost:9881/api/command?cmd=SIM" | Out-Null
 Start-Sleep 2
 curl.exe -s "http://localhost:9881/api/log?since=$seq" | ConvertFrom-Json |
     Select-Object -Expand lines | Where-Object { $_.text -match "^SIM" } | ForEach-Object { $_.text }
 
-# Mark log and start recording
-curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+tracks.1+E80Track+record" | Out-Null
+# Mark log and start recording the first track
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+tracks.1+E80Track1+record" | Out-Null
 curl.exe -s "http://localhost:9883/api/command?cmd=t+start"
 ```
 
-Drive a 3-leg triangle (~30s total) as a background task:
+Drive a 3-leg triangle (~30s) as a background task, wait for `ALL_LEGS_DONE`:
 
 ```bash
-# Run via Bash run_in_background
 echo "L1-start" && sleep 10 && curl.exe -s "http://localhost:9881/api/command?cmd=H%3D210" > /dev/null && \
 echo "L2-start" && sleep 10 && curl.exe -s "http://localhost:9881/api/command?cmd=H%3D330" > /dev/null && \
 echo "L3-start" && sleep 10 && echo "ALL_LEGS_DONE"
 ```
 
-Wait for `ALL_LEGS_DONE` in the background output, then stop / name / save:
+Then stop, name as E80Track1, save:
 
 ```powershell
 curl.exe -s "http://localhost:9883/api/command?cmd=t+stop"
 Start-Sleep 2
-curl.exe -s "http://localhost:9883/api/command?cmd=t+name+E80Track"
+curl.exe -s "http://localhost:9883/api/command?cmd=t+name+E80Track1"
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/command?cmd=t+save"
+Start-Sleep 4
+curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json |
+    Select-Object -Expand lines | Where-Object { $_.text -match "got track" } | ForEach-Object { $_.text }
+```
+
+#### tracks.1b -- record E80Track2
+
+Second recording, different geometry so the two tracks are distinguishable.  Each `t+save` produces a new E80 uuid; record both before any DB interaction so neither uuid is contaminated by paste.
+
+```powershell
+curl.exe -s "http://localhost:9881/api/command?cmd=H%3D45" | Out-Null     # heading NE
+Start-Sleep 1
+curl.exe -s "http://localhost:9881/api/command?cmd=S%3D50" | Out-Null
+Start-Sleep 2
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+tracks.1+E80Track2+record" | Out-Null
+curl.exe -s "http://localhost:9883/api/command?cmd=t+start"
+```
+
+Two-leg short triangle (~20s):
+
+```bash
+echo "L1-start" && sleep 10 && curl.exe -s "http://localhost:9881/api/command?cmd=H%3D225" > /dev/null && \
+echo "L2-start" && sleep 10 && echo "ALL_LEGS_DONE"
+```
+
+Stop, name, save:
+
+```powershell
+curl.exe -s "http://localhost:9883/api/command?cmd=t+stop"
+Start-Sleep 2
+curl.exe -s "http://localhost:9883/api/command?cmd=t+name+E80Track2"
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/command?cmd=t+save"
 Start-Sleep 4
 
-# Verify save: look for "got track(<uuid>) = 'E80Track'" in log
-curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json |
-    Select-Object -Expand lines | Where-Object { $_.text -match "got track" } | ForEach-Object { $_.text }
-
 # Park simulator
 curl.exe -s "http://localhost:9881/api/command?cmd=S%3D0"
+
+# Capture both uuids
+$db = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
+$db.tracks.PSObject.Properties | ForEach-Object { "$($_.Name) -> $($_.Value.name)" }
 ```
 
 **NEVER use `STOP`** -- that halts the simulator entirely; `S=0` (URL-encoded `S%3D0`) zeroes speed only.
 
-Note `[E80_TK]` from `/api/db` tracks (the only track present after save).
+Note `[E80_TK1]` and `[E80_TK2]` from `/api/db` tracks (the two tracks present after both saves).
 
-**Pass:** `/api/db` tracks contains exactly 1 track named "E80Track"; its UUID has byte 1 = `B2` (E80-assigned).  Track-record protocol warnings are documented known-quiet (see `../master_runbook.md`).
+**Pass:** `/api/db` tracks contains exactly 2 tracks named "E80Track1" and "E80Track2"; both UUIDs have byte 1 = `B2` (E80-assigned).  Track-record protocol warnings are documented known-quiet (see `../master_runbook.md`).
 
 ---
 
-### Test 2 -- Copy E80 track, Paste to DB
+### Test 2 -- Copy E80Track1, Paste to DB
 
 ```powershell
-$E80_TK = "<from-tracks.1>"
+$E80_TK1 = "<from-tracks.1a>"
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+tracks.2" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$E80_TK&cmd=10200" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$E80_TK1&cmd=10200" | Out-Null
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=6f4e72ceae0264de&right_click=6f4e72ceae0264de&cmd=10210" | Out-Null
 Start-Sleep 5
 ```
 
-**Pass:** E80Track appears in `/api/nmdb` tracks with UUID = `$E80_TK` (preserved); E80Track still on E80; PASTE STARTED/FINISHED.
+**Pass:** E80Track1 appears in `/api/nmdb` tracks with UUID = `$E80_TK1` (preserved); E80Track1 still on E80; PASTE STARTED/FINISHED.
 
 ---
 
-### Test 3 -- Copy E80 track, Paste New to DB (fresh UUID)
+### Test 3 -- Copy E80Track1, Paste New to DB (fresh UUID)
 
 ```powershell
-$E80_TK = "<from-tracks.1>"
+$E80_TK1 = "<from-tracks.1a>"
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+tracks.3" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$E80_TK&cmd=10200" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$E80_TK1&cmd=10200" | Out-Null
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=6f4e72ceae0264de&right_click=6f4e72ceae0264de&cmd=10211" | Out-Null
 Start-Sleep 5
 ```
 
-**Pass:** new E80Track record in `/api/nmdb` tracks with a fresh navMate UUID (byte 1 = `0x4e`, NOT `$E80_TK`); E80Track still on E80 (COPY not CUT); DB now has 2 records for the recorded track.
+**Pass:** new E80Track1 record in `/api/nmdb` tracks with a fresh navMate UUID (byte 1 = `0x4e`, NOT `$E80_TK1`); E80Track1 still on E80 (COPY not CUT); DB now has 2 records for the recorded track.
 
 ---
 
-### Test 4 -- Cut E80 track, Paste to DB
+### Test 4 -- Cut E80Track2, Paste to DB
+
+Uses `[E80_TK2]` from tracks.1b -- a fresh E80 uuid that is NOT yet in the DB.  This isolates the CUT+PASTE record-creating positive from the uuid-collision case (where the source uuid is already in DB; see tracks.G3).
 
 ```powershell
-$E80_TK = "<from-tracks.1>"
+$E80_TK2 = "<from-tracks.1b>"
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+tracks.4" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$E80_TK&cmd=10201" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$E80_TK2&cmd=10201" | Out-Null
 Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=6f4e72ceae0264de&right_click=6f4e72ceae0264de&cmd=10210" | Out-Null
 Start-Sleep 6
 ```
 
-**Pass:** E80Track absent from `/api/db` (E80-side erased); `/api/nmdb` tracks row at UUID = `$E80_TK` updated in place (same-UUID PASTE hits in-place-update); log shows `queueTRACKCommand(...) extra(erase)` line.  End state: E80 empty, DB has 2 records.
+**Pass:** E80Track2 absent from `/api/db` (E80-side erased by CUT); `/api/nmdb` tracks contains a new row at UUID = `$E80_TK2` named "E80Track2" (preserved E80 uuid; record creation); log shows `queueTRACKCommand(...) extra(erase)` for `$E80_TK2`.  PASTE STARTED/FINISHED.  End state: E80 still has E80Track1 (unchanged), DB has 3 rows total (E80Track1@`$E80_TK1`, E80Track1@fresh-navMate, E80Track2@`$E80_TK2`).
 
 ---
 
@@ -157,23 +193,19 @@ $tk."8a4e3c4a2201fac2".name
 
 ### Test 6 -- PASTE multi DB tracks -> E80 tracks header
 
-Uses `[DB_TRACK_MULTI_A/B/C] = 8a4e3c4a2201fac2`, `664e93a624018e26`, `694e27fe26016702` ("BOCAS1-001/002/003", 77+74+55 pts).  Multi-select by chaining `cmd=10200` calls (the clipboard accumulates) -- the helper below picks up the three children of `[DB_TRACKS_BRANCH]`.
+Uses `[DB_TRACK_MULTI_B/C] = 664e93a624018e26`, `694e27fe26016702` ("BOCAS1-002/003", 74+55 pts).  Two-track batch; `[DB_TRACK_MULTI_A]` (BOCAS1-001) is excluded because tracks.5 already pasted it to E80, and `_pasteAllToE80` rejects a batch that contains any uuid already present on E80 (with `use PASTE_NEW instead` sentinel).  Multi-select is a single call with comma-separated uuids (`navTest.pm` line 11 documents this form; chaining N single-select calls each REPLACES the prior selection, so only the last reaches PASTE -- that's a runbook bug, not a code bug).
 
 ```powershell
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+tracks.6" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=8a4e3c4a2201fac2&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=664e93a624018e26&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=694e27fe26016702&cmd=10200" | Out-Null
-Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=664e93a624018e26,694e27fe26016702&cmd=10200" | Out-Null
+Start-Sleep 2
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_click=header%3Atracks&cmd=10210" | Out-Null
 Start-Sleep 20
 
 @((curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json).tracks.PSObject.Properties).Count
 ```
 
-**Pass:** `/api/db` tracks count includes the 3 new BOCAS1-001/002/003 records (plus tracks.5's BOCAS1-001 if same -- in-place update on the dup uuid; net count may be 3 or 4 depending on tracks.5's state at this point).  All three have mta_uuid preserved from DB.  PASTE STARTED/FINISHED.
+**Pass:** `/api/db` tracks now contains BOCAS1-002@`664e93a624018e26` and BOCAS1-003@`694e27fe26016702` alongside the BOCAS1-001@`8a4e3c4a2201fac2` from tracks.5 (E80 count goes 1 -> 3 plus E80Track1 from Section 1 = 4 total).  Both new tracks have mta_uuid preserved from DB.  PASTE STARTED/FINISHED + ProgressDialog STARTED/FINISHED.
 
 ---
 
@@ -195,14 +227,10 @@ Start-Sleep 8
 
 ```powershell
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+tracks.8" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=8a4e3c4a2201fac2&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=664e93a624018e26&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=database&select=694e27fe26016702&cmd=10200" | Out-Null
-Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=8a4e3c4a2201fac2,664e93a624018e26,694e27fe26016702&cmd=10200" | Out-Null
+Start-Sleep 2
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_click=header%3Atracks&cmd=10211" | Out-Null
-Start-Sleep 20
+Start-Sleep 25
 ```
 
 **Pass:** three new tracks on E80 with FRESH navMate UUIDs (all byte 1 = `0x4e`); names = "BOCAS1-001", "BOCAS1-002", "BOCAS1-003"; DB unchanged.
@@ -253,44 +281,51 @@ Write-Host "DB color: before=$color_before after=$($row_after.color)"
 
 ### Test 11 -- Multi-COPY from E80 -> PASTE to DB
 
+Source uuids: any three E80 uuids that are NOT yet in DB.  The uuid-collision preflight added 2026-05-29 rejects record-creating spoke->DB paste at an already-existing uuid (use PUSH for that), so this positive test must pick uncontaminated source uuids.  The fresh-navMate-uuid tracks from tracks.7/.8 fit (byte 1 = `4e` and DB has no row at those uuids).
+
 ```powershell
-# Pick three E80 tracks to copy (e.g. tracks.6 / tracks.8 outputs)
-$E80_TR1 = "<uuid from /api/db tracks>"
-$E80_TR2 = "<uuid from /api/db tracks>"
-$E80_TR3 = "<uuid from /api/db tracks>"
+$nmdb_uuids = @{}
+$nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
+$nmdb_uuids[$_] = 1 foreach (@($nmdb.tracks | ForEach-Object { $_.uuid }))
+$db    = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
+$fresh = @($db.tracks.PSObject.Properties | Where-Object { -not $nmdb_uuids[$_.Name] } | ForEach-Object { $_.Name })
+"E80 uuids NOT in DB: $($fresh -join ', ')"
+$picked = $fresh | Select-Object -First 3
+"Picked: $($picked -join ', ')"
 
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+tracks.11" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$E80_TR1&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$E80_TR2&cmd=10200" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$E80_TR3&cmd=10200" | Out-Null
-Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$($picked -join ',')&cmd=10200" | Out-Null
+Start-Sleep 2
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=6f4e72ceae0264de&right_click=6f4e72ceae0264de&cmd=10210" | Out-Null
-Start-Sleep 10
+Start-Sleep 15
 ```
 
-**Pass:** `/api/nmdb` tracks now contains rows at all three E80 UUIDs (preserved through PASTE); E80 unchanged; PASTE STARTED/FINISHED.
+**Pass:** `/api/nmdb` tracks now contains rows at all three picked uuids (preserved through PASTE); E80 unchanged (COPY not CUT); PASTE STARTED/FINISHED.  If `$fresh` has fewer than 3 elements at runtime, the test records NOT_RUN (state setup precondition unmet).
 
 ---
 
 ### Test 12 -- Multi-CUT from E80 -> PASTE to DB
 
+Same uuid-collision constraint as tracks.11 -- pick E80 uuids that are NOT yet in DB.  After tracks.11 those fresh uuids ARE now in DB (tracks.11 pasted them), so this test re-derives the set fresh.
+
 ```powershell
-# Pick the remaining E80 tracks
-$E80_TR1 = "<uuid>"
-$E80_TR2 = "<uuid>"
+$nmdb_uuids = @{}
+$nmdb = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
+$nmdb_uuids[$_] = 1 foreach (@($nmdb.tracks | ForEach-Object { $_.uuid }))
+$db    = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
+$fresh = @($db.tracks.PSObject.Properties | Where-Object { -not $nmdb_uuids[$_.Name] } | ForEach-Object { $_.Name })
+"E80 uuids NOT in DB: $($fresh -join ', ')"
+$picked = $fresh | Select-Object -First 2
+"Picked: $($picked -join ', ')"
 
 curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+tracks.12" | Out-Null
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$E80_TR1&cmd=10201" | Out-Null
-Start-Sleep 1
-curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$E80_TR2&cmd=10201" | Out-Null
-Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=$($picked -join ',')&cmd=10201" | Out-Null
+Start-Sleep 2
 curl.exe -s "http://localhost:9883/api/test?panel=database&select=6f4e72ceae0264de&right_click=6f4e72ceae0264de&cmd=10210" | Out-Null
-Start-Sleep 10
+Start-Sleep 15
 ```
 
-**Pass:** E80 tracks count decreased by 2 (the cut tracks removed); DB rows at those UUIDs updated in place (in-place-update from PASTE on existing UUIDs); CUT/PASTE STARTED/FINISHED.
+**Pass:** E80 tracks count decreased by 2 (the CUT items removed); `/api/nmdb` tracks contains new rows at the 2 picked uuids (record creation, preserved E80 uuid); CUT STARTED/FINISHED + PASTE STARTED/FINISHED; log shows `extra(erase)` for both picked uuids.  If `$fresh` has fewer than 2 elements at runtime, the test records NOT_RUN.
 
 ---
 
@@ -343,14 +378,58 @@ Start-Sleep 1
 curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_click=header%3Atracks&cmd=10210" | Out-Null
 Start-Sleep 15
 
-# Log should show both lossy-warn lines
+# Log should show both lossy-warn lines (emitted by lossyTransformWarning
+# before the suppress short-circuit; the test-visible prefix is "lossyTransformWarning:").
 curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json |
     Select-Object -Expand lines |
-    Where-Object { $_.text -match "truncated|cannot round-trip|approximated" } |
+    Where-Object { $_.text -match "lossyTransformWarning:" } |
     ForEach-Object { $_.text }
 ```
 
-**Pass:** log contains BOTH the `truncated_names` line and the `color_mismatch` line of `lossyTransformWarning`; lossy-warn dialog auto-accepts under suppress=1; track lands on E80 with name "2006-01-11-Sand" (15 chars); E80 track color is a palette index 0..5; PASTE STARTED/FINISHED.  If only one of the two lossy lines fires, that's a regression in `_preflightLossyTransform`.
+**Pass:** log contains TWO `lossyTransformWarning:` lines -- one with `1 item(s) will have names truncated to 15 characters` and one with `1 item(s) have colors that cannot round-trip to the destination and will be approximated`; lossy-warn dialog auto-accepts under suppress=1; track lands on E80 with name "2006-01-11-Sand" (15 chars); E80 track color is a palette index 0..5; PASTE STARTED/FINISHED.  If only one of the two lossy lines fires, that's a regression in `_preflightLossyTransform`.
+
+---
+
+### Test G3 -- uuid-collision preflight on spoke -> DB record-creating paste
+
+Verifies the 2026-05-29 preflight rule: PASTE of a clipboard item whose uuid already exists in the corresponding DB table is rejected with a sentinel naming the rule.  PASTE_NEW is the alternative (fresh-uuid record creation); PUSH is the alternative for "sync into existing-uuid DB row".  Tracks here; the same rule fires for waypoints/groups/routes.
+
+Setup: ensure E80 has a track at a uuid that also exists in DB.  After tracks.5's PASTE, `8a4e3c4a2201fac2` is present on BOTH E80 and DB (preserved-uuid PASTE).  After tracks.13's DELETE TRACK at the tracks-header, E80 is empty; re-establish the shared uuid first.
+
+```powershell
+# Setup: PASTE BOCAS1-001 to E80 so the uuid lives on both sides.
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+tracks.G3+setup" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=8a4e3c4a2201fac2&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=header%3Atracks&right_click=header%3Atracks&cmd=10210" | Out-Null
+Start-Sleep 8
+
+# Verify setup
+$db = curl.exe -s "http://localhost:9883/api/db" | ConvertFrom-Json
+"E80 has BOCAS1-001@8a4e3c4a2201fac2: $($db.tracks.'8a4e3c4a2201fac2'.name)"
+
+# Now the actual guard: COPY from E80, PASTE to DB at the same uuid.
+$nmdb_before = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
+$count_before = @($nmdb_before.tracks).Count
+
+curl.exe -s "http://localhost:9883/api/command?cmd=mark+Test+tracks.G3" | Out-Null
+curl.exe -s "http://localhost:9883/api/test?panel=e80&select=8a4e3c4a2201fac2&cmd=10200" | Out-Null
+Start-Sleep 1
+curl.exe -s "http://localhost:9883/api/test?panel=database&select=6f4e72ceae0264de&right_click=6f4e72ceae0264de&cmd=10210" | Out-Null
+Start-Sleep 5
+
+$nmdb_after = curl.exe -s "http://localhost:9883/api/nmdb" | ConvertFrom-Json
+$count_after = @($nmdb_after.tracks).Count
+"nmdb tracks: before=$count_before after=$count_after"
+
+# Log should show the preflight rejection sentinel
+curl.exe -s "http://localhost:9883/api/log?since=mark" | ConvertFrom-Json |
+    Select-Object -Expand lines |
+    Where-Object { $_.text -match "Paste rejected|already exist in the database" } |
+    ForEach-Object { $_.text }
+```
+
+**Pass:** log contains the preflight sentinel `Paste rejected: 1 item(s) already exist in the database at the same uuid.` (with the PUSH/PASTE_NEW guidance line); nmdb tracks count unchanged (no SQL INSERT attempted, so no `UNIQUE constraint failed: tracks.uuid` either); PASTE STARTED line present but FINISHED also present (the predicate returns early; no progress dialog opens for the data side).
 
 ---
 

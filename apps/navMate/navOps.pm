@@ -1161,6 +1161,48 @@ sub _doPaste
 	}
 	else
 	{
+		# Spoke->DB record-creating paste: reject if any clipboard item's
+		# uuid already exists at the corresponding DB table.  PASTE_NEW
+		# mints a fresh DB uuid at the writer/inserter, so it bypasses
+		# this check.  Without this preflight the underlying INSERT hits
+		# the table's UNIQUE constraint and the user sees only a raw SQL
+		# error.  PUSH is the operation for syncing into an existing-uuid
+		# DB row; PASTE creates records.
+		my $src = $cb->{source} // '';
+		my $is_paste_new_db = ($cmd_id == $CTX_CMD_PASTE_NEW
+		                   || $cmd_id == $CTX_CMD_PASTE_NEW_BEFORE
+		                   || $cmd_id == $CTX_CMD_PASTE_NEW_AFTER);
+		if (!$is_paste_new_db && ($src eq 'e80' || $src eq 'fsh'))
+		{
+			my $coll_dbh = connectDB();
+			if ($coll_dbh)
+			{
+				my @colls;
+				for my $item (@resolved)
+				{
+					my $t = $item->{type} // '';
+					my $u = $item->{uuid} // '';
+					next if !$u;
+					my $existing;
+					if    ($t eq 'waypoint')             { $existing = getWaypoint($coll_dbh, $u); }
+					elsif ($t eq 'route')                { $existing = getRoute($coll_dbh, $u); }
+					elsif ($t eq 'track')                { $existing = getTrack($coll_dbh, $u); }
+					elsif ($t eq 'group' || $t eq 'branch') { $existing = getCollection($coll_dbh, $u); }
+					push @colls, { type => $t, uuid => $u, name => ($item->{data} // {})->{name} // '' }
+						if $existing;
+				}
+				disconnectDB($coll_dbh);
+				if (@colls)
+				{
+					my @lines = map { "  $_->{type} '$_->{name}' (uuid=$_->{uuid})" } @colls;
+					error("Paste rejected: " . scalar(@colls)
+					    . " item(s) already exist in the database at the same uuid."
+					    . "  Use PUSH to sync into an existing record, or PASTE_NEW to create"
+					    . " a fresh record.\n" . join("\n", @lines));
+					return;
+				}
+			}
+		}
 		navOps::_pasteDB($cmd_id, $right_click_node, $tree, \@resolved, $cb);
 	}
 	clearClipboard() if $cb->{cut_flag};

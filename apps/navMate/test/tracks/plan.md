@@ -48,19 +48,19 @@ Two-section structure per master runbook's Test Organization Convention: positiv
 
 | Test | What it verifies |
 |------|------------------|
-| tracks.1 | teensyBoat records ONE track on E80 (proof of recording path) |
-| tracks.2 | Copy E80 track, Paste to DB (E80 UUID preserved; E80 track stays) |
-| tracks.3 | Copy E80 track, Paste New to DB (fresh navMate UUID; E80 unchanged) |
-| tracks.4 | Cut E80 track, Paste to DB (E80 track consumed; same-UUID hits in-place-update on DB row from tracks.2) |
+| tracks.1 | teensyBoat records TWO tracks on E80 (tracks.1a E80Track1, tracks.1b E80Track2 -- the second exists so tracks.4 has a fresh E80 uuid for the CUT+PASTE record-creating positive after tracks.2/3 contaminate the first uuid in DB) |
+| tracks.2 | Copy E80Track1, Paste to DB (E80 UUID preserved; E80 track stays) |
+| tracks.3 | Copy E80Track1, Paste New to DB (fresh navMate UUID; E80 unchanged) |
+| tracks.4 | Cut E80Track2, Paste to DB (E80Track2 consumed by CUT; PASTE creates DB row at preserved E80Track2 uuid -- uuid is uncontaminated, so the 2026-05-29 uuid-collision preflight does not fire) |
 
-End-of-Section-1 state: E80 empty; DB has two records for the recorded track -- one at the original E80 UUID, one at a fresh navMate UUID.
+End-of-Section-1 state: E80 has E80Track1 (tracks.2/3 are COPY, not CUT); DB has 3 records (E80Track1@preserved-E80, E80Track1@fresh-navMate, E80Track2@preserved-E80).  Section 2's tracks.5+ tolerates the leftover E80Track1.
 
 ### Section 2 -- DB/FSH -> E80 + multi-from-E80
 
 | Test | What it verifies |
 |------|------------------|
 | tracks.5 | PASTE single DB track [DB_TRACK_SHORT] -> E80 tracks header (mta_uuid preserved; writer-session protocol) |
-| tracks.6 | PASTE multi DB tracks [DB_TRACK_MULTI_A/B/C] -> E80 tracks header (three tracks land) |
+| tracks.6 | PASTE multi DB tracks [DB_TRACK_MULTI_B/C] -> E80 tracks header (two tracks land at preserved uuids).  001 is excluded because tracks.5 already pasted it to E80, and `_pasteAllToE80` rejects a batch that contains any uuid already present on the spoke. |
 | tracks.7 | PASTE_NEW single DB track [DB_TRACK_SHORT] -> E80 (fresh navMate UUID minted at writer seam; DB unchanged) |
 | tracks.8 | PASTE_NEW multi DB tracks -> E80 |
 | tracks.9 | PASTE single FSH track [FSH_TRACK_BOCAS1_003] -> E80 (cross-spoke FSH-to-E80 via writer-session) |
@@ -74,7 +74,8 @@ End-of-Section-1 state: E80 empty; DB has two records for the recorded track -- 
 | Test | What it verifies |
 |------|------------------|
 | tracks.G1 | PASTE track at non-tracks-header E80 destination rejected (D6 spoke content-vs-destination sub-rule).  E80 unchanged. |
-| tracks.G2 | Lossy-warn fires both `truncated_names` and `color_mismatch` lines for [DB_TRACK_LONG_NONPALETTE]; under `suppress=1` (auto-accept), paste succeeds with name truncated at wire seam and color snapped to nearest palette index. |
+| tracks.G2 | Lossy-warn fires both `truncated_names` and `color_mismatch` lines for [DB_TRACK_LONG_NONPALETTE]; under `suppress=1` (auto-accept), paste succeeds with name truncated at wire seam and color snapped to nearest palette index.  Log evidence: two `lossyTransformWarning:` lines (emitted before the suppress short-circuit so they appear in automated-run logs). |
+| tracks.G3 | uuid-collision preflight rejects spoke->DB record-creating PASTE when the source uuid already exists in DB.  Setup re-establishes shared uuid (PASTE BOCAS1-001 from DB to E80) then exercises the rejection (COPY from E80, PASTE to DB).  Sentinel names PUSH / PASTE_NEW as the alternatives. |
 
 ## Intra-module sequencing
 
@@ -86,10 +87,10 @@ Tests build E80 state progressively from the empty baseline:
 
 ## Notes
 
-- **Single teensyBoat track suffices**.  The previous two-track pattern (Track1, Track2) was needed because Track1 had to stay on E80 for the COPY/PASTE_NEW tests while Track2 was consumed by CUT.  The writer-session protocol now provides a wire path to put DB tracks on E80, so multi-track-on-E80 state is built by Section 2's paste tests rather than by additional teensyBoat recordings.  One recording proves the recording path; the rest is mechanical multiplication via the wire path.
+- **Two teensyBoat tracks needed**.  E80Track1 stays on E80 across tracks.2/3 (COPY, not CUT); its uuid is now in DB twice (preserved + fresh-navMate).  tracks.4 must CUT a record-creating positive at a fresh uuid -- the 2026-05-29 uuid-collision preflight rejects spoke->DB PASTE at an already-existing DB uuid -- so E80Track2 exists for tracks.4 to cut.  Mechanical multiplication via the writer-session protocol still serves Section 2's volume tests.
 - Track-record protocol warnings (`TRACK EVENT(N)`, `enquing GET_CUR2`, `handleEvent() returning undef`, `bad points(0) != expected(N)`, `TRACK OUT OF BAND`) are documented protocol noise; see `../master_runbook.md` Known-Quiet Warnings.
 - After tracks.1's recording, park the teensyBoat simulator with `S=0` (never `STOP` -- that halts the simulator entirely).
 - tracks.G2 exercises both lossy-warn entries (name truncation + color snap) in a single test because `[DB_TRACK_LONG_NONPALETTE]` has BOTH a >15-char name AND a non-palette color.  Cheaper than two tests for the same dialog code path.
 - `_pasteTracksToE80Allows`'s `point_count > 0` and non-empty `mta_uuid` hard rules are NOT exercised here.  No real-world UI flow can produce a DB row in those states (every DB track has positive points by construction; every DB row has a non-empty primary-key uuid).  The defensive code remains; integration-test coverage is omitted as unreachable.  See `survey_report.txt` 2026-05-29.
 - `tracks.10` exercises the **natural color drift** from tracks.5's PASTE -- no out-of-band modify step.  The DB track had a non-palette color (`ffff6666`); the wire seam snapped it to a palette index; PUSH back to DB lands the palette-exact ABGR, which differs from the original.  This is a genuine diff sync without requiring chartplotter UI or external helpers.
-- `[E80_TK]` UUID is derived at runtime from `/api/db` tracks after tracks.1 saves; varies per cycle.
+- `[E80_TK1]` / `[E80_TK2]` UUIDs are derived at runtime from `/api/db` tracks after tracks.1a / tracks.1b save; vary per cycle.

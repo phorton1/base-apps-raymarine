@@ -73,8 +73,8 @@ my $WITH_WX          = 1;
 my $WITH_WPMGR       = 1;
 my $WITH_TRACK       = 1;
 my $WITH_FILESYS     = 1;
-my $WITH_DB          = 0;
-my $WITH_DBNAV       = 0;
+my $WITH_DB          = 1;
+my $WITH_DBNAV       = 1;
 
 
 #-----------------------------------------

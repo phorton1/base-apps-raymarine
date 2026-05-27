@@ -80,9 +80,9 @@ UUIDs verified 2026-05-08 from live `/api/nmdb` (schema 10, git-baseline navMate
 | [TestTrack] | 1a4eed924904ebbe | "2005-11-25-SanDiego2Oceanside" -- in MandalaLogs/Tracks; 500 pts, palette color (ff00ff00 green) |
 | [DB_TRACK_SHORT] | 8a4e3c4a2201fac2 | "BOCAS1-001" -- 11 chars, 77 pts, color=ffff6666; short-name positive PASTE-to-E80 candidate |
 | [DB_TRACK_LONG_NONPALETTE] | 824e8a104b04c37c | "2006-01-11-SanDiego2DanaPoint" -- 31 chars, 231 pts, color=ffffff00; exercises BOTH lossy-warn lines (name truncation + color snap) in a single paste |
-| [DB_TRACK_MULTI_A] | 8a4e3c4a2201fac2 | = [DB_TRACK_SHORT]. Alias for use in multi-track tests as the first of N. |
-| [DB_TRACK_MULTI_B] | 664e93a624018e26 | "BOCAS1-002" -- 11 chars, 74 pts. Second in multi-track tests. |
-| [DB_TRACK_MULTI_C] | 694e27fe26016702 | "BOCAS1-003" -- 11 chars, 55 pts. Third in multi-track tests. |
+| [DB_TRACK_MULTI_A] | 8a4e3c4a2201fac2 | = [DB_TRACK_SHORT]. The single-PASTE track in tracks.5; NOT used in multi-PASTE because by then it lives on E80 (uuid-preserving multi-PASTE collides). |
+| [DB_TRACK_MULTI_B] | 664e93a624018e26 | "BOCAS1-002" -- 11 chars, 74 pts. First slot in the tracks.6 multi-PASTE batch. |
+| [DB_TRACK_MULTI_C] | 694e27fe26016702 | "BOCAS1-003" -- 11 chars, 55 pts. Second slot in the tracks.6 multi-PASTE batch. |
 | [DB_TRACKS_BRANCH] | 2b4e3308ca00cf66 | oldE80/Tracks branch -- 123 tracks; parent of the BOCAS1-* / BOCAS2-* / TOBOBE-* / SANBLAS-* etc. children used by multi-track tests. |
 
 ### Paste destination
@@ -161,7 +161,8 @@ These entries have no static UUID. The module's baseline setup creates them; the
 | [E80_WP] | setup:upload_wp([IsolatedWP1]) -- e80 module | Paste [IsolatedWP1] to E80 (UUID preserved). Used as the canonical upload-WP across e80 module tests. |
 | [E80_GR] | setup:upload_group([GroupWithRouteMembers]) -- e80 module | Paste Popa group to E80 (UUID preserved). |
 | [E80_RT] | setup:upload_route([TestRoute]) -- e80 module | Paste Popa route to E80 (UUID preserved). |
-| [E80_TK] | setup:teensyBoat_track(E80Track) -- tracks module | Single teensyBoat-recorded track; UUID assigned by E80 (byte 1 = B2). One track is sufficient now that the track-writer protocol provides a wire path for DB->E80 paste; multi-track variants source from DB-paste outputs rather than additional teensyBoat recordings. |
+| [E80_TK1] | setup:teensyBoat_track(E80Track1) -- tracks module | First teensyBoat-recorded track; UUID assigned by E80 (byte 1 = B2). Lives on E80 across tracks.2/3 (COPY-only) and into Section 2. |
+| [E80_TK2] | setup:teensyBoat_track(E80Track2) -- tracks module | Second teensyBoat-recorded track; fresh E80 uuid (byte 1 = B2). Used by tracks.4 as the CUT+PASTE record-creating positive (its uuid must be uncontaminated in DB because the 2026-05-29 uuid-collision preflight rejects spoke->DB paste at an existing DB uuid). |
 | [E80_FRESH_WP] | setup:paste_new_wp -- e80 module | Fresh-UUID WP created by PASTE_NEW (navMate-assigned UUID, byte 1 = 0x4e). |
 | [E80_FRESH_WP2] | setup:paste_new_wp -- e80 module | Second fresh-UUID WP. |
 | [E80_RT_FRESH] | setup:paste_new_route -- e80 module | Fresh-UUID route from PASTE_NEW (preserves member WP UUIDs by reference). |

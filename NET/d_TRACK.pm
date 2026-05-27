@@ -107,6 +107,7 @@ sub init
 	
 	$this->{tracks} = shared_clone({});
 	$this->{current_track_uuid} = '';
+	$this->{erase_progress} = shared_clone({});
 	return $this;
 }
 
@@ -121,7 +122,7 @@ sub destroy
 	$query_in_progress = 0;
 	$this->SUPER::destroy();
 
-    delete @$this{qw(tracks current_track_uuid)};
+    delete @$this{qw(tracks current_track_uuid erase_progress)};
 	return $this;
 }
 
@@ -895,6 +896,13 @@ sub do_general
 	if ($rpart eq 'erase')
 	{
 		$cmd = $TRACK_CMD_ERASE;
+		# Register progress for TRACK_CHANGED-byte-2 signaling, so the
+		# Delete Track ProgressDialog can auto-FINISH when E80 broadcasts
+		# the delete event for this uuid.
+		if ($command->{progress})
+		{
+			$this->{erase_progress}{$uuid} = $command->{progress};
+		}
 	}
 	elsif ($rpart eq 'mta')
 	{
@@ -1011,6 +1019,17 @@ sub handleEvent
 					warning($dbg_mods,1,"deleting tracks($uuid) $exists->{name}");
 					delete $tracks->{$uuid};
 					$this->incVersion();
+				}
+				# Signal Delete Track ProgressDialog if this uuid was
+				# registered for erase-progress tracking.  Match by uuid
+				# regardless of whether the in-memory track existed --
+				# the erase ack arrives whether or not we already had it.
+				my $erase_progress = $this->{erase_progress};
+				my $prog = $erase_progress ? $erase_progress->{$uuid} : undef;
+				if ($prog)
+				{
+					$prog->{done}++;
+					delete $erase_progress->{$uuid};
 				}
 			}
 			else	# enqueue a GET_TRACK command
