@@ -187,21 +187,21 @@ for my $port (keys %SERVICE_PORT_DEFS)
 
 # My current hardwired monitoring preferences, per implemented service
 
-my $SHARK_MON_FILESYS	= $MON_HEADER | $MON_RAW | $MON_PARSE | $MON_PIECES;
-my $SHARK_MON_DBNAV		= $MON_ALL;
+my $SHARK_MON_FILESYS	= 0;	# $MON_HEADER | $MON_RAW | $MON_PARSE | $MON_PIECES;
+my $SHARK_MON_DBNAV		= 0;	# $MON_ALL;
 my $SHARK_MON_TRACK 	= $MON_HEADER | $MON_RAW | $MON_MULTI | $MON_PARSE | $MON_PIECES |
 	$MON_PACK		|
     $MON_PACK_CONTROL |
     $MON_PACK_UNKNOWN;
 
-# $SHARK_MON_TRACK = 0;	# turn it off in single line
+$SHARK_MON_TRACK = 0;	# turn it off in single line
 
 my $SHARK_MON_WAYPOINT 	= 0;	# $MON_MIN;  # $MON_ALL;
 my $SHARK_MON_ROUTE 	= 0;	# $MON_MIN;  # $MON_ALL;
 my $SHARK_MON_GROUP 	= 0;	# $MON_MIN;  # $MON_ALL;
 
-my $ACTIVE_TRACK 		= 1;
-my $ACTIVE_WPMGR 		= 1;
+my $ACTIVE_TRACK 		= 0;
+my $ACTIVE_WPMGR 		= 0;
 my $ACTIVE_FILESYS 		= 0;
 my $ACTIVE_DBNAV 		= 0;
 my $ACTIVE_DB 			= 0;
