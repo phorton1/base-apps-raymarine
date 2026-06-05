@@ -11,7 +11,8 @@
 **[GE Notes](ge_notes.md)** --
 **[Testing](testing.md)** --
 **[winFSH](winFSH.md)** --
-**[winMultiEditor](winMultiEditor.md)**
+**[winMultiEditor](winMultiEditor.md)** --
+**[E80Config](e80_config.md)**
 
 Folders: **[Raymarine](../../../docs/readme.md)** --
 **[NET](../../../NET/docs/readme.md)** --

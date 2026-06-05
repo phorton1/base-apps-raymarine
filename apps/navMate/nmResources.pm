@@ -45,6 +45,9 @@ BEGIN
 		$COMMAND_REFRESH_E80_DB
 		$COMMAND_CLEAR_E80_DB
 		$COMMAND_REFRESH_WIN_E80
+		$COMMAND_SAVE_E80_CONFIG
+		$COMMAND_RESTORE_E80_CONFIG
+		$COMMAND_CLEAR_E80_CONFIG
 		$COMMAND_IMPORT_DB_TEXT
 		$COMMAND_EXPORT_DB_TEXT
 		$COMMAND_SAVE_OUTLINE
@@ -88,6 +91,9 @@ our $COMMAND_REFRESH_DB			= 10041;
 our $COMMAND_REFRESH_E80_DB		= 10042;
 our $COMMAND_CLEAR_E80_DB		= 10043;
 our $COMMAND_REFRESH_WIN_E80	= 10050;
+our $COMMAND_SAVE_E80_CONFIG	= 10051;
+our $COMMAND_RESTORE_E80_CONFIG	= 10052;
+our $COMMAND_CLEAR_E80_CONFIG	= 10053;
 our $COMMAND_IMPORT_DB_TEXT		= 10061;
 our $COMMAND_EXPORT_DB_TEXT		= 10062;
 our $COMMAND_SAVE_OUTLINE		= 10071;
@@ -142,6 +148,9 @@ my $command_data = {
 	$COMMAND_REFRESH_E80_DB		=> ['Refresh E80-DB',		'Re-query all waypoints, routes, groups, and tracks from E80'],
 	$COMMAND_CLEAR_E80_DB		=> ['Clear',				'Delete all waypoints, routes, groups, and tracks from E80'],
 	$COMMAND_REFRESH_WIN_E80	=> ['Refresh Window',		'Reload E80 window from in-memory data'],
+	$COMMAND_SAVE_E80_CONFIG	=> ['Save Configuration...',	'Save the E80 display configuration to a folder'],
+	$COMMAND_RESTORE_E80_CONFIG	=> ['Restore Configuration...',	'Restore a saved E80 display configuration from a folder'],
+	$COMMAND_CLEAR_E80_CONFIG	=> ['Clear Configuration',	'Reset the E80 display configuration to factory defaults'],
 	$COMMAND_IMPORT_DB_TEXT		=> ['Import from Text',		'Replace navMate database from a text backup file'],
 	$COMMAND_EXPORT_DB_TEXT		=> ['Export to Text',		'Export navMate database to a text backup file'],
 	$COMMAND_SAVE_OUTLINE		=> ['Save Outline',			'Save database tree expansion state to nmDBOutline.json'],
@@ -205,6 +214,10 @@ my $e80_menu = [
 	$COMMAND_CLEAR_E80_DB,
 	$ID_SEPARATOR,
 	$WIN_FILESYS,
+	$ID_SEPARATOR,
+	$COMMAND_SAVE_E80_CONFIG,
+	$COMMAND_RESTORE_E80_CONFIG,
+	$COMMAND_CLEAR_E80_CONFIG,
 ];
 
 my $filesys_context_menu = [

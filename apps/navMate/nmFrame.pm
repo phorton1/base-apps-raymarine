@@ -36,6 +36,7 @@ use apps::raymarine::NET::winFILESYS;
 use navOneTimeImport;
 use navKML;
 use winSymMapping;
+use nmE80Config;
 use base qw(Pub::WX::Frame);
 
 my $next_db_instance = 0;
@@ -67,6 +68,9 @@ sub new
 	EVT_MENU($this, $COMMAND_REFRESH_WIN_E80,	\&onCommand);
 	EVT_MENU($this, $COMMAND_REFRESH_E80_DB,	\&onCommand);
 	EVT_MENU($this, $COMMAND_CLEAR_E80_DB,		\&onCommand);
+	EVT_MENU($this, $COMMAND_SAVE_E80_CONFIG,	\&onCommand);
+	EVT_MENU($this, $COMMAND_RESTORE_E80_CONFIG,	\&onCommand);
+	EVT_MENU($this, $COMMAND_CLEAR_E80_CONFIG,	\&onCommand);
 	EVT_MENU($this, $COMMAND_REFRESH_DB,		\&onCommand);
 	EVT_MENU($this, $COMMAND_EXPORT_DB_TEXT,	\&onCommand);
 	EVT_MENU($this, $COMMAND_IMPORT_DB_TEXT,	\&onCommand);
@@ -85,6 +89,9 @@ sub new
 	EVT_UPDATE_UI($this, $COMMAND_REFRESH_WIN_E80,		\&onCommandEnable);
 	EVT_UPDATE_UI($this, $COMMAND_REFRESH_E80_DB,		\&onCommandEnable);
 	EVT_UPDATE_UI($this, $COMMAND_CLEAR_E80_DB,			\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_SAVE_E80_CONFIG,		\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_RESTORE_E80_CONFIG,	\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_CLEAR_E80_CONFIG,		\&onCommandEnable);
 	EVT_UPDATE_UI($this, $COMMAND_REVERT_DB,			\&onCommandEnable);
 	EVT_UPDATE_UI($this, $COMMAND_COMMIT_DB,			\&onCommandEnable);
 	EVT_UPDATE_UI($this, $COMMAND_SAVE_FSH_FILE,		\&onCommandEnable);
@@ -152,6 +159,8 @@ sub onIdle
 		my $route_edit = pollRouteEditPending();
 		dispatchRouteEdit($this, $route_edit) if $route_edit;
 	}
+
+	nmE80Config::onIdle($this);
 
 	if (pollClearMapPending())
 	{
@@ -350,6 +359,18 @@ sub onCommand
 	{
 		navOps::doClearE80DB($this);
 	}
+	elsif ($id == $COMMAND_SAVE_E80_CONFIG)
+	{
+		nmE80Config::doSave($this);
+	}
+	elsif ($id == $COMMAND_RESTORE_E80_CONFIG)
+	{
+		nmE80Config::doRestore($this);
+	}
+	elsif ($id == $COMMAND_CLEAR_E80_CONFIG)
+	{
+		nmE80Config::doClear($this);
+	}
 	elsif ($id == $COMMAND_REFRESH_DB)
 	{
 		$_->refresh() for $this->_findDatabasePanes();
@@ -490,6 +511,12 @@ sub onCommandEnable
 			             || %{$wpmgr->{waypoints} // {}}
 			             || ($track && %{$track->{tracks} // {}}));
 		}
+	}
+	elsif ($id == $COMMAND_SAVE_E80_CONFIG
+	    || $id == $COMMAND_RESTORE_E80_CONFIG
+	    || $id == $COMMAND_CLEAR_E80_CONFIG)
+	{
+		$enable = 0 if !nmE80Config::deviceCount();
 	}
 	elsif ($id == $COMMAND_REVERT_DB || $id == $COMMAND_COMMIT_DB)
 	{

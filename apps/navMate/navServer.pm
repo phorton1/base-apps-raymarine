@@ -17,6 +17,9 @@
 #   /api/query   - SELECT against navMate SQLite DB
 #   /api/nmdb    - structured snapshot: collections, waypoints, routes, route_waypoints, tracks
 #   /api/fsh     - navFSH in-memory state as JSON (waypoints, groups, routes, tracks)
+#   /api/e80config - headless E80 config save/restore/clear:
+#                  ?op=save|restore|clear&ip=<addr>&folder=<path>  (folder omitted for clear)
+#                  -> { ok:1, message:... } | { error:... }   (blocking; no dialogs)
 
 package navServer;
 use strict;
@@ -32,6 +35,7 @@ use nmResources qw(ensureLeafletNative ensureLeafletMask leafletNativePath leafl
 use nmDialogs qw($suppress_confirm $suppress_outcome $suppress_error_dialog);
 use navDB;
 use navFSH;
+use nmE80Config;
 use base qw(apps::raymarine::NET::h_server);
 
 
@@ -301,6 +305,15 @@ sub handle_request
 			routes    => $fsh_db->{routes}    // {},
 			tracks    => $fsh_db->{tracks}    // {},
 		});
+	}
+	elsif ($uri eq '/api/e80config')
+	{
+		# headless save/restore/clear: ip + folder are supplied directly (no pickers),
+		# the library call runs to completion on this HTTP thread, no dialogs.  See
+		# nmE80Config::apiOp and docs/e80_config.md.
+		my $params = $request->{params} // {};
+		my $result = nmE80Config::apiOp($params->{op}, $params->{ip}, $params->{folder});
+		return json_response($request, $result);
 	}
 
 	elsif ($uri eq '/api/test')
