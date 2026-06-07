@@ -1,20 +1,22 @@
 #!/usr/bin/perl
 #-------------------------------------------------------------------------
-# nmE80Config.pm
+# nmE80DirectOps.pm
 #-------------------------------------------------------------------------
-# navMate-side orchestration for E80 configuration save / restore / clear.
-# Wraps the e80Config library (the on-device work) with the navMate layer:
-# device selection (RAYDP FILESYS), folder selection / validation, a worker
-# thread driving a Pub::WX::ProgressDialog, and a success confirmation.  The
-# same core is reachable headlessly through apiOp() for /api/e80config.
+# navMate-side orchestration for the "direct" E80 operations that drive a live
+# unit over its diagnostic network channel: configuration save / restore / clear
+# (e80Config) and live screen capture (e80ScreenGrab).  Each wraps its on-device
+# cleanroom library with the navMate layer: device selection (RAYDP FILESYS),
+# folder / file selection and validation, a worker thread driving a
+# Pub::WX::ProgressDialog, and a success confirmation.  The same cores are reachable
+# headlessly through apiOp() (/api/e80config) and apiGrab() (/api/e80grab).
 #
 # Two front-ends, one core:
 #   - interactive (menu): _doInteractive -> pickers/dialogs -> _launch (worker + dialog)
-#   - headless (/api):    apiOp -> direct blocking library call on the HTTP thread
+#   - headless (/api):    apiOp / apiGrab -> direct blocking library call on the HTTP thread
 #
-# See docs/e80_config.md.
+# See docs/e80_config.md and e80ScreenGrab_API.md.
 
-package nmE80Config;
+package nmE80DirectOps;
 use strict;
 use warnings;
 use threads;
@@ -26,6 +28,7 @@ use Pub::WX::Dialogs;
 use apps::raymarine::NET::a_defs qw(%KNOWN_SERVER_IPS);
 use apps::raymarine::NET::c_RAYDP;
 use e80Config;
+use e80ScreenGrab;
 
 my $dbg = 0;
 
@@ -33,12 +36,19 @@ my $dbg = 0;
 my $CONFIG_LIBRARY = 'C:/dat/Rhapsody/E80Configs';
 my $last_folder    = $CONFIG_LIBRARY;
 
+# session default for the screen-grab file dialog (separate from the config library, per request);
+# remembered in memory only.  The library my_mkdir's the parent on write, so it need not pre-exist.
+my $GRAB_LIBRARY   = 'C:/dat/Rhapsody/E80Screens';
+my $last_grab_dir  = $GRAB_LIBRARY;
+
 # the configuration manifest (written last by a successful save).  Its presence is the
 # practical marker (the folder is a config); its validity is the formal check.
 my $MANIFEST_FILE = 'e80Config.json';
 
-# one config op at a time -- the library binds a single fixed reply port, and clear/restore
-# reboot the unit.  Guards interactive-vs-api and api-vs-api across threads.
+# one direct E80 op at a time -- the config library binds a single fixed reply port and clear/restore
+# reboot the unit, and the interactive path has one pending-success slot and one ProgressDialog.
+# Guards interactive-vs-api and api-vs-api across threads.  (Screen grab is read-only and needs no
+# exclusivity for correctness, but it shares the guard so the single-dialog discipline holds.)
 my $op_busy :shared = 0;
 
 # interactive success pending: { progress, message, frame, op }.  Set when an interactive op
@@ -234,6 +244,7 @@ sub successMessage
     return "Configuration '$name' ($source_id) saved to $folder"       if $op eq 'save';
     return "Configuration '$name' ($source_id) restored to $target_id" if $op eq 'restore';
     return "Configuration cleared on $target_id"                       if $op eq 'clear';
+    return "Screen captured from $target_id to $folder"                if $op eq 'grab';
     return '';
 }
 
@@ -266,6 +277,7 @@ sub _release
 sub doSave    { _doInteractive($_[0], 'save'); }
 sub doRestore { _doInteractive($_[0], 'restore'); }
 sub doClear   { _doInteractive($_[0], 'clear'); }
+sub doGrab    { _doInteractive($_[0], 'grab'); }
 
 
 sub _doInteractive
@@ -310,6 +322,11 @@ sub _doInteractive
             }
             $source_id = _sourceIdFromManifest($folder);
         }
+    }
+    elsif ($op eq 'grab')
+    {
+        $folder = _pickPngFile($frame);     # $folder carries the destination .png path for grab
+        return if !defined($folder);
     }
     else        # clear
     {
@@ -368,6 +385,24 @@ sub _pickFolder
 }
 
 
+sub _pickPngFile
+    # wxFileDialog (Save) rooted at the remembered grab directory.  Returns a forward-slashed path
+    # or undef; the ".png" extension is left for the library to append if the user omits it.
+{
+    my ($frame) = @_;
+    my $dlg = Wx::FileDialog->new(
+        $frame, "Save the E80 screen capture as:",
+        $last_grab_dir, '',
+        "PNG image (*.png)|*.png|All files (*.*)|*.*",
+        wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+    my $path = ($dlg->ShowModal() == wxID_OK) ? $dlg->GetPath() : undef;
+    $last_grab_dir = $dlg->GetDirectory() if defined($path);    # remember for next time
+    $dlg->Destroy();
+    $path =~ s{\\}{/}g if defined($path);                       # normalize (library builds the path)
+    return $path;
+}
+
+
 sub _launch
     # Spawn the worker thread that runs the (blocking) library op behind a ProgressDialog, and
     # arm the success confirmation that nmFrame::onIdle raises once the dialog closes cleanly.
@@ -381,6 +416,7 @@ sub _launch
 
     my $title = ($op eq 'save')    ? "Saving E80 Configuration..."
               : ($op eq 'restore') ? "Restoring E80 Configuration..."
+              : ($op eq 'grab')    ? "Capturing E80 Screen..."
               :                      "Clearing E80 Configuration...";
 
     my $dlg = Pub::WX::ProgressDialog->new($frame, $title, 1, $progress);
@@ -392,12 +428,13 @@ sub _launch
 
     $pending_success = { progress => $progress, message => $message, frame => $frame, op => $op };
 
-    display($dbg, 0, "nmE80Config::_launch($op,$ip,".($folder // '-').")");
+    display($dbg, 0, "nmE80DirectOps::_launch($op,$ip,".($folder // '-').")");
 
     threads->create(sub {
         my $ok =
             ($op eq 'save')    ? saveE80Config($ip, $folder, $progress) :
             ($op eq 'restore') ? restoreE80Config($ip, $folder, $progress) :
+            ($op eq 'grab')    ? grabE80Screen($ip, $folder, $progress) :
                                  clearE80Config($ip, $progress);
         $progress->{workers} = 0;    # success -> dialog auto-closes; failure already set {error} -> terminal
         _release();
@@ -426,7 +463,7 @@ sub onIdle
 
 
 #-------------------------------------------------------
-# headless entry (/api/e80config)
+# headless entry (/api/e80config, /api/e80grab)
 #-------------------------------------------------------
 
 sub apiOp
@@ -443,7 +480,7 @@ sub apiOp
 
     $folder =~ s{\\}{/}g if defined($folder);
 
-    return { error => 'another E80 configuration operation is in progress' } if !_acquire();
+    return { error => 'another E80 direct operation is in progress' } if !_acquire();
 
     # device identity for the message: match the ip against the live FILESYS set for a device id
     my $device_id = '';
@@ -482,6 +519,49 @@ sub apiOp
 
     return { ok => 1, message => successMessage($op, $folder // '', $source_id, $target_id) } if $ok;
     return { error => ($progress->{error} || "$op failed") };
+}
+
+
+sub apiGrab
+    # Headless screen capture for /api/e80grab, blocking on the calling (HTTP) thread, no dialogs.
+    # With $path: write the PNG to $path and return { ok => 1, message => ..., path => ... }.
+    # Without $path: capture in memory and return { png => <PNG bytes> } for the caller to stream
+    # as image/png (no file written).  { error => ... } on failure.
+{
+    my ($ip, $path) = @_;
+    $ip = '' if !defined($ip);
+    return { error => 'missing ip' } if $ip eq '';
+
+    return { error => 'another E80 direct operation is in progress' } if !_acquire();
+
+    # device identity for the message: match the ip against the live FILESYS set for a device id
+    my $device_id = '';
+    for my $d (filesysDevices()) { if ($d->{ip} eq $ip) { $device_id = $d->{device_id}; last; } }
+    my $target_id = deviceLabel($ip, $device_id);
+
+    my $progress = Pub::WX::ProgressDialog::newProgressData(0);   # no dialog reads it; library mutates it
+    $progress->{active} = 1;
+
+    my $result;
+    if (defined($path) && $path ne '')
+    {
+        $path =~ s{\\}{/}g;
+        my $ok = eval { grabE80Screen($ip, $path, $progress); };
+        $path .= '.png' if $path !~ /\.png$/i;      # mirror the library's append for the reported path
+        $result = $ok
+            ? { ok => 1, message => successMessage('grab', $path, $target_id, $target_id), path => $path }
+            : { error => ($progress->{error} || 'grab failed') };
+    }
+    else
+    {
+        my $image = eval { grabE80ScreenImage($ip, $progress); };
+        my $png   = $image ? encodeE80Png($image) : undef;
+        $result = defined($png)
+            ? { png => $png }
+            : { error => ($progress->{error} || 'grab failed') };
+    }
+    _release();
+    return $result;
 }
 
 

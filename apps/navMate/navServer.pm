@@ -20,6 +20,9 @@
 #   /api/e80config - headless E80 config save/restore/clear:
 #                  ?op=save|restore|clear&ip=<addr>&folder=<path>  (folder omitted for clear)
 #                  -> { ok:1, message:... } | { error:... }   (blocking; no dialogs)
+#   /api/e80grab - headless E80 screen capture:
+#                  ?ip=<addr>[&path=<png-path>]
+#                  -> image/png bytes (no path) | { ok:1, message:..., path:... } (path) | { error:... }
 
 package navServer;
 use strict;
@@ -35,7 +38,7 @@ use nmResources qw(ensureLeafletNative ensureLeafletMask leafletNativePath leafl
 use nmDialogs qw($suppress_confirm $suppress_outcome $suppress_error_dialog);
 use navDB;
 use navFSH;
-use nmE80Config;
+use nmE80DirectOps;
 use base qw(apps::raymarine::NET::h_server);
 
 
@@ -310,9 +313,19 @@ sub handle_request
 	{
 		# headless save/restore/clear: ip + folder are supplied directly (no pickers),
 		# the library call runs to completion on this HTTP thread, no dialogs.  See
-		# nmE80Config::apiOp and docs/e80_config.md.
+		# nmE80DirectOps::apiOp and docs/e80_config.md.
 		my $params = $request->{params} // {};
-		my $result = nmE80Config::apiOp($params->{op}, $params->{ip}, $params->{folder});
+		my $result = nmE80DirectOps::apiOp($params->{op}, $params->{ip}, $params->{folder});
+		return json_response($request, $result);
+	}
+	elsif ($uri eq '/api/e80grab')
+	{
+		# headless screen capture: ip supplied directly.  With path=, write the PNG there and return
+		# JSON; without path=, return the PNG bytes inline as image/png.  See nmE80DirectOps::apiGrab
+		# and e80ScreenGrab_API.md.
+		my $params = $request->{params} // {};
+		my $result = nmE80DirectOps::apiGrab($params->{ip}, $params->{path});
+		return Pub::HTTP::Response->new($request, $result->{png}, 200, 'image/png') if defined($result->{png});
 		return json_response($request, $result);
 	}
 

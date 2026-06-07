@@ -36,7 +36,7 @@ use apps::raymarine::NET::winFILESYS;
 use navOneTimeImport;
 use navKML;
 use winSymMapping;
-use nmE80Config;
+use nmE80DirectOps;
 use base qw(Pub::WX::Frame);
 
 my $next_db_instance = 0;
@@ -71,6 +71,7 @@ sub new
 	EVT_MENU($this, $COMMAND_SAVE_E80_CONFIG,	\&onCommand);
 	EVT_MENU($this, $COMMAND_RESTORE_E80_CONFIG,	\&onCommand);
 	EVT_MENU($this, $COMMAND_CLEAR_E80_CONFIG,	\&onCommand);
+	EVT_MENU($this, $COMMAND_GRAB_E80_SCREEN,	\&onCommand);
 	EVT_MENU($this, $COMMAND_REFRESH_DB,		\&onCommand);
 	EVT_MENU($this, $COMMAND_EXPORT_DB_TEXT,	\&onCommand);
 	EVT_MENU($this, $COMMAND_IMPORT_DB_TEXT,	\&onCommand);
@@ -92,6 +93,7 @@ sub new
 	EVT_UPDATE_UI($this, $COMMAND_SAVE_E80_CONFIG,		\&onCommandEnable);
 	EVT_UPDATE_UI($this, $COMMAND_RESTORE_E80_CONFIG,	\&onCommandEnable);
 	EVT_UPDATE_UI($this, $COMMAND_CLEAR_E80_CONFIG,		\&onCommandEnable);
+	EVT_UPDATE_UI($this, $COMMAND_GRAB_E80_SCREEN,		\&onCommandEnable);
 	EVT_UPDATE_UI($this, $COMMAND_REVERT_DB,			\&onCommandEnable);
 	EVT_UPDATE_UI($this, $COMMAND_COMMIT_DB,			\&onCommandEnable);
 	EVT_UPDATE_UI($this, $COMMAND_SAVE_FSH_FILE,		\&onCommandEnable);
@@ -160,7 +162,7 @@ sub onIdle
 		dispatchRouteEdit($this, $route_edit) if $route_edit;
 	}
 
-	nmE80Config::onIdle($this);
+	nmE80DirectOps::onIdle($this);
 
 	if (pollClearMapPending())
 	{
@@ -361,15 +363,19 @@ sub onCommand
 	}
 	elsif ($id == $COMMAND_SAVE_E80_CONFIG)
 	{
-		nmE80Config::doSave($this);
+		nmE80DirectOps::doSave($this);
 	}
 	elsif ($id == $COMMAND_RESTORE_E80_CONFIG)
 	{
-		nmE80Config::doRestore($this);
+		nmE80DirectOps::doRestore($this);
 	}
 	elsif ($id == $COMMAND_CLEAR_E80_CONFIG)
 	{
-		nmE80Config::doClear($this);
+		nmE80DirectOps::doClear($this);
+	}
+	elsif ($id == $COMMAND_GRAB_E80_SCREEN)
+	{
+		nmE80DirectOps::doGrab($this);
 	}
 	elsif ($id == $COMMAND_REFRESH_DB)
 	{
@@ -514,9 +520,10 @@ sub onCommandEnable
 	}
 	elsif ($id == $COMMAND_SAVE_E80_CONFIG
 	    || $id == $COMMAND_RESTORE_E80_CONFIG
-	    || $id == $COMMAND_CLEAR_E80_CONFIG)
+	    || $id == $COMMAND_CLEAR_E80_CONFIG
+	    || $id == $COMMAND_GRAB_E80_SCREEN)
 	{
-		$enable = 0 if !nmE80Config::deviceCount();
+		$enable = 0 if !nmE80DirectOps::deviceCount();
 	}
 	elsif ($id == $COMMAND_REVERT_DB || $id == $COMMAND_COMMIT_DB)
 	{

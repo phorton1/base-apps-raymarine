@@ -34,6 +34,12 @@ is the mariner's primary user-level surface for the E80, so configuration
 management belongs here alongside the waypoint, route, and track operations,
 even though it is device maintenance rather than navigation-data management.
 
+> **Related -- live screen capture.** The same navMate module that implements these
+> operations (`nmE80DirectOps`) also provides a **Grab Screen** menu command and an
+> `/api/e80grab` endpoint that capture the E80's live display to a PNG over the unit's
+> diagnostic channel. That capture is read-only and one-shot; its client API is
+> documented separately in [e80ScreenGrab_API.md](../e80ScreenGrab_API.md).
+
 ## The Configuration abstraction
 
 A **configuration is a folder**, treated by navMate as an opaque single unit.

@@ -97,7 +97,7 @@ BEGIN
 
 our $E80_0A_IP = '10.0.18.120';
 our $E80_1_IP = '10.0.241.54';
-our $E80_2_IP = '10.0.241.83';
+our $E80_2_IP = '10.0.240.83';
 our $E80_3_IP = '10.0.42.39';
 our $E80_4_IP = '10.0.166.121';
 
@@ -258,7 +258,7 @@ our %KNOWN_DEVICES = (
 	$SHARK_DEVICE_ID =>   'shark' );
 
 our %KNOWN_SERVER_IPS = (
-	$E80_0A_IP =>	'E80_0B',
+	$E80_0A_IP =>	'E80_0A',
 	$E80_1_IP =>	'E80_1',
 	$E80_2_IP =>	'E80_2',
 	$E80_3_IP =>	'E80_3',
