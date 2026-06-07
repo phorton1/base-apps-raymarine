@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-package navE80Config;
+package e80Config;
 use strict;
 use warnings;
 use threads;
@@ -1444,7 +1444,7 @@ sub _open
         Timeout   => 2 );
     if (!$sock)
     {
-        error("navE80Config: cannot bind UDP reply port $REPLY_PORT: $!");
+        error("e80Config: cannot bind UDP reply port $REPLY_PORT: $!");
         return undef;
     }
     return { sock => $sock, ip => $ip, reply_port => $REPLY_PORT };
@@ -1560,7 +1560,7 @@ sub _saveE80
     my $manifest = {
         __order => ['tool','format_version','machine_name','owner_id','device_ip','captured',
                     'page_sets','panelsets','selectors'],
-        tool           => 'navE80Config',
+        tool           => 'e80Config',
         format_version => $FORMAT_VERSION,
         machine_name   => ($MACHINE_NAME{$ownerid} || ''),
         owner_id       => $ownerid,
@@ -1803,4 +1803,4 @@ sub _writeE80
 1;
 
 
-# end of navE80Config.pm
+# end of e80Config.pm

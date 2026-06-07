@@ -28,7 +28,7 @@ display configuration to navMate. A configuration -- the page-set layout, the
 instrument panelsets, and the per-window panel selectors that together make up
 an E80 screen -- is captured to, and restored from, a navMate-managed folder.
 
-The on-device work is performed by the **navE80Config** library; this document
+The on-device work is performed by the **e80Config** library; this document
 covers the navMate-side user interface and implementation that wrap it. navMate
 is the mariner's primary user-level surface for the E80, so configuration
 management belongs here alongside the waypoint, route, and track operations,
@@ -41,7 +41,7 @@ The folder holds several files -- the page-set blocks, the panelset bodies, the
 per-window selectors, and a manifest -- but navMate neither parses nor assembles
 them; that is the library's contract. The folder is the currency of every
 operation. The folder's internal format is documented in the library API (see
-[The navE80Config library](#the-nave80config-library) below).
+[The e80Config library](#the-e80config-library) below).
 
 ### Identifying a configuration folder
 
@@ -51,7 +51,7 @@ Two tiers, used at different moments:
   save writes it **last**, so its presence marks a *complete* configuration; an
   interrupted save leaves the data files but no manifest.
 - **Formal** -- that same `e80Config.json` parses and is valid: its `tool` field
-  is `navE80Config` and its `format_version` is supported.
+  is `e80Config` and its `format_version` is supported.
 
 The two tiers share one file: practical is "the manifest exists," formal is "the
 manifest is well-formed and ours." The only gap between them is a present-but-corrupt
@@ -179,7 +179,7 @@ text is logged; the success message is returned in the HTTP response instead.
 
 ### Loading the library
 
-navMate loads the library with `use navE80Config;`, which exports
+navMate loads the library with `use e80Config;`, which exports
 `saveE80Config`, `clearE80Config`, and `restoreE80Config`. Each is synchronous,
 blocking, and self-contained: it opens its own UDP diagnostic session to the
 unit and returns 1 on success or 0 on failure (the reason left on the progress
@@ -251,16 +251,16 @@ A new endpoint is added to `navServer.pm`'s dispatch chain:
 `{ error: '<reason>' }` on failure. The `op=suppress` mechanism already in
 `/api/test` is the model for forcing dialog suppression.
 
-## The navE80Config library
+## The e80Config library
 
 The on-device work -- capturing, clearing, and restoring the three
 configuration layers over the E80's diagnostic channel -- is performed entirely
-by the navE80Config library. navMate treats its three entry points as opaque and
+by the e80Config library. navMate treats its three entry points as opaque and
 depends on neither the wire protocol nor the folder's internal byte layout.
 
-- Module: [navE80Config.pm](../navE80Config.pm)
+- Module: [e80Config.pm](../e80Config.pm)
 - Client API, folder format, manifest schema, progress contract, and known
-  limitations: [navE80Config_API.md](../navE80Config_API.md)
+  limitations: [e80Config_API.md](../e80Config_API.md)
 
 The library is firmware-version-specific and self-contained; this document is
 the navMate layer above it.

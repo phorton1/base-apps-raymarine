@@ -3,7 +3,7 @@
 # nmE80Config.pm
 #-------------------------------------------------------------------------
 # navMate-side orchestration for E80 configuration save / restore / clear.
-# Wraps the navE80Config library (the on-device work) with the navMate layer:
+# Wraps the e80Config library (the on-device work) with the navMate layer:
 # device selection (RAYDP FILESYS), folder selection / validation, a worker
 # thread driving a Pub::WX::ProgressDialog, and a success confirmation.  The
 # same core is reachable headlessly through apiOp() for /api/e80config.
@@ -25,7 +25,7 @@ use Pub::Utils qw(display getAppFrame);
 use Pub::WX::Dialogs;
 use apps::raymarine::NET::a_defs qw(%KNOWN_SERVER_IPS);
 use apps::raymarine::NET::c_RAYDP;
-use navE80Config;
+use e80Config;
 
 my $dbg = 0;
 
@@ -127,7 +127,7 @@ sub readManifest
     return undef if !defined($text) || $text eq '';
     my $mf = eval { decode_json($text) };
     return undef if !$mf || ref($mf) ne 'HASH';
-    return undef if ($mf->{tool} // '') ne 'navE80Config';
+    return undef if ($mf->{tool} // '') ne 'e80Config';
     return $mf;
 }
 

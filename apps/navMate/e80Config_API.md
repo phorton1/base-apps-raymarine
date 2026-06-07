@@ -1,6 +1,6 @@
-# navE80Config -- Configuration Backup / Restore API
+# e80Config -- Configuration Backup / Restore API
 
-[navE80Config](navE80Config.pm) is a navMate-side Perl library that backs up and
+[e80Config](e80Config.pm) is a navMate-side Perl library that backs up and
 restores an E80 chartplotter's display **configuration gestalt** -- the complete
 set of user-visible layout and panel settings -- over the unit's diagnostic
 network channel. It exposes three synchronous operations -- **save**, **clear**,
@@ -44,12 +44,12 @@ selectors come up with every instrument window defaulted.
 ## Loading and calling
 
 The library **exports** its three entry points (`saveE80Config`, `clearE80Config`,
-`restoreE80Config`) via `Exporter`, so `use navE80Config;` imports them into the
+`restoreE80Config`) via `Exporter`, so `use e80Config;` imports them into the
 caller's namespace -- call them unqualified:
 
 ```perl
 use lib '/path/to/cleanroom';
-use navE80Config;
+use e80Config;
 
 my $ok = saveE80Config($ip, $folder, $progress);
 ```
@@ -160,7 +160,7 @@ JSON. The top-level object:
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| `tool` | string | always `"navE80Config"` |
+| `tool` | string | always `"e80Config"` |
 | `format_version` | integer | currently `1` |
 | `machine_name` | string | friendly unit name if known, else `""` |
 | `owner_id` | string | the unit's 8-hex-digit owner id (e.g. `"b280ad37"`) |
@@ -202,7 +202,7 @@ Example (values illustrative):
 
 ```json
 {
-  "tool": "navE80Config",
+  "tool": "e80Config",
   "format_version": 1,
   "machine_name": "E80-2",
   "owner_id": "b280ad37",
