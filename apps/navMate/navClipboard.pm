@@ -9,6 +9,7 @@ use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils qw(warning error getAppFrame);
+use apps::raymarine::NET::a_defs qw($E80_MAX_TRACK_POINTS $E80_MAX_TRACKS);
 use navDB;
 use navFSH qw(fshToNavUUID navToFSHUUID);
 use n_defs;
@@ -482,7 +483,7 @@ sub _pasteRuleAllows
 
 sub _pasteTracksToE80Allows
 {
-	my ($items, $track_service) = @_;
+	my ($items, $track_service, $skip_collision) = @_;
 	$items ||= [];
 
 	# Hard rules per track.  Name length and color drift are NOT hard
@@ -512,9 +513,40 @@ sub _pasteTracksToE80Allows
 		{
 			return ('reject:track "' . $name . '" has no points');
 		}
+		if ($pt_count > $E80_MAX_TRACK_POINTS)
+		{
+			# The E80 CTrack is a fixed $E80_MAX_TRACK_POINTS-point buffer
+			# (TRACK_writing.md "Device limits").  Over the cap the device
+			# rings/overwrites or the auto-save never fires and the upload
+			# hangs.  Downsampling/segmenting is not supported yet, so reject.
+			return ('reject:track "' . $name . '" has ' . $pt_count
+				. ' points; the E80 holds at most ' . $E80_MAX_TRACK_POINTS
+				. ' points per track.  Trim or split it first '
+				. '(automatic downsampling is not supported).');
+		}
 		if (!$uuid)
 		{
 			return ('reject:track "' . $name . '" has no mta_uuid');
+		}
+	}
+
+	# Device capacity: the E80 saved-track database holds at most
+	# $E80_MAX_TRACKS tracks, and every track written here consumes a new
+	# slot (PASTE with a fresh UUID, or PASTE_NEW), so reject the whole
+	# batch up front when existing + incoming would exceed the cap.  The
+	# real fix (downsample / segment) is unsupported; this just prevents
+	# the operation.  Needs the live TRACK-service hash; absent it we
+	# cannot count and the device-side SAVED failure is the backstop.
+	if ($track_service && ref($track_service->{tracks}) eq 'HASH')
+	{
+		my $existing = scalar keys %{$track_service->{tracks}};
+		my $incoming = scalar grep { ($_->{type} // '') eq 'track' } @$items;
+		if ($existing + $incoming > $E80_MAX_TRACKS)
+		{
+			return ('reject:E80 track storage is full -- ' . $existing
+				. ' present plus ' . $incoming . ' to write exceeds the E80 '
+				. 'limit of ' . $E80_MAX_TRACKS . ' tracks.  Delete tracks on '
+				. 'the E80 (or archive to a CompactFlash card) first.');
 		}
 	}
 
@@ -524,7 +556,9 @@ sub _pasteTracksToE80Allows
 	# 'paste_new_required'.  This is the empirical finding from
 	# 2026-05-27: E80 rejects writer-session RECORD with an existing
 	# UUID via success=0x80040f07 in the SAVED reply.
-	if ($track_service && ref($track_service->{tracks}) eq 'HASH')
+	# Skipped for PASTE_NEW ($skip_collision): it mints fresh UUIDs, so a
+	# source-UUID match on the E80 is expected and must not redirect.
+	if (!$skip_collision && $track_service && ref($track_service->{tracks}) eq 'HASH')
 	{
 		my $e80_tracks = $track_service->{tracks};
 		for my $item (@$items)

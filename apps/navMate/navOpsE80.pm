@@ -8,6 +8,8 @@
 package navOps;	# continued ...
 use strict;
 use warnings;
+use threads;
+use threads::shared;
 use Wx qw(:everything);
 use Pub::Utils qw(display warning error getAppFrame);
 use Pub::WX::Dialogs;
@@ -148,7 +150,7 @@ sub _openE80Progress
     my ($title, $total, $opts) = @_;
     return undef if !$total;
     display(0, 0, "navOps::_openE80Progress '$title' total=$total");
-    my $progress = Pub::WX::ProgressDialog::newProgressData($total);
+    my $progress = Pub::WX::ProgressDialog::newProgressData($total, $opts ? $opts->{workers} : undef);
     $progress->{label}        = $title;
     $progress->{cancel_label} = $opts->{cancel_label} if $opts && $opts->{cancel_label};
     $progress->{cancel_msg}   = $opts->{cancel_msg}   if $opts && $opts->{cancel_msg};
@@ -1045,6 +1047,21 @@ sub _trackItemPoints
 }
 
 
+sub _trackPointCount
+    # Cheap preflight count of a track item's points: mirrors
+    # _trackItemPoints' source order but returns a count and never fetches
+    # the point blob from the DB.  PASTE clipboard items carry their points
+    # (snapshotted at copy time -- _snapshotDBNode), so this is exact; the
+    # point_count column is the fallback.  Feeds the per-track preflight
+    # d_TRACK_writer::framesForTrack to size the ProgressDialog up front.
+{
+    my ($item) = @_;
+    return scalar(@{$item->{points}})       if ref($item->{points}) eq 'ARRAY' && @{$item->{points}};
+    return scalar(@{$item->{data}{points}}) if ref($item->{data}{points}) eq 'ARRAY' && @{$item->{data}{points}};
+    return $item->{data}{point_count} // 0;
+}
+
+
 sub _buildMtaRecForItem
 {
     # Assembles the MTA hash that buildMTA consumes from a track item.
@@ -1189,6 +1206,50 @@ sub _pasteNewTrackToE80
 }
 
 
+sub _dispatchTrackWritesAsync
+    # Writes a homogeneous batch of tracks to the E80 on a worker thread,
+    # behind a ProgressDialog the caller opened with {workers}=1 and sized
+    # (via d_TRACK_writer::framesForTrack) to the batch's total frame count.
+    # Each d_TRACK_writer session is a blocking, one-shot socket op (connect
+    # -> send -> await SAVED); running the batch off the main thread keeps
+    # the wx event loop free so ProgressDialog::_onIdle can animate the gauge
+    # and close the dialog when the worker is done.  Mirrors the
+    # nmE80DirectOps config-op worker shape.
+    #
+    # @$jobs: [ { item => <track item>, uuid => <16-hex uuid to save under> }, ... ]
+    # The gauge advances per FRAME: d_TRACK_writer::_progressFrameTick bumps
+    # $progress->{done} as it sends, on this same worker thread, so {done}
+    # has a single writer -- no lock needed.  This routine just sets the
+    # per-track user label ("Writing '<name>'") and handles halt/teardown.
+    # Point blobs ride along in the item (snapshotted at copy time), FSH
+    # too.  Nothing here touches Wx ($node/$tree/$cb).
+{
+    my ($jobs, $progress) = @_;
+    $progress->{frame_ticks} = 1;   # opt the writer into per-frame {done} bumps
+                                     # ({total} was sized by framesForTrack)
+    my $ntracks = scalar @$jobs;
+    threads->create(sub {
+        my $idx = 0;
+        for my $job (@$jobs)
+        {
+            last if $progress->{cancelled};
+            $idx++;
+            my $name = $job->{item}{data}{name} // $job->{item}{name} // '?';
+            $progress->{label} = "($idx/$ntracks) $name";
+            my $ok = _writeTrackToE80($job->{item}, $job->{uuid}, $progress);
+            if (!$ok)
+            {
+                # _writeTrackToE80 already logged the specific failure;
+                # surface a terminal message so _onIdle shows the red state.
+                $progress->{error} ||= "track '$name' write failed";
+                last;   # halt-on-any-failure (matches the synchronous loops)
+            }
+        }
+        $progress->{workers}--;   # 1 -> 0: _onIdle closes the dialog
+    })->detach();
+}
+
+
 sub _pasteAllToE80
     # UUID-preserving multi-item paste to E80. $items already pre-flighted.
 {
@@ -1220,6 +1281,36 @@ sub _pasteAllToE80
             error("_pasteAllToE80: one or more tracks already exist on E80 by UUID; use PASTE_NEW instead");
             return;
         }
+    }
+
+    # Homogeneous track batch -- navClipboard D6 (header:tracks accepts
+    # only 'track') guarantees every item is a track when any is, so the
+    # all-tracks test below is normally always true here.  The blocking
+    # per-track writer sessions are dispatched to a worker thread behind a
+    # {workers}=1 ProgressDialog so the UI thread is not frozen for the
+    # whole group.  Gated on all-tracks for defence in depth: a (D6-
+    # impossible) mixed batch falls through to the synchronous loop rather
+    # than silently dropping its non-track items.
+    if (@track_items && @track_items == @$items)
+    {
+        my @jobs;
+        my $total = 0;
+        for my $item (@track_items)
+        {
+            my $uuid = $item->{uuid} // $item->{data}{mta_uuid} // $item->{data}{uuid} // '';
+            if (!$uuid)
+            {
+                error("_pasteAllToE80: track item has no UUID");
+                return;
+            }
+            push @jobs, { item => $item, uuid => $uuid };
+            $total += apps::raymarine::NET::d_TRACK_writer::framesForTrack(_trackPointCount($item));
+        }
+        my $progress = _openE80Progress("Paste Tracks", $total,
+            {cancel_label => 'Abort', cancel_msg => 'Aborted by user', workers => 1});
+        return if !$progress;
+        _dispatchTrackWritesAsync(\@jobs, $progress);
+        return;
     }
 
     # Pasting waypoints into an existing E80 route: append by UUID reference, no WP creation.
@@ -1559,7 +1650,11 @@ sub _pasteNewAllToE80
     my @track_items = grep { ($_->{type} // '') eq 'track' } @$items;
     if (@track_items)
     {
-        my $verdict_hard = _pasteTracksToE80Allows(\@track_items, undef);
+        my $track_svc = _track();
+        # skip_collision=1: PASTE_NEW mints fresh UUIDs, so the collision
+        # redirect is not wanted -- but the point-count and 10-track
+        # capacity caps still apply, so we pass the live service.
+        my $verdict_hard = _pasteTracksToE80Allows(\@track_items, $track_svc, 1);
         if ($verdict_hard =~ /^reject:(.*)/)
         {
             error("_pasteNewAllToE80: track preflight rejected: $1");
@@ -1567,7 +1662,6 @@ sub _pasteNewAllToE80
         }
         # Count tracks that would collide with existing E80 UUIDs
         # (informational only; PASTE_NEW always mints fresh UUIDs).
-        my $track_svc = _track();
         my $m = 0;
         if ($track_svc && ref($track_svc->{tracks}) eq 'HASH')
         {
@@ -1587,6 +1681,35 @@ sub _pasteNewAllToE80
                     . "This operation will write $n new track(s), $m of which have existing UUIDs on the E80.";
             return if !confirmDialog($tree, $msg, 'PASTE_NEW');
         }
+    }
+
+    # Homogeneous track batch (navClipboard D6): dispatch the blocking
+    # per-track writer sessions to a worker thread behind a {workers}=1
+    # ProgressDialog so the UI thread stays responsive.  Fresh navMate
+    # UUIDs are minted here on the main thread so the worker stays pure
+    # I/O.  Gated on all-tracks (see _pasteAllToE80) for defence in depth.
+    if (@track_items && @track_items == @$items)
+    {
+        my @jobs;
+        my $total = 0;
+        for my $item (@track_items)
+        {
+            my $uuid = _newNavUUID();
+            if (!$uuid)
+            {
+                error("_pasteNewAllToE80: _newNavUUID returned undef");
+                return;
+            }
+            display($dbg_e80_ops, 0, "_pasteNewAllToE80: minted fresh uuid=$uuid for '"
+                . ($item->{data}{name} // $item->{uuid} // '?') . "'");
+            push @jobs, { item => $item, uuid => $uuid };
+            $total += apps::raymarine::NET::d_TRACK_writer::framesForTrack(_trackPointCount($item));
+        }
+        my $progress = _openE80Progress("Paste New Tracks", $total,
+            {cancel_label => 'Abort', cancel_msg => 'Aborted by user', workers => 1});
+        return if !$progress;
+        _dispatchTrackWritesAsync(\@jobs, $progress);
+        return;
     }
 
     # Pasting into an existing E80 route: append existing WPs by UUID reference.

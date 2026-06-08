@@ -57,7 +57,9 @@ my $WRITER_IN_COLOR  = $UTILS_COLOR_LIGHT_BLUE;
 my $WRITER_OUT_COLOR = $UTILS_COLOR_LIGHT_CYAN;
 
 
-my $dbg = 1;
+my $dbg_tw = 0;     # default 0: display($dbg_tw,...) shows major protocol
+                    # steps; display($dbg_tw+1/+2,...) finer detail surfaces
+                    # when $dbg_tw is lowered to -1 / -2.
 
 # Chunking ceiling: 498 bytes per BUFFER content, mirroring the WPMGR
 # pattern.  TRACK_HEADER is 8 bytes, each TRACK_PT is 14 bytes, so
@@ -151,7 +153,7 @@ sub new
 
 	bless $this, $class;
 	$this->init();
-	display($dbg,0,"d_TRACK_writer::new($this->{ip}:$this->{port}) uuid=$this->{uuid_hex} points=".scalar(@{$this->{points}}));
+	display($dbg_tw,0,"d_TRACK_writer::new($this->{ip}:$this->{port}) uuid=$this->{uuid_hex} points=".scalar(@{$this->{points}}));
 	return $this;
 }
 
@@ -167,14 +169,14 @@ sub new
 sub run
 {
 	my ($this) = @_;
-	display($dbg,0,"d_TRACK_writer::run() starting");
+	display($dbg_tw,0,"d_TRACK_writer::run() starting");
 
 	# 1. Start b_sock threads (sockThread + commandThread).
 	#    Connection happens asynchronously inside sockThread.
 	$this->start();
 
 	# 2. Wait for the TCP connection, polling $this->{connected}.
-	$this->_progressLabel('Connecting');
+	display($dbg_tw,1,"connecting to $this->{ip}:$this->{port}");
 	my $deadline = time() + $CONNECT_TIMEOUT;
 	while (!$this->{connected} && time() < $deadline)
 	{
@@ -186,7 +188,7 @@ sub run
 		$this->destroy();
 		return 0;
 	}
-	display($dbg,1,"d_TRACK_writer connected from $this->{local}");
+	display($dbg_tw,1,"d_TRACK_writer connected from $this->{local}");
 
 	# 3. Build the full frame sequence (RECORD + body groups).
 	my @frames = $this->_buildFrames();
@@ -201,11 +203,11 @@ sub run
 	#    commandThread / out_queue drainer writes to socket).  One
 	#    syscall per frame -- the existing d_TRACK / d_WPMGR pattern.
 	#    TCP / Nagle may coalesce on the wire; that's transparent.
-	$this->_progressLabel('Sending');
+	display($dbg_tw,1,"sending ".scalar(@frames)." frames");
 	for my $msg (@frames)
 	{
 		$this->sendPacket($msg);
-		$this->_progressInnerTick();
+		$this->_progressFrameTick();
 	}
 
 	# 5. Wait for the SAVED reply.  e_TRACK::parseMessage emits a
@@ -213,7 +215,7 @@ sub run
 	#    arrives (terminal=1 in %TRACK_PARSE_RULES).
 	$this->{wait_seq}  = $this->{seq_token};
 	$this->{wait_name} = 'SAVED';
-	$this->_progressLabel('Awaiting save ack');
+	display($dbg_tw,1,"awaiting SAVED ack");
 
 	# b_sock::waitReply uses $apps::raymarine::NET::b_sock::command_timeout
 	# which is 10s; that's our $REPLY_TIMEOUT budget.
@@ -231,8 +233,7 @@ sub run
 	elsif ($reply->{success})
 	{
 		$this->{saved} = 1;
-		display($dbg,1,"d_TRACK_writer SAVED ok (seq=0x".sprintf('%08x',$this->{seq_token}).")");
-		$this->_progressLabel('Saved');
+		display($dbg_tw,1,"d_TRACK_writer SAVED ok (seq=0x".sprintf('%08x',$this->{seq_token}).")");
 	}
 	else
 	{
@@ -340,7 +341,7 @@ sub _buildFrames
 		$a += scalar @batch;
 	}
 
-	display($dbg+1,1,"d_TRACK_writer _buildFrames produced ".scalar(@frames)." frames for $cnt points");
+	display($dbg_tw+1,1,"d_TRACK_writer _buildFrames produced ".scalar(@frames)." frames for $cnt points");
 	return @frames;
 }
 
@@ -376,43 +377,47 @@ sub _wrapBuffer
 #-----------------------------------------------
 # Progress hooks
 #-----------------------------------------------
-# The $progress shared hash conventionally carries:
-#   total  -- outer item count (set by caller; not touched here)
-#   done   -- outer items completed (set by caller; not touched here)
-#   workers-- caller-side worker semaphore (not touched here)
-#   label  -- short user-visible string for the dialog
-#   inner_total, inner_done -- optional fine-grained per-track ticks
+# Progress model -- the $progress shared hash carries:
+#   total  -- total frame count for the whole batch; the CALLER sizes it
+#             before run() by summing framesForTrack(point_count) over its
+#             tracks (the preflight, see framesForTrack below).
+#   done   -- frames sent so far; bumped here once per frame so the dialog
+#             gauge advances smoothly and monotonically across the batch.
+#   workers-- caller-side worker semaphore (not touched here).
+#   label  -- user-visible "Writing '<name>'" string; the CALLER owns it.
 #
-# d_TRACK_writer updates label at the macro steps (Connecting,
-# Sending, Awaiting save ack, Saved) and bumps inner_done at every
-# frame sent so that callers wanting a sub-track progress bar can
-# read it.  Outer counts are the caller's responsibility.
+# The macro protocol steps (connecting / sending / awaiting ack / saved)
+# are emitted as display($dbg_tw,...) debug, NOT pushed to {label}: the
+# dialog is end-user UI, the protocol phases are for debugging.  This is
+# the debug-vs-UI separation -- the writer never writes the dialog text.
 
-sub _progressLabel
-{
-	my ($this, $label) = @_;
-	my $progress = $this->{progress};
-	return if !$progress;
-	$progress->{label} = $label;
-	display($dbg+1,1,"progress: $label");
-}
-
-sub _progressInnerTick
+sub _progressFrameTick
+	# One tick per frame sent -- bumps the shared {done} the dialog reads.
+	# OPT-IN: only fires when the caller set $progress->{frame_ticks}, i.e.
+	# it sized {total} by summing framesForTrack (the frame-granular paste
+	# worker).  Per-track callers (PUSH, the synchronous fallback loops)
+	# leave frame_ticks unset and bump {done} once per track themselves, so
+	# the writer must not touch {done} for them.  When enabled, the
+	# run()-driving worker thread is the single writer of {done}: no lock.
 {
 	my ($this) = @_;
 	my $progress = $this->{progress};
 	return if !$progress;
-	return if !exists $progress->{inner_done};
-	$progress->{inner_done}++;
+	return if !$progress->{frame_ticks};
+	$progress->{done}++;
+	display($dbg_tw+2,2,"frame tick: done=".($progress->{done}//0)."/".($progress->{total}//0));
 }
 
 
 
 #-----------------------------------------------
-# Frame-count helper for caller-side progress sizing
+# Frame-count helper -- the per-track preflight
 #-----------------------------------------------
-# Caller wanting deep per-track progress can pre-compute the inner
-# tick count for one track via:
+# Static method: the exact number of frame-ticks one track of
+# $point_count points will emit (RECORD + MTA group + ceil(N/35) point
+# groups), matching _progressFrameTick's per-frame bumps one-for-one.
+# Callers sum this over a batch to size the ProgressDialog {total} before
+# dispatching the writes -- see navOps::_dispatchTrackWritesAsync.
 #   d_TRACK_writer::framesForTrack(scalar @points)
 
 sub framesForTrack

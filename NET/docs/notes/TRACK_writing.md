@@ -1,17 +1,5 @@
 # TRACK writing -- protocol specification
 
-**Status: confirmed live 2026-05-27.** End-to-end FSH -> E80 -> auto-pickup
-roundtrip verified with the BOCAS1-001 fixture (11-point track) via the harness
-preserved at [example_write_track_bocas.pl](example_write_track_bocas.pl).
-E80 auto-saves and emits
-`TRACK_CHANGED` broadcast, which any connected reader (navMate, shark) picks up
-and refreshes from. Constants and `%TRACK_PARSE_RULES` entries are landed in
-`NET/d_TRACK.pm`; the writer-session `expect_trk` dispatch is in
-`NET/e_TRACK.pm::parseMessage`. The navMate operations-layer wiring
-(paste-to-E80-tracks, push-to-E80) is a separate, still-pending step.
-
----
-
 A transient one-track-per-session TCP protocol for uploading a
 complete track to the E80 TRACK service. Uses the existing service
 port (advertised via RAYDP), the existing message envelope format,
@@ -194,3 +182,31 @@ needs the inverse of the reader-side `northEastToLatLon`: a
   server-side timeout. The writer SHOULD impose its own (e.g., 10
   seconds after the final `$TRACK_INFO_END`); on timeout, close
   TCP and treat the upload as failed.
+
+## Device limits
+
+These are properties of the E80 itself, independent of the writer
+protocol:
+
+- **Maximum 10 saved tracks.** The E80's saved-track database holds at
+  most 10 tracks (E-Series Reference Manual: "1,200 waypoints, 150
+  routes and 10 tracks"). With 10 already present, the upload's
+  auto-save cannot allocate an 11th and the write fails. Treat any
+  `SAVED` `success` value other than `0x00040000`, or a reply timeout,
+  as a failed save, and surface "track storage full" rather than a
+  generic error. Free a slot first -- delete a track on the device, or
+  archive to a CompactFlash card. (The on-device recording track is
+  separate from these 10.)
+
+- **Maximum 1000 points per track.** A `CTrack` is a fixed 1000-point
+  buffer; set `cnt1` no greater than 1000. On the device side the
+  recorder rings (overwrites oldest) beyond 1000; for an upload, keep
+  the delivered point count within 1000.
+
+- **Segment breaks are sentinel points.** Within a track the E80
+  encodes a segment break as a single point with all fields all-ones
+  (north = east = 0xFFFFFFFF, temp = depth = 0xFFFF), which decodes to
+  approximately lat 0 / lon 0. To upload a multi-segment track, insert
+  one such sentinel point between legs and count it in `cnt1` like any
+  other point. (Encoding confirmed from the recorder side; the writer
+  round-trip of a sentinel has not yet been verified on hardware.)

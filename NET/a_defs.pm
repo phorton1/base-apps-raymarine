@@ -71,6 +71,8 @@ BEGIN
 
 		$E80_MAX_NAME
 		$E80_MAX_COMMENT
+		$E80_MAX_TRACK_POINTS
+		$E80_MAX_TRACKS
 
 		$PI
 		$PI_OVER_2
@@ -178,6 +180,8 @@ our %DIRECTION_NAME = (
 
 our $E80_MAX_NAME    = 15;    # waypoints, groups, routes, tracks
 our $E80_MAX_COMMENT = 31;    # waypoints, groups, routes (tracks have no comment field)
+our $E80_MAX_TRACK_POINTS = 1000;   # E80 CTrack is a fixed 1000-point buffer (NET/docs/notes/TRACK_writing.md)
+our $E80_MAX_TRACKS       = 10;     # E80 saved-track database holds at most 10 tracks
 
 
 #------------------------------
