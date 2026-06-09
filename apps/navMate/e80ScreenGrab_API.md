@@ -17,8 +17,9 @@ does not cover the wire-protocol internals or the device-side capture mechanism.
 A single capture is the **complete composited screen** -- every visible display
 layer (chart / raster, instrument panels, UI chrome, and video) flattened into
 one true-color image, exactly as it appears on the unit's panel at the instant
-of capture. The unit's screen is 640 x 480; a capture is a faithful 640 x 480
-true-color snapshot of what is on the glass.
+of capture. The capture matches the unit's panel resolution -- 640 x 480 on an
+E80, 800 x 600 on an E120 -- discovered automatically from the device; the caller
+never specifies it and reads the actual dimensions from the returned image (or PNG).
 
 The capture is **read-only**: it never modifies the unit, writes no
 configuration, and does not reboot. It is the screen-side analogue of
@@ -106,8 +107,8 @@ no device-specific detail:
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| `width` | integer | image width in pixels (the unit's screen width, 640) |
-| `height` | integer | image height in pixels (480) |
+| `width` | integer | image width in pixels = the unit's panel width (640 on an E80, 800 on an E120) |
+| `height` | integer | image height in pixels = the unit's panel height (480 on an E80, 600 on an E120) |
 | `format` | string | pixel layout; currently always `'rgb24'` |
 | `pixels` | string | exactly `width * height * 3` bytes (the pixel data) |
 
@@ -171,6 +172,9 @@ point the bulk transfer begins; once underway the transfer runs to completion
   exhibit on a changing screen.
 - **Bounded.** The call is timeout-bounded; a powered-off, unreachable, or
   rebooting unit fails (false / `undef`) rather than hanging the caller.
+- **Resolution-agnostic.** The image dimensions are derived from the device, so
+  the same library serves any panel size (an E80's 640 x 480 or an E120's
+  800 x 600) with no configuration; read `width`/`height` from the returned image.
 
 ## Known limitations
 
