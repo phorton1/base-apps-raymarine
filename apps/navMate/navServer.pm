@@ -2,7 +2,7 @@
 # navServer.pm
 #---------------------------------------------
 # navMate HTTP server.  Extends h_server.pm.
-# Port 9883.  Static files from _site/.
+# HTTP port from the HTTP_PORT pref (dev 9883 / packaged 9873).  Static files from _site/.
 #
 # Inherits from h_server:
 #   /api/db      - E80 WGRT in-memory state as JSON
@@ -34,6 +34,7 @@ use Pub::Utils qw(display warning error);
 use Pub::HTTP::Response qw(json_response);
 use apps::raymarine::NET::h_server;
 use n_utils qw($app_dir);
+use navPrefs qw(getPref $PREF_HTTP_PORT);
 use nmResources qw(ensureLeafletNative ensureLeafletMask leafletNativePath leafletMaskPath);
 use nmDialogs qw($suppress_confirm $suppress_outcome $suppress_error_dialog);
 use navDB;
@@ -42,7 +43,7 @@ use nmE80DirectOps;
 use base qw(apps::raymarine::NET::h_server);
 
 
-my $SERVER_PORT = 9883;
+my $SERVER_PORT;            # resolved from the HTTP_PORT pref by _serverPort()
 my $SITE_DIR    = "$app_dir/_site";
 
 my $nm_server;
@@ -81,9 +82,19 @@ BEGIN
 # public API (called from wx thread)
 #---------------------------------
 
+sub _serverPort
+	# The HTTP/Leaflet server port is the HTTP_PORT preference, resolved on
+	# first use (after navPrefs::init_prefs has run) and cached.  Dev defaults
+	# to 9883; packaged builds default to 9873 -- see navPrefs::init_prefs.
+{
+	$SERVER_PORT = (getPref($PREF_HTTP_PORT) || 9883) if !defined($SERVER_PORT);
+	return $SERVER_PORT;
+}
+
+
 sub startNavMateServer
 {
-	display(0,0,"starting navServer on port $SERVER_PORT");
+	display(0,0,"starting navServer on port "._serverPort());
 	$nm_server = navServer->new();
 	$nm_server->start();
 	display(0,0,"navServer started");
@@ -155,7 +166,7 @@ sub isBrowserConnected
 
 sub openMapBrowser
 {
-	system(1,'cmd /c start firefox --new-window http://localhost:9883/map.html');
+	system(1,'cmd /c start firefox --new-window http://localhost:'._serverPort().'/map.html');
 }
 
 
@@ -212,7 +223,7 @@ sub new
 {
 	my ($class) = @_;
 	my $params = {
-		HTTP_PORT             => $SERVER_PORT,
+		HTTP_PORT             => _serverPort(),
 		HTTP_DOCUMENT_ROOT    => $SITE_DIR,
 		HTTP_GET_EXT_RE       => 'html|js|css|png',
 		HTTP_DEFAULT_LOCATION => '/map.html',

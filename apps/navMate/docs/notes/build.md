@@ -159,16 +159,61 @@ family) now pack, then re-launch.
 ## Seam -- packaged-vs-dev divergences (running list)
 
 All the same flavor: config that should differ between the dev and installed versions,
-solved by one mechanism (env-dependent defaults, via the per-environment prefs file /
-IsPackaged()). To be done in the seam pass (Phase 3); none block the build/launch.
+solved by one mechanism (env-dependent defaults keyed on $Cava::Packager::PACKAGED,
+surfaced through the per-environment prefs file). None block the build/launch.
 
-1. DB path: dev uses hardcoded C:/dat/Rhapsody/navMate.db -> make it a prefs key, default
-   $data_dir/navMate.db, seed-on-first-run; dev overrides to /dat via its own prefs file.
-2. _site (served website): HTTP_DOCUMENT_ROOT reaches into source $app_dir/_site ->
-   re-home to $resource_dir AND bundle _site into the package.
-3. HTTP port: dev and installed both bind 9883, so they cannot run simultaneously. The
-   installed/packaged version should present a DIFFERENT port (dev stays 9883) so the two
-   can coexist. Same prefs-key / packaged-default pattern. Installed port number: TBD.
+1. DB path  [VERIFIED 2026-06-10 -- packaged run]: was hardcoded
+   C:/dat/Rhapsody/navMate.db -> now the DATABASE_PATH pref. Packaged default
+   $data_dir/navMate.db (My Documents); dev default stays the live /dat database.
+2. _site (served website)  [pending]: HTTP_DOCUMENT_ROOT reaches into source
+   $app_dir/_site -> re-home to $resource_dir AND bundle _site into the package.
+   The same re-home covers sym_catalog (and _Inline) -- $app_dir is the catch-all
+   source root, so the whole resource family moves together (see other reach-backs).
+3. HTTP port  [VERIFIED 2026-06-10 -- packaged run]: dev and installed both
+   bound 9883 (could not coexist). Now the HTTP_PORT pref: dev 9883, packaged 9873.
+   ServerBase already honors an HTTP_PORT pref, so the override came for free.
+
+Other reach-backs found in the same audit (still to do):
+- nmE80DirectOps.pm: C:/dat/Rhapsody/E80Configs and .../E80Screens hardcoded (-> $data_dir).
+- nmFrame.pm: the Commit/Revert "navMate.db to git" ops shell out to git -C C:/dat/Rhapsody
+  -- a dev-only feature; gate it off (or re-derive the dir) when the DB is not under git.
+- navMatchC.pm: _Inline under $app_dir -- the Inline::C-when-packaged question (open).
+- navServer.pm openMapBrowser: launches "firefox" by name -- fragile on a user machine;
+  a public build should fall back to the default browser. (Port now follows the server.)
+
+### Seam pass -- 2026-06-10  (items a + b: DB path + HTTP port)
+- navPrefs.pm: added DATABASE_PATH and HTTP_PORT prefs with $Cava::Packager::PACKAGED-
+  dependent defaults; init_prefs now also writes a barebones, human-editable navMate.prefs
+  on first run (never clobbers an existing file) so DATABASE_PATH/HTTP_PORT are visible and
+  editable without guessing key names.
+- navDB.pm: openDB / _db_params resolve the path via _dbPath() = getPref(DATABASE_PATH),
+  read at run time (after init_prefs) and cached. $NAVMATE_DATABASE remains the dev default.
+- navServer.pm: port resolved via _serverPort() = getPref(HTTP_PORT); startNavMateServer,
+  the server ctor params, and openMapBrowser all use it. The _site client uses relative
+  URLs, so the Leaflet map follows the bound port automatically.
+- Net effect: a packaged navMate defaults to its own DB (My Documents) and its own port
+  (9873), so it can run side by side with the dev build and never touches the live database.
+- EOL: navMate.pm is CRLF; every other navMate .pm edited here is LF. Edits matched per file.
+- VERIFIED 2026-06-10 (packaged release/navMate/bin/navMate.exe, clean Documents/raymarine):
+  seeded navMate.prefs (explicit DATABASE_PATH + HTTP_PORT=9873); openDB created a FRESH
+  empty schema-12.0 DB at Documents/raymarine/navMate.db (NOT the live /dat DB); server bound
+  PORT(9873); live E80 still worked (RAYDP/WPMGR/FILESYS/TRACK, pulled 2006-01-11-SanD,
+  BOCAS1-001). NB the same run logged HTTP_DOCUMENT_ROOT = ...apps/navMate/_site -- i.e. the
+  served site still reaches into SOURCE, so item 2 (_site -> $resource_dir + bundle) is the
+  real blocker before the package can run on a machine without the dev tree.
+
+## Known limitations / deeper iceberg (public-install scoping)
+
+- My Documents subfolder name: packaged $data_dir is My Documents/raymarine (from $appGroup
+  in NET/a_utils.pm, shared with shark). "raymarine" is presumptuous as a worldwide My
+  Documents folder; revisiting it is a shared-a_utils decision, deferred for now. Because the
+  packaged DB/data defaults derive from $data_dir, renaming that folder later needs no rework
+  in this seam.
+- e80Config / e80ScreenGrab: these two features are NOT cleanly shippable in a public v1.
+  They depend on (1) a separate hardcoded port [branching it is out of scope for this repo
+  right now], (2) a Windows firewall hole the user must open (which the install would need to
+  document), and (3) CUSTOM E80 FIRMWARE running on the device. For the public installable
+  these are "advanced / requires custom firmware" features, not baseline.
 
 ## Version control
 

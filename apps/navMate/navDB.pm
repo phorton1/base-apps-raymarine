@@ -12,6 +12,7 @@ use Pub::Database;
 use n_defs;
 use n_utils;
 use navVisibility qw(pruneDbVisible getDbVisible setDbVisible batchSetDbVisible clearAllDbVisible);
+use navPrefs qw(getPref $PREF_DATABASE_PATH);
 
 
 BEGIN
@@ -97,7 +98,7 @@ BEGIN
 }
 
 
-my $db_path = $NAVMATE_DATABASE;
+my $db_path;   # resolved lazily from the DATABASE_PATH pref (see _dbPath)
 
 our $db_ready :shared = 0;
 
@@ -199,13 +200,28 @@ my $db_def = {
 
 
 #---------------------------------
+# _dbPath
+#---------------------------------
+# The database location is the DATABASE_PATH preference, resolved on first
+# use (after navPrefs::init_prefs has run) and cached.  Dev defaults to the
+# live C:/dat/Rhapsody database; packaged builds default to
+# $data_dir/navMate.db -- see navPrefs::init_prefs.
+
+sub _dbPath
+{
+	$db_path = getPref($PREF_DATABASE_PATH) if !defined($db_path);
+	return $db_path;
+}
+
+
+#---------------------------------
 # openDB
 #---------------------------------
 # Connect, create/verify schema, disconnect.  Returns 1=ok, 0=error, -1=mismatch.
 
 sub openDB
 {
-	display(0,0,"navDB::openDB($db_path)");
+	display(0,0,"navDB::openDB("._dbPath().")");
 	$db_ready = 0;
 
 	my $dbh = Pub::Database->connect(_db_params());
@@ -553,7 +569,7 @@ sub _db_params
 {
 	return {
 		engine       => $engine_sqlite,
-		database     => $db_path,
+		database     => _dbPath(),
 		database_def => $db_def,
 	};
 }
