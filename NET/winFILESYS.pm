@@ -63,7 +63,7 @@ my $sort_indicator = [' ^',' v'];
 
 my $font_fixed = Wx::Font->new(11,wxFONTFAMILY_MODERN,wxFONTSTYLE_NORMAL,wxFONTWEIGHT_BOLD);
 
-my $DEFAULT_SAVE_DIR = 	"/base/Pub/Ray/NET/docs/junk/dowloads";
+my $DEFAULT_SAVE_DIR = 	"$ENV{USERPROFILE}/Downloads";
 
 
 

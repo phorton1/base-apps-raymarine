@@ -96,8 +96,11 @@ reverse engineering for personal and educational purposes.
 
 ## License
 
-This software is released under the
-[**GNU General Public License v3**](../LICENSE.TXT).
+Copyright (C) 2026 Patrick Horton
+
+This repository is free software, released under the
+[GNU General Public License v3](../LICENSE.TXT) or any later version.
+See [LICENSE.TXT](../LICENSE.TXT) or <https://www.gnu.org/licenses/> for details.
 
 ## Please Also See
 
@@ -122,14 +125,6 @@ This software is released under the
 - [**teensyBoat.pm**](https://github.com/phorton1/base-apps-teensyBoat) -
   Perl application companion to teensyBoat.ino; provides remote monitoring and
   control of the teensyBoat device over TCP/IP and UDP.
-
-## License
-
-Copyright (C) 2026 Patrick Horton
-
-This repository is free software, released under the
-[GNU General Public License v3](../LICENSE.TXT) or any later version.
-See [LICENSE.TXT](../LICENSE.TXT) or <https://www.gnu.org/licenses/> for details.
 
 ---
 
