@@ -2,7 +2,7 @@
 # navServer.pm
 #---------------------------------------------
 # navMate HTTP server.  Extends h_server.pm.
-# HTTP port from the HTTP_PORT pref (dev 9883 / packaged 9873).  Static files from _site/.
+# HTTP port from the HTTP_PORT pref (dev 9883 / packaged 9873).  Static files from _res/site/.
 #
 # Inherits from h_server:
 #   /api/db      - E80 WGRT in-memory state as JSON
@@ -30,11 +30,10 @@ use warnings;
 use threads;
 use threads::shared;
 use JSON::PP qw(encode_json decode_json);
-use Pub::Utils qw(display warning error);
+use Pub::Utils qw(display warning error $resource_dir);
 use Pub::HTTP::Response qw(json_response);
 use apps::raymarine::NET::h_server;
-use n_utils qw($app_dir);
-use navPrefs qw(getPref $PREF_HTTP_PORT);
+use navPrefs qw(getPref setPref $PREF_HTTP_PORT $PREF_MAP_BROWSER);
 use nmResources qw(ensureLeafletNative ensureLeafletMask leafletNativePath leafletMaskPath);
 use nmDialogs qw($suppress_confirm $suppress_outcome $suppress_error_dialog);
 use navDB;
@@ -42,9 +41,6 @@ use navFSH;
 use nmE80DirectOps;
 use base qw(apps::raymarine::NET::h_server);
 
-
-my $SERVER_PORT;            # resolved from the HTTP_PORT pref by _serverPort()
-my $SITE_DIR    = "$app_dir/_site";
 
 my $nm_server;
 
@@ -82,20 +78,10 @@ BEGIN
 # public API (called from wx thread)
 #---------------------------------
 
-sub _serverPort
-	# The HTTP/Leaflet server port is the HTTP_PORT preference, resolved on
-	# first use (after navPrefs::init_prefs has run) and cached.  Dev defaults
-	# to 9883; packaged builds default to 9873 -- see navPrefs::init_prefs.
-{
-	$SERVER_PORT = (getPref($PREF_HTTP_PORT) || 9883) if !defined($SERVER_PORT);
-	return $SERVER_PORT;
-}
-
-
 sub startNavMateServer
 {
-	display(0,0,"starting navServer on port "._serverPort());
 	$nm_server = navServer->new();
+	display(0,0,"starting navServer on port ".getPref($PREF_HTTP_PORT));
 	$nm_server->start();
 	display(0,0,"navServer started");
 }
@@ -165,8 +151,13 @@ sub isBrowserConnected
 
 
 sub openMapBrowser
+	# MAP_BROWSER pref (if set) precedes the URL -- e.g. 'firefox --new-window'
+	# to force a separate window; empty -> the system default browser.
 {
-	system(1,'cmd /c start firefox --new-window http://localhost:'._serverPort().'/map.html');
+	my $browser = getPref($PREF_MAP_BROWSER) // '';
+	my $url     = 'http://localhost:'.getPref($PREF_HTTP_PORT).'/map.html';
+	my $cmd     = $browser ? "start $browser $url" : "start \"\" $url";
+	system(1, "cmd /c $cmd");
 }
 
 
@@ -222,9 +213,16 @@ sub pollRouteEditPending
 sub new
 {
 	my ($class) = @_;
+
+	# navServer's HTTP config.  HTTP_PORT's default lives here and is published
+	# to the prefs hash so getPref($PREF_HTTP_PORT) is its canonical read; a
+	# prefs-file HTTP_PORT wins (set-if-absent skips it).  Packaged builds use a
+	# different port so they coexist with development.
+	setPref($PREF_HTTP_PORT, $Cava::Packager::PACKAGED ? 9873 : 9883)
+		if !defined getPref($PREF_HTTP_PORT);
+
 	my $params = {
-		HTTP_PORT             => _serverPort(),
-		HTTP_DOCUMENT_ROOT    => $SITE_DIR,
+		HTTP_DOCUMENT_ROOT    => "$resource_dir/site",
 		HTTP_GET_EXT_RE       => 'html|js|css|png',
 		HTTP_DEFAULT_LOCATION => '/map.html',
 		HTTP_MAX_THREADS      => 4,

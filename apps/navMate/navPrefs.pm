@@ -22,6 +22,7 @@ BEGIN
 		$PREF_FAHRENHEIT
 		$PREF_DATABASE_PATH
 		$PREF_HTTP_PORT
+		$PREF_MAP_BROWSER
 	);
 	push @EXPORT, grep { $_ ne 'initPrefs' } @Pub::Prefs::EXPORT;
 }
@@ -32,54 +33,27 @@ our $PREF_DEPTH_DISPLAY   = 'DEPTH_DISPLAY';
 our $PREF_FAHRENHEIT      = 'FAHRENHEIT';
 our $PREF_DATABASE_PATH   = 'DATABASE_PATH';
 our $PREF_HTTP_PORT       = 'HTTP_PORT';
-
-# Installed builds must NOT default to the dev live database or the dev
-# HTTP port, so a packaged navMate can run side by side with development.
-# Packaged defaults derive from $data_dir (e.g. My Documents); dev keeps
-# the live database and port 9883.  See docs/notes/build.md "Seam".
-my $DEV_HTTP_PORT      = 9883;
-my $PACKAGED_HTTP_PORT = 9873;
+our $PREF_MAP_BROWSER     = 'MAP_BROWSER';
 
 sub init_prefs
+	# navMate's changeable prefs are placed into the prefs hash as in-hash
+	# non-defaults: they ARE the discoverable list, and a hand-made
+	# navMate.prefs overrides any of them.  set-only-if-absent never clobbers
+	# a user's file value.  No prefs file is written -- defaults live in code
+	# (the DB default here; HTTP_PORT in navServer.pm's new()).
 {
-	my $packaged     = $Cava::Packager::PACKAGED ? 1 : 0;
-	my $db_default   = $packaged ? "$data_dir/navMate.db" : $NAVMATE_DATABASE;
-	my $port_default = $packaged ? $PACKAGED_HTTP_PORT : $DEV_HTTP_PORT;
+	my $packaged = $Cava::Packager::PACKAGED ? 1 : 0;
 
-	Pub::Prefs::initPrefs(
-		"$data_dir/navMate.prefs",
-		{
-			$PREF_DEPTH_DISPLAY => $DEPTH_DISPLAY_FEET,
-			$PREF_FAHRENHEIT    => 1,
-			$PREF_DATABASE_PATH => $db_default,
-			$PREF_HTTP_PORT     => $port_default,
-		});
+	Pub::Prefs::initPrefs("$data_dir/navMate.prefs", {});
 
-	_seedPrefsFile($db_default, $port_default);
-}
-
-
-sub _seedPrefsFile
-	# On first run (no prefs file yet), write a barebones, human-editable
-	# prefs file that spells out the database location and HTTP port, so the
-	# values can be changed without guessing key names.  Never clobbers an
-	# existing prefs file.
-{
-	my ($db_default, $port_default) = @_;
-	my $file = "$data_dir/navMate.prefs";
-	return if -f $file;
-
-	my $text =
-		"# navMate preferences\n".
-		"# Lines beginning with # are comments.  Edit a value and restart navMate.\n".
-		"\n".
-		"# Full path to the navMate SQLite database.\n".
-		"$PREF_DATABASE_PATH = $db_default\n".
-		"\n".
-		"# Port for the built-in HTTP / Leaflet map server.\n".
-		"$PREF_HTTP_PORT = $port_default\n";
-
-	printVarToFile(1, $file, $text, 1);
+	setPref($PREF_DATABASE_PATH, $packaged ? "$data_dir/navMate.db" : $NAVMATE_DATABASE)
+		if !defined getPref($PREF_DATABASE_PATH);
+	setPref($PREF_MAP_BROWSER, '')
+		if !defined getPref($PREF_MAP_BROWSER);
+	setPref($PREF_DEPTH_DISPLAY, $DEPTH_DISPLAY_FEET)
+		if !defined getPref($PREF_DEPTH_DISPLAY);
+	setPref($PREF_FAHRENHEIT, 1)
+		if !defined getPref($PREF_FAHRENHEIT);
 }
 
 1;

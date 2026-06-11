@@ -13,7 +13,7 @@ use Wx qw(:everything);
 use Pub::WX::Resources;
 use Pub::WX::AppConfig;
 use apps::raymarine::NET::a_utils qw(@E80_SYMS);
-use n_utils qw($app_dir);
+use Pub::Utils qw($resource_dir $temp_dir);
 
 
 BEGIN
@@ -193,9 +193,9 @@ my $view_menu = [
 my $database_menu = [
 	$COMMAND_REFRESH_DB,
 	$ID_SEPARATOR,
-	$COMMAND_COMMIT_DB,
-	$COMMAND_REVERT_DB,
-	$ID_SEPARATOR,
+	# Commit/Revert navMate.db to git is a dev-only feature (the packaged DB is
+	# not under git); omit the menu items when packaged.
+	($Cava::Packager::PACKAGED ? () : ($COMMAND_COMMIT_DB, $COMMAND_REVERT_DB, $ID_SEPARATOR)),
 	$COMMAND_SAVE_OUTLINE,
 	$COMMAND_RESTORE_OUTLINE,
 	$ID_SEPARATOR,
@@ -280,7 +280,7 @@ my $_blank_bm;
 
 sub _ensureCache20x20
 {
-	# Build sym_catalog/cache/20x20_NN.png from sym_catalog/symNN.png
+	# Build $temp_dir/sym_cache/20x20_NN.png from sym_catalog/symNN.png
 	# if missing or older than the source.  20x20 = 16x16 source + 2 px
 	# white border; green sentinel pixels in the source resolve to white.
 	my ($src_path, $cache_path) = @_;
@@ -328,8 +328,8 @@ sub symBitmap
 	my ($i) = @_;
 	return undef if !defined $i || $i < 0 || $i > $#E80_SYMS;
 	return $_sym_bitmaps{$i} if exists $_sym_bitmaps{$i};
-	my $src   = sprintf('%s/sym_catalog/sym%02d.png',          $app_dir, $i);
-	my $cache = sprintf('%s/sym_catalog/cache/20x20_%02d.png', $app_dir, $i);
+	my $src   = sprintf('%s/sym_catalog/sym%02d.png',          $resource_dir, $i);
+	my $cache = sprintf('%s/sym_cache/20x20_%02d.png', $temp_dir, $i);
 	_ensureCache20x20($src, $cache);
 	$_sym_bitmaps{$i} = Wx::Bitmap->new($cache, wxBITMAP_TYPE_PNG);
 	return $_sym_bitmaps{$i};
@@ -378,13 +378,13 @@ sub makeSymComboBox
 sub leafletNativePath
 {
 	my ($i) = @_;
-	return sprintf('%s/sym_catalog/cache/leaflet_native_%02d.png', $app_dir, $i);
+	return sprintf('%s/sym_cache/leaflet_native_%02d.png', $temp_dir, $i);
 }
 
 sub leafletMaskPath
 {
 	my ($i) = @_;
-	return sprintf('%s/sym_catalog/cache/leaflet_mask_%02d.png', $app_dir, $i);
+	return sprintf('%s/sym_cache/leaflet_mask_%02d.png', $temp_dir, $i);
 }
 
 sub _buildLeafletVariant
@@ -455,7 +455,7 @@ sub ensureLeafletNative
 {
 	my ($i) = @_;
 	return undef if !defined $i || $i < 0 || $i > $#E80_SYMS;
-	my $src   = sprintf('%s/sym_catalog/sym%02d.png', $app_dir, $i);
+	my $src   = sprintf('%s/sym_catalog/sym%02d.png', $resource_dir, $i);
 	my $cache = leafletNativePath($i);
 	_buildLeafletVariant($src, $cache, 0);
 	return -f $cache ? $cache : undef;
@@ -465,7 +465,7 @@ sub ensureLeafletMask
 {
 	my ($i) = @_;
 	return undef if !defined $i || $i < 0 || $i > $#E80_SYMS;
-	my $src   = sprintf('%s/sym_catalog/sym%02d.png', $app_dir, $i);
+	my $src   = sprintf('%s/sym_catalog/sym%02d.png', $resource_dir, $i);
 	my $cache = leafletMaskPath($i);
 	_buildLeafletVariant($src, $cache, 1);
 	return -f $cache ? $cache : undef;

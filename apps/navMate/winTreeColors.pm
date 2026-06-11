@@ -24,8 +24,8 @@ package winTreeBase;	# continued ...
 use strict;
 use warnings;
 use Wx qw(:everything);
-use Pub::Utils qw(display);
-use n_utils qw($app_dir @E80_ROUTE_COLOR_ABGR);
+use Pub::Utils qw(display $resource_dir $temp_dir);
+use n_utils qw(@E80_ROUTE_COLOR_ABGR);
 
 my $SWATCH_W = 15;
 my $SWATCH_H = 15;
@@ -268,7 +268,7 @@ sub _swatchSpec
 
 sub _ensureCache15x15
 {
-	# Build sym_catalog/cache/15x15_NN.png from symNN.png if missing or
+	# Build $temp_dir/sym_cache/15x15_NN.png from symNN.png if missing or
 	# older.  Resolve the green sentinel to white first (so edge area-
 	# averaging doesn't produce green-tinged pixels), Rescale 16x16 ->
 	# 13x13 with wxIMAGE_QUALITY_HIGH, then place in a 15x15 white
@@ -327,8 +327,8 @@ sub _swatchBitmapForSym
 	# from sym_catalog/symNN.png: 16x16 source downsampled to 13x13 and
 	# placed in a 15x15 white canvas with 1-px border.
 	my ($sym) = @_;
-	my $src   = sprintf('%s/sym_catalog/sym%02d.png',          $app_dir, $sym);
-	my $cache = sprintf('%s/sym_catalog/cache/15x15_%02d.png', $app_dir, $sym);
+	my $src   = sprintf('%s/sym_catalog/sym%02d.png',          $resource_dir, $sym);
+	my $cache = sprintf('%s/sym_cache/15x15_%02d.png', $temp_dir, $sym);
 	_ensureCache15x15($src, $cache);
 	return undef if !-f $cache;
 	my $bmp = Wx::Bitmap->new($cache, wxBITMAP_TYPE_PNG);
@@ -420,8 +420,8 @@ sub _swatchBitmapForColoredSym
 	# userColor*chroma/255 + lift <= chroma + lift = max(r,g,b) <= 255.
 	# Built lazily by _ensureCache15x15Grey from sym_catalog/symNN.png.
 	my ($sym, $color_hex) = @_;
-	my $src_path   = sprintf('%s/sym_catalog/sym%02d.png',               $app_dir, $sym);
-	my $cache_path = sprintf('%s/sym_catalog/cache/15x15_grey_%02d.png', $app_dir, $sym);
+	my $src_path   = sprintf('%s/sym_catalog/sym%02d.png',               $resource_dir, $sym);
+	my $cache_path = sprintf('%s/sym_cache/15x15_grey_%02d.png', $temp_dir, $sym);
 	_ensureCache15x15Grey($src_path, $cache_path);
 	return undef if !-f $cache_path;
 	my $src = Wx::Image->new($cache_path, wxBITMAP_TYPE_PNG);

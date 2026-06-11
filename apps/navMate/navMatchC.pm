@@ -43,24 +43,42 @@
 package navMatchC;
 use strict;
 use warnings;
-use Pub::Utils qw(display warning error);
+use Win32;
+use Pub::Utils qw(display warning error $resource_dir $temp_dir);
 use n_utils qw($app_dir);
 use navMatch;
 
 our $dbg_navmc = -1;   # raise for tracing pack/unpack; -1 = silent
 
-# Inline cache directory.  Inline 0.5 requires an absolute, pre-existing
-# DIRECTORY; derived from $app_dir so the navMate location is centralized
-# in n_utils.pm.
-use constant INLINE_DIR => "$app_dir/_Inline";
+# Inline cache directory.  Inline 0.5 needs an absolute, drive-lettered,
+# WRITABLE directory.  The compiled .dll ships bundled (read-only, and under a
+# drive-less /PROGRA~2 path that Inline rejects) in the resource tree at
+# $resource_dir/_Inline.  In a packaged build, copy it out to a writable,
+# drive-lettered temp dir (Win32::GetFullPathName normalizes the path) and
+# point Inline there.  In dev, the in-repo _res/_Inline is already writable.
+our $INLINE_DIR;
 BEGIN
 {
-	mkdir INLINE_DIR if !-d INLINE_DIR;
+	if ($Cava::Packager::PACKAGED)
+	{
+		my $src = Win32::GetFullPathName("$resource_dir/_Inline");
+		my $tmp = $temp_dir || $ENV{TEMP};
+		$INLINE_DIR = Win32::GetFullPathName("$tmp/_Inline");
+		if (-d $src && !-d $INLINE_DIR)
+		{
+			system('xcopy', $src, $INLINE_DIR, '/E', '/I', '/Y', '/Q');
+		}
+	}
+	else
+	{
+		$INLINE_DIR = "$resource_dir/_Inline";
+	}
+	mkdir $INLINE_DIR if !-d $INLINE_DIR;
 }
 
 use Inline
 	Config =>
-	DIRECTORY => INLINE_DIR;
+	DIRECTORY => $INLINE_DIR;
 
 use Inline C => <<'__END_C__';
 

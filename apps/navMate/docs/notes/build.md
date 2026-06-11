@@ -165,21 +165,24 @@ surfaced through the per-environment prefs file). None block the build/launch.
 1. DB path  [VERIFIED 2026-06-10 -- packaged run]: was hardcoded
    C:/dat/Rhapsody/navMate.db -> now the DATABASE_PATH pref. Packaged default
    $data_dir/navMate.db (My Documents); dev default stays the live /dat database.
-2. _site (served website)  [pending]: HTTP_DOCUMENT_ROOT reaches into source
-   $app_dir/_site -> re-home to $resource_dir AND bundle _site into the package.
-   The same re-home covers sym_catalog (and _Inline) -- $app_dir is the catch-all
-   source root, so the whole resource family moves together (see other reach-backs).
+2. _site + sym_catalog  [DONE 2026-06-10]: were under source $app_dir; moved to a
+   dedicated repo resource folder apps/navMate/_res/{site,sym_catalog} (git mv, 54 pure
+   renames), routed through $resource_dir (setStandardCavaResourceDir in n_utils), and the
+   Cava resource_path set to .../_res so the whole tree bundles.  _Inline NOT moved -- that
+   is the separate Inline::C-when-packaged item.
 3. HTTP port  [VERIFIED 2026-06-10 -- packaged run]: dev and installed both
    bound 9883 (could not coexist). Now the HTTP_PORT pref: dev 9883, packaged 9873.
    ServerBase already honors an HTTP_PORT pref, so the override came for free.
 
-Other reach-backs found in the same audit (still to do):
-- nmE80DirectOps.pm: C:/dat/Rhapsody/E80Configs and .../E80Screens hardcoded (-> $data_dir).
-- nmFrame.pm: the Commit/Revert "navMate.db to git" ops shell out to git -C C:/dat/Rhapsody
-  -- a dev-only feature; gate it off (or re-derive the dir) when the DB is not under git.
-- navMatchC.pm: _Inline under $app_dir -- the Inline::C-when-packaged question (open).
-- navServer.pm openMapBrowser: launches "firefox" by name -- fragile on a user machine;
-  a public build should fall back to the default browser. (Port now follows the server.)
+Other reach-backs found in the same audit:
+- nmE80DirectOps.pm [still to do]: C:/dat/Rhapsody/E80Configs and .../E80Screens hardcoded
+  (-> $data_dir); also wants immediate-write last-used-folder state (a .json, not the ini).
+- nmFrame.pm Commit/Revert "navMate.db to git" [DONE 2026-06-10]: dev-only; menu items now
+  omitted when $Cava::Packager::PACKAGED (nmResources $database_menu).  The git ops keep their
+  /dat/Rhapsody path -- unreachable in the packaged build.
+- navServer.pm openMapBrowser [DONE 2026-06-10]: now the MAP_BROWSER pref -- value precedes the
+  URL (e.g. 'firefox --new-window'); empty -> the system default browser.
+- navMatchC.pm: _Inline under $app_dir -- the Inline::C-when-packaged question (still open).
 
 ### Seam pass -- 2026-06-10  (items a + b: DB path + HTTP port)
 - navPrefs.pm: added DATABASE_PATH and HTTP_PORT prefs with $Cava::Packager::PACKAGED-
@@ -201,6 +204,48 @@ Other reach-backs found in the same audit (still to do):
   BOCAS1-001). NB the same run logged HTTP_DOCUMENT_ROOT = ...apps/navMate/_site -- i.e. the
   served site still reaches into SOURCE, so item 2 (_site -> $resource_dir + bundle) is the
   real blocker before the package can run on a machine without the dev tree.
+
+### Seam pass -- 2026-06-10  (item c + prefs redesign + map browser + commit/revert gate)
+- _res resource re-home: apps/navMate/_site -> _res/site, sym_catalog -> _res/sym_catalog
+  (git mv, 54 renames).  n_utils.pm calls setStandardCavaResourceDir("$app_dir/_res") (dev =
+  the in-repo _res; packaged = Cava bundle root).  navServer HTTP_DOCUMENT_ROOT = "$resource_dir/
+  site"; nmResources.pm + winTreeColors.pm sym_catalog reads use $resource_dir.  Cava .cpkgproj
+  local_config_values.resource_path set to .../_res so Cava bundles the whole _res tree.
+- Prefs redesign (SUPERSEDES the a+b seed-file approach above): NO prefs file is written.
+  init_prefs sets the changeable prefs into the hash as in-hash non-defaults (set-only-if-
+  absent): DATABASE_PATH, MAP_BROWSER, DEPTH_DISPLAY, FAHRENHEIT.  HTTP_PORT's default lives in
+  navServer->new() (setPref-if-absent there) so its config sits with the other HTTP_ params;
+  getPref($PREF_HTTP_PORT) is the canonical read everywhere.  A hand-made navMate.prefs
+  overrides any of them.  Rationale: a written file goes stale as code changes; defaults live
+  in code, discoverable at their natural site (DB in navPrefs, port in navServer).
+- MAP_BROWSER pref replaces the hardcoded firefox; _serverPort() helper removed (getPref is the
+  read surface).
+- Commit/Revert menu gated off when packaged (nmResources $database_menu).
+- Icon: navMate.ico (multi-res, derived from _res/site/anchor.png) lives at _res/site/navMate.ico.
+  The Windows exe icon is executable.icon_bundle, which Cava INTERNALIZES (buddy/cm store just a
+  filename pointing into Cava's iconresource dir) -- so it must be set via the Cava GUI icon
+  field (one click) pointing at that .ico; SQL alone cannot wire it.
+- sym_catalog thumbnail cache [DONE 2026-06-10]: the 5 generated caches (20x20, 15x15,
+  15x15_grey, leaflet_native, leaflet_mask) now write to $temp_dir/sym_cache -- writable in dev
+  AND packaged -- instead of under $resource_dir (read-only when packaged).  Source symNN.png
+  reads stay at $resource_dir/sym_catalog; each cache writer already mkdirs its target dir.
+- KNOWN GAP: _Inline (navMatchC) still under $app_dir -- the Inline::C-when-packaged item, open.
+
+## Installer (Inno Setup)
+
+- installer_capable + doinstaller = 1 in cava20/msw/installer.config (the Storable hash, NOT the
+  tracked .cpkgproj); a build then emits the Inno installer alongside the SFX.
+- Cava 2.0 generates innosetup.iss for an older Inno; the installed Inno Setup 5.5.9 rejects three
+  things in the raw file (ISCC stops at the first -- MinVersion):
+    MinVersion=,<nt>           legacy 9x,NT comma form, invalid since 5.5.x dropped 9x support
+    OutputManifestFile=<path>  a path is no longer accepted (bare filename only)
+    [Languages] Basque/Slovak  those .isl files no longer ship
+- Fix: apps/navMate/_installer/PreInstallApp.pm (set as installer.config pre_installer_script)
+  rewrites innosetup.iss before the ISCC compile -- comments MinVersion, re-emits a bare
+  OutputManifestFile in [Setup], drops the whole [Languages] section, adds CloseApplications=force.
+  Modelled on buddy/cm's PreInstallApp; navMate's omits buddy's PATH-registry code.
+- Artifacts: SFX = navmate-mswin-x86-<ver>.exe (run-in-place); installer = app-installer-<...>.exe
+  ('app-installer' is Cava's placeholder base name -- rename later via installer.config name field).
 
 ## Known limitations / deeper iceberg (public-install scoping)
 
@@ -239,3 +284,30 @@ Other reach-backs found in the same audit (still to do):
   files. Resolved by re-initializing the repo clean (old .git moved aside to temp), leaving
   a single commit tracking only .gitignore + cava20.cpkgproj. LESSON: add the .gitignore
   BEFORE the first commit (buddy/cm did).
+
+## Inline::C / navMatch packaging
+
+The Inline-C matcher loads and runs in the packaged build.  navMatch.pm, navMatchC.pm, winFind,
+and Inline.pm all bundle normally -- Cava packs every module into the compressed package.lib, so
+bundling is confirmed in build.log's "Building file" list, not by looking for loose files under
+release/.
+
+The compiled kernel cache -- config-MSWin32-x86-multi-thread-5.012004 plus
+lib/auto/navMatchC_8dee/navMatchC_8dee.dll -- lives under the resource tree at _res/_Inline
+(git-mv'd there from _Inline), so resource_path=_res bundles it into {app}/res/_Inline.
+
+navMatchC.pm derives INLINE_DIR from $resource_dir/_Inline.  In dev that is the in-repo
+_res/_Inline (writable, where Inline built it).  When $Cava::Packager::PACKAGED, navMatchC
+xcopy's the bundled cache out to Win32::GetFullPathName("$temp_dir/_Inline") -- a writable,
+drive-lettered temp dir -- and points Inline there.  Both fixes are required: Inline 0.5 rejects
+a DIRECTORY that is read-only (Program Files) OR drive-less (the packaged $resource_dir is a
+'/PROGRA~2/...' path); the copy-to-temp solves both.  INLINE_DIR is a hardcoded path, not an
+@INC entry, so PERLLIB has no bearing on it.
+
+The committed .dll loads as-is, no recompile: PE machine 0x014c (i386 / 32-bit x86), Inline key
+MSWin32-x86-multi-thread-5.012004 -- identical to Cava's bundled perl (MSWin32-x86, 5.12.4).
+Inline validates that key on load, so a mismatch is refused (rebuild) rather than mis-loaded.
+
+Proven 2026-06-10: with the dev tree renamed aside and PERLLIB unset, the installed exe came up
+self-contained and a Find returned real candidates -- the kernel loaded and ran from the bundled
+cache.  See the memory [[inline-c-packaging-diagnosis]].
