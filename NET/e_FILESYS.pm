@@ -3,18 +3,18 @@
 #---------------------------------------------
 # Parser for FILESYS packets
 
-package apps::raymarine::NET::e_FILESYS;
+package Pub::Ray::NET::e_FILESYS;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
-use apps::raymarine::NET::a_defs;
-use apps::raymarine::NET::a_mon;
-use apps::raymarine::NET::a_utils;
-use apps::raymarine::NET::d_FILESYS;
-use base qw(apps::raymarine::NET::a_parser);
+use Pub::Ray::NET::a_defs;
+use Pub::Ray::NET::a_mon;
+use Pub::Ray::NET::a_utils;
+use Pub::Ray::NET::d_FILESYS;
+use base qw(Pub::Ray::NET::a_parser);
 
 
 my $dbg_fp = 0;
@@ -23,7 +23,7 @@ my $dbg_fp = 0;
 sub newParser
 {
 	my ($class, $mon_defs) = @_;
-	display($dbg_fp,0,"apps::raymarine::NET::e_FILESYS::newParser($mon_defs->{name})");
+	display($dbg_fp,0,"Pub::Ray::NET::e_FILESYS::newParser($mon_defs->{name})");
 	my $this = $class->SUPER::newParser($mon_defs);
 	bless $this,$class;
 
@@ -74,13 +74,13 @@ sub parsePacket
 	my $packet_len = length($payload);
 	my ($cmd_word,$sid,$seq) = unpack('vvV',substr($payload,0,8));
 	
-	display($dbg_fp+1,0,"apps::raymarine::NET::e_FILESYS::parsePacket len($packet_len)");
+	display($dbg_fp+1,0,"Pub::Ray::NET::e_FILESYS::parsePacket len($packet_len)");
 
 	$this->{file_error} = '';
 	$packet = $this->SUPER::parsePacket($packet);
 	return shared_clone({ seq_num=>$seq, success=>0 }) if $this->{file_error};
 
-	display($dbg_fp+1,0,"apps::raymarine::NET::e_FILESYS::parsePacket returning "._def($packet));
+	display($dbg_fp+1,0,"Pub::Ray::NET::e_FILESYS::parsePacket returning "._def($packet));
 	return $packet;
 }
 
@@ -97,7 +97,7 @@ sub parseMessage
 	my $cmd_name = $FILE_CMD_NAME{$cmd};
 	$cmd_name ||= 'WHO CARES?';
 	my $dir_name = $DIRECTION_NAME{$dir};
-	display($dbg_fp+2,1,"apps::raymarine::NET::e_FILESYS::parseMessage dir($dir)=$dir_name seq($seq) cmd($cmd)=$cmd_name");;
+	display($dbg_fp+2,1,"Pub::Ray::NET::e_FILESYS::parseMessage dir($dir)=$dir_name seq($seq) cmd($cmd)=$cmd_name");;
 
 	$this->SUPER::parseMessage($packet,$len,$part);
 
@@ -253,7 +253,7 @@ sub parseMessage
 					$name =~ s/\x00//g;								# remove traling null from '.' directory
 					$name =~ s/\.//g if $attr & $FAT_VOLUME_ID;		# remove erroneous . in middle of my volume name
 
-					printConsole(3,$mon,$color,apps::raymarine::NET::d_FILESYS::dbgFatStr($attr).pad("len($length)",8).$name)
+					printConsole(3,$mon,$color,Pub::Ray::NET::d_FILESYS::dbgFatStr($attr).pad("len($length)",8).$name)
 						if $mon & $MON_PARSE;
 
 					$this->{file_content} .= "\n" if $this->{file_content};
@@ -363,7 +363,7 @@ sub parseMessage
 	return undef;	# still processing file packets
 
 
-}	# apps::raymarine::NET::e_FILESYS::parsePacket()
+}	# Pub::Ray::NET::e_FILESYS::parsePacket()
 
 
 

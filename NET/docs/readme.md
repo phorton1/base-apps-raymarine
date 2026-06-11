@@ -9,16 +9,19 @@
 **[DBNAV](DBNAV.md)** --
 **[Cables](ethernet_cables.md)**
 
-Folders: **[Raymarine](../../docs/readme.md)** --
+Folders: **[Home](../../docs/readme.md)** --
 **NET** --
 **[FSH](../../FSH/docs/readme.md)** --
-**[CSV](../../CSV/docs/readme.md)** --
-**[shark](../../apps/shark/docs/shark.md)** --
-**[navMate](../../apps/navMate/docs/readme.md)**
+**[CSV](../../CSV/docs/readme.md)**
+
+repos: **[phorton1](https://github.com/phorton1)** --
+**Ray Library** --
+**[shark Tool](https://github.com/phorton1/base-apps-shark/blob/master/docs/shark.md)** --
+**[navMate App](https://github.com/phorton1/base-apps-navMate/blob/master/docs/readme.md)**
 
 The NET folder contains Perl implementations of the Raymarine **SeatalkHS**
-ethernet protocols, along with the tools built on them - **[shark](../../apps/shark/docs/shark.md)** (the
-engineering tool) and **[navMate](../../apps/navMate/docs/readme.md)** (the navigation application) - and supporting
+ethernet protocols, along with the tools built on them - **[shark](https://github.com/phorton1/base-apps-shark/blob/master/docs/shark.md)** (the
+engineering tool) and **[navMate](https://github.com/phorton1/base-apps-navMate/blob/master/docs/readme.md)** (the navigation application) - and supporting
 documentation.
 
 Throughout this documentation and the implementation code, **RAYNET** is used
@@ -120,8 +123,8 @@ is running and the E80 is underway.
 
 Working with the E80 over SeatalkHS requires physical ethernet access.
 The **NET library** provides the programmatic API to the E80 independently
-of any application; **shark** (`apps/shark/`) is the engineering tool built
-on it for protocol probing and exploration, and **navMate** (`apps/navMate/`)
+of any application; **shark** (its own repository) is the engineering tool built
+on it for protocol probing and exploration, and **navMate** (also its own repository)
 - primarily a user-level navigation application - has grown into an adjunct
 tool that provides its own hands-on E80 access. Each E80 has its own fixed
 IP address - units do not use DHCP. The address is intrinsic to the hardware,
@@ -136,8 +139,8 @@ field-installable waterproof connector.
 NET is a **standalone Perl library**. It has no application entry point of its own;
 two applications consume it:
 
-- **[shark](../../apps/shark/docs/shark.md)** (`apps/shark/`) - the wxPerl engineering tool used to probe and operate the E80
-- **[navMate](../../apps/navMate/docs/readme.md)** (`apps/navMate/`) - the navigation knowledge management application
+- **[shark](https://github.com/phorton1/base-apps-shark/blob/master/docs/shark.md)** - the wxPerl engineering tool used to probe and operate the E80
+- **[navMate](https://github.com/phorton1/base-apps-navMate/blob/master/docs/readme.md)** - the navigation knowledge management application
 
 NET modules follow a layered naming convention (one letter prefix per layer):
 
@@ -171,7 +174,7 @@ DBNAV, RAYDP) are unaffected and continue to use the `doParse` path.
 
 ### Engineering Tool Documentation
 
-- **[shark](../../apps/shark/docs/shark.md)** -
+- **[shark](https://github.com/phorton1/base-apps-shark/blob/master/docs/shark.md)** -
   The wxPerl engineering application: serial command vocabulary, feature flags,
   GUI panels, and the probe system for exploring unknown ports and services.
 

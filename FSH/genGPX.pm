@@ -3,15 +3,15 @@
 #-------------------------------------------------------
 # Generates a GPX file from $all_blocks
 
-package apps::raymarine::FSH::genGPX;
+package Pub::Ray::FSH::genGPX;
 use strict;
 use warnings;
 use Fcntl qw(:seek);
 use Time::Local;
 use Pub::Utils;
-use apps::raymarine::FSH::fshUtils;
-use apps::raymarine::FSH::fshFile;
-use apps::raymarine::FSH::fshBlocks;
+use Pub::Ray::FSH::fshUtils;
+use Pub::Ray::FSH::fshFile;
+use Pub::Ray::FSH::fshBlocks;
 
 
 BEGIN

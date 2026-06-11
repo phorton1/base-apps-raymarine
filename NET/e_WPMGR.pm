@@ -5,18 +5,18 @@
 # parsePiece to implement semantic parsing of WPMGR packets,
 # including returning WRG Records in $packet->{item}
 
-package apps::raymarine::NET::e_WPMGR;
+package Pub::Ray::NET::e_WPMGR;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils;
-use apps::raymarine::NET::a_defs;
-use apps::raymarine::NET::a_mon;
-use apps::raymarine::NET::a_utils;
-use apps::raymarine::NET::e_wp_defs;
-use apps::raymarine::NET::b_records;
-use base qw(apps::raymarine::NET::a_parser);
+use Pub::Ray::NET::a_defs;
+use Pub::Ray::NET::a_mon;
+use Pub::Ray::NET::a_utils;
+use Pub::Ray::NET::e_wp_defs;
+use Pub::Ray::NET::b_records;
+use base qw(Pub::Ray::NET::a_parser);
 
 my $dbg_ewp = 0;
 
@@ -24,7 +24,7 @@ my $dbg_ewp = 0;
 sub newParser
 {
 	my ($class, $mon_defs) = @_;
-	display($dbg_ewp,0,"apps::raymarine::NET::e_WPMGR::newParser($mon_defs->{name}) is_shark($mon_defs->{is_shark}) is_sniffer($mon_defs->{is_sniffer})");
+	display($dbg_ewp,0,"Pub::Ray::NET::e_WPMGR::newParser($mon_defs->{name}) is_shark($mon_defs->{is_shark}) is_sniffer($mon_defs->{is_sniffer})");
 	my $this = $class->SUPER::newParser($mon_defs);
 	bless $this,$class;
 	$this->{last_dir_was_reply} = 1;
@@ -59,7 +59,7 @@ sub resetTransaction
 sub applyMonDefs
 {
 	my ($this,$packet) = @_;
-	display($dbg_ewp+1,0,"apps::raymarine::NET::e_WPMGR::applyMonDefs()");
+	display($dbg_ewp+1,0,"Pub::Ray::NET::e_WPMGR::applyMonDefs()");
 
 	# payload is now the msg body (no length prefix); cmd_word is at offset 0
 	my $cmd_word = unpack('v',substr($packet->{payload},0,2));
@@ -112,7 +112,7 @@ sub parseMessage
 	# Returns undef for intermediate messages, shared reply hash for terminal.
 {
 	my ($this,$packet,$len,$part) = @_;
-	display($dbg_ewp+2,0,"apps::raymarine::NET::e_WPMGR::parseMessage($len)");
+	display($dbg_ewp+2,0,"Pub::Ray::NET::e_WPMGR::parseMessage($len)");
 	return undef if !$this->SUPER::parseMessage($packet,$len,$part);
 
 	my $cmd_word = unpack('v',$part);

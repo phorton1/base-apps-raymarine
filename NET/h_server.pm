@@ -28,7 +28,7 @@
 # Subclasses override handleCommand to add app-specific commands,
 # calling SUPER::handleCommand for anything not handled.
 
-package apps::raymarine::NET::h_server;
+package Pub::Ray::NET::h_server;
 use strict;
 use warnings;
 use threads;
@@ -39,11 +39,11 @@ use Pub::Utils;
 use Pub::ServerUtils;
 use Pub::HTTP::ServerBase;
 use Pub::HTTP::Response qw(http_ok http_error);
-use apps::raymarine::NET::a_defs;
-use apps::raymarine::NET::a_mon;
-use apps::raymarine::NET::a_utils;
-use apps::raymarine::NET::b_sock;
-use apps::raymarine::NET::c_RAYDP;
+use Pub::Ray::NET::a_defs;
+use Pub::Ray::NET::a_mon;
+use Pub::Ray::NET::a_utils;
+use Pub::Ray::NET::b_sock;
+use Pub::Ray::NET::c_RAYDP;
 use base qw(Pub::HTTP::ServerBase);
 
 
@@ -129,7 +129,7 @@ sub api_db
 	my $wp_mgr    = $raydp->findImplementedService('WPMGR',1);
 	my $track_mgr = $raydp->findImplementedService('TRACK',1);
 	my $data = {
-		version   => apps::raymarine::NET::b_sock::getVersion(),
+		version   => Pub::Ray::NET::b_sock::getVersion(),
 		waypoints => $wp_mgr    ? $wp_mgr->{waypoints}    : {},
 		routes    => $wp_mgr    ? $wp_mgr->{routes}       : {},
 		groups    => $wp_mgr    ? $wp_mgr->{groups}       : {},
@@ -283,7 +283,7 @@ sub handleCommand
 
 	if ($lpart eq 'wakeup')
 	{
-		apps::raymarine::NET::b_sock::wakeup_e80();
+		Pub::Ray::NET::b_sock::wakeup_e80();
 	}
 
 	# E80 in-memory state
@@ -318,7 +318,7 @@ sub handleCommand
 		return error("t_uuid: usage: t_uuid <uuid> <erase|mta|rename <new_name>>")
 			if !($uuid && $op);
 		$track->queueTRACKCommand(
-			$apps::raymarine::NET::d_TRACK::API_GENERAL_CMD,
+			$Pub::Ray::NET::d_TRACK::API_GENERAL_CMD,
 			$uuid, $op);
 	}
 
@@ -474,12 +474,12 @@ sub handleCommand
 	{
 		if ($rpart =~ /^\d+$/)
 		{
-			$apps::raymarine::NET::b_sock::command_timeout = $rpart + 0;
-			display(0,0,"b_sock::command_timeout set to $apps::raymarine::NET::b_sock::command_timeout");
+			$Pub::Ray::NET::b_sock::command_timeout = $rpart + 0;
+			display(0,0,"b_sock::command_timeout set to $Pub::Ray::NET::b_sock::command_timeout");
 		}
 		else
 		{
-			display(0,0,"b_sock::command_timeout = $apps::raymarine::NET::b_sock::command_timeout");
+			display(0,0,"b_sock::command_timeout = $Pub::Ray::NET::b_sock::command_timeout");
 		}
 	}
 
@@ -900,7 +900,7 @@ sub kml_RAYSYS
 	my $wp_mgr    = $raydp->findImplementedService('WPMGR',1);
 	my $track_mgr = $raydp->findImplementedService('TRACK',1);
 
-	my $local_version = apps::raymarine::NET::b_sock::getVersion();
+	my $local_version = Pub::Ray::NET::b_sock::getVersion();
 	my $changed = $server_version == $local_version ? 0 : 1;
 	my $update  = !$changed && $param_version == $server_version ? 1 : 0;
 

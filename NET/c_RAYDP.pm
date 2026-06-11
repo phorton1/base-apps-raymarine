@@ -86,7 +86,7 @@
 #		finished records
 #			containing the same level of detail
 
-package apps::raymarine::NET::c_RAYDP;
+package Pub::Ray::NET::c_RAYDP;
 use strict;
 use warnings;
 use threads;
@@ -94,12 +94,12 @@ use threads::shared;
 use Socket;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
-use apps::raymarine::NET::a_defs;
-use apps::raymarine::NET::a_mon;
-use apps::raymarine::NET::a_utils;
-use apps::raymarine::NET::b_sock;
-use apps::raymarine::NET::a_parser;
-use base qw(apps::raymarine::NET::b_sock apps::raymarine::NET::a_parser);
+use Pub::Ray::NET::a_defs;
+use Pub::Ray::NET::a_mon;
+use Pub::Ray::NET::a_utils;
+use Pub::Ray::NET::b_sock;
+use Pub::Ray::NET::a_parser;
+use base qw(Pub::Ray::NET::b_sock Pub::Ray::NET::a_parser);
 
 my $dbg_raydp = 0;
 
@@ -278,7 +278,7 @@ sub connectServicePort
 		$service_port->{local_port} = $LOCAL_UDP_PORT_BASE + $service_port->{service_id}
 			if $proto eq 'udp';
 
-		bless $service_port, 'apps::raymarine::NET::b_sock';
+		bless $service_port, 'Pub::Ray::NET::b_sock';
 		$service_port->init();
 		$service_port->start();
 	}
@@ -364,7 +364,7 @@ sub startImplementedService
 {
     my ($this,$service_port) = @_;
 	my $name = $service_port->{name};
-    my $class = "apps::raymarine::NET::d_$name";
+    my $class = "Pub::Ray::NET::d_$name";
 	warning(0,0,"STARTING IMPLEMENTED SERVICE $name auto_start($service_port->{auto_connect}) populate($service_port->{auto_populate})");
     bless $service_port, $class;
 	$this->{implemented_services}->{$name} = $service_port;
@@ -379,7 +379,7 @@ sub startImplementedService
 		$service_port->{shutdown} = $SHUTDOWN_DONE;
 		
     $service_port->start();
-	apps::raymarine::NET::b_sock::incVersion();	# addition or deletion of implemented services causes h_server to send a new page
+	Pub::Ray::NET::b_sock::incVersion();	# addition or deletion of implemented services causes h_server to send a new page
 
 }
 
@@ -623,7 +623,7 @@ sub onStartSocketThread
 {
 	my ($this) = @_;
 	display($dbg_raydp,0,"RAYDP onStartSocketThread()");
-	apps::raymarine::NET::b_sock::wakeup_e80();
+	Pub::Ray::NET::b_sock::wakeup_e80();
 }
 
 
@@ -669,7 +669,7 @@ sub onIdle
 				warning($dbg_raydp,2,"DESTROYING service_port $addr $name");
 				$service_port->destroy();
 				bless $service_port,'HASH';
-				apps::raymarine::NET::b_sock::incVersion();	# addition or deletion of implemented services causes h_server to send a new page
+				Pub::Ray::NET::b_sock::incVersion();	# addition or deletion of implemented services causes h_server to send a new page
 			}
 			elsif ($implemented && !$still_exists)				# its implemented and there are no more instances
 			{
@@ -677,7 +677,7 @@ sub onIdle
 				delete $this->{implemented_services}->{$name};
 				$implemented->destroy();
 				bless $implemented,'HASH';
-				apps::raymarine::NET::b_sock::incVersion();	# addition or deletion of implemented services causes h_server to send a new page
+				Pub::Ray::NET::b_sock::incVersion();	# addition or deletion of implemented services causes h_server to send a new page
 			}
 		}
 	}

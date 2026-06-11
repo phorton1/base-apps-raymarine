@@ -6,18 +6,18 @@
 # implement semantic parsing of service specific packets,
 # including returning Track Records in $packet->{item}
 
-package apps::raymarine::NET::e_TRACK;
+package Pub::Ray::NET::e_TRACK;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils;
-use apps::raymarine::NET::a_defs;
-use apps::raymarine::NET::a_mon;
-use apps::raymarine::NET::a_utils;
-use apps::raymarine::NET::b_records;
-use apps::raymarine::NET::d_TRACK;
-use base qw(apps::raymarine::NET::a_parser);
+use Pub::Ray::NET::a_defs;
+use Pub::Ray::NET::a_mon;
+use Pub::Ray::NET::a_utils;
+use Pub::Ray::NET::b_records;
+use Pub::Ray::NET::d_TRACK;
+use base qw(Pub::Ray::NET::a_parser);
 
 my $dbg_tp = 0;
 my $dbg_evt = 0;
@@ -26,7 +26,7 @@ my $dbg_evt = 0;
 sub newParser
 {
 	my ($class, $mon_defs) = @_;
-	display($dbg_tp,0,"apps::raymarine::NET::e_TRACK::new($mon_defs->{name})");
+	display($dbg_tp,0,"Pub::Ray::NET::e_TRACK::new($mon_defs->{name})");
 	my $this = $class->SUPER::newParser($mon_defs);
 	bless $this,$class;
 	$this->resetTransaction();
@@ -66,7 +66,7 @@ sub parseMessage
 	# Returns undef for intermediate messages, shared reply hash for terminal.
 {
 	my ($this,$packet,$len,$part) = @_;
-	display($dbg_tp+2,0,"apps::raymarine::NET::e_TRACK::parseMessage($len)");
+	display($dbg_tp+2,0,"Pub::Ray::NET::e_TRACK::parseMessage($len)");
 	return undef if !$this->SUPER::parseMessage($packet,$len,$part);
 
 	my $cmd_word = unpack('v',substr($part,0,2));
@@ -78,7 +78,7 @@ sub parseMessage
 	my $cmd_name = $packet->{is_reply} ? $TRACK_REPLY_NAME{$cmd} : $TRACK_REQUEST_NAME{$cmd};
 	$cmd_name ||= 'WHO CARES?';
 	my $dir_name = $DIRECTION_NAME{$dir} // sprintf('0x%04X',$dir);
-	display($dbg_tp+2,1,"apps::raymarine::NET::e_TRACK::parseMessage() dir($dir)=$dir_name cmd($cmd)=$cmd_name");
+	display($dbg_tp+2,1,"Pub::Ray::NET::e_TRACK::parseMessage() dir($dir)=$dir_name cmd($cmd)=$cmd_name");
 
 	my $mon = $packet->{mon};
 	printConsole(1,$mon,$packet->{color},"$dir_name $cmd_name")

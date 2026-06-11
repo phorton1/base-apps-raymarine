@@ -19,11 +19,11 @@ use Wx::Event qw(
 use Pub::Utils;
 use Pub::WX::Window;
 use Pub::WX::Dialogs;;
-use apps::raymarine::NET::a_defs;
-use apps::raymarine::NET::a_utils;
-use apps::raymarine::NET::c_RAYDP;
-use apps::raymarine::NET::d_FILESYS;
-use apps::raymarine::NET::winMultiProgress;
+use Pub::Ray::NET::a_defs;
+use Pub::Ray::NET::a_utils;
+use Pub::Ray::NET::c_RAYDP;
+use Pub::Ray::NET::d_FILESYS;
+use Pub::Ray::NET::winMultiProgress;
 use base qw(Pub::WX::Window);
 
 my $dbg_win = 1;		# window basics
@@ -63,7 +63,7 @@ my $sort_indicator = [' ^',' v'];
 
 my $font_fixed = Wx::Font->new(11,wxFONTFAMILY_MODERN,wxFONTSTYLE_NORMAL,wxFONTWEIGHT_BOLD);
 
-my $DEFAULT_SAVE_DIR = 	"/base/apps/raymarine/NET/docs/junk/dowloads";
+my $DEFAULT_SAVE_DIR = 	"/base/Pub/Ray/NET/docs/junk/dowloads";
 
 
 

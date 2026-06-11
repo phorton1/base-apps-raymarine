@@ -79,7 +79,7 @@
 # attempts reconnections after a specific interval of time.
 
 
-package apps::raymarine::NET::b_sock;
+package Pub::Ray::NET::b_sock;
 use strict;
 use warnings;
 use threads;
@@ -91,9 +91,9 @@ use IO::Select;
 use IO::Socket::INET;
 use IO::Socket::Multicast;
 use Pub::Utils;
-use apps::raymarine::NET::a_defs;
-use apps::raymarine::NET::a_mon;
-use apps::raymarine::NET::a_utils qw(parse_dwords setConsoleColor $appClientName);
+use Pub::Ray::NET::a_defs;
+use Pub::Ray::NET::a_mon;
+use Pub::Ray::NET::a_utils qw(parse_dwords setConsoleColor $appClientName);
 
 
 
@@ -269,7 +269,7 @@ sub init
     $this->{command_queue}      = shared_clone([]);
     $this->{replies}            = shared_clone([]);
 
-	my $parser_class = $this->{parser_class} || 'apps::raymarine::NET::a_parser';
+	my $parser_class = $this->{parser_class} || 'Pub::Ray::NET::a_parser';
 	$this->{parser} = $parser_class->newParser($this->{mon_defs}) if !$this->{parser};
 
 }

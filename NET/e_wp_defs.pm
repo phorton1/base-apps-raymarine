@@ -2,14 +2,14 @@
 # e_wp_defs.pm
 #---------------------------------------------
 
-package apps::raymarine::NET::e_wp_defs;	
+package Pub::Ray::NET::e_wp_defs;	
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(time sleep);
 use Pub::Utils;
-use apps::raymarine::NET::a_defs;
+use Pub::Ray::NET::a_defs;
 my $dbg_wpp = -1;
 
 

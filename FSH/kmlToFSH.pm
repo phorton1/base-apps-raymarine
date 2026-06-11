@@ -30,15 +30,15 @@
 
 
 
-package apps::raymarine::FSH::kmlToFSH;
+package Pub::Ray::FSH::kmlToFSH;
 use strict;
 use warnings;
 use XML::Simple;
 use Data::Dumper;
 use Pub::Utils;
-use apps::raymarine::FSH::fshUtils;
-use apps::raymarine::FSH::fshBlocks;
-use apps::raymarine::FSH::fshFile;
+use Pub::Ray::FSH::fshUtils;
+use Pub::Ray::FSH::fshBlocks;
+use Pub::Ray::FSH::fshFile;
 
 $Data::Dumper::Indent = 1;
 $Data::Dumper::Sortkeys = 1;
@@ -318,7 +318,7 @@ my $ofilename = "/junk/tracks.fsh";
 my $kml = parseKML($ifilename);
 if ($kml)
 {
-	my $fsh_file = apps::raymarine::FSH::fshFile->new();
+	my $fsh_file = Pub::Ray::FSH::fshFile->new();
 	my $folder = $kml->{Document}->{Folder};
 	if ($folder)
 	{

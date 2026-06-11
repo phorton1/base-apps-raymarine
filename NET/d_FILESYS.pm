@@ -16,16 +16,16 @@
 # between udp packets.
 
 
-package apps::raymarine::NET::d_FILESYS;
+package Pub::Ray::NET::d_FILESYS;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
-use apps::raymarine::NET::a_defs;
-use apps::raymarine::NET::a_utils;
-use base qw(apps::raymarine::NET::b_sock);
+use Pub::Ray::NET::a_defs;
+use Pub::Ray::NET::a_utils;
+use base qw(Pub::Ray::NET::b_sock);
 
 
 my $dbg_fs = 0;

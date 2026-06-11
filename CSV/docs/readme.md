@@ -1,11 +1,14 @@
 # CSV - Google Earth to Raymarine RNS Conversion
 
-Folders: **[Raymarine](../../docs/readme.md)** --
+Folders: **[Home](../../docs/readme.md)** --
 **[NET](../../NET/docs/readme.md)** --
 **[FSH](../../FSH/docs/readme.md)** --
-**CSV** --
-**[shark](../../apps/shark/docs/shark.md)** --
-**[navMate](../../apps/navMate/docs/readme.md)**
+**CSV**
+
+repos: **[phorton1](https://github.com/phorton1)** --
+**Ray Library** --
+**[shark Tool](https://github.com/phorton1/base-apps-shark/blob/master/docs/shark.md)** --
+**[navMate App](https://github.com/phorton1/base-apps-navMate/blob/master/docs/readme.md)**
 
 **`kmlToCSV.pm`** converts a Google Earth KML export into a Raymarine RNS-compatible
 CSV file, enabling a workflow for managing navigation data in Google Earth and

@@ -2,7 +2,7 @@
 # a_defs.pm
 #---------------------------------------------
 
-package apps::raymarine::NET::a_defs;
+package Pub::Ray::NET::a_defs;
 use strict;
 use warnings;
 use threads;
@@ -444,27 +444,27 @@ sub initServices
 	my (%want) = @_;
 	my $auto_query = $want{auto_query} // 0;
 	mergeHash($SERVICE_PORT_DEFS{$SPORT_FILESYS},{
-		parser_class	=> 'apps::raymarine::NET::e_FILESYS',
+		parser_class	=> 'Pub::Ray::NET::e_FILESYS',
 		implemented 	=> $want{filesys} || 0,
 		auto_connect 	=> 1,
 		auto_populate	=> $auto_query });
 	mergeHash($SERVICE_PORT_DEFS{$SPORT_WPMGR},{
-		parser_class	=> 'apps::raymarine::NET::e_WPMGR',
+		parser_class	=> 'Pub::Ray::NET::e_WPMGR',
 		implemented 	=> $want{wpmgr} || 0,
 		auto_connect 	=> 1,
 		auto_populate 	=> $auto_query });
 	mergeHash($SERVICE_PORT_DEFS{$SPORT_TRACK},{
-		parser_class	=> 'apps::raymarine::NET::e_TRACK',
+		parser_class	=> 'Pub::Ray::NET::e_TRACK',
 		implemented 	=> $want{track} || 0,
 		auto_connect 	=> 1,
 		auto_populate 	=> $auto_query });
 	mergeHash($SERVICE_PORT_DEFS{$SPORT_DBNAV},{
-		parser_class	=> 'apps::raymarine::NET::e_DBNAV',
+		parser_class	=> 'Pub::Ray::NET::e_DBNAV',
 		implemented 	=> $want{dbnav} || 0,
 		auto_connect 	=> 1,
 		auto_populate 	=> $auto_query });
 	mergeHash($SERVICE_PORT_DEFS{$SPORT_DB},{
-		parser_class	=> 'apps::raymarine::NET::e_DB',
+		parser_class	=> 'Pub::Ray::NET::e_DB',
 		implemented 	=> $want{db} || 0,
 		auto_connect 	=> 1,
 		auto_populate 	=> $auto_query });

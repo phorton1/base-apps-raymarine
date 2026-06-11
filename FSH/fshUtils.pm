@@ -3,7 +3,7 @@
 #--------------------------------------
 # Based on the C code at https://github.com/rahra/parsefsh
 
-package apps::raymarine::FSH::fshUtils;
+package Pub::Ray::FSH::fshUtils;
 use strict;
 use warnings;
 use POSIX qw(floor pow atan tan);

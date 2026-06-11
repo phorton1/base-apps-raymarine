@@ -2,7 +2,7 @@
 # write_track_bocas.pl
 #
 # Test harness for the TRACK writing protocol described in
-# C:/base/apps/raymarine/NET/docs/notes/TRACK_writing.md.
+# C:/base/Pub/Ray/NET/docs/notes/TRACK_writing.md.
 #
 # Fetches the BOCAS1-001 track from navMate /api/fsh, encodes its MTA and
 # 11 trackpoints per b_records.pm SPECS, opens a single-track-per-session

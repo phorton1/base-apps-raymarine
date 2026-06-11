@@ -9,12 +9,15 @@
 **DBNAV** --
 **[Cables](ethernet_cables.md)**
 
-Folders: **[Raymarine](../../docs/readme.md)** --
+Folders: **[Home](../../docs/readme.md)** --
 **NET** --
 **[FSH](../../FSH/docs/readme.md)** --
-**[CSV](../../CSV/docs/readme.md)** --
-**[shark](../../apps/shark/docs/shark.md)** --
-**[navMate](../../apps/navMate/docs/readme.md)**
+**[CSV](../../CSV/docs/readme.md)**
+
+repos: **[phorton1](https://github.com/phorton1)** --
+**Ray Library** --
+**[shark Tool](https://github.com/phorton1/base-apps-shark/blob/master/docs/shark.md)** --
+**[navMate App](https://github.com/phorton1/base-apps-navMate/blob/master/docs/readme.md)**
 
 Two related services provide access to the E80's navigation field database,
 both using service_id **16** (0x10, shown as `1000` in hex streams):
@@ -115,4 +118,4 @@ the primary source for future FID identification work.
 
 ---
 
-**Next:** [shark](../../apps/shark/docs/shark.md)
+**Next:** [Cables](ethernet_cables.md)

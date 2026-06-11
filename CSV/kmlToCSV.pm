@@ -26,7 +26,7 @@
 # manually copied to the /src/Arduino/ NMEA0183 simulator
 # directory to synchronize the simulator with the E80.
 
-package apps::raymarine::CSV::kmlToCSV;
+package Pub::Ray::CSV::kmlToCSV;
 use strict;
 use warnings;
 use XML::Simple;

@@ -21,14 +21,14 @@
 # blocks while parsing, or implement a "collection by UUID" for WRG's and
 # thus, only take the last one of a particular uuid found, I suppose.
 
-package apps::raymarine::FSH::fshFile;
+package Pub::Ray::FSH::fshFile;
 use strict;
 use warnings;
 use POSIX qw(floor pow atan);
 use Fcntl qw(:seek);
 use Time::Local;
 use Pub::Utils;
-use apps::raymarine::FSH::fshUtils;
+use Pub::Ray::FSH::fshUtils;
 
 my $ACTIVE_BLOCKS_ONLY = 1;
 

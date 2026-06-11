@@ -80,14 +80,14 @@
 # Everything else needed for history-preserving read-modify-write
 # is already in place.
 
-package apps::raymarine::FSH::fshFile;		# continued
+package Pub::Ray::FSH::fshFile;		# continued
 use strict;
 use warnings;
 use POSIX qw(floor pow atan);
 use Fcntl qw(:seek);
 use Time::Local;
 use Pub::Utils;
-use apps::raymarine::FSH::fshUtils;
+use Pub::Ray::FSH::fshUtils;
 
 
 my $dbg_block = 1;

@@ -20,7 +20,7 @@
 #
 # Usage:
 #
-#   my $writer = apps::raymarine::NET::d_TRACK_writer->new(
+#   my $writer = Pub::Ray::NET::d_TRACK_writer->new(
 #       ip       => '10.0.166.121',
 #       port     => 2053,
 #       mta_rec  => $rec,           # hash compatible with buildMTA's $rec arg
@@ -36,19 +36,19 @@
 # always equals the total point count -- chunking is invisible to
 # the E80 beyond per-batch CONTEXT/BUFFER/END framing.
 
-package apps::raymarine::NET::d_TRACK_writer;
+package Pub::Ray::NET::d_TRACK_writer;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
-use apps::raymarine::NET::a_utils;
-use apps::raymarine::NET::a_defs;
-use apps::raymarine::NET::a_mon;
-use apps::raymarine::NET::b_records;
-use apps::raymarine::NET::d_TRACK;
-use base qw(apps::raymarine::NET::b_sock);
+use Pub::Ray::NET::a_utils;
+use Pub::Ray::NET::a_defs;
+use Pub::Ray::NET::a_mon;
+use Pub::Ray::NET::b_records;
+use Pub::Ray::NET::d_TRACK;
+use base qw(Pub::Ray::NET::b_sock);
 
 # Track-writer monitoring colors (echo the SHARK_DEFAULTS values for
 # $SPORT_TRACK so writer traffic visually matches reader traffic in
@@ -133,7 +133,7 @@ sub new
 		sid          => $TRACK_SERVICE_ID,   # alias also consulted by some helpers
 		ip           => $args{ip},
 		port         => $args{port} || 2053,
-		parser_class => 'apps::raymarine::NET::e_TRACK',
+		parser_class => 'Pub::Ray::NET::e_TRACK',
 		mon_defs     => $mon_defs,
 
 		# writer-session state
@@ -217,7 +217,7 @@ sub run
 	$this->{wait_name} = 'SAVED';
 	display($dbg_tw,1,"awaiting SAVED ack");
 
-	# b_sock::waitReply uses $apps::raymarine::NET::b_sock::command_timeout
+	# b_sock::waitReply uses $Pub::Ray::NET::b_sock::command_timeout
 	# which is 10s; that's our $REPLY_TIMEOUT budget.
 	my $reply = $this->waitReply(0);   # do NOT pass expect_success; we evaluate ourselves
 

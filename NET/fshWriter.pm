@@ -3,19 +3,19 @@
 #--------------------------------------------
 # Uses FSH routines to write an FSH file
 
-package apps::raymarine::NET::fshWriter;
+package Pub::Ray::NET::fshWriter;
 use strict;
 use warnings;
 use POSIX qw(floor pow atan);
 use Fcntl qw(:seek);
 use Time::Local;
 use Pub::Utils;
-use apps::raymarine::FSH::fshUtils;
-use apps::raymarine::FSH::fshFile;
-use apps::raymarine::NET::a_defs;
-use apps::raymarine::NET::a_mon;
-use apps::raymarine::NET::b_records;
-use apps::raymarine::NET::c_RAYDP;
+use Pub::Ray::FSH::fshUtils;
+use Pub::Ray::FSH::fshFile;
+use Pub::Ray::NET::a_defs;
+use Pub::Ray::NET::a_mon;
+use Pub::Ray::NET::b_records;
+use Pub::Ray::NET::c_RAYDP;
 use Pub::Utils;
 
 my $dbg_fwr = 0;
@@ -40,8 +40,8 @@ sub createBlock
 
 sub write
 {
-	display($dbg_fwr,0,"apps::raymarine::NET::fshWriter::write()");
-	my $fsh_file = apps::raymarine::FSH::fshFile->new();
+	display($dbg_fwr,0,"Pub::Ray::NET::fshWriter::write()");
+	my $fsh_file = Pub::Ray::FSH::fshFile->new();
 	my $wp_mgr = $raydp->findImplementedService('WPMGR');
 	my $trk_mgr = $raydp->findImplementedService('TRACK');
 

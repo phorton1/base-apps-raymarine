@@ -30,24 +30,24 @@
 # **good** purpose to try to upload a track to the E80.
 
 
-package apps::raymarine::FSH::fshConvert;
+package Pub::Ray::FSH::fshConvert;
 use strict;
 use warnings;
 use Fcntl qw(:seek);
 use Time::Local;
 use Pub::Utils;
-use apps::raymarine::FSH::fshUtils;
-use apps::raymarine::FSH::fshFile;
-use apps::raymarine::FSH::fshBlocks;
-use apps::raymarine::FSH::genGPX;
-use apps::raymarine::FSH::genKML;
+use Pub::Ray::FSH::fshUtils;
+use Pub::Ray::FSH::fshFile;
+use Pub::Ray::FSH::fshBlocks;
+use Pub::Ray::FSH::genGPX;
+use Pub::Ray::FSH::genKML;
 
 
 #---------------------------------------
 # main
 #---------------------------------------
 
-my $SRC_DIR = '/base/apps/raymarine/FSH';
+my $SRC_DIR = '/base/Pub/Ray/FSH';
 my $DEFAULT_INFILE = "/Archive/ARCHIVE.FSH";	# ARCHIVE2_FROM_OLD_E80.FSH";
 my $DEFAULT_OUTFILE = 'output/created_from_ARCHIVE_FSH.kml';
 
@@ -77,7 +77,7 @@ else
 	warning(0,0,"using default output file = $ofilename")
 }
 
-my $fsh_file = apps::raymarine::FSH::fshFile->new($ifilename);
+my $fsh_file = Pub::Ray::FSH::fshFile->new($ifilename);
 
 if ($fsh_file)
 {

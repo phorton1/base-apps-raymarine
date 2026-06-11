@@ -9,12 +9,15 @@
 **[DBNAV](DBNAV.md)** --
 **[Cables](ethernet_cables.md)**
 
-Folders: **[Raymarine](../../docs/readme.md)** --
+Folders: **[Home](../../docs/readme.md)** --
 **NET** --
 **[FSH](../../FSH/docs/readme.md)** --
-**[CSV](../../CSV/docs/readme.md)** --
-**[shark](../../apps/shark/docs/shark.md)** --
-**[navMate](../../apps/navMate/docs/readme.md)**
+**[CSV](../../CSV/docs/readme.md)**
+
+repos: **[phorton1](https://github.com/phorton1)** --
+**Ray Library** --
+**[shark Tool](https://github.com/phorton1/base-apps-shark/blob/master/docs/shark.md)** --
+**[navMate App](https://github.com/phorton1/base-apps-navMate/blob/master/docs/readme.md)**
 
 **FILESYS** provides read access to the CF card filesystem on the E80. It operates
 over UDP on port **2049**, service_id **5**. All known operations are read-only

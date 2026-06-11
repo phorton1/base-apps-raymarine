@@ -14,18 +14,18 @@
 # The MTA_UUID IS USED CONSISTENTLY THROUGHOUT THE SYSTEMS AS
 # THE IDENTITY UUID.
 
-package apps::raymarine::NET::d_TRACK;
+package Pub::Ray::NET::d_TRACK;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
-use apps::raymarine::NET::a_utils;
-use apps::raymarine::NET::a_defs;
-use apps::raymarine::NET::b_records;	# temporary name
+use Pub::Ray::NET::a_utils;
+use Pub::Ray::NET::a_defs;
+use Pub::Ray::NET::b_records;	# temporary name
 # use c_RAYDP  loaded by shark.pm
-use base qw(apps::raymarine::NET::b_sock);
+use base qw(Pub::Ray::NET::b_sock);
 
 
 my $dbg 		= 1;
@@ -505,7 +505,7 @@ sub createMsg
 sub sendRequest
 {
 	my ($this,$seq,$name,$request) = @_;
-	display($dbg+1,0,"sendRequest() calling apps::raymarine::NET::b_sock::sendPacket()");
+	display($dbg+1,0,"sendRequest() calling Pub::Ray::NET::b_sock::sendPacket()");
 	$this->sendPacket($request);
 	$this->{wait_seq} = $seq;
 	$this->{wait_name} = $name;

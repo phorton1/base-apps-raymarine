@@ -1,11 +1,14 @@
 # Raymarine Reverse Engineering - SeatalkHS, FSH, and CSV
 
-**Raymarine** --
+**Home** --
 **[NET](../NET/docs/readme.md)** --
 **[FSH](../FSH/docs/readme.md)** --
-**[CSV](../CSV/docs/readme.md)** --
-**[shark](../apps/shark/docs/shark.md)** --
-**[navMate](../apps/navMate/docs/readme.md)**
+**[CSV](../CSV/docs/readme.md)**
+
+repos: **[phorton1](https://github.com/phorton1)** --
+**Ray Library** --
+**[shark Tool](https://github.com/phorton1/base-apps-shark/blob/master/docs/shark.md)** --
+**[navMate App](https://github.com/phorton1/base-apps-navMate/blob/master/docs/readme.md)**
 
 This repository documents the results of a systematic reverse-engineering effort
 targeting Raymarine's proprietary protocols and file formats: the **SeatalkHS**
@@ -20,7 +23,7 @@ The work was conducted on a Raymarine **E80** chartplotter, but the SeatalkHS
 protocol is also used by E120-series MFDs, the DSM300 sonar module, and other
 Raymarine hardware of the same generation.
 
-This protocol and file-format work is the foundation for **[navMate](../apps/navMate/docs/readme.md)**,
+This protocol and file-format work is the foundation for **[navMate](https://github.com/phorton1/base-apps-navMate/blob/master/docs/readme.md)**,
 a desktop application for lifelong, device-independent navigation data management, currently
 in implementation. Its architecture, detailed design, and status are documented there.
 
@@ -79,16 +82,6 @@ reverse engineering for personal and educational purposes.
   Conversion from Google Earth KML to Raymarine RNS-compatible CSV format,
   enabling a Google Earth -> RNS -> E80 navigation data workflow.
 
-- **[shark](../apps/shark/docs/shark.md)** -
-  The wxPerl SeatalkHS engineering tool used to probe and operate the E80: serial command
-  vocabulary, feature flags, GUI panels, and the probe system for exploring unknown ports
-  and services.
-
-- **[navMate](../apps/navMate/docs/readme.md)** -
-  Desktop application for lifelong, device-independent navigation data management (WRGT),
-  currently in implementation. Architecture, data model, UI model, and implementation
-  status documented.
-
 ## Credits
 
 - [**parsefsh**](https://github.com/rahra/parsefsh) by Bernhard R. Fischer -
@@ -108,8 +101,18 @@ This software is released under the
 
 ## Please Also See
 
-- [**phorton1/base-apps-raymarine**](https://github.com/phorton1/base-apps-raymarine) -
+- [**phorton1/base-Pub-Ray**](https://github.com/phorton1/base-Pub-Ray) -
   this repository on GitHub
+
+- [**shark**](https://github.com/phorton1/base-apps-shark/blob/master/docs/shark.md) -
+  the wxPerl SeatalkHS engineering tool used to probe and operate the E80: serial command
+  vocabulary, feature flags, GUI panels, and the probe system for exploring unknown ports
+  and services.
+
+- [**navMate**](https://github.com/phorton1/base-apps-navMate/blob/master/docs/readme.md) -
+  desktop application for lifelong, device-independent navigation data management,
+  built on this library. Architecture, data model, UI model, and implementation
+  status documented there.
 
 - [**teensyBoat.ino**](https://github.com/phorton1/Arduino-boat-teensyBoat) -
   Arduino/Teensy4.0 physical boat simulator used to drive the E80 to known and

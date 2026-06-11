@@ -9,12 +9,15 @@
 **[DBNAV](DBNAV.md)** --
 **[Cables](ethernet_cables.md)**
 
-Folders: **[Raymarine](../../docs/readme.md)** --
+Folders: **[Home](../../docs/readme.md)** --
 **NET** --
 **[FSH](../../FSH/docs/readme.md)** --
-**[CSV](../../CSV/docs/readme.md)** --
-**[shark](../../apps/shark/docs/shark.md)** --
-**[navMate](../../apps/navMate/docs/readme.md)**
+**[CSV](../../CSV/docs/readme.md)**
+
+repos: **[phorton1](https://github.com/phorton1)** --
+**Ray Library** --
+**[shark Tool](https://github.com/phorton1/base-apps-shark/blob/master/docs/shark.md)** --
+**[navMate App](https://github.com/phorton1/base-apps-navMate/blob/master/docs/readme.md)**
 
 **TRACK** is the service for managing GPS tracks recorded by the E80. It operates
 over TCP on port **2053**, service_id **19** (0x13, shown as `1300` in hex streams).

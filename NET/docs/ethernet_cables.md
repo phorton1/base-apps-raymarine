@@ -9,12 +9,15 @@
 **[DBNAV](DBNAV.md)** --
 **Cables**
 
-Folders: **[Raymarine](../../docs/readme.md)** --
+Folders: **[Home](../../docs/readme.md)** --
 **NET** --
 **[FSH](../../FSH/docs/readme.md)** --
-**[CSV](../../CSV/docs/readme.md)** --
-**[shark](../../apps/shark/docs/shark.md)** --
-**[navMate](../../apps/navMate/docs/readme.md)**
+**[CSV](../../CSV/docs/readme.md)**
+
+repos: **[phorton1](https://github.com/phorton1)** --
+**Ray Library** --
+**[shark Tool](https://github.com/phorton1/base-apps-shark/blob/master/docs/shark.md)** --
+**[navMate App](https://github.com/phorton1/base-apps-navMate/blob/master/docs/readme.md)**
 
 ### The Raymarine E80 and E120 Chartplotter and the DSM300 Sonar module can use STANDARD ETHERNET CABLES.  Period.
 
@@ -199,7 +202,7 @@ Although this is specifically designed for use with some ethernet cables I purch
 should work fairly well with most run-of-the mill ethernet cables you might buy.  If not,
 all of the 3D printing files, the Fusion360 design, the STL files, the Prusa Slicer files
 and Gcode files are available in the
-[**NET/docs/e80_connector**](https://github.com/phorton1/base-apps-raymarine/tree/master/NET/docs/e80_connector)
+[**NET/docs/e80_connector**](https://github.com/phorton1/base-Pub-Ray/tree/master/NET/docs/e80_connector)
 folder within this repo to allow you to customize for your particular cable or connector.
 
 
@@ -207,4 +210,4 @@ folder within this repo to allow you to customize for your particular cable or c
 
 ---
 
-**Next:** [Home](../../docs/readme.md)
+**Next:** [FSH Format](../../FSH/docs/readme.md)

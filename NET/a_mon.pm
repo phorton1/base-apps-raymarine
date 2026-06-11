@@ -3,13 +3,13 @@
 #---------------------------------------------
 # monitor bit definitions and shared objects
 
-package apps::raymarine::NET::a_mon;
+package Pub::Ray::NET::a_mon;
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Pub::Utils;
-use apps::raymarine::NET::a_defs;
+use Pub::Ray::NET::a_defs;
 
 
 BEGIN
@@ -317,26 +317,26 @@ my $SNIFF_MON_GROUP 	= 0;	# $MON_MIN;
 
 
 mergeHash($SNIFFER_DEFAULTS{$SPORT_FILESYS},{
-	parser_class	=> 'apps::raymarine::NET::e_FILESYS',
+	parser_class	=> 'Pub::Ray::NET::e_FILESYS',
 	mon_in			=> 0, # 2026-04-12 turned off for chart analysis: $SNIFF_MON_FILESYS,
 	mon_out 		=> $SNIFF_MON_FILESYS,
 	in_color		=> $UTILS_COLOR_BROWN,
 	out_color		=> $UTILS_COLOR_LIGHT_MAGENTA, });
 mergeHash($SNIFFER_DEFAULTS{$SPORT_DBNAV},{
-	parser_class	=> 'apps::raymarine::NET::e_DBNAV',
+	parser_class	=> 'Pub::Ray::NET::e_DBNAV',
 	mon_in			=> $SNIFF_MON_DBNAV,
 	mon_out 		=> $SNIFF_MON_DBNAV,
 	in_color		=> $UTILS_COLOR_GREEN,
 	out_color		=> $UTILS_COLOR_MAGENTA, });
 mergeHash($SNIFFER_DEFAULTS{$SPORT_TRACK},{
-	parser_class	=> 'apps::raymarine::NET::e_TRACK',
+	parser_class	=> 'Pub::Ray::NET::e_TRACK',
 	active => 1,
 	mon_in			=> $SNIFF_MON_TRACK,
 	mon_out 		=> $SNIFF_MON_TRACK,
 	in_color		=> $UTILS_COLOR_CYAN,
 	out_color		=> $UTILS_COLOR_BLUE, });
 mergeHash($SNIFFER_DEFAULTS{$SPORT_WPMGR},{
-	parser_class	=> 'apps::raymarine::NET::e_WPMGR',
+	parser_class	=> 'Pub::Ray::NET::e_WPMGR',
 	active => 1,
 	mon_ins => shared_clone([
 		$SNIFF_MON_WAYPOINT,
@@ -358,7 +358,7 @@ mergeHash($SNIFFER_DEFAULTS{$SPORT_WPMGR},{
 		$UTILS_COLOR_CYAN, ]),
 });
 mergeHash($SNIFFER_DEFAULTS{$SPORT_DB},{
-	parser_class	=> 'apps::raymarine::NET::e_DB',
+	parser_class	=> 'Pub::Ray::NET::e_DB',
 	mon_in			=> $MON_ALL,
 	mon_out 		=> $MON_ALL,
 	in_color		=> $UTILS_COLOR_LIGHT_GREEN,

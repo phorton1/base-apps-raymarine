@@ -5,7 +5,7 @@
 # Reads Win32 console events in a detached thread and dispatches
 # complete command lines to the caller-supplied handler.
 
-package apps::raymarine::NET::s_serial;
+package Pub::Ray::NET::s_serial;
 use strict;
 use warnings;
 use threads;

@@ -28,14 +28,14 @@
 #
 # Note that udp probes are sent with global sendUDPPacket() in a_utils.
 
-package apps::raymarine::NET::b_sock;	# continued ...
+package Pub::Ray::NET::b_sock;	# continued ...
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use Time::HiRes qw(sleep time);
 use Pub::Utils;
-use apps::raymarine::NET::a_utils;
+use Pub::Ray::NET::a_utils;
 
 
 my $dbg_probe 	= 0;
